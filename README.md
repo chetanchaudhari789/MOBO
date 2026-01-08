@@ -1,83 +1,95 @@
-# MOBO Ecosystem Pro
+# MOBO
 
-Monorepo for the MOBO multi-portal product:
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
-- **Backend API** (Express + TypeScript + MongoDB)
-- **Buyer portal** (Next.js)
-- **Mediator portal** (Next.js)
-- **Agency portal** (Next.js)
-- **Brand portal** (Next.js)
-- **Admin portal** (Next.js)
-- **E2E tests** (Playwright) + backend tests (Vitest)
+MOBO is a monorepo for a multi-portal commerce + operations system:
 
-All portals talk to the backend through a simple convention:
+- Backend API: Express + TypeScript + MongoDB
+- Portals (Next.js): Buyer, Mediator, Agency, Brand, Admin
+- Tests: Vitest (backend) + Playwright (E2E)
 
-- Frontends call **`/api/*`**
-- Each Next app rewrites `/api/*` → `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*` (defaults to `http://localhost:8080`)
+## System diagram
 
-## Docs
+All portals follow one contract:
 
-- Architecture: `docs/ARCHITECTURE.md`
-- API (UI contract): `docs/API.md`
-- Deployment (quick): `docs/DEPLOYMENT.md` (see also `DEPLOYMENTS.md`)
+- The UI calls `/api/*`
+- Each Next app rewrites `/api/*` → `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*`
+
+```mermaid
+graph TD
+  subgraph Portals[Next.js portals]
+    B[Buyer :3001]
+    M[Mediator :3002]
+    A[Agency :3003]
+    BR[Brand :3004]
+    AD[Admin :3005]
+  end
+
+  API[Backend API :8080]
+  DB[(MongoDB)]
+  AI[Gemini API]
+
+  B -->|/api/*| API
+  M -->|/api/*| API
+  A -->|/api/*| API
+  BR -->|/api/*| API
+  AD -->|/api/*| API
+
+  API --> DB
+  API -. optional .-> AI
+```
+
+## Data model (conceptual)
+
+```mermaid
+erDiagram
+  USER ||--o{ WALLET : owns
+  WALLET ||--o{ TRANSACTION : records
+  WALLET ||--o{ PAYOUT : requests
+  USER ||--o{ ORDER : places
+  USER ||--o{ CAMPAIGN : creates
+  CAMPAIGN ||--o{ DEAL : publishes
+  USER ||--o{ TICKET : creates
+```
 
 ## Repo layout
 
 - `backend/` — Express API, Mongo models, services, seeds, tests
-- `apps/buyer-app/` — Buyer Next.js app (port **3001**)
-- `apps/mediator-app/` — Mediator Next.js app (port **3002**)
-- `apps/agency-web/` — Agency Next.js app (port **3003**)
-- `apps/brand-web/` — Brand Next.js app (port **3004**)
-- `apps/admin-web/` — Admin Next.js app (port **3005**)
-- `shared/` — shared UI/types/utilities used by portals
-- `e2e/` — Playwright tests
-- `playwright.config.ts` — multi-project Playwright config (buyer/mediator/agency/brand/admin/api)
+- `apps/buyer-app/` — Buyer portal (dev port 3001)
+- `apps/mediator-app/` — Mediator portal (dev port 3002)
+- `apps/agency-web/` — Agency portal (dev port 3003)
+- `apps/brand-web/` — Brand portal (dev port 3004)
+- `apps/admin-web/` — Admin portal (dev port 3005)
+- `shared/` — shared utilities/types used by portals
+- `e2e/` — Playwright end-to-end tests
+- `docs/` — architecture + API + deployment docs
+
+## Docs
+
+- `docs/ARCHITECTURE.md`
+- `docs/API.md` (UI contract endpoints)
+- `docs/DEPLOYMENT.md` (quick) and `DEPLOYMENTS.md` (detailed)
 
 ## Prerequisites
 
-- Node.js **20+** (recommended)
-- npm **9+**
+- Node.js 20+
+- npm 9+
 
-## Environment variables
+## Quickstart (local)
 
-### Backend (`backend/.env`)
-
-Start by copying the example:
-
-- Copy `backend/.env.example` → `backend/.env`
-
-Key variables used by the backend (see `backend/config/env.ts`):
-
-- `NODE_ENV`: `development` | `test` | `production`
-- `PORT`: default `8080`
-- `MONGODB_URI`: required (in non-prod you can use a placeholder to force in-memory Mongo)
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`: in **production** must be real secrets (>= 20 chars)
-- `CORS_ORIGINS`: comma-separated list of allowed origins
-- `GEMINI_API_KEY`: optional; if blank, AI routes are effectively disabled
-
-**Local dev tip:** the example uses `MONGODB_URI=<REPLACE_ME>` which triggers an **in-memory MongoDB** in non-production for easier local setup.
-
-### Frontend (`NEXT_PUBLIC_API_PROXY_TARGET`)
-
-Each Next app supports:
-
-- `NEXT_PUBLIC_API_PROXY_TARGET` (optional)
-  - Default: `http://localhost:8080`
-  - Used by Next rewrites to proxy `/api/*` to the backend
-
-You can set this in your shell, or in each app’s `.env.local` if you want.
-
-## Install
-
-From repo root:
+1. Install
 
 ```bash
 npm install
 ```
 
-## Run locally (recommended)
+2. Configure backend env
 
-### Option A: start everything (backend + all portals)
+- Copy `backend/.env.example` → `backend/.env`
+
+For local dev, `MONGODB_URI=<REPLACE_ME>` (the example) uses an in-memory MongoDB.
+
+3. Start everything
 
 ```bash
 npm run dev:all
@@ -85,57 +97,66 @@ npm run dev:all
 
 Ports:
 
-- Backend API: http://localhost:8080
+- API: http://localhost:8080
 - Buyer: http://localhost:3001
 - Mediator: http://localhost:3002
 - Agency: http://localhost:3003
 - Brand: http://localhost:3004
 - Admin: http://localhost:3005
 
-### Option B: start individually
+## Environment variables
 
-```bash
-npm run dev:backend
-npm run dev:buyer
-npm run dev:mediator
-npm run dev:agency
-npm run dev:brand
-npm run dev:admin
-```
+Backend (`backend/.env`):
+
+- `NODE_ENV`, `PORT`
+- `MONGODB_URI`
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` (in production: real secrets, >= 20 chars)
+- `CORS_ORIGINS`
+- `GEMINI_API_KEY` (optional)
+
+Portals:
+
+- `NEXT_PUBLIC_API_PROXY_TARGET` (defaults to `http://localhost:8080`)
+
+Examples:
+
+- Root: `.env.example`
+- Per-app: `apps/*/.env.local.example`
 
 ## Testing
 
-### One command (recommended)
-
-Runs backend tests + Playwright E2E:
+Run everything:
 
 ```bash
 npm test
 ```
 
-### Backend tests only
+Or backend only:
 
 ```bash
 npm run test:backend
 ```
 
-### E2E tests only
-
-```bash
-npm run test:e2e
-```
-
 Notes:
 
-- Playwright auto-starts a **safe E2E backend** (`backend` `dev:e2e`) and all portals.
-- E2E runs use seeded accounts and an in-memory DB; they do not touch real databases.
-
-## Common issues / troubleshooting
-
-- **CORS errors**: ensure `CORS_ORIGINS` in `backend/.env` includes your portal origin(s).
-- **Auth/secret errors in production**: `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` must be real secrets (>= 20 chars) in `NODE_ENV=production`.
-- **API mismatch**: if your backend isn’t on `http://localhost:8080`, set `NEXT_PUBLIC_API_PROXY_TARGET`.
+- Playwright starts a safe E2E backend + all portals automatically.
+- E2E uses deterministic seeding and does not require a real MongoDB.
 
 ## Deployment
 
-See **DEPLOYMENTS.md** for production deployment options, required environment variables, and recommended CI/CD flow.
+- Backend: Render (or any Node host)
+- Portals: Vercel (or any Next host)
+
+Start here:
+
+- `docs/DEPLOYMENT.md`
+- `DEPLOYMENTS.md`
+
+## Troubleshooting
+
+- CORS: ensure `CORS_ORIGINS` includes your portal origins.
+- Wrong backend URL: set `NEXT_PUBLIC_API_PROXY_TARGET`.
+
+## Repo hygiene
+
+See `PUSH_CHECKLIST.md` for a pre-push checklist.
