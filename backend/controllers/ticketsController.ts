@@ -17,7 +17,7 @@ async function getScopedOrderIdsForRequester(params: {
   if (isPrivileged(roles)) return [];
 
   if (roles.includes('brand')) {
-    const orders = await OrderModel.find({ brandUserId: requesterId, deletedAt: { $exists: false } })
+    const orders = await OrderModel.find({ brandUserId: requesterId, deletedAt: null })
       .select({ _id: 1 })
       .sort({ createdAt: -1 })
       .limit(5000)
@@ -28,7 +28,7 @@ async function getScopedOrderIdsForRequester(params: {
   if (roles.includes('mediator')) {
     const mediatorCode = String((requesterUser as any)?.mediatorCode || '').trim();
     if (!mediatorCode) return [];
-    const orders = await OrderModel.find({ managerName: mediatorCode, deletedAt: { $exists: false } })
+    const orders = await OrderModel.find({ managerName: mediatorCode, deletedAt: null })
       .select({ _id: 1 })
       .sort({ createdAt: -1 })
       .limit(5000)
@@ -41,7 +41,7 @@ async function getScopedOrderIdsForRequester(params: {
     if (!agencyCode) return [];
     const mediatorCodes = await listMediatorCodesForAgency(agencyCode);
     if (!mediatorCodes.length) return [];
-    const orders = await OrderModel.find({ managerName: { $in: mediatorCodes }, deletedAt: { $exists: false } })
+    const orders = await OrderModel.find({ managerName: { $in: mediatorCodes }, deletedAt: null })
       .select({ _id: 1 })
       .sort({ createdAt: -1 })
       .limit(5000)
@@ -100,7 +100,7 @@ export function makeTicketsController() {
       try {
         const { roles, userId, user } = getRequester(req);
 
-        const baseQuery: any = { deletedAt: { $exists: false } };
+        const baseQuery: any = { deletedAt: null };
 
         // Privileged can see all tickets.
         if (isPrivileged(roles)) {

@@ -63,7 +63,7 @@ export async function transitionOrderWorkflow(params: {
   const order = await OrderModel.findOneAndUpdate(
     {
       _id: params.orderId,
-      deletedAt: { $exists: false },
+      deletedAt: null,
       frozen: { $ne: true },
       workflowStatus: params.from,
     } as any,
@@ -95,7 +95,7 @@ export async function freezeOrders(params: {
   const res = await OrderModel.updateMany(
     {
       ...params.query,
-      deletedAt: { $exists: false },
+      deletedAt: null,
       frozen: { $ne: true },
       workflowStatus: { $nin: Array.from(TERMINAL) },
     },
@@ -125,7 +125,7 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
   const order = await OrderModel.findOneAndUpdate(
     {
       _id: params.orderId,
-      deletedAt: { $exists: false },
+      deletedAt: null,
       frozen: true,
       workflowStatus: { $nin: Array.from(TERMINAL) },
     } as any,

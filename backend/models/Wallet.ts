@@ -9,8 +9,6 @@ const walletSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-      unique: true,
-      index: true,
     },
     currency: { type: String, enum: Currency, default: 'INR' },
 
@@ -30,6 +28,15 @@ const walletSchema = new Schema(
 );
 
 walletSchema.index({ deletedAt: 1, createdAt: -1 });
+
+// Wallet upserts intentionally ignore soft-deleted docs; uniqueness must match that.
+walletSchema.index(
+  { ownerUserId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { deletedAt: null },
+  }
+);
 
 export type WalletDoc = InferSchemaType<typeof walletSchema>;
 export const WalletModel = mongoose.model('Wallet', walletSchema);

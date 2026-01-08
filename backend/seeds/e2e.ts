@@ -116,7 +116,7 @@ export async function seedE2E() {
   // Minimal campaign so dashboards have something to render.
   const existingCampaign = await CampaignModel.findOne({
     title: 'E2E Campaign',
-    deletedAt: { $exists: false },
+    deletedAt: null,
   });
 
   const campaign = existingCampaign ?? (await CampaignModel.create({
@@ -146,7 +146,7 @@ export async function seedE2E() {
   const existingDeal = await DealModel.findOne({
     campaignId: campaign._id,
     mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-    deletedAt: { $exists: false },
+    deletedAt: null,
   }).lean();
 
   if (!existingDeal) {

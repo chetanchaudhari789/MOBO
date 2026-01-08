@@ -15,6 +15,12 @@ All portals talk to the backend through a simple convention:
 - Frontends call **`/api/*`**
 - Each Next app rewrites `/api/*` → `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*` (defaults to `http://localhost:8080`)
 
+## Docs
+
+- Architecture: `docs/ARCHITECTURE.md`
+- API (UI contract): `docs/API.md`
+- Deployment (quick): `docs/DEPLOYMENT.md` (see also `DEPLOYMENTS.md`)
+
 ## Repo layout
 
 - `backend/` — Express API, Mongo models, services, seeds, tests

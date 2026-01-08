@@ -20,8 +20,8 @@ const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
 
-    mobile: { type: String, required: true, trim: true, unique: true, index: true },
-    email: { type: String, trim: true, lowercase: true, index: true, sparse: true },
+    mobile: { type: String, required: true, trim: true },
+    email: { type: String, trim: true, lowercase: true },
 
     // Never store plaintext passwords
     passwordHash: { type: String, required: true },
@@ -33,7 +33,7 @@ const userSchema = new Schema(
     status: { type: String, enum: UserStatus, default: 'active', index: true },
 
     // --- Ops hierarchy / attribution ---
-    mediatorCode: { type: String, trim: true, index: true, unique: true, sparse: true },
+    mediatorCode: { type: String, trim: true },
     parentCode: { type: String, trim: true, index: true },
     generatedCodes: [{ type: String, trim: true }],
 
@@ -41,8 +41,8 @@ const userSchema = new Schema(
     isVerifiedByMediator: { type: Boolean, default: false },
 
     // --- Brand specific ---
-    brandCode: { type: String, trim: true, index: true, sparse: true },
-    connectedAgencies: [{ type: String, trim: true }],
+    brandCode: { type: String, trim: true },
+    connectedAgencies: { type: [{ type: String, trim: true }], default: [] },
     pendingConnections: [
       {
         agencyId: { type: String, trim: true },
@@ -92,12 +92,73 @@ const userSchema = new Schema(
   if (this.role && !this.roles.includes(this.role)) {
     this.roles = Array.from(new Set([this.role, ...this.roles]));
   }
+
+  // Normalize and dedupe connection arrays (arrays can accumulate duplicates under retries)
+  if (Array.isArray(this.connectedAgencies)) {
+    const cleaned = this.connectedAgencies
+      .map((v: unknown) => String(v ?? '').trim())
+      .filter(Boolean);
+    this.connectedAgencies = Array.from(new Set(cleaned));
+  }
+
+  if (Array.isArray(this.pendingConnections)) {
+    const byCode = new Map<string, any>();
+    for (const entry of this.pendingConnections) {
+      const code = String(entry?.agencyCode ?? '').trim();
+      if (!code) continue;
+      const prev = byCode.get(code);
+      if (!prev) {
+        byCode.set(code, entry);
+      } else {
+        const prevTs = prev?.timestamp ? new Date(prev.timestamp).getTime() : 0;
+        const nextTs = entry?.timestamp ? new Date(entry.timestamp).getTime() : 0;
+        if (nextTs > prevTs) byCode.set(code, entry);
+      }
+    }
+    this.pendingConnections = Array.from(byCode.values());
+  }
 });
+
+// Uniqueness + query indexes should respect soft delete.
+userSchema.index(
+  { mobile: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { deletedAt: null },
+  }
+);
+
+// Optional email should be unique when present (and not deleted)
+userSchema.index(
+  { email: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      deletedAt: null,
+      email: { $type: 'string' },
+    },
+  }
+);
 
 // Compound indexes for efficient role-based queries
 userSchema.index({ brandCode: 1, roles: 1, deletedAt: 1 });
 userSchema.index({ mediatorCode: 1, roles: 1, deletedAt: 1 });
 userSchema.index({ roles: 1, status: 1, deletedAt: 1 });
+
+userSchema.index(
+  { mediatorCode: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { deletedAt: null, mediatorCode: { $type: 'string' } },
+  }
+);
+
+userSchema.index(
+  { brandCode: 1 },
+  {
+    partialFilterExpression: { deletedAt: null, brandCode: { $type: 'string' } },
+  }
+);
 
 export type UserDoc = InferSchemaType<typeof userSchema>;
 export const UserModel = mongoose.model('User', userSchema);

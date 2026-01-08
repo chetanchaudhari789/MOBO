@@ -47,7 +47,7 @@ export function makeOpsController() {
         const agencyCode = String((requester as any)?.mediatorCode || '').trim();
         if (!agencyCode) throw new AppError(409, 'MISSING_AGENCY_CODE', 'Agency is missing a code');
 
-        const brand = await UserModel.findOne({ brandCode: body.brandCode, roles: 'brand', deletedAt: { $exists: false } });
+        const brand = await UserModel.findOne({ brandCode: body.brandCode, roles: 'brand', deletedAt: null });
         if (!brand) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
         if (brand.status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
 
@@ -100,7 +100,7 @@ export function makeOpsController() {
         const mediators = await UserModel.find({
           roles: 'mediator',
           parentCode: agencyCode,
-          deletedAt: { $exists: false },
+          deletedAt: null,
         })
           .sort({ createdAt: -1 })
           .lean();
@@ -120,7 +120,7 @@ export function makeOpsController() {
         // Scope campaigns by requester unless admin/ops.
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
 
-        const query: any = { deletedAt: { $exists: false } };
+        const query: any = { deletedAt: null };
         if (code) {
           query.$or = [
             { allowedAgencyCodes: code },
@@ -165,7 +165,7 @@ export function makeOpsController() {
 
         const orders = await OrderModel.find({
           managerName: { $in: managerCodes },
-          deletedAt: { $exists: false },
+          deletedAt: null,
         })
           .sort({ createdAt: -1 })
           .limit(5000)
@@ -188,7 +188,7 @@ export function makeOpsController() {
           role: 'shopper',
           parentCode: code,
           isVerifiedByMediator: false,
-          deletedAt: { $exists: false },
+          deletedAt: null,
         })
           .sort({ createdAt: -1 })
           .lean();
@@ -211,7 +211,7 @@ export function makeOpsController() {
           role: 'shopper',
           parentCode: code,
           isVerifiedByMediator: true,
-          deletedAt: { $exists: false },
+          deletedAt: null,
         })
           .sort({ createdAt: -1 })
           .lean();
@@ -227,7 +227,7 @@ export function makeOpsController() {
       try {
         const { roles, userId, user } = getRequester(req);
 
-        const payoutQuery: any = { deletedAt: { $exists: false } };
+        const payoutQuery: any = { deletedAt: null };
 
         if (!isPrivileged(roles)) {
           if (roles.includes('mediator')) {
@@ -243,7 +243,7 @@ export function makeOpsController() {
               res.json([]);
               return;
             }
-            const mediators = await UserModel.find({ roles: 'mediator', mediatorCode: { $in: mediatorCodes }, deletedAt: { $exists: false } })
+            const mediators = await UserModel.find({ roles: 'mediator', mediatorCode: { $in: mediatorCodes }, deletedAt: null })
               .select({ _id: 1 })
               .lean();
             payoutQuery.beneficiaryUserId = { $in: mediators.map((m) => m._id) };
@@ -450,7 +450,7 @@ export function makeOpsController() {
         const hasOpenDispute = await TicketModel.exists({
           orderId: String(order._id),
           status: 'Open',
-          deletedAt: { $exists: false },
+          deletedAt: null,
         });
         if (hasOpenDispute) {
           order.affiliateStatus = 'Frozen_Disputed';
@@ -483,7 +483,7 @@ export function makeOpsController() {
                 'items.0.campaignId': campaignId,
                 $or: [{ affiliateStatus: 'Approved_Settled' }, { paymentStatus: 'Paid' }],
                 _id: { $ne: order._id },
-                deletedAt: { $exists: false },
+                deletedAt: null,
               });
               if (settledCount >= assignedLimit) isOverLimit = true;
             }
@@ -627,7 +627,7 @@ export function makeOpsController() {
           throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is permanently locked after slot assignment');
         }
 
-        const hasOrders = await OrderModel.exists({ 'items.campaignId': campaign._id, deletedAt: { $exists: false } });
+        const hasOrders = await OrderModel.exists({ 'items.campaignId': campaign._id, deletedAt: null });
         if (hasOrders) {
           throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is locked after first order; create a new campaign to change terms');
         }
@@ -708,7 +708,7 @@ export function makeOpsController() {
         const existingDeal = await DealModel.findOne({ 
           campaignId: campaign._id, 
           mediatorCode: body.mediatorCode, 
-          deletedAt: { $exists: false } 
+          deletedAt: null 
         }).lean();
 
         if (existingDeal) {
@@ -803,7 +803,7 @@ export function makeOpsController() {
     // Optional endpoint used by some UI versions.
     getTransactions: async (_req: Request, res: Response, next: NextFunction) => {
       try {
-        const tx = await TransactionModel.find({ deletedAt: { $exists: false } })
+        const tx = await TransactionModel.find({ deletedAt: null })
           .sort({ createdAt: -1 })
           .limit(1000)
           .lean();

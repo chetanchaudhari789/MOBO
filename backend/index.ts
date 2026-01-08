@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import { loadDotenv } from './config/dotenvLoader.js';
+
+loadDotenv();
 import { loadEnv } from './config/env.js';
 import { connectMongo } from './database/mongo.js';
 import { createApp } from './app.js';

@@ -47,7 +47,7 @@ dealSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      deletedAt: { $exists: false },
+      deletedAt: null,
     },
   }
 );

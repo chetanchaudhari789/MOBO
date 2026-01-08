@@ -26,7 +26,7 @@ export function makeProductsController() {
         const deals = await DealModel.find({
           mediatorCode,
           active: true,
-          deletedAt: { $exists: false },
+          deletedAt: null,
         })
           .sort({ createdAt: -1 })
           .limit(2000)
@@ -53,7 +53,7 @@ export function makeProductsController() {
         const mediatorCode = String((requester as any).parentCode || '').trim();
         if (!mediatorCode) throw new AppError(409, 'MISSING_MEDIATOR_LINK', 'Your account is not linked to a mediator');
 
-        const deal = await DealModel.findOne({ _id: dealId, mediatorCode, active: true, deletedAt: { $exists: false } }).lean();
+        const deal = await DealModel.findOne({ _id: dealId, mediatorCode, active: true, deletedAt: null }).lean();
         if (!deal) throw new AppError(404, 'DEAL_NOT_FOUND', 'Deal not found');
 
         const campaign = await CampaignModel.findById((deal as any).campaignId).select({ brandUserId: 1, brandName: 1, deletedAt: 1 }).lean();

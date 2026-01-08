@@ -24,27 +24,35 @@ describe('api smoke', () => {
 
     const campaign = await CampaignModel.findOne({
       title: 'E2E Campaign',
-      deletedAt: { $exists: false },
+      deletedAt: null,
     }).lean();
     expect(campaign).toBeTruthy();
 
     // Ensure buyer has at least one visible deal.
-    await DealModel.create({
-      campaignId: (campaign as any)._id,
-      mediatorCode: 'MED_TEST',
-      title: 'E2E Deal',
-      description: 'E2E deal for buyer app',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      platform: 'Amazon',
-      brandName: 'E2E Brand',
-      dealType: 'Discount',
-      originalPricePaise: 199900,
-      pricePaise: 99900,
-      commissionPaise: 15000,
-      payoutPaise: 15000, // CRITICAL: Added required field
-      active: true,
-    });
+      const existingDeal = await DealModel.findOne({
+        campaignId: (campaign as any)._id,
+        mediatorCode: 'MED_TEST',
+        deletedAt: null,
+      }).lean();
+
+      if (!existingDeal) {
+        await DealModel.create({
+          campaignId: (campaign as any)._id,
+          mediatorCode: 'MED_TEST',
+          title: 'E2E Deal',
+          description: 'E2E deal for buyer app',
+          image: 'https://placehold.co/600x400',
+          productUrl: 'https://example.com/product',
+          platform: 'Amazon',
+          brandName: 'E2E Brand',
+          dealType: 'Discount',
+          originalPricePaise: 199900,
+          pricePaise: 99900,
+          commissionPaise: 15000,
+          payoutPaise: 15000, // CRITICAL: Added required field
+          active: true,
+        });
+      }
 
     const app = createApp(env);
 

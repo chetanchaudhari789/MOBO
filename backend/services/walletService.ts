@@ -17,7 +17,7 @@ export type WalletMutationInput = {
 };
 
 export async function ensureWallet(ownerUserId: string) {
-  const existing = await WalletModel.findOne({ ownerUserId, deletedAt: { $exists: false } });
+  const existing = await WalletModel.findOne({ ownerUserId, deletedAt: null });
   if (existing) return existing;
   return WalletModel.create({ ownerUserId, availablePaise: 0, pendingPaise: 0, lockedPaise: 0 });
 }
@@ -34,7 +34,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       if (existingTx) return existingTx;
 
       const wallet = await WalletModel.findOneAndUpdate(
-        { ownerUserId: input.ownerUserId, deletedAt: { $exists: false } },
+        { ownerUserId: input.ownerUserId, deletedAt: null },
         {
           $setOnInsert: {
             ownerUserId: input.ownerUserId,
@@ -89,7 +89,7 @@ export async function applyWalletDebit(input: WalletMutationInput) {
       const wallet = await WalletModel.findOneAndUpdate(
         {
           ownerUserId: input.ownerUserId,
-          deletedAt: { $exists: false },
+          deletedAt: null,
           // Ensure sufficient funds
           availablePaise: { $gte: input.amountPaise },
         },
@@ -103,7 +103,7 @@ export async function applyWalletDebit(input: WalletMutationInput) {
         // Check if wallet exists but has insufficient funds
         const existing = await WalletModel.findOne({
           ownerUserId: input.ownerUserId,
-          deletedAt: { $exists: false },
+          deletedAt: null,
         }).session(session);
 
         if (!existing) throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');

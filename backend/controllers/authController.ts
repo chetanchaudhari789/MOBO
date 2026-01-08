@@ -81,7 +81,7 @@ export function makeAuthController(env: Env) {
             mediatorCode: upstreamMediatorCode,
             roles: 'mediator',
             status: 'active',
-            deletedAt: { $exists: false },
+            deletedAt: null,
           })
             .session(session)
             .lean();
@@ -202,7 +202,7 @@ export function makeAuthController(env: Env) {
               mediatorCode: agencyCode,
               roles: 'agency',
               status: 'active',
-              deletedAt: { $exists: false },
+              deletedAt: null,
             })
               .session(session)
               .lean();

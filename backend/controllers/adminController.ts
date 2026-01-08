@@ -30,7 +30,7 @@ export function makeAdminController() {
         const role = typeof req.query.role === 'string' ? req.query.role : 'all';
         const dbRole = roleToDb(role);
 
-        const query: any = { deletedAt: { $exists: false } };
+        const query: any = { deletedAt: null };
         if (dbRole) query.role = dbRole;
 
         const users = await UserModel.find(query).sort({ createdAt: -1 }).limit(5000).lean();
@@ -45,7 +45,7 @@ export function makeAdminController() {
 
     getFinancials: async (_req: Request, res: Response, next: NextFunction) => {
       try {
-        const orders = await OrderModel.find({ deletedAt: { $exists: false } })
+        const orders = await OrderModel.find({ deletedAt: null })
           .sort({ createdAt: -1 })
           .limit(5000)
           .lean();
@@ -58,8 +58,8 @@ export function makeAdminController() {
     getStats: async (_req: Request, res: Response, next: NextFunction) => {
       try {
         const [users, orders] = await Promise.all([
-          UserModel.find({ deletedAt: { $exists: false } }).select({ role: 1 }).lean(),
-          OrderModel.find({ deletedAt: { $exists: false } }).select({ totalPaise: 1, affiliateStatus: 1 }).lean(),
+          UserModel.find({ deletedAt: null }).select({ role: 1 }).lean(),
+          OrderModel.find({ deletedAt: null }).select({ totalPaise: 1, affiliateStatus: 1 }).lean(),
         ]);
 
         const counts: any = { total: users.length, user: 0, mediator: 0, agency: 0, brand: 0 };
@@ -93,7 +93,7 @@ export function makeAdminController() {
         since.setDate(since.getDate() - 6);
         since.setHours(0, 0, 0, 0);
 
-        const orders = await OrderModel.find({ createdAt: { $gte: since }, deletedAt: { $exists: false } })
+        const orders = await OrderModel.find({ createdAt: { $gte: since }, deletedAt: null })
           .select({ createdAt: 1, totalPaise: 1 })
           .lean();
 
@@ -119,7 +119,7 @@ export function makeAdminController() {
 
     getProducts: async (_req: Request, res: Response, next: NextFunction) => {
       try {
-        const deals = await DealModel.find({ deletedAt: { $exists: false } })
+        const deals = await DealModel.find({ deletedAt: null })
           .sort({ createdAt: -1 })
           .limit(5000)
           .lean();
@@ -156,21 +156,21 @@ export function makeAdminController() {
             }
 
             if (roles.includes('mediator') && mediatorCode) {
-              await DealModel.updateMany({ mediatorCode, deletedAt: { $exists: false } }, { $set: { active: false } });
+              await DealModel.updateMany({ mediatorCode, deletedAt: null }, { $set: { active: false } });
               await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminUserId });
             }
 
             if (roles.includes('agency') && mediatorCode) {
               const mediatorCodes = await listMediatorCodesForAgency(mediatorCode);
               if (mediatorCodes.length) {
-                await DealModel.updateMany({ mediatorCode: { $in: mediatorCodes }, deletedAt: { $exists: false } }, { $set: { active: false } });
+                await DealModel.updateMany({ mediatorCode: { $in: mediatorCodes }, deletedAt: null }, { $set: { active: false } });
                 await freezeOrders({ query: { managerName: { $in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminUserId });
               }
             }
 
             if (roles.includes('brand')) {
               await CampaignModel.updateMany(
-                { brandUserId: user._id, deletedAt: { $exists: false }, status: { $in: ['active', 'draft'] } },
+                { brandUserId: user._id, deletedAt: null, status: { $in: ['active', 'draft'] } },
                 { $set: { status: 'paused' } }
               );
               await freezeOrders({ query: { brandUserId: user._id }, reason: 'BRAND_SUSPENDED', actorUserId: adminUserId });

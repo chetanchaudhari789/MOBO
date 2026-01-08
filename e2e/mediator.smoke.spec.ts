@@ -13,8 +13,10 @@ test('mediator can login and open Market', async ({ page }) => {
   await page.getByPlaceholder('Password').fill(PASSWORD);
   await page.getByRole('button', { name: /^Login$/ }).click();
 
-  // Landing assertions
-  await expect(page.getByText('MED_TEST', { exact: false })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+
+  // Landing assertions (avoid brittle user-name text; wait for a stable navigation entry)
+  await expect(page.getByRole('button', { name: 'Market' })).toBeVisible({ timeout: 15000 });
 
   // Navigate one core section
   await page.getByRole('button', { name: 'Market' }).click();

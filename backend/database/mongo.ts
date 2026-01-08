@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import type { Env } from '../config/env.js';
 
 let memoryServer: { stop: () => Promise<unknown>; getUri: () => string } | null = null;
+let isIntentionalDisconnect = false;
 
 function looksPlaceholderMongoUri(uri: string | undefined): boolean {
   if (!uri) return true;
@@ -15,6 +16,8 @@ function looksPlaceholderMongoUri(uri: string | undefined): boolean {
 export async function connectMongo(env: Env): Promise<void> {
   if (mongoose.connection.readyState >= 1) return;
 
+  isIntentionalDisconnect = false;
+
   mongoose.set('strictQuery', true);
 
   // Connection event handlers for monitoring and resilience
@@ -23,6 +26,7 @@ export async function connectMongo(env: Env): Promise<void> {
   });
 
   mongoose.connection.on('disconnected', () => {
+    if (isIntentionalDisconnect) return;
     console.warn('MongoDB disconnected. Attempting reconnection...');
   });
 
@@ -58,6 +62,7 @@ export async function connectMongo(env: Env): Promise<void> {
 
 export async function disconnectMongo(): Promise<void> {
   if (mongoose.connection.readyState === 0) return;
+  isIntentionalDisconnect = true;
   await mongoose.disconnect();
   if (memoryServer) {
     await memoryServer.stop();

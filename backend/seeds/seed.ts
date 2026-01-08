@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import { loadDotenv } from '../config/dotenvLoader.js';
+
+loadDotenv();
 
 import { faker } from '@faker-js/faker';
 import seedrandom from 'seedrandom';
@@ -17,6 +19,10 @@ import { DealModel } from '../models/Deal.js';
 import { OrderModel } from '../models/Order.js';
 import { TicketModel } from '../models/Ticket.js';
 import { PayoutModel } from '../models/Payout.js';
+import { TransactionModel } from '../models/Transaction.js';
+import { InviteModel } from '../models/Invite.js';
+import { AuditLogModel } from '../models/AuditLog.js';
+import { SuspensionModel } from '../models/Suspension.js';
 
 import { hashPassword } from '../services/passwords.js';
 import { applyWalletCredit } from '../services/walletService.js';
@@ -54,6 +60,7 @@ async function wipe() {
   await Promise.all([
     UserModel.deleteMany({}),
     WalletModel.deleteMany({}),
+    TransactionModel.deleteMany({}),
     AgencyModel.deleteMany({}),
     BrandModel.deleteMany({}),
     MediatorProfileModel.deleteMany({}),
@@ -63,6 +70,9 @@ async function wipe() {
     OrderModel.deleteMany({}),
     TicketModel.deleteMany({}),
     PayoutModel.deleteMany({}),
+    InviteModel.deleteMany({}),
+    AuditLogModel.deleteMany({}),
+    SuspensionModel.deleteMany({}),
   ]);
 }
 
@@ -414,7 +424,7 @@ export async function runLargeSeed(params?: { wipe?: boolean }) {
     for (const c of chosen) {
       // eslint-disable-next-line no-await-in-loop
       await DealModel.updateOne(
-        { campaignId: c._id, mediatorCode: mediator.mediatorCode, deletedAt: { $exists: false } },
+        { campaignId: c._id, mediatorCode: mediator.mediatorCode, deletedAt: null },
         {
           $setOnInsert: {
             campaignId: c._id,
@@ -439,7 +449,7 @@ export async function runLargeSeed(params?: { wipe?: boolean }) {
   }
 
   // Create orders across workflow states
-  const dealIndex = await DealModel.find({ active: true, deletedAt: { $exists: false } })
+  const dealIndex = await DealModel.find({ active: true, deletedAt: null })
     .limit(50_000)
     .lean();
   const dealsByMediator = new Map<string, any[]>();

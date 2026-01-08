@@ -20,7 +20,7 @@ async function ensureActiveUserByCode(params: { code: string; role: string }, se
     mediatorCode: params.code,
     roles: params.role,
     status: 'active',
-    deletedAt: { $exists: false },
+    deletedAt: null,
   })
     .session(session ?? null)
     .lean();

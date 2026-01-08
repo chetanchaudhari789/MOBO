@@ -5,6 +5,7 @@ import { UserModel } from '../models/User.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { DealModel } from '../models/Deal.js';
 import { OrderModel } from '../models/Order.js';
+import type { OrderWorkflowStatus } from '../models/Order.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiOrder } from '../utils/uiMappers.js';
@@ -27,7 +28,7 @@ export function makeOrdersController() {
 
         const orders = await OrderModel.find({
           userId,
-          deletedAt: { $exists: false },
+          deletedAt: null,
         })
           .sort({ createdAt: -1 })
           .limit(2000)
@@ -63,15 +64,15 @@ export function makeOrdersController() {
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
         const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         const [hourly, daily] = await Promise.all([
-          OrderModel.countDocuments({ userId: user._id, createdAt: { $gte: oneHourAgo }, deletedAt: { $exists: false } }),
-          OrderModel.countDocuments({ userId: user._id, createdAt: { $gte: oneDayAgo }, deletedAt: { $exists: false } }),
+          OrderModel.countDocuments({ userId: user._id, createdAt: { $gte: oneHourAgo }, deletedAt: null }),
+          OrderModel.countDocuments({ userId: user._id, createdAt: { $gte: oneDayAgo }, deletedAt: null }),
         ]);
         if (hourly >= 10 || daily >= 30) {
           throw new AppError(429, 'VELOCITY_LIMIT', 'Too many orders created. Please try later.');
         }
 
         if (body.externalOrderId) {
-          const dup = await OrderModel.exists({ externalOrderId: body.externalOrderId, deletedAt: { $exists: false } });
+          const dup = await OrderModel.exists({ externalOrderId: body.externalOrderId, deletedAt: null });
           if (dup) {
             throw new AppError(
               409,
@@ -86,7 +87,7 @@ export function makeOrdersController() {
         const existingDealOrder = await OrderModel.findOne({
           userId: user._id,
           'items.0.productId': firstItem.productId,
-          deletedAt: { $exists: false },
+          deletedAt: null,
           workflowStatus: { $nin: ['FAILED', 'REJECTED'] },
         });
         if (existingDealOrder) {
@@ -105,7 +106,7 @@ export function makeOrdersController() {
         const item = body.items[0];
         const campaign = await CampaignModel.findOne({
           _id: item.campaignId,
-          deletedAt: { $exists: false },
+          deletedAt: null,
         }).session(session);
         if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
@@ -117,7 +118,7 @@ export function makeOrdersController() {
         // Access is granted if either:
         // - campaign is assigned to the buyer's agency (allowedAgencyCodes), OR
         // - campaign has an explicit slot assignment for the buyer's mediator (assignments).
-        const mediatorUser = await UserModel.findOne({ roles: 'mediator', mediatorCode: upstreamMediatorCode, deletedAt: { $exists: false } })
+        const mediatorUser = await UserModel.findOne({ roles: 'mediator', mediatorCode: upstreamMediatorCode, deletedAt: null })
           .select({ parentCode: 1 })
           .lean();
         const upstreamAgencyCode = String((mediatorUser as any)?.parentCode || '').trim();
@@ -153,7 +154,7 @@ export function makeOrdersController() {
             managerName: upstreamMediatorCode,
             'items.0.campaignId': campaign._id,
             status: { $ne: 'Cancelled' },
-            deletedAt: { $exists: false },
+            deletedAt: null,
           });
           if (mediatorSales >= assigned) {
             throw new AppError(
@@ -177,7 +178,7 @@ export function makeOrdersController() {
             const existing = await OrderModel.findOne({
               _id: body.preOrderId,
               userId: user._id,
-              deletedAt: { $exists: false },
+              deletedAt: null,
             }).session(session);
             if (!existing) throw new AppError(404, 'ORDER_NOT_FOUND', 'Pre-order not found');
             if ((existing as any).frozen) throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -309,7 +310,7 @@ export function makeOrdersController() {
 
           const afterProof = await transitionOrderWorkflow({
             orderId: String((finalOrder as any)._id),
-            from: String((finalOrder as any).workflowStatus || 'ORDERED'),
+            from: ((finalOrder as any).workflowStatus ?? 'ORDERED') as OrderWorkflowStatus,
             to: 'PROOF_SUBMITTED',
             actorUserId: String(requesterId || ''),
             metadata: { proofType: initialProofTypes[0], source: 'createOrder' },

@@ -9,10 +9,15 @@
     "dev:e2e": "tsx watch index.e2e.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
+    "migrate": "tsx scripts/migrate.ts",
+    "migrate:status": "tsx scripts/migrate.ts --status",
     "test": "vitest run -c vitest.config.ts",
     "test:watch": "vitest",
     "lint": "eslint \"**/*.ts\"",
     "seed": "tsx seeds/seed.ts",
+    "seed:e2e": "tsx scripts/seedE2E.ts",
+    "wipe": "tsx scripts/wipe.ts",
+    "seed:reset": "tsx scripts/resetSeed.ts",
     "ai:check": "tsx scripts/checkAiKey.ts"
   },
   "dependencies": {

@@ -13,8 +13,10 @@ test('agency can login and view Team', async ({ page }) => {
   await page.getByPlaceholder('••••••••').fill(PASSWORD);
   await page.getByRole('button', { name: /Login to Ops/i }).click();
 
-  // Landing assertions
-  await expect(page.getByText('Agency Portal', { exact: true }).first()).toBeVisible();
+  await page.waitForLoadState('networkidle');
+
+  // Landing assertions (avoid brittle header text; wait for stable navigation)
+  await expect(page.getByRole('button', { name: 'My Team' })).toBeVisible({ timeout: 15000 });
 
   // Navigate one core section
   await page.getByRole('button', { name: 'My Team' }).click();

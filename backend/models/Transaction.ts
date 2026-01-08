@@ -7,6 +7,8 @@ export const TransactionType = [
   'commission_settle',
   'cashback_lock',
   'cashback_settle',
+  'agency_payout',
+  'agency_receipt',
   'payout_request',
   'payout_complete',
   'payout_failed',
@@ -20,7 +22,7 @@ export type TransactionStatus = (typeof TransactionStatus)[number];
 const transactionSchema = new Schema(
   {
     // idempotency is mandatory for money-moving operations
-    idempotencyKey: { type: String, required: true, unique: true, index: true, trim: true },
+    idempotencyKey: { type: String, required: true, trim: true },
 
     type: { type: String, enum: TransactionType, required: true, index: true },
     status: { type: String, enum: TransactionStatus, default: 'pending', index: true },
@@ -50,6 +52,14 @@ const transactionSchema = new Schema(
 transactionSchema.index({ status: 1, type: 1, createdAt: -1 });
 transactionSchema.index({ deletedAt: 1, createdAt: -1 });
 transactionSchema.index({ walletId: 1, createdAt: -1 });
+
+transactionSchema.index(
+  { idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { deletedAt: null },
+  }
+);
 
 export type TransactionDoc = InferSchemaType<typeof transactionSchema>;
 export const TransactionModel = mongoose.model('Transaction', transactionSchema);

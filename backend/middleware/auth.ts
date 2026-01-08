@@ -72,7 +72,7 @@ export function requireAuth(env: Env) {
           const agency = await UserModel.findOne({
             mediatorCode: parentCode,
             roles: 'agency',
-            deletedAt: { $exists: false },
+            deletedAt: null,
           })
             .select({ status: 1 })
             .lean();
@@ -87,7 +87,7 @@ export function requireAuth(env: Env) {
           const mediator = await UserModel.findOne({
             mediatorCode: parentCode,
             roles: 'mediator',
-            deletedAt: { $exists: false },
+            deletedAt: null,
           })
             .select({ status: 1, parentCode: 1 })
             .lean();
@@ -100,7 +100,106 @@ export function requireAuth(env: Env) {
             const agency = await UserModel.findOne({
               mediatorCode: agencyCode,
               roles: 'agency',
-              deletedAt: { $exists: false },
+              deletedAt: null,
+            })
+              .select({ status: 1 })
+              .lean();
+            if (!agency || agency.status !== 'active') {
+              return next(new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream agency is not active'));
+            }
+          }
+        }
+      }
+
+      req.auth = { userId, roles, user: user as any };
+      next();
+    } catch {
+      next(new AppError(401, 'UNAUTHENTICATED', 'Invalid or expired token'));
+    }
+  };
+}
+
+// Like requireAuth(), but does not require a token.
+// - If token is missing: continues unauthenticated.
+// - If token is present and invalid: returns 401.
+// - If token is valid: attaches req.auth (zero-trust roles from DB).
+export function optionalAuth(env: Env) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    const header = req.header('authorization') || '';
+    const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
+
+    if (!token) {
+      return next();
+    }
+
+    try {
+      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as jwt.JwtPayload;
+      const userId = String(decoded.sub || '');
+      if (!userId) {
+        return next(new AppError(401, 'UNAUTHENTICATED', 'Invalid token'));
+      }
+
+      const user = await UserModel.findById(userId)
+        .select({
+          status: 1,
+          roles: 1,
+          role: 1,
+          parentCode: 1,
+          mediatorCode: 1,
+          brandCode: 1,
+          deletedAt: 1,
+          mobile: 1,
+          name: 1,
+        })
+        .lean();
+
+      if (!user || (user as any).deletedAt) {
+        return next(new AppError(401, 'UNAUTHENTICATED', 'User not found'));
+      }
+
+      if (user.status !== 'active') {
+        return next(new AppError(403, 'USER_NOT_ACTIVE', 'User is not active'));
+      }
+
+      const roles = Array.isArray(user.roles) ? (user.roles as Role[]) : [];
+
+      // Reuse upstream suspension enforcement to avoid inconsistent behavior.
+      const parentCode = String((user as any).parentCode || '').trim();
+
+      if (roles.includes('mediator')) {
+        if (parentCode) {
+          const agency = await UserModel.findOne({
+            mediatorCode: parentCode,
+            roles: 'agency',
+            deletedAt: null,
+          })
+            .select({ status: 1 })
+            .lean();
+          if (!agency || agency.status !== 'active') {
+            return next(new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream agency is not active'));
+          }
+        }
+      }
+
+      if (roles.includes('shopper')) {
+        if (parentCode) {
+          const mediator = await UserModel.findOne({
+            mediatorCode: parentCode,
+            roles: 'mediator',
+            deletedAt: null,
+          })
+            .select({ status: 1, parentCode: 1 })
+            .lean();
+          if (!mediator || mediator.status !== 'active') {
+            return next(new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream mediator is not active'));
+          }
+
+          const agencyCode = String((mediator as any).parentCode || '').trim();
+          if (agencyCode) {
+            const agency = await UserModel.findOne({
+              mediatorCode: agencyCode,
+              roles: 'agency',
+              deletedAt: null,
             })
               .select({ status: 1 })
               .lean();

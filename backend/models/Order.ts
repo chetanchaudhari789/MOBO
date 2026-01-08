@@ -124,7 +124,7 @@ orderSchema.index(
     unique: true,
     partialFilterExpression: {
       externalOrderId: { $type: 'string' },
-      deletedAt: { $exists: false },
+      deletedAt: null,
     },
   }
 );
@@ -136,7 +136,7 @@ orderSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      deletedAt: { $exists: false },
+      deletedAt: null,
       workflowStatus: { $nin: ['FAILED', 'REJECTED'] },
     },
   }

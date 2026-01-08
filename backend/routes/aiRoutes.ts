@@ -1,28 +1,60 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 
 import type { Env } from '../config/env.js';
 import { checkGeminiApiKey, generateChatUiResponse, isGeminiConfigured, verifyProofWithAi } from '../services/aiService.js';
-import { requireAuth, requireRoles } from '../middleware/auth.js';
+import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 
 const chatSchema = z.object({
-  message: z.string().default(''),
+  message: z.string().max(4000).default(''),
+  // Legacy UI fields (ignored server-side unless no auth is present)
   userId: z.string().optional(),
-  userName: z.string().default('Guest'),
-  products: z.array(z.any()).optional(),
-  orders: z.array(z.any()).optional(),
-  tickets: z.array(z.any()).optional(),
-  image: z.string().optional(),
+  userName: z.string().max(120).default('Guest'),
+  products: z.array(z.any()).max(200).optional(),
+  orders: z.array(z.any()).max(200).optional(),
+  tickets: z.array(z.any()).max(200).optional(),
+  // data URL / base64; overall request size is also capped by express.json({limit:'10mb'})
+  image: z.string().max(8_000_000).optional(),
 });
 
 const proofSchema = z.object({
-  imageBase64: z.string().min(1),
+  imageBase64: z.string().min(1).max(8_000_000),
   expectedOrderId: z.string().min(1),
   expectedAmount: z.number().finite(),
 });
 
 export function aiRoutes(env: Env): Router {
   const router = Router();
+
+  // Optional auth so the UI can call AI routes without sending a token,
+  // but if a token is provided we can trust user identity from DB.
+  router.use(optionalAuth(env));
+
+  // Tighten AI abuse surface beyond the global app limiter.
+  // - Authenticated users get a higher quota.
+  // - Unauthenticated requests are heavily throttled.
+  const limiterChat = rateLimit({
+    windowMs: 60_000,
+    limit: (req) => {
+      if (env.NODE_ENV !== 'production') return 10_000;
+      return req.auth?.userId ? 120 : 20;
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
+  });
+
+  const limiterVerifyProof = rateLimit({
+    windowMs: 60_000,
+    limit: (req) => {
+      if (env.NODE_ENV !== 'production') return 10_000;
+      return req.auth?.userId ? 60 : 10;
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
+  });
 
   const sendKnownError = (err: unknown, res: any): boolean => {
     if (err instanceof z.ZodError) {
@@ -46,10 +78,22 @@ export function aiRoutes(env: Env): Router {
     return false;
   };
 
-  router.post('/chat', async (req, res, next) => {
+  router.post('/chat', limiterChat, async (req, res, next) => {
     try {
       const payload = chatSchema.parse(req.body);
-      const result = await generateChatUiResponse(env, payload);
+
+      // Zero-trust identity: never trust userId/userName from the client if auth is present.
+      const authUser = req.auth?.user;
+      const effectiveUserName = authUser ? String((authUser as any)?.name || 'User') : payload.userName;
+
+      const result = await generateChatUiResponse(env, {
+        message: payload.message,
+        userName: effectiveUserName,
+        products: payload.products,
+        orders: payload.orders,
+        tickets: payload.tickets,
+        image: payload.image,
+      });
       res.json(result);
     } catch (err) {
       if (!sendKnownError(err, res)) next(err);
@@ -72,7 +116,7 @@ export function aiRoutes(env: Env): Router {
     }
   });
 
-  router.post('/verify-proof', async (req, res, next) => {
+  router.post('/verify-proof', limiterVerifyProof, async (req, res, next) => {
     try {
       const payload = proofSchema.parse(req.body);
       const result = await verifyProofWithAi(env, payload);

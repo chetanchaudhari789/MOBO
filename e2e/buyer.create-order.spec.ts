@@ -5,8 +5,14 @@ const SHOPPER_MOBILE = '9000000004';
 const SHOPPER_PASSWORD = 'ChangeMe_123!';
 
 test('buyer can submit a cashback claim (creates an order)', async ({ page }) => {
-  page.on('dialog', async (dialog) => {
-    await dialog.accept();
+  page.once('dialog', (dialog) => {
+    // Dialogs can appear late (e.g., during navigation/teardown).
+    // Accept best-effort and swallow any "Test ended" / closed-page errors.
+    try {
+      dialog.accept().catch(() => undefined);
+    } catch {
+      // ignore
+    }
   });
 
   await page.goto('/');
@@ -24,13 +30,13 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   await page.getByRole('button', { name: 'New order' }).click();
   await expect(page.getByRole('heading', { name: 'Claim Cashback' })).toBeVisible();
 
-    // Wait for the claim modal/sheet to appear
-    const claimModal = page.locator('div.fixed.inset-0.z-50').filter({ hasText: 'Claim Cashback' });
-    await expect(claimModal).toBeVisible();
-  
-    // Select the seeded deal (Discount tab is default)
-    // We rely on seed title containing "E2E".
-    await claimModal.getByText('E2E', { exact: false }).first().click();
+  // Wait for the claim modal/sheet to appear
+  const claimModal = page.locator('div.fixed.inset-0.z-50').filter({ hasText: 'Claim Cashback' });
+  await expect(claimModal).toBeVisible();
+
+  // Select the seeded deal (Discount tab is default)
+  // We rely on seed title containing "E2E".
+  await claimModal.getByText('E2E', { exact: false }).first().click();
 
   // Upload proof
   const proofPath = path.resolve(process.cwd(), 'e2e', 'fixtures', 'proof.svg');

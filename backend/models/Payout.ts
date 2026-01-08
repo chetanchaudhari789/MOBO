@@ -33,5 +33,19 @@ const payoutSchema = new Schema(
 payoutSchema.index({ status: 1, requestedAt: -1 });
 payoutSchema.index({ beneficiaryUserId: 1, requestedAt: -1 });
 
+// Prevent duplicate provider callbacks / double-processing.
+// Scoped by provider because many providers only guarantee uniqueness within their own namespace.
+payoutSchema.index(
+  { provider: 1, providerRef: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      deletedAt: null,
+      provider: { $type: 'string' },
+      providerRef: { $type: 'string' },
+    },
+  }
+);
+
 export type PayoutDoc = InferSchemaType<typeof payoutSchema>;
 export const PayoutModel = mongoose.model('Payout', payoutSchema);
