@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "index.ts",
+    "app.ts",
+    "types/**/*.d.ts",
+    "config/**/*.ts",
+    "database/**/*.ts",
+    "models/**/*.ts",
+    "modules/**/*.ts",
+    "services/**/*.ts",
+    "controllers/**/*.ts",
+    "routes/**/*.ts",
+    "middleware/**/*.ts",
+    "validations/**/*.ts",
+    "seeds/**/*.ts"
+  ],
+  "exclude": ["dist", "node_modules", "tests"]
+}

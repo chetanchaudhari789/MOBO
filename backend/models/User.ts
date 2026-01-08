@@ -1,0 +1,103 @@
+import mongoose, { Schema, type InferSchemaType } from 'mongoose';
+
+export const Roles = ['shopper', 'mediator', 'agency', 'brand', 'admin', 'ops'] as const;
+export type Role = (typeof Roles)[number];
+
+export const UserStatus = ['active', 'suspended', 'pending'] as const;
+export type UserStatus = (typeof UserStatus)[number];
+
+const bankDetailsSchema = new Schema(
+  {
+    accountNumber: { type: String, trim: true },
+    ifsc: { type: String, trim: true },
+    bankName: { type: String, trim: true },
+    holderName: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const userSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
+
+    mobile: { type: String, required: true, trim: true, unique: true, index: true },
+    email: { type: String, trim: true, lowercase: true, index: true, sparse: true },
+
+    // Never store plaintext passwords
+    passwordHash: { type: String, required: true },
+
+    // Keep a legacy single-role field for backwards compatibility while enabling multi-role.
+    role: { type: String, enum: Roles, default: 'shopper', index: true },
+    roles: { type: [String], enum: Roles, default: ['shopper'], index: true },
+
+    status: { type: String, enum: UserStatus, default: 'active', index: true },
+
+    // --- Ops hierarchy / attribution ---
+    mediatorCode: { type: String, trim: true, index: true, unique: true, sparse: true },
+    parentCode: { type: String, trim: true, index: true },
+    generatedCodes: [{ type: String, trim: true }],
+
+    // --- Consumer specific ---
+    isVerifiedByMediator: { type: Boolean, default: false },
+
+    // --- Brand specific ---
+    brandCode: { type: String, trim: true, index: true, sparse: true },
+    connectedAgencies: [{ type: String, trim: true }],
+    pendingConnections: [
+      {
+        agencyId: { type: String, trim: true },
+        agencyName: { type: String, trim: true },
+        agencyCode: { type: String, trim: true },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
+
+    // --- KYC ---
+    kycStatus: {
+      type: String,
+      enum: ['none', 'pending', 'verified', 'rejected'],
+      default: 'none',
+      index: true,
+    },
+    kycDocuments: {
+      panCard: { type: String, trim: true },
+      aadhaar: { type: String, trim: true },
+      gst: { type: String, trim: true },
+    },
+
+    // --- Financials ---
+    upiId: { type: String, trim: true },
+    qrCode: { type: String, trim: true },
+    bankDetails: { type: bankDetailsSchema },
+
+    walletBalancePaise: { type: Number, default: 0, min: 0 },
+    walletPendingPaise: { type: Number, default: 0, min: 0 },
+
+    // --- Meta ---
+    avatar: { type: String, trim: true },
+
+    // --- Audit / soft delete ---
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    deletedAt: { type: Date, index: true },
+    deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
+  { timestamps: true }
+);
+
+(userSchema as any).pre('validate', function ensureRoles(this: any) {
+  if (!this.roles || this.roles.length === 0) {
+    this.roles = [this.role as Role];
+  }
+  if (this.role && !this.roles.includes(this.role)) {
+    this.roles = Array.from(new Set([this.role, ...this.roles]));
+  }
+});
+
+// Compound indexes for efficient role-based queries
+userSchema.index({ brandCode: 1, roles: 1, deletedAt: 1 });
+userSchema.index({ mediatorCode: 1, roles: 1, deletedAt: 1 });
+userSchema.index({ roles: 1, status: 1, deletedAt: 1 });
+
+export type UserDoc = InferSchemaType<typeof userSchema>;
+export const UserModel = mongoose.model('User', userSchema);

@@ -1,0 +1,17 @@
+import jwt from 'jsonwebtoken';
+import type { Env } from '../config/env.js';
+import type { Role } from '../models/User.js';
+
+export function signAccessToken(env: Env, userId: string, roles: Role[]): string {
+  return jwt.sign({ roles }, env.JWT_ACCESS_SECRET, {
+    subject: userId,
+    expiresIn: env.JWT_ACCESS_TTL_SECONDS,
+  });
+}
+
+export function signRefreshToken(env: Env, userId: string, roles: Role[]): string {
+  return jwt.sign({ roles, typ: 'refresh' }, env.JWT_REFRESH_SECRET, {
+    subject: userId,
+    expiresIn: env.JWT_REFRESH_TTL_SECONDS,
+  });
+}

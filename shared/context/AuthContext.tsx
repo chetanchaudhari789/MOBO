@@ -1,0 +1,129 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { User } from '../types';
+import { api } from '../services/api';
+
+interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  login: (mobile: string, pass: string) => Promise<void>;
+  register: (name: string, mobile: string, pass: string, mediatorCode: string) => Promise<void>;
+  registerOps: (
+    name: string,
+    mobile: string,
+    pass: string,
+    role: 'agency' | 'mediator',
+    code: string
+  ) => Promise<void>;
+  registerBrand: (name: string, mobile: string, pass: string, brandCode: string) => Promise<void>;
+  updateUser: (updates: Partial<User>) => Promise<void>;
+  logout: () => void;
+  isLoading: boolean;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      try {
+        const storedUser = localStorage.getItem('mobo_session');
+        if (!storedUser) return;
+
+        // If we have a stored user but no access token, treat it as logged-out.
+        const rawTokens = localStorage.getItem('mobo_tokens_v1');
+        if (!rawTokens) {
+          localStorage.removeItem('mobo_session');
+          return;
+        }
+
+        // Validate token and refresh user from backend.
+        const me = await api.auth.me();
+        setUser(me);
+        localStorage.setItem('mobo_session', JSON.stringify(me));
+      } catch {
+        // Any failure => clear local auth state and show splash.
+        localStorage.removeItem('mobo_session');
+        localStorage.removeItem('mobo_tokens_v1');
+        setUser(null);
+      }
+    };
+
+    restoreSession().finally(() => setIsLoading(false));
+  }, []);
+
+  const login = async (mobile: string, pass: string) => {
+    const loggedInUser = await api.auth.login(mobile, pass);
+    setUser(loggedInUser);
+    localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
+  };
+
+  const register = async (name: string, mobile: string, pass: string, mediatorCode: string) => {
+    const newUser = await api.auth.register(name, mobile, pass, mediatorCode);
+    setUser(newUser);
+    localStorage.setItem('mobo_session', JSON.stringify(newUser));
+  };
+
+  const registerOps = async (
+    name: string,
+    mobile: string,
+    pass: string,
+    role: 'agency' | 'mediator',
+    code: string
+  ) => {
+    const newUser = await api.auth.registerOps(name, mobile, pass, role, code);
+    setUser(newUser);
+    localStorage.setItem('mobo_session', JSON.stringify(newUser));
+  };
+
+  const registerBrand = async (name: string, mobile: string, pass: string, brandCode: string) => {
+    const newUser = await api.auth.registerBrand(name, mobile, pass, brandCode);
+    setUser(newUser);
+    localStorage.setItem('mobo_session', JSON.stringify(newUser));
+  };
+
+  const updateUser = async (updates: Partial<User>) => {
+    if (!user) return;
+    try {
+      const updatedUser = await api.auth.updateProfile(user.id, updates);
+      setUser(updatedUser);
+      localStorage.setItem('mobo_session', JSON.stringify(updatedUser));
+    } catch (e) {
+      throw e;
+    }
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('mobo_session');
+    localStorage.removeItem('mobo_tokens_v1');
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        login,
+        register,
+        registerOps,
+        registerBrand,
+        updateUser,
+        logout,
+        isLoading,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
