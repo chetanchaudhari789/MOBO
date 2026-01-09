@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react';
+import type { Metadata } from 'next';
 import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Mediator App',
   description: 'Minimal Next.js mediator app scaffold',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
