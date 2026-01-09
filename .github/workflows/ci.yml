@@ -29,5 +29,8 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Lint (ESLint)
+        run: npm run lint
+
       - name: Backend tests (Vitest)
         run: npm run test:backend
