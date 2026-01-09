@@ -8,8 +8,16 @@ If you do not have custom domains yet, use: `docs/DEPLOYMENT_RENDER_VERCEL_NO_DO
 
 Recommended: Render **Web Service** running Node.
 
-- Build: `npm install; npm --prefix backend run build`
+Note on Render **Root Directory**:
+
+- If Root Directory is blank (repo root), the `--prefix backend` commands below are correct.
+- If Root Directory is set to `backend`, remove `--prefix backend` (otherwise it becomes `backend/backend`).
+
+- Build (repo root Root Directory): `npm install --include=dev; npm --prefix backend run build`
+- Build (Root Directory = `backend`): `npm install --include=dev; npm run build`
 - Start: `npm --prefix backend run start`
+
+If you see `TS2688: Cannot find type definition file for 'node'` on Render, it means devDependencies (like `@types/node`) were not installed during build. Fix by using `--include=dev` as above or set `NPM_CONFIG_PRODUCTION=false` in Render.
 
 Required env vars:
 

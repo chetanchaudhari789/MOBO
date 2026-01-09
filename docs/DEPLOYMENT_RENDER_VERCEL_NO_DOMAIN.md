@@ -33,12 +33,35 @@ In both cases, **the portals won’t work in the browser until the backend `CORS
 
 Create a new **Web Service** pointing to this repo.
 
+### Root Directory (important)
+
+Render runs your commands from the configured **Root Directory**.
+
+- If Root Directory is **blank** (repo root), use commands that target `backend/` (examples below).
+- If Root Directory is set to **`backend`**, do **not** use `--prefix backend` (otherwise Render will look for `backend/backend/package.json`).
+
 ### Commands
 
 - Build command:
-  - `npm install; npm --prefix backend run build`
+  - Repo root Root Directory:
+    - `npm install --include=dev; npm --prefix backend run build`
+  - Root Directory = `backend`:
+    - `npm install --include=dev; npm run build`
 - Start command:
-  - `npm --prefix backend run start`
+  - Repo root Root Directory:
+    - `npm --prefix backend run start`
+  - Root Directory = `backend`:
+    - `npm run start`
+
+Why `--include=dev`?
+
+- The backend build runs TypeScript (`tsc`) which needs devDependencies like `@types/node`.
+- Many hosts set `NODE_ENV=production` during build which can cause `npm install` to omit devDependencies, leading to:
+  - `error TS2688: Cannot find type definition file for 'node'.`
+
+Alternative to `--include=dev`:
+
+- In Render environment variables, set `NPM_CONFIG_PRODUCTION=false` so devDependencies are installed during build.
 
 ### Health check
 
