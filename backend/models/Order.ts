@@ -77,6 +77,9 @@ const orderSchema = new Schema(
 
     externalOrderId: { type: String, trim: true },
 
+    // Optional payout/settlement reference (e.g., UTR) recorded during settlement.
+    settlementRef: { type: String, trim: true },
+
     screenshots: {
       order: { type: String },
       payment: { type: String },

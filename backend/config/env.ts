@@ -5,6 +5,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(8080),
 
+  // When true, seed + E2E flows may bypass external integrations.
+  SEED_E2E: z.coerce.boolean().default(false),
+
   MONGODB_URI: z.string().min(1),
   MONGODB_DBNAME: z.string().trim().min(1).optional(),
 

@@ -2,7 +2,7 @@ import { UserModel } from '../models/User.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { DealModel } from '../models/Deal.js';
 import { hashPassword } from '../services/passwords.js';
-import { ensureWallet } from '../services/walletService.js';
+import { applyWalletCredit, ensureWallet } from '../services/walletService.js';
 
 const DEFAULT_PASSWORD = 'ChangeMe_123!';
 
@@ -112,6 +112,15 @@ export async function seedE2E() {
     ensureWallet(String(shopper._id)),
     ensureWallet(String(shopper2._id)),
   ]);
+
+  // Fund the E2E brand so payout/ledger flows work end-to-end.
+  await applyWalletCredit({
+    idempotencyKey: 'seed-e2e-brand-fund',
+    type: 'brand_deposit',
+    ownerUserId: String(brand._id),
+    amountPaise: 50_000_00, // ₹50,000
+    metadata: { seeded: true, mode: 'e2e' },
+  });
 
   // Minimal campaign so dashboards have something to render.
   const existingCampaign = await CampaignModel.findOne({

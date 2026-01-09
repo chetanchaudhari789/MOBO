@@ -119,6 +119,20 @@ export function aiRoutes(env: Env): Router {
   router.post('/verify-proof', limiterVerifyProof, async (req, res, next) => {
     try {
       const payload = proofSchema.parse(req.body);
+
+      // E2E runs should be deterministic and must not depend on external AI quotas.
+      if (env.SEED_E2E) {
+        res.json({
+          orderIdMatch: true,
+          amountMatch: true,
+          confidenceScore: 95,
+          detectedOrderId: payload.expectedOrderId,
+          detectedAmount: payload.expectedAmount,
+          discrepancyNote: 'E2E mode: AI verification bypassed.',
+        });
+        return;
+      }
+
       const result = await verifyProofWithAi(env, payload);
       res.json(result);
     } catch (err) {

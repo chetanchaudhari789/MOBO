@@ -374,6 +374,22 @@ export const api = {
       const data = await res.json();
       return data.code;
     },
+    connectBrand: async (brandCode: string) => {
+      const res = await fetch(`${API_URL}/ops/brands/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ brandCode }),
+      });
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const err = new Error(payload?.error?.message || 'Failed to send connection request');
+        (err as any).code = payload?.error?.code;
+        throw err;
+      }
+
+      return payload;
+    },
     analyzeProof: async (
       orderId: string,
       proofUrl: string,
@@ -420,11 +436,18 @@ export const api = {
       return res.json();
     },
     payoutAgency: async (brandId: string, agencyId: string, amount: number, ref: string) => {
-      return fetch(`${API_URL}/brand/payout`, {
+      const res = await fetch(`${API_URL}/brand/payout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ brandId, agencyId, amount, ref }),
       });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const err = new Error(payload?.error?.message || 'Failed to record payment');
+        (err as any).code = payload?.error?.code;
+        throw err;
+      }
+      return payload;
     },
     resolveConnectionRequest: async (brandId: string, agencyId: string, action: string) => {
       return fetch(`${API_URL}/brand/requests/resolve`, {

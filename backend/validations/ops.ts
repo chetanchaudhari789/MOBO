@@ -14,6 +14,7 @@ export const verifyOrderSchema = z.object({
 
 export const settleOrderSchema = z.object({
   orderId: z.string().min(1),
+  settlementRef: z.string().trim().min(2).max(128).optional(),
 });
 
 export const createCampaignSchema = z.object({

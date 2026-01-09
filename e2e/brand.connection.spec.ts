@@ -57,7 +57,11 @@ test('brand can see and approve an agency connection request', async ({ page, re
     headers: { Authorization: `Bearer ${agencyAuth.token}` },
     data: { brandCode: BRAND_CODE },
   });
-  expect(connectRes.ok()).toBeTruthy();
+  if (!connectRes.ok()) {
+    const payload = (await connectRes.json().catch(() => null)) as any;
+    expect(connectRes.status()).toBe(409);
+    expect(payload?.error?.code).toBe('ALREADY_REQUESTED');
+  }
 
   // Now verify in the brand UI.
   await page.goto('/');
@@ -86,5 +90,7 @@ test('brand can see and approve an agency connection request', async ({ page, re
 
   // And the agency should appear in partners.
   await page.getByRole('button', { name: 'Agency Partners' }).click();
-  await expect(page.getByText('E2E Agency', { exact: false })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'E2E Agency' }).first()).toBeVisible({
+    timeout: 15000,
+  });
 });

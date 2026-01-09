@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import { execFileSync } from 'node:child_process';
 
 const isWindows = process.platform === 'win32';
 const npmCmd = isWindows ? process.execPath : 'npm';
@@ -8,6 +9,7 @@ const npmCli = isWindows
   : null;
 
 const smokeMode = process.argv.includes('--smoke');
+const forceMode = process.argv.includes('--force');
 
 const services = [
   {
@@ -23,6 +25,7 @@ const services = [
     cmd: npmCmd,
     args: ['--prefix', 'apps/buyer-app', 'run', 'dev'],
     port: 3001,
+    healthUrl: 'http://127.0.0.1:3001/_next/static/chunks/main-app.js',
   },
   {
     name: 'mediator',
@@ -30,6 +33,7 @@ const services = [
     cmd: npmCmd,
     args: ['--prefix', 'apps/mediator-app', 'run', 'dev'],
     port: 3002,
+    healthUrl: 'http://127.0.0.1:3002/_next/static/chunks/main-app.js',
   },
   {
     name: 'agency',
@@ -37,6 +41,7 @@ const services = [
     cmd: npmCmd,
     args: ['--prefix', 'apps/agency-web', 'run', 'dev'],
     port: 3003,
+    healthUrl: 'http://127.0.0.1:3003/_next/static/chunks/main-app.js',
   },
   {
     name: 'brand',
@@ -44,6 +49,7 @@ const services = [
     cmd: npmCmd,
     args: ['--prefix', 'apps/brand-web', 'run', 'dev'],
     port: 3004,
+    healthUrl: 'http://127.0.0.1:3004/_next/static/chunks/main-app.js',
   },
   {
     name: 'admin',
@@ -51,6 +57,7 @@ const services = [
     cmd: npmCmd,
     args: ['--prefix', 'apps/admin-web', 'run', 'dev'],
     port: 3005,
+    healthUrl: 'http://127.0.0.1:3005/_next/static/chunks/main-app.js',
   },
 ];
 
@@ -100,11 +107,98 @@ function isPortOpen(port) {
   });
 }
 
+async function isHttpOk(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+  try {
+    const res = await fetch(url, { method: 'GET', signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function getListeningPidWindows(port) {
+  try {
+    const stdout = execFileSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen | Select-Object -First 1; if ($null -ne $c) { $c.OwningProcess }`,
+      ],
+      { encoding: 'utf8' }
+    ).trim();
+
+    const pid = Number.parseInt(stdout, 10);
+    return Number.isFinite(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function killPidTreeWindows(pid) {
+  try {
+    execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureServiceNotStale(svc) {
+  if (typeof svc.port !== 'number') return;
+
+  const isOpen = await isPortOpen(svc.port);
+  if (!isOpen) return;
+
+  const shouldCheckHealth = typeof svc.healthUrl === 'string' && svc.healthUrl.length > 0;
+  const healthy = shouldCheckHealth ? await isHttpOk(svc.healthUrl) : true;
+
+  if (!forceMode && healthy) return;
+
+  if (!isWindows) {
+    process.stdout.write(
+      `[${svc.name}] already listening on ${svc.port} but cannot auto-restart on this OS; proceeding without killing\n`
+    );
+    return;
+  }
+
+  const pid = getListeningPidWindows(svc.port);
+  if (!pid) {
+    process.stdout.write(
+      `[${svc.name}] already listening on ${svc.port} but PID lookup failed; proceeding without killing\n`
+    );
+    return;
+  }
+
+  const reason = forceMode ? 'force restart requested' : 'health check failed';
+  process.stdout.write(`[${svc.name}] port ${svc.port} in use (pid ${pid}); ${reason}; killing\n`);
+  killPidTreeWindows(pid);
+
+  // Wait briefly for the port to actually free.
+  for (let i = 0; i < 20; i += 1) {
+    const stillOpen = await isPortOpen(svc.port);
+    if (!stillOpen) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 async function startAll() {
   for (const svc of services) {
+    await ensureServiceNotStale(svc);
+
     if (typeof svc.port === 'number') {
       const alreadyRunning = await isPortOpen(svc.port);
       if (alreadyRunning) {
+        // If we reach here, either we are not in --force mode and health check passed,
+        // or we were unable to auto-kill the existing listener.
         process.stdout.write(`[${svc.name}] already listening on ${svc.port}; skipping\n`);
         continue;
       }

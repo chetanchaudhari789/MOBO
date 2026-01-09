@@ -161,6 +161,7 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     paymentStatus: o.paymentStatus,
     affiliateStatus: o.affiliateStatus,
     externalOrderId: o.externalOrderId,
+    settlementRef: (o as any).settlementRef,
     screenshots: o.screenshots ?? {},
     reviewLink: o.reviewLink,
     managerName: o.managerName,

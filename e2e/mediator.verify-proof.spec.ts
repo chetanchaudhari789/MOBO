@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 
 const BUYER_MOBILE = '9000000005';
 const MEDIATOR_MOBILE = '9000000002';
+const OPS_MOBILE = 'admin';
+const BRAND_MOBILE = '9000000003';
 const PASSWORD = 'ChangeMe_123!';
 
 test('mediator can open verification modal for a newly created buyer order', async ({ page, request }) => {
@@ -13,31 +15,87 @@ test('mediator can open verification modal for a newly created buyer order', asy
     }
   });
 
-  // Create a fresh order as buyer via API first
-  const loginRes = await request.post('/api/auth/login', {
-    data: { mobile: BUYER_MOBILE, password: PASSWORD },
+  const login = async (mobile: string) => {
+    const res = await request.post('/api/auth/login', {
+      data: { mobile, password: PASSWORD },
+    });
+    expect(res.ok()).toBeTruthy();
+    const json = await res.json();
+    expect(json?.tokens?.accessToken).toBeTruthy();
+    return json as {
+      user: { id: string; roles: string[] };
+      tokens: { accessToken: string };
+    };
+  };
+
+  const buyer = await login(BUYER_MOBILE);
+  const ops = await login(OPS_MOBILE);
+  const brand = await login(BRAND_MOBILE);
+
+  const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+  // Create a unique campaign+deal so we always get a fresh Unchecked order.
+  // The backend blocks duplicate active orders per buyer+deal, and the seeded deal
+  // can already be settled by other specs.
+  const campaignTitle = `Mediator Proof ${Date.now()}`;
+  const createCampaignRes = await request.post('/api/ops/campaigns', {
+    headers: authHeaders(ops.tokens.accessToken),
+    data: {
+      brandUserId: brand.user.id,
+      title: campaignTitle,
+      platform: 'Amazon',
+      dealType: 'Discount',
+      price: 999,
+      originalPrice: 1999,
+      payout: 150,
+      image: 'https://placehold.co/600x400',
+      productUrl: 'https://example.com/mediator-proof',
+      totalSlots: 10,
+      allowedAgencies: [],
+      returnWindowDays: 14,
+    },
   });
-  expect(loginRes.ok()).toBeTruthy();
-  const loginJson = (await loginRes.json()) as any;
-  const buyerToken = loginJson?.tokens?.accessToken;
-  const buyerId = loginJson?.user?.id;
-  expect(buyerToken).toBeTruthy();
-  expect(buyerId).toBeTruthy();
+  expect(createCampaignRes.ok()).toBeTruthy();
+  const createdCampaign = (await createCampaignRes.json()) as any;
+  const campaignId = String(createdCampaign?.id || '');
+  expect(campaignId).toBeTruthy();
+
+  const assignRes = await request.post('/api/ops/campaigns/assign', {
+    headers: authHeaders(ops.tokens.accessToken),
+    data: {
+      id: campaignId,
+      assignments: {
+        MED_TEST: { limit: 5 },
+      },
+    },
+  });
+  expect(assignRes.ok()).toBeTruthy();
+
+  const publishRes = await request.post('/api/ops/deals/publish', {
+    headers: authHeaders(ops.tokens.accessToken),
+    data: {
+      id: campaignId,
+      commission: 50,
+      mediatorCode: 'MED_TEST',
+    },
+  });
+  expect(publishRes.ok()).toBeTruthy();
 
   const dealsRes = await request.get('/api/products', {
-    headers: { Authorization: `Bearer ${buyerToken}` },
+    headers: authHeaders(buyer.tokens.accessToken),
   });
   expect(dealsRes.ok()).toBeTruthy();
   const deals = (await dealsRes.json()) as any[];
   expect(Array.isArray(deals)).toBeTruthy();
   expect(deals.length).toBeGreaterThan(0);
-  const deal = deals[0];
+  const deal = deals.find((d) => String(d?.campaignId) === campaignId) ?? deals.find((d) => String(d?.title) === campaignTitle);
+  expect(deal).toBeTruthy();
 
-  let expectedExternalOrderId = `MED-E2E-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const expectedExternalOrderId = `MED-E2E-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const createRes = await request.post('/api/orders', {
-    headers: { Authorization: `Bearer ${buyerToken}` },
+    headers: authHeaders(buyer.tokens.accessToken),
     data: {
-      userId: String(buyerId),
+      userId: String(buyer.user.id),
       items: [
         {
           productId: String(deal.id),
@@ -58,20 +116,19 @@ test('mediator can open verification modal for a newly created buyer order', asy
       },
     },
   });
+  expect(createRes.ok()).toBeTruthy();
 
-  if (!createRes.ok()) {
-    // Anti-fraud prevents multiple active orders for the same buyer+deal.
-    // If an order already exists, re-use it instead of failing.
-    const existingRes = await request.get(`/api/orders/user/${buyerId}`, {
-      headers: { Authorization: `Bearer ${buyerToken}` },
-    });
-    expect(existingRes.ok()).toBeTruthy();
-    const existing = (await existingRes.json()) as any[];
-    expect(Array.isArray(existing)).toBeTruthy();
-    expect(existing.length).toBeGreaterThan(0);
-    const reusable = existing.find((o) => o?.screenshots?.order) ?? existing[0];
-    expectedExternalOrderId = String(reusable?.externalOrderId || 'Not Provided');
-  }
+  // Sanity check: the order should be visible to the mediator as Unchecked.
+  const mediator = await login(MEDIATOR_MOBILE);
+  const mediatorOrdersRes = await request.get('/api/ops/orders?mediatorCode=MED_TEST', {
+    headers: authHeaders(mediator.tokens.accessToken),
+  });
+  expect(mediatorOrdersRes.ok()).toBeTruthy();
+  const mediatorOrders = (await mediatorOrdersRes.json()) as any[];
+  const createdForMediator = mediatorOrders.find(
+    (o) => o?.buyerMobile === BUYER_MOBILE && o?.affiliateStatus === 'Unchecked' && String(o?.items?.[0]?.title) === campaignTitle,
+  );
+  expect(createdForMediator).toBeTruthy();
 
   // Now login as mediator in UI
   await page.goto('/');
@@ -82,10 +139,13 @@ test('mediator can open verification modal for a newly created buyer order', asy
   await page.waitForLoadState('networkidle');
 
   // Ensure inbox is loaded and open verification for the buyer
+  // Scope to the actual order card (the UI renders many nested divs, and a broad div
+  // locator can match the whole page, containing multiple "Verify Proofs" buttons).
   const buyerCard = page
-    .locator('div')
+    .locator('div.bg-white.p-2')
     .filter({ hasText: 'Buyer:' })
     .filter({ hasText: 'E2E Shopper 2' })
+    .filter({ hasText: campaignTitle })
     .first();
   await expect(buyerCard).toBeVisible({ timeout: 15000 });
 

@@ -492,10 +492,14 @@ export function makeOpsController() {
 
         order.paymentStatus = 'Paid';
         order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
+        if (body.settlementRef) {
+          (order as any).settlementRef = body.settlementRef;
+        }
         order.events = pushOrderEvent(order.events as any, {
           type: isOverLimit ? 'CAP_EXCEEDED' : 'SETTLED',
           at: new Date(),
           actorUserId: req.auth?.userId,
+          metadata: body.settlementRef ? { settlementRef: body.settlementRef } : undefined,
         }) as any;
         await order.save();
 
@@ -645,9 +649,16 @@ export function makeOpsController() {
         const current = campaign.assignments instanceof Map ? campaign.assignments : new Map();
         for (const [code, assignment] of Object.entries(body.assignments)) {
           // Support both old format (number) and new format ({ limit, payout })
-          const assignmentObj = typeof assignment === 'number' 
+          const assignmentObj = typeof assignment === 'number'
             ? { limit: assignment, payout: campaign.payoutPaise }
-            : { limit: (assignment as any).limit, payout: (assignment as any).payout ?? campaign.payoutPaise };
+            : {
+                limit: (assignment as any).limit,
+                // API payloads use rupees like the rest of ops endpoints; store payout in paise.
+                payout:
+                  typeof (assignment as any).payout === 'number'
+                    ? rupeesToPaise((assignment as any).payout)
+                    : campaign.payoutPaise,
+              };
           current.set(code, assignmentObj as any);
         }
         campaign.assignments = current as any;

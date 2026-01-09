@@ -23,5 +23,5 @@ test('buyer can login and view deals in Explore', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Explore Deals' })).toBeVisible();
 
   // We seed at least one deal for E2E.
-  await expect(page.getByRole('button', { name: /GET LOOT LINK/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /GET LOOT LINK/i }).first()).toBeVisible();
 });

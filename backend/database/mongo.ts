@@ -3,6 +3,7 @@ import type { Env } from '../config/env.js';
 
 let memoryServer: { stop: () => Promise<unknown>; getUri: () => string } | null = null;
 let isIntentionalDisconnect = false;
+let lastNodeEnv: Env['NODE_ENV'] | undefined;
 
 function looksPlaceholderMongoUri(uri: string | undefined): boolean {
   if (!uri) return true;
@@ -17,6 +18,7 @@ export async function connectMongo(env: Env): Promise<void> {
   if (mongoose.connection.readyState >= 1) return;
 
   isIntentionalDisconnect = false;
+  lastNodeEnv = env.NODE_ENV;
 
   mongoose.set('strictQuery', true);
 
@@ -41,11 +43,16 @@ export async function connectMongo(env: Env): Promise<void> {
   let mongoUri = env.MONGODB_URI;
   if (env.NODE_ENV !== 'production' && looksPlaceholderMongoUri(mongoUri)) {
     const { MongoMemoryReplSet } = await import('mongodb-memory-server');
-    const replset = await MongoMemoryReplSet.create({
-      replSet: { count: 1, storageEngine: 'wiredTiger' },
-    });
-    memoryServer = replset;
-    mongoUri = replset.getUri();
+    if (!memoryServer) {
+      const replset = await MongoMemoryReplSet.create({
+        replSet: { count: 1, storageEngine: 'wiredTiger' },
+        // Pin version for more deterministic behavior across developer machines.
+        // Can be overridden by setting MONGOMS_VERSION in the environment.
+        binary: { version: process.env.MONGOMS_VERSION || '7.0.12' },
+      });
+      memoryServer = replset;
+    }
+    mongoUri = memoryServer.getUri();
   }
 
   await mongoose.connect(mongoUri, {
@@ -63,8 +70,21 @@ export async function connectMongo(env: Env): Promise<void> {
 export async function disconnectMongo(): Promise<void> {
   if (mongoose.connection.readyState === 0) return;
   isIntentionalDisconnect = true;
+
+  // For tests, keep the in-memory replset alive for the whole process to avoid
+  // repeated start/stop on Windows (can lead to flaky mongod internal errors).
+  // Drop DB to keep test isolation.
+  if (lastNodeEnv === 'test') {
+    try {
+      await mongoose.connection.dropDatabase();
+    } catch {
+      // best-effort
+    }
+  }
+
   await mongoose.disconnect();
-  if (memoryServer) {
+
+  if (memoryServer && lastNodeEnv !== 'test') {
     await memoryServer.stop();
     memoryServer = null;
   }

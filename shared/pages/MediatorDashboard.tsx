@@ -683,16 +683,26 @@ const LedgerModal = ({ buyer, orders, onClose, onRefresh }: any) => {
 
   const handleSettle = async () => {
     if (!settleId) return;
-    await api.ops.settleOrderPayment(settleId);
-    setSettleId(null);
-    setUtr('');
-    onRefresh();
+    try {
+      await api.ops.settleOrderPayment(settleId, utr.trim() || undefined);
+      setSettleId(null);
+      setUtr('');
+      onRefresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to settle';
+      alert(msg);
+    }
   };
 
   const handleRevert = async (orderId: string) => {
     if (confirm('Undo settlement?')) {
-      await api.ops.verifyOrderClaim(orderId);
-      onRefresh();
+      try {
+        await api.ops.verifyOrderClaim(orderId);
+        onRefresh();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to undo';
+        alert(msg);
+      }
     }
   };
 

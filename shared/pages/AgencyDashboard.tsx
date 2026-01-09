@@ -689,20 +689,34 @@ const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
   );
 };
 
-const BrandsView = ({ user }: any) => {
-  // Component remains similar but uses user data for dynamic logic
+const BrandsView = () => {
   const [brandCode, setBrandCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!brandCode.trim()) return;
+    const code = brandCode.trim().toUpperCase();
+    if (!code) return;
     setLoading(true);
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setLoading(false);
-    alert(`Request sent to Brand ${brandCode.toUpperCase()}!`);
-    setBrandCode('');
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      await api.ops.connectBrand(code);
+      setSuccessMsg(`Request sent to Brand ${code}.`);
+      setBrandCode('');
+    } catch (e: any) {
+      // Idempotent UX: if it's already connected/pending, treat as success.
+      if (e?.code === 'ALREADY_REQUESTED') {
+        setSuccessMsg(`Already connected or already pending for ${code}.`);
+        setBrandCode('');
+      } else {
+        setErrorMsg(String(e?.message || 'Failed to send request.'));
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -742,6 +756,17 @@ const BrandsView = ({ user }: any) => {
             )}
             Send Connection Request
           </button>
+
+          {successMsg && (
+            <div className="text-center text-xs font-bold text-green-700 bg-green-50 border border-green-100 rounded-2xl px-4 py-3">
+              {successMsg}
+            </div>
+          )}
+          {errorMsg && (
+            <div className="text-center text-xs font-bold text-red-700 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
+              {errorMsg}
+            </div>
+          )}
         </form>
       </div>
     </div>
