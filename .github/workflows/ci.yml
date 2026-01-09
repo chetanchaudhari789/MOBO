@@ -20,6 +20,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Pin npm version
+        run: |
+          npm i -g npm@11.6.2
+          node -v
+          npm -v
+
       - name: Install
         run: npm ci
 
