@@ -423,11 +423,13 @@ export const opsAPI = {
     }
   },
 
-  settleOrderPayment: async (orderId: string): Promise<void> => {
+  settleOrderPayment: async (orderId: string, settlementRef?: string): Promise<void> => {
     await delay(MOCK_DELAY);
     const orders = getOrders();
     const order = orders.find((o) => o.id === orderId);
     if (!order) throw new Error('Order not found');
+
+    if (settlementRef) (order as any).settlementRef = settlementRef;
 
     // [Support] Dispute Resolution Check
     const tickets = getTickets();

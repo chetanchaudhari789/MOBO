@@ -7,11 +7,21 @@ test('agency can login and view Team', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
 
   // Splash -> Login
-  await expect(page.getByRole('button', { name: /Enter Portal/i })).toBeVisible({ timeout: 15000 });
-  await page.getByRole('button', { name: /Enter Portal/i }).click();
+  const enterPortal = page.getByRole('button', { name: /Enter Portal/i });
+  await expect(enterPortal).toBeVisible({ timeout: 15000 });
 
-  await page.getByPlaceholder('9000000000').fill(AGENCY_MOBILE);
-  await page.getByPlaceholder('••••••••').fill(PASSWORD);
+  // Next.js client hydration can make the first click a no-op; retry until the form is visible.
+  await enterPortal.click();
+  const mobileInput = page.locator('input[type="tel"]');
+  try {
+    await mobileInput.waitFor({ state: 'visible', timeout: 5000 });
+  } catch {
+    await enterPortal.click();
+    await mobileInput.waitFor({ state: 'visible', timeout: 15000 });
+  }
+
+  await mobileInput.fill(AGENCY_MOBILE);
+  await page.locator('input[type="password"]').fill(PASSWORD);
   await page.getByRole('button', { name: /Login to Ops/i }).click();
 
   // Landing assertions (avoid brittle header text; wait for stable navigation)

@@ -307,11 +307,11 @@ export const api = {
         body: JSON.stringify({ id }),
       });
     },
-    settleOrderPayment: async (orderId: string) => {
+    settleOrderPayment: async (orderId: string, settlementRef?: string) => {
       return fetch(`${API_URL}/ops/orders/settle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ orderId }),
+        body: JSON.stringify({ orderId, settlementRef }),
       });
     },
     verifyOrderClaim: async (orderId: string) => {

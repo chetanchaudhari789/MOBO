@@ -5,6 +5,25 @@ let memoryServer: { stop: () => Promise<unknown>; getUri: () => string } | null 
 let isIntentionalDisconnect = false;
 let lastNodeEnv: Env['NODE_ENV'] | undefined;
 
+let handlersAttached = false;
+
+const onMongoError = (err: unknown) => {
+  console.error('MongoDB connection error:', err);
+};
+
+const onMongoDisconnected = () => {
+  if (isIntentionalDisconnect) return;
+  console.warn('MongoDB disconnected. Attempting reconnection...');
+};
+
+const onMongoConnected = () => {
+  console.log('MongoDB connected successfully');
+};
+
+const onMongoReconnected = () => {
+  console.log('MongoDB reconnected');
+};
+
 function looksPlaceholderMongoUri(uri: string | undefined): boolean {
   if (!uri) return true;
   const v = uri.trim();
@@ -22,23 +41,15 @@ export async function connectMongo(env: Env): Promise<void> {
 
   mongoose.set('strictQuery', true);
 
-  // Connection event handlers for monitoring and resilience
-  mongoose.connection.on('error', (err) => {
-    console.error('MongoDB connection error:', err);
-  });
-
-  mongoose.connection.on('disconnected', () => {
-    if (isIntentionalDisconnect) return;
-    console.warn('MongoDB disconnected. Attempting reconnection...');
-  });
-
-  mongoose.connection.on('connected', () => {
-    console.log('MongoDB connected successfully');
-  });
-
-  mongoose.connection.on('reconnected', () => {
-    console.log('MongoDB reconnected');
-  });
+  // Connection event handlers for monitoring and resilience.
+  // Important: connectMongo() is called repeatedly in tests, so handlers must be attached idempotently.
+  if (!handlersAttached) {
+    mongoose.connection.on('error', onMongoError);
+    mongoose.connection.on('disconnected', onMongoDisconnected);
+    mongoose.connection.on('connected', onMongoConnected);
+    mongoose.connection.on('reconnected', onMongoReconnected);
+    handlersAttached = true;
+  }
 
   let mongoUri = env.MONGODB_URI;
   if (env.NODE_ENV !== 'production' && looksPlaceholderMongoUri(mongoUri)) {

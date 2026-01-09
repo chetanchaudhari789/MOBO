@@ -82,14 +82,20 @@ export function makeOrdersController() {
           }
         }
 
-        // CRITICAL ANTI-FRAUD: Prevent duplicate orders for the same deal by the same buyer
+        // CRITICAL ANTI-FRAUD: Prevent duplicate orders for the same deal by the same buyer.
+        // Important: allow upgrading a redirect-tracked pre-order (preOrderId) into a real order.
         const firstItem = body.items[0];
-        const existingDealOrder = await OrderModel.findOne({
+        const duplicateQuery: any = {
           userId: user._id,
           'items.0.productId': firstItem.productId,
           deletedAt: null,
           workflowStatus: { $nin: ['FAILED', 'REJECTED'] },
-        });
+        };
+        if (body.preOrderId) {
+          duplicateQuery._id = { $ne: body.preOrderId };
+        }
+
+        const existingDealOrder = await OrderModel.findOne(duplicateQuery);
         if (existingDealOrder) {
           throw new AppError(
             409,

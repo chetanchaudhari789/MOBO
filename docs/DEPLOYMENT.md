@@ -2,6 +2,8 @@
 
 This doc complements [DEPLOYMENTS.md](../DEPLOYMENTS.md) with a minimal, copy/paste oriented setup.
 
+If you do not have custom domains yet, use: `docs/DEPLOYMENT_RENDER_VERCEL_NO_DOMAIN.md`.
+
 ## Backend (Render)
 
 Recommended: Render **Web Service** running Node.

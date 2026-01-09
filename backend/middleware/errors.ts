@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { z } from 'zod';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -34,6 +35,31 @@ export function errorHandler(
         code: err.code,
         message: err.message,
         details: err.details,
+      },
+    });
+    return;
+  }
+
+  // Validation errors should never be 500s.
+  if (err instanceof z.ZodError) {
+    res.status(400).json({
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'Invalid request',
+        details: err.issues,
+      },
+    });
+    return;
+  }
+
+  // Common Mongoose failure when an endpoint expects an ObjectId but receives an invalid string.
+  const anyErr = err as any;
+  if (anyErr && anyErr.name === 'CastError') {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_ID',
+        message: 'Invalid identifier',
+        details: { path: anyErr.path, value: anyErr.value },
       },
     });
     return;

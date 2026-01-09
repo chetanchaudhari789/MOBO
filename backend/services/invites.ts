@@ -83,7 +83,11 @@ export async function consumeInvite(params: {
       await InviteModel.updateOne(
         { _id: (inviteSnapshot as any)._id },
         { $set: { status: 'expired' } },
-        { session: params.session ?? undefined }
+        // IMPORTANT: this update must not participate in the caller's transaction.
+        // If we mark as expired inside the transaction and then throw (as intended),
+        // the transaction abort will roll back the status change, leaving the invite
+        // incorrectly "active" even though it is expired.
+        { session: undefined }
       );
       throw new AppError(400, 'INVITE_EXPIRED', 'Invite has expired');
     }
