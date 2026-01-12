@@ -1,0 +1,26 @@
+export function digitsOnly(value: unknown): string {
+  if (typeof value !== 'string' && typeof value !== 'number') return '';
+  return String(value).replace(/\D/g, '');
+}
+
+/**
+ * Normalizes a phone/mobile input into the canonical 10-digit mobile number.
+ *
+ * Behavior:
+ * - Strips all non-digits.
+ * - Accepts common prefixes but stores only the last 10 digits:
+ *   - Leading `0` (11 digits total) -> drop the leading 0
+ *   - Country code `91` (12 digits total) -> drop the leading 91
+ * - Otherwise returns the digit string as-is (so callers can validate/deny).
+ */
+export function normalizeMobileTo10Digits(value: unknown): string {
+  const digits = digitsOnly(value);
+  if (digits.length === 10) return digits;
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  return digits;
+}
+
+export function isValidMobile10(value: string): boolean {
+  return /^\d{10}$/.test(value);
+}

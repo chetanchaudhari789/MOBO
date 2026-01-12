@@ -1,0 +1,26 @@
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  {
+    ignores: ['**/dist/**', '**/node_modules/**'],
+    linterOptions: {
+      reportUnusedDisableDirectives: 'off',
+    },
+  },
+  ...tseslint.configs.recommended,
+  {
+    files: ['**/*.ts'],
+    rules: {
+      // TypeScript handles undefined globals/types at build-time.
+      'no-undef': 'off',
+
+      // This repo intentionally uses `any` in a few boundary layers (env parsing, Mongoose, JSON).
+      // Treat it as a non-blocking concern for now.
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  }
+);

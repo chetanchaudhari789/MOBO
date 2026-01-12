@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+  <rect width="320" height="180" fill="#ffffff"/>
+  <rect x="10" y="10" width="300" height="160" fill="#f3f4f6" stroke="#111827"/>
+  <text x="24" y="48" font-family="Arial, sans-serif" font-size="18" fill="#111827">MOBO E2E PROOF</text>
+  <text x="24" y="80" font-family="Arial, sans-serif" font-size="14" fill="#374151">This is a test upload file.</text>
+</svg>

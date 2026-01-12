@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Pin npm version
+        run: |
+          npm i -g npm@11.6.2
+          node -v
+          npm -v
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Lint (backend)
+        run: npm -w @mobo/backend run lint
+
+      - name: Build (backend)
+        run: npm -w @mobo/backend run build
+
+      - name: Backend tests (Vitest)
+        run: npm run test:backend
+
+      - name: Build (all portals)
+        run: npm run build:apps
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: E2E tests (Playwright)
+        run: npm run test:e2e
