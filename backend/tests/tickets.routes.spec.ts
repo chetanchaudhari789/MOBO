@@ -12,15 +12,11 @@ async function login(app: any, mobile: string, password: string) {
   return res.body.tokens.accessToken as string;
 }
 
-<<<<<<< HEAD
 async function loginAdmin(app: any, username: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ username, password });
   expect(res.status).toBe(200);
   return res.body.tokens.accessToken as string;
 }
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 describe('tickets routes', () => {
   afterEach(async () => {
     await disconnectMongo();
@@ -39,11 +35,7 @@ describe('tickets routes', () => {
 
     const shopperToken = await login(app, E2E_ACCOUNTS.shopper.mobile, E2E_ACCOUNTS.shopper.password);
     const shopper2Token = await login(app, E2E_ACCOUNTS.shopper2.mobile, E2E_ACCOUNTS.shopper2.password);
-<<<<<<< HEAD
     const adminToken = await loginAdmin(app, E2E_ACCOUNTS.admin.username, E2E_ACCOUNTS.admin.password);
-=======
-    const adminToken = await login(app, E2E_ACCOUNTS.admin.mobile, E2E_ACCOUNTS.admin.password);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
     const createRes = await request(app)
       .post('/api/tickets')

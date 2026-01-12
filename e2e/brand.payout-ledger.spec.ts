@@ -1,15 +1,11 @@
-import { test, expect, type APIRequestContext } from '@playwright/test';
+﻿import { test, expect, type APIRequestContext } from '@playwright/test';
 
 const BRAND_MOBILE = '9000000003';
 const AGENCY_MOBILE = '9000000001';
 const PASSWORD = 'ChangeMe_123!';
 
 const BRAND_CODE = 'BRD_TEST';
-<<<<<<< HEAD
 const AGENCY_CODE = 'AG_TEST';
-=======
-const AGENCY_CODE = 'AGY_TEST';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 async function loginApi(request: APIRequestContext, mobile: string) {
   const res = await request.post('/api/auth/login', {
@@ -100,7 +96,7 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
   await page.goto('/');
   await page.getByRole('button', { name: /Access Portal/i }).click();
   await page.getByPlaceholder('9000000000').fill(BRAND_MOBILE);
-  await page.getByPlaceholder('••••••••').fill(PASSWORD);
+  await page.getByPlaceholder('â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢').fill(PASSWORD);
   await page.getByRole('button', { name: /Login to Portal/i }).click();
 
   await expect(page.getByText('Partner Portal', { exact: true })).toBeVisible({ timeout: 15000 });
@@ -122,20 +118,12 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
   await page.getByPlaceholder('0.00').fill(String(amount));
   await page.getByPlaceholder('Transaction Reference (UTR)').fill(ref);
 
-<<<<<<< HEAD
   await page.getByRole('button', { name: /Confirm Transfer/i }).click();
 
   // Brand portal uses an in-app toast (not a browser dialog) on success.
   await expect(page.getByRole('status').filter({ hasText: 'Payment recorded' }).first()).toBeVisible({
     timeout: 15000,
   });
-=======
-  const dialogPromise = page.waitForEvent('dialog');
-  await page.getByRole('button', { name: /Confirm Transfer/i }).click();
-  const dialog = await dialogPromise;
-  expect(dialog.message()).toMatch(/Payment Recorded!/i);
-  await dialog.accept();
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   // Modal closes on success.
   await expect(page.getByRole('heading', { name: 'Record Payment' })).toBeHidden({
@@ -177,6 +165,6 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
   const ledgerRow = page
     .locator('tbody tr')
     .filter({ hasText: agencyName })
-    .filter({ hasText: `₹${amount}` });
+    .filter({ hasText: `â‚¹${amount}` });
   await expect(ledgerRow.first()).toBeVisible({ timeout: 15000 });
 });

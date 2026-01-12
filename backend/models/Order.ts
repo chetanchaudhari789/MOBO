@@ -1,8 +1,5 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
-<<<<<<< HEAD
 import { normalizeMobileTo10Digits } from '../utils/mobiles.js';
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 export const OrderWorkflowStatuses = [
   'CREATED',
@@ -92,7 +89,6 @@ const orderSchema = new Schema(
     },
     reviewLink: { type: String, trim: true },
 
-<<<<<<< HEAD
     // Step-level verification (purchase vs review/rating requirements)
     verification: {
       order: {
@@ -108,18 +104,11 @@ const orderSchema = new Schema(
         verifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
       },
     },
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     managerName: { type: String, required: true, trim: true, index: true }, // mediatorCode
     agencyName: { type: String, trim: true },
 
     buyerName: { type: String, required: true, trim: true },
-<<<<<<< HEAD
     buyerMobile: { type: String, required: true, trim: true, match: /^\d{10}$/ },
-=======
-    buyerMobile: { type: String, required: true, trim: true },
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
     brandName: { type: String, trim: true },
 
@@ -147,15 +136,11 @@ orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ managerName: 1, createdAt: -1 });
 orderSchema.index({ brandUserId: 1, createdAt: -1 });
 
-<<<<<<< HEAD
 (orderSchema as any).pre('validate', function normalizeBuyerMobile(this: any) {
   if (this.buyerMobile != null) {
     this.buyerMobile = normalizeMobileTo10Digits(this.buyerMobile);
   }
 });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 // Prevent duplicate marketplace orders system-wide (while allowing missing ids).
 orderSchema.index(
   { externalOrderId: 1 },

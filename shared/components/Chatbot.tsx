@@ -1,23 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
-<<<<<<< HEAD
-=======
-  Send,
-  Bot,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   X,
   ArrowRight,
   Mic,
   MicOff,
-<<<<<<< HEAD
   Paperclip,
-=======
-  Sparkles,
-  ShoppingBag,
-  Wallet,
-  Paperclip,
-  Image as ImageIcon,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   CalendarClock,
   CheckCircle2,
   Bell,
@@ -27,11 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useNotification } from '../context/NotificationContext';
 import { api, compressImage } from '../services/api';
-<<<<<<< HEAD
 import { Ticket } from '../types';
-=======
-import { ChatMessage, Product, Order, Ticket } from '../types';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import { ProductCard } from './ProductCard';
 
 interface ChatbotProps {
@@ -81,13 +64,8 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
 };
 
 export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }) => {
-<<<<<<< HEAD
   const { messages, addMessage } = useChat();
   const { notifications, removeNotification, unreadCount, markAllRead } = useNotification();
-=======
-  const { messages, addMessage, setMessages } = useChat();
-  const { notifications, removeNotification } = useNotification();
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -186,7 +164,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           addMessage({
             id: makeMessageId(),
             role: 'model',
-            text: "Sure — let's explore some **Loot Deals**.",
+            text: "Sure â€” let's explore some **Loot Deals**.",
             timestamp: Date.now(),
           });
         } else if (
@@ -302,11 +280,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         relatedProducts: response.uiType === 'product_card' ? response.data : undefined,
         relatedOrders: response.uiType === 'order_card' ? response.data : undefined,
       });
-<<<<<<< HEAD
     } catch {
-=======
-    } catch (error) {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       addMessage({
         id: makeMessageId(),
         role: 'model',
@@ -320,9 +294,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   };
 
   const quickActions = [
-    { emoji: '🔥', text: 'Loot Deals', command: 'Show me the top 5 loot deals' },
-    { emoji: '📦', text: 'Latest Order', command: 'Where is my latest order?' },
-    { emoji: '🎟️', text: 'Tickets', command: 'Check status of my support tickets' },
+    { emoji: 'ðŸ”¥', text: 'Loot Deals', command: 'Show me the top 5 loot deals' },
+    { emoji: 'ðŸ“¦', text: 'Latest Order', command: 'Where is my latest order?' },
+    { emoji: 'ðŸŽŸï¸', text: 'Tickets', command: 'Check status of my support tickets' },
   ];
 
   return (
@@ -346,11 +320,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
             className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 hover:bg-slate-100 relative transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
           >
             <Bell size={20} />
-<<<<<<< HEAD
             {unreadCount > 0 && (
-=======
-            {notifications.length > 0 && (
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
               <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white animate-pulse motion-reduce:animate-none"></span>
             )}
           </button>
@@ -360,7 +330,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       {showNotifications && (
         <div className="shrink-0 px-5 pt-2">
           <div className="flex justify-end">
-<<<<<<< HEAD
             <div className="w-[78vw] max-w-[340px] bg-white rounded-[2rem] shadow-2xl border border-gray-100 p-2 animate-enter">
               <div className="px-4 py-3 flex justify-between items-center border-b border-gray-50 mb-1">
                 <h3 className="font-extrabold text-sm text-slate-900">Notifications</h3>
@@ -383,16 +352,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                 </button>
               </div>
               <div className="max-h-[360px] overflow-y-auto scrollbar-hide space-y-2 p-1">
-=======
-            <div className="w-[85vw] max-w-[320px] bg-white rounded-[2rem] shadow-2xl border border-gray-100 p-2 animate-enter">
-              <div className="px-4 py-3 flex justify-between items-center border-b border-gray-50 mb-1">
-                <h3 className="font-extrabold text-sm text-slate-900">Notifications</h3>
-                <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded-full">
-                  {notifications.length}
-                </span>
-              </div>
-              <div className="max-h-[350px] overflow-y-auto scrollbar-hide space-y-2 p-1">
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 {notifications.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Bell size={20} className="text-slate-300 mb-2" />
@@ -429,14 +388,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                           <div className="text-[10px] font-medium text-slate-500 leading-snug">
                             {n.message}
                           </div>
-<<<<<<< HEAD
                           {n.createdAt && (
                             <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mt-1">
                               {new Date(n.createdAt).toLocaleString()}
                             </div>
                           )}
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                         </div>
                       </div>
                       {n.action && (
@@ -581,7 +537,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                               )}
                             </div>
                             <span className="text-sm font-mono font-bold text-slate-900">
-                              ₹{order.total}
+                              â‚¹{order.total}
                             </span>
                           </div>
                         </div>

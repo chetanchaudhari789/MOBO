@@ -1,29 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-<<<<<<< HEAD
 import { subscribeRealtime } from '../services/realtime';
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   Camera,
   QrCode,
   CreditCard,
-<<<<<<< HEAD
   Save,
   Edit2,
   LogOut,
-=======
-  Phone,
-  User as UserIcon,
-  Save,
-  Loader2,
-  Edit2,
-  ChevronRight,
-  LogOut,
-  Receipt,
-  X,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   TrendingUp,
   ShieldCheck,
   Plus,
@@ -36,11 +21,7 @@ export const Profile: React.FC = () => {
 
   // Form State
   const [name, setName] = useState(user?.name || '');
-<<<<<<< HEAD
   const [mobile, _setMobile] = useState(user?.mobile || '');
-=======
-  const [mobile, setMobile] = useState(user?.mobile || '');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [upiId, setUpiId] = useState(user?.upiId || '');
   const [isEditing, setIsEditing] = useState(false);
 
@@ -48,13 +29,8 @@ export const Profile: React.FC = () => {
   const [avatar, setAvatar] = useState<string | undefined>(user?.avatar);
   const [qrCode, setQrCode] = useState<string | undefined>(user?.qrCode);
 
-<<<<<<< HEAD
   const [, setIsLoading] = useState(false);
   const [, setMessage] = useState('');
-=======
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState('');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   // Stats
   const [orders, setOrders] = useState<Order[]>([]);
@@ -67,7 +43,6 @@ export const Profile: React.FC = () => {
     if (user) fetchStats();
   }, [user]);
 
-<<<<<<< HEAD
   // Realtime: keep buyer stats in sync across sessions.
   useEffect(() => {
     if (!user) return;
@@ -91,9 +66,6 @@ export const Profile: React.FC = () => {
       if (timer) clearTimeout(timer);
     };
   }, [user]);
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const fetchStats = async () => {
     try {
       const userOrders = await api.orders.getUserOrders(user!.id);
@@ -126,20 +98,12 @@ export const Profile: React.FC = () => {
     setMessage('');
 
     try {
-<<<<<<< HEAD
       // Backend profile update does not allow changing mobile via this endpoint.
       await updateUser({ name, upiId, avatar, qrCode });
       setMessage('Success');
       setIsEditing(false);
       setTimeout(() => setMessage(''), 3000);
     } catch {
-=======
-      await updateUser({ name, mobile, upiId, avatar, qrCode });
-      setMessage('Success');
-      setIsEditing(false);
-      setTimeout(() => setMessage(''), 3000);
-    } catch (error) {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       setMessage('Failed');
     } finally {
       setIsLoading(false);
@@ -221,15 +185,9 @@ export const Profile: React.FC = () => {
               </label>
               <input
                 type="tel"
-<<<<<<< HEAD
                 disabled
                 value={mobile}
                 onChange={() => {}}
-=======
-                disabled={!isEditing}
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 className="w-full p-4 bg-zinc-50 border-none rounded-2xl font-bold text-zinc-900 outline-none focus:ring-2 focus:ring-lime-400 disabled:bg-zinc-50/50 disabled:text-zinc-500 transition-all font-mono"
               />
             </div>
@@ -344,10 +302,6 @@ export const Profile: React.FC = () => {
 
         {/* Danger Zone */}
         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-zinc-100 animate-slide-up">
-<<<<<<< HEAD
-=======
-          <h3 className="font-extrabold text-xl text-zinc-900 mb-6">Settings</h3>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           <button
             onClick={logout}
             className="w-full py-4 border-2 border-red-50 text-red-500 font-bold rounded-2xl text-sm hover:bg-red-50 transition-colors flex items-center justify-center gap-2"

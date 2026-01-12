@@ -1,14 +1,8 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-<<<<<<< HEAD
 import { Bot, ArrowRight, Lock, User, Phone, Hash, ChevronLeft } from 'lucide-react';
 import { Button, Input, Spinner } from '../components/ui';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
-=======
-import { api } from '../services/api';
-import { Bot, ArrowRight, Lock, User, Phone, Hash, ChevronLeft } from 'lucide-react';
-import { User as UserType } from '../types';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 interface AuthScreenProps {
   onBack?: () => void;
@@ -23,11 +17,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-<<<<<<< HEAD
   const { login, register, logout } = useAuth();
-=======
-  const { login, register } = useAuth();
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,11 +35,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
         return;
       }
       if (!mediatorCode.trim()) {
-<<<<<<< HEAD
           setError('Mediator Code / Invite Code is required to create an account.');
-=======
-        setError('Invite Code is required to create an account.');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         return;
       }
     }
@@ -58,7 +44,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
 
     try {
       if (view === 'login') {
-<<<<<<< HEAD
         // Login once; if it's the wrong role, immediately sign them out and explain.
         const u = await login(mobile, password);
         if (u?.role !== 'user') {
@@ -69,18 +54,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
           setIsLoading(false);
           return;
         }
-=======
-        // Pre-check role to ensure only Consumers login here
-        const userCheck = await api.auth.login(mobile, password);
-        const typedUser = userCheck as UserType;
-        if (typedUser.role !== 'user') {
-          const portal = typedUser.role === 'brand' ? 'Brand Portal' : 'Partner Ops Portal';
-          setError(`You are a ${typedUser.role}. Please use the ${portal}.`);
-          setIsLoading(false);
-          return;
-        }
-        await login(mobile, password);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       } else {
         await register(name, mobile, password, mediatorCode);
       }
@@ -137,13 +110,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
               Get Started
               <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
             </button>
-<<<<<<< HEAD
            
-=======
-            <p className="text-center text-[10px] text-gray-600 font-bold uppercase tracking-widest">
-              Powered by Gemini AI
-            </p>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           </div>
         </div>
       </div>
@@ -154,7 +121,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
   return (
     <div className="flex-1 flex flex-col bg-white h-full relative px-8 pt-12 pb-[env(safe-area-inset-bottom)] overflow-y-auto scrollbar-hide">
       <div className="mb-8">
-<<<<<<< HEAD
         <Button
           type="button"
           variant="secondary"
@@ -165,14 +131,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
         >
           <ArrowRight className="rotate-180" size={20} />
         </Button>
-=======
-        <button
-          onClick={() => setView('splash')}
-          className="mb-8 w-12 h-12 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-900 hover:bg-black hover:text-white transition-all active:scale-90 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-        >
-          <ArrowRight className="rotate-180" size={24} />
-        </button>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         <h2 className="text-4xl font-extrabold text-gray-900 mb-2 tracking-tight">
           {view === 'login' ? 'Welcome Back' : 'Join Mobo'}
         </h2>
@@ -189,7 +147,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
         )}
 
         {view === 'register' && (
-<<<<<<< HEAD
           <Input
             label="Full Name"
             placeholder="Full Name"
@@ -250,90 +207,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
         >
           {view === 'login' ? 'Sign In' : 'Create Account'}
         </Button>
-=======
-          <div className="relative group">
-            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-lime-600 transition-colors">
-              <User size={20} />
-            </div>
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-[1.5rem] text-[15px] font-semibold focus:outline-none focus:bg-white focus:ring-2 focus:ring-lime-400/50 focus:border-lime-400 transition-all placeholder:text-gray-400 text-gray-900"
-              required
-              autoCapitalize="words"
-              autoComplete="name"
-            />
-          </div>
-        )}
-
-        <div className="relative group">
-          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-lime-600 transition-colors">
-            <Phone size={20} />
-          </div>
-          <input
-            type="tel"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            placeholder="Mobile Number"
-            value={mobile}
-            onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))} // Only allow numbers
-            className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-[1.5rem] text-[15px] font-semibold focus:outline-none focus:bg-white focus:ring-2 focus:ring-lime-400/50 focus:border-lime-400 transition-all placeholder:text-gray-400 text-gray-900"
-            required
-            autoComplete="tel"
-          />
-        </div>
-
-        <div className="relative group">
-          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-lime-600 transition-colors">
-            <Lock size={20} />
-          </div>
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-[1.5rem] text-[15px] font-semibold focus:outline-none focus:bg-white focus:ring-2 focus:ring-lime-400/50 focus:border-lime-400 transition-all placeholder:text-gray-400 text-gray-900"
-            required
-            autoComplete="current-password"
-          />
-        </div>
-
-        {view === 'register' && (
-          <div className="relative group">
-            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-lime-600 transition-colors">
-              <Hash size={20} />
-            </div>
-            <input
-              type="text"
-              placeholder="Invite Code (from Mediator)"
-              value={mediatorCode}
-              onChange={(e) => setMediatorCode(e.target.value)}
-              className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-[1.5rem] text-[15px] font-semibold focus:outline-none focus:bg-white focus:ring-2 focus:ring-lime-400/50 focus:border-lime-400 transition-all placeholder:text-gray-400 text-gray-900"
-              autoCapitalize="characters"
-              required
-            />
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full bg-black text-white font-bold py-5 rounded-[2rem] shadow-xl hover:bg-lime-400 hover:text-black transition-all active:scale-[0.98] mt-6 flex items-center justify-center gap-3 text-[16px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-        >
-          {isLoading ? (
-            <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin motion-reduce:animate-none"></span>
-          ) : (
-            <>
-              {view === 'login' ? 'Sign In' : 'Create Account'}
-              <div className="bg-white/20 rounded-full p-1">
-                <ArrowRight size={14} />
-              </div>
-            </>
-          )}
-        </button>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       </form>
 
       <div className="mt-auto text-center pb-8 pt-4">

@@ -17,7 +17,6 @@ export type WalletMutationInput = {
 };
 
 export async function ensureWallet(ownerUserId: string) {
-<<<<<<< HEAD
   // Concurrency-safe wallet creation: multiple requests may race during onboarding/settlement.
   return WalletModel.findOneAndUpdate(
     { ownerUserId, deletedAt: null },
@@ -33,11 +32,6 @@ export async function ensureWallet(ownerUserId: string) {
     },
     { upsert: true, new: true }
   );
-=======
-  const existing = await WalletModel.findOne({ ownerUserId, deletedAt: null });
-  if (existing) return existing;
-  return WalletModel.create({ ownerUserId, availablePaise: 0, pendingPaise: 0, lockedPaise: 0 });
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 }
 
 export async function applyWalletCredit(input: WalletMutationInput) {

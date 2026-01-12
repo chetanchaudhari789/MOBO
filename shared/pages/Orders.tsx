@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-<<<<<<< HEAD
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
@@ -10,24 +9,10 @@ import { Badge, Button, EmptyState, Spinner } from '../components/ui';
 import {
   Clock,
   CheckCircle2,
-=======
-import { Order, Product } from '../types';
-import {
-  Clock,
-  CheckCircle2,
-  Camera,
-  MessageCircle,
-  Star,
-  ChevronRight,
-  Upload,
-  ExternalLink,
-  Eye,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   X,
   Plus,
   Search,
   ScanLine,
-<<<<<<< HEAD
   Check,
   Loader2,
   CalendarClock,
@@ -35,27 +20,13 @@ import {
   AlertTriangle,
   ShieldCheck,
   Package,
-=======
-  FileText,
-  Check,
-  Loader2,
-  CalendarClock,
-  DollarSign,
-  HelpCircle,
-  AlertTriangle,
-  ShieldCheck,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   Zap,
 } from 'lucide-react';
 
 export const Orders: React.FC = () => {
-<<<<<<< HEAD
   const { connected } = useRealtimeConnection();
   const { user } = useAuth();
   const { toast } = useToast();
-=======
-  const { user } = useAuth();
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -111,12 +82,6 @@ export const Orders: React.FC = () => {
       });
     }
   }, [user]);
-
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const loadOrders = async () => {
     try {
       const data = await api.orders.getUserOrders(user!.id);
@@ -128,7 +93,6 @@ export const Orders: React.FC = () => {
     }
   };
 
-<<<<<<< HEAD
   // Realtime: refresh order list when any order changes.
   useEffect(() => {
     if (!user) return;
@@ -183,23 +147,6 @@ export const Orders: React.FC = () => {
     } finally {
       setIsUploading(false);
     }
-=======
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0] || !selectedOrder) return;
-    setIsUploading(true);
-    const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64 = reader.result as string;
-      const apiType = uploadType as 'rating' | 'order';
-      await api.orders.submitClaim(selectedOrder.id, { type: apiType, data: base64 });
-      alert('Proof uploaded successfully!');
-      setSelectedOrder(null);
-      loadOrders();
-    };
-    reader.readAsDataURL(file);
-    setIsUploading(false);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   };
 
   const handleSubmitLink = async () => {
@@ -207,21 +154,12 @@ export const Orders: React.FC = () => {
     setIsUploading(true);
     try {
       await api.orders.submitClaim(selectedOrder.id, { type: 'review', data: inputValue });
-<<<<<<< HEAD
       toast.success('Link submitted!');
       setSelectedOrder(null);
       setInputValue('');
       loadOrders();
     } catch (e: any) {
       toast.error(String(e?.message || 'Failed to submit link'));
-=======
-      alert('Link submitted!');
-      setSelectedOrder(null);
-      setInputValue('');
-      loadOrders();
-    } catch (e) {
-      alert('Failed');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsUploading(false);
     }
@@ -255,11 +193,8 @@ export const Orders: React.FC = () => {
       }
     } catch (e) {
       console.error(e);
-<<<<<<< HEAD
       const msg = String((e as any)?.message || 'Failed to extract details from screenshot');
       toast.error(msg, { title: 'Extraction' });
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsAnalyzing(false);
     }
@@ -291,11 +226,7 @@ export const Orders: React.FC = () => {
         ],
         {
           screenshots: screenshots,
-<<<<<<< HEAD
           externalOrderId: extractedDetails.orderId ? extractedDetails.orderId : undefined,
-=======
-          externalOrderId: extractedDetails.orderId,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           reviewLink: selectedProduct.dealType === 'Review' ? reviewLinkInput : undefined,
         }
       );
@@ -308,15 +239,9 @@ export const Orders: React.FC = () => {
       setExtractedDetails({ orderId: '', amount: '' });
       setMatchStatus({ id: 'none', amount: 'none' });
       loadOrders();
-<<<<<<< HEAD
       toast.success('Order submitted successfully!');
     } catch (e: any) {
       toast.error(String(e.message || 'Failed to submit order.'));
-=======
-      alert('Order submitted successfully!');
-    } catch (e: any) {
-      alert(e.message || 'Failed to submit order.');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsUploading(false);
     }
@@ -334,19 +259,11 @@ export const Orders: React.FC = () => {
         issueType: ticketIssue,
         description: ticketDesc,
       });
-<<<<<<< HEAD
       toast.success('Ticket raised! Support will contact you shortly.');
       setTicketModal(null);
       setTicketDesc('');
     } catch {
       toast.error('Failed to raise ticket.');
-=======
-      alert('Ticket Raised! Support will contact you shortly.');
-      setTicketModal(null);
-      setTicketDesc('');
-    } catch (e) {
-      alert('Failed to raise ticket.');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsUploading(false);
     }
@@ -357,7 +274,6 @@ export const Orders: React.FC = () => {
       <div className="p-6 pb-4 bg-white shadow-sm z-10 sticky top-0 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">My Orders</h1>
-<<<<<<< HEAD
           <div className="flex items-center gap-2">
             <p className="text-sm text-slate-500 font-medium">Track purchases & cashback.</p>
             <Badge
@@ -383,22 +299,10 @@ export const Orders: React.FC = () => {
         >
           <Plus size={20} strokeWidth={3} />
         </Button>
-=======
-          <p className="text-sm text-slate-500 font-medium">Track purchases & cashback.</p>
-        </div>
-        <button
-          onClick={() => setIsNewOrderModalOpen(true)}
-          aria-label="New order"
-          className="w-10 h-10 bg-black text-lime-400 rounded-xl flex items-center justify-center shadow-lg hover:bg-zinc-800 active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-        >
-          <Plus size={20} strokeWidth={3} />
-        </button>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24 scrollbar-hide">
         {isLoading ? (
-<<<<<<< HEAD
           <div className="flex justify-center py-10 text-lime-500">
             <Spinner className="w-6 h-6" />
           </div>
@@ -413,15 +317,6 @@ export const Orders: React.FC = () => {
               </Button>
             }
           />
-=======
-          <div className="flex justify-center py-10">
-            <span className="animate-spin motion-reduce:animate-none w-6 h-6 border-2 border-lime-500 rounded-full border-t-transparent"></span>
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="text-center py-20 text-slate-400 font-bold text-sm">
-            No orders yet. Start shopping!
-          </div>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         ) : (
           orders.map((order) => {
             const dealType = order.items[0].dealType || 'Discount';
@@ -429,13 +324,9 @@ export const Orders: React.FC = () => {
             const isReview = dealType === 'Review';
             const isRating = dealType === 'Rating';
 
-<<<<<<< HEAD
             const purchaseVerified = !!order.verification?.orderVerified;
             const missingProofs = order.requirements?.missingProofs ?? [];
             const missingVerifications = order.requirements?.missingVerifications ?? [];
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             let displayStatus = 'PENDING';
             let statusClass = 'bg-orange-50 text-orange-700 border-orange-100';
 
@@ -445,7 +336,6 @@ export const Orders: React.FC = () => {
             } else if (order.affiliateStatus === 'Frozen_Disputed') {
               displayStatus = 'FROZEN';
               statusClass = 'bg-red-50 text-red-700 border-red-200';
-<<<<<<< HEAD
             } else if (String((order as any).workflowStatus || '') === 'UNDER_REVIEW' && !purchaseVerified) {
               displayStatus = 'UNDER REVIEW';
               statusClass = 'bg-slate-50 text-slate-700 border-slate-200';
@@ -455,8 +345,6 @@ export const Orders: React.FC = () => {
             } else if (purchaseVerified && missingVerifications.length > 0) {
               displayStatus = 'AWAITING APPROVAL';
               statusClass = 'bg-purple-50 text-purple-700 border-purple-200';
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             } else if (order.affiliateStatus === 'Pending_Cooling') {
               displayStatus = 'VERIFIED';
               statusClass = 'bg-blue-50 text-blue-700 border-blue-100';
@@ -922,7 +810,6 @@ export const Orders: React.FC = () => {
           </div>
         </div>
       )}
-<<<<<<< HEAD
 
       {/* ADD REVIEW / RATING MODAL */}
       {selectedOrder && (
@@ -1000,8 +887,6 @@ export const Orders: React.FC = () => {
           </div>
         </div>
       )}
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     </div>
   );
 };

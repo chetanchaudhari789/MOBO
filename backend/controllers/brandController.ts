@@ -4,18 +4,13 @@ import { UserModel } from '../models/User.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { OrderModel } from '../models/Order.js';
 import { rupeesToPaise } from '../utils/money.js';
-<<<<<<< HEAD
 import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
-=======
-import { toUiCampaign, toUiOrder, toUiUser } from '../utils/uiMappers.js';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';
 import { payoutAgencySchema } from '../validations/brand.js';
 import { TransactionModel } from '../models/Transaction.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
-<<<<<<< HEAD
 import { publishBroadcast, publishRealtime } from '../services/realtimeHub.js';
 
 async function recordManualPayoutLedger(args: {
@@ -75,8 +70,6 @@ async function recordManualPayoutLedger(args: {
     } as any);
   }
 }
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 export function makeBrandController() {
   return {
@@ -132,15 +125,11 @@ export function makeBrandController() {
           ];
         }
         const orders = await OrderModel.find(query).sort({ createdAt: -1 }).limit(5000).lean();
-<<<<<<< HEAD
         // Brands must not see buyer PII or proof artifacts.
         if (!isPrivileged(roles) && roles.includes('brand')) {
           res.json(orders.map(toUiOrderForBrand));
           return;
         }
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json(orders.map(toUiOrder));
       } catch (err) {
         next(err);
@@ -242,7 +231,6 @@ export function makeBrandController() {
         // Idempotent payout: double-click safe.
         const idKey = `brand_agency_payout:${brandId}:${body.agencyId}:${ref}`;
 
-<<<<<<< HEAD
         const brandName = String((brand as any).name || 'Brand');
         const agencyName = String((agency as any).name || 'Agency');
 
@@ -285,29 +273,6 @@ export function makeBrandController() {
             brandName,
           });
         }
-=======
-        // Debit brand first (fails if insufficient funds).
-        await applyWalletDebit({
-          idempotencyKey: idKey,
-          type: 'agency_payout',
-          ownerUserId: String(brandId),
-          fromUserId: String(brandId),
-          toUserId: String(body.agencyId),
-          amountPaise,
-          metadata: { ref, agencyId: String(body.agencyId), agencyCode, agencyName: String((agency as any).name || 'Agency') },
-        });
-
-        // Credit agency (separate idempotency key to keep both sides independently replay-safe).
-        await applyWalletCredit({
-          idempotencyKey: `${idKey}:credit`,
-          type: 'agency_receipt',
-          ownerUserId: String(body.agencyId),
-          fromUserId: String(brandId),
-          toUserId: String(body.agencyId),
-          amountPaise,
-          metadata: { ref, brandId: String(brandId), brandName: String((brand as any).name || 'Brand') },
-        });
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
         await writeAuditLog({
           req,
@@ -317,12 +282,8 @@ export function makeBrandController() {
           metadata: { agencyId: String(body.agencyId), agencyCode, amountPaise, ref },
         });
 
-<<<<<<< HEAD
         publishBroadcast('wallets.changed', { brandId: String(brandId), agencyId: String(body.agencyId) });
         publishBroadcast('notifications.changed');
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -385,7 +346,6 @@ export function makeBrandController() {
           metadata: { agencyCode },
         });
 
-<<<<<<< HEAD
         // Realtime: update both sides' UI state (scoped).
         const ts = new Date().toISOString();
         publishRealtime({
@@ -408,9 +368,6 @@ export function makeBrandController() {
             roles: ['admin', 'ops'],
           },
         });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -449,7 +406,6 @@ export function makeBrandController() {
           metadata: { agencyCode: body.agencyCode },
         });
 
-<<<<<<< HEAD
         // Realtime: update both brand + removed agency UIs.
         const agencyCode = String(body.agencyCode || '').trim();
         const ts = new Date().toISOString();
@@ -473,9 +429,6 @@ export function makeBrandController() {
             roles: ['admin', 'ops'],
           },
         });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -495,7 +448,6 @@ export function makeBrandController() {
           throw new AppError(400, 'INVALID_ALLOWED_AGENCIES', 'allowedAgencies is required');
         }
 
-<<<<<<< HEAD
         const normalizedAllowed = allowed.map((c: any) => String(c).trim()).filter(Boolean);
         const agencies = await UserModel.find({
           mediatorCode: { $in: normalizedAllowed },
@@ -517,14 +469,6 @@ export function makeBrandController() {
             { _id: userId as any },
             { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } }
           );
-=======
-        if (!isPrivileged(roles)) {
-          const connected = Array.isArray((user as any)?.connectedAgencies) ? (user as any).connectedAgencies : [];
-          const allConnected = allowed.every((c: any) => connected.includes(String(c)));
-          if (!allConnected) {
-            throw new AppError(403, 'FORBIDDEN', 'Campaign can only be assigned to connected agencies');
-          }
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         }
 
         const campaign = await CampaignModel.create({
@@ -540,16 +484,11 @@ export function makeBrandController() {
           totalSlots: Number(body.totalSlots ?? 0),
           usedSlots: 0,
           status: 'active',
-<<<<<<< HEAD
           allowedAgencyCodes: normalizedAllowed,
-=======
-          allowedAgencyCodes: allowed,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           dealType: body.dealType,
           returnWindowDays: Number(body.returnWindowDays ?? 14),
         });
 
-<<<<<<< HEAD
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
@@ -571,9 +510,6 @@ export function makeBrandController() {
             roles: ['admin', 'ops'],
           },
         });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.status(201).json(toUiCampaign(campaign.toObject()));
       } catch (err) {
         next(err);
@@ -586,22 +522,16 @@ export function makeBrandController() {
         if (!id) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
 
         const { roles, userId, user } = getRequester(req);
-<<<<<<< HEAD
         let previousAllowed: string[] = [];
         let previousBrandUserId: string | null = null;
         if (!isPrivileged(roles)) {
           const existing = await CampaignModel.findById(id)
             .select({ brandUserId: 1, brandName: 1, allowedAgencyCodes: 1 })
             .lean();
-=======
-        if (!isPrivileged(roles)) {
-          const existing = await CampaignModel.findById(id).select({ brandUserId: 1, brandName: 1 }).lean();
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           if (!existing) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
           const ok = String((existing as any).brandUserId || '') === String(userId);
           if (!ok) throw new AppError(403, 'FORBIDDEN', 'Cannot modify campaigns outside your brand');
 
-<<<<<<< HEAD
           previousBrandUserId = String((existing as any).brandUserId || '') || null;
           previousAllowed = Array.isArray((existing as any).allowedAgencyCodes)
             ? (existing as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
@@ -629,15 +559,6 @@ export function makeBrandController() {
               { _id: userId as any },
               { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } }
             );
-=======
-          if (typeof (req.body as any)?.allowedAgencies !== 'undefined') {
-            const allowed = Array.isArray((req.body as any).allowedAgencies) ? (req.body as any).allowedAgencies : [];
-            const connected = Array.isArray((user as any)?.connectedAgencies) ? (user as any).connectedAgencies : [];
-            const allConnected = allowed.every((c: any) => connected.includes(String(c)));
-            if (!allConnected) {
-              throw new AppError(403, 'FORBIDDEN', 'Campaign can only be assigned to connected agencies');
-            }
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           }
         }
 
@@ -672,7 +593,6 @@ export function makeBrandController() {
 
         const campaign = await CampaignModel.findByIdAndUpdate(id, update, { new: true });
         if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
-<<<<<<< HEAD
 
         const nextAllowed = Array.isArray((campaign as any).allowedAgencyCodes)
           ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
@@ -703,9 +623,6 @@ export function makeBrandController() {
             roles: ['admin', 'ops'],
           },
         });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json(toUiCampaign(campaign.toObject()));
       } catch (err) {
         next(err);

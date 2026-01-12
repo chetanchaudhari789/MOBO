@@ -16,16 +16,11 @@
     "lint": "eslint \"**/*.ts\"",
     "seed": "tsx seeds/seed.ts",
     "seed:e2e": "tsx scripts/seedE2E.ts",
-<<<<<<< HEAD
     "seed:admin": "tsx scripts/seedAdmin.ts",
     "wipe": "tsx scripts/wipe.ts",
     "reset:admin": "tsx scripts/resetToAdmin.ts",
     "seed:reset": "tsx scripts/resetSeed.ts",
     "repair:role-docs": "tsx scripts/repairRoleDocuments.ts",
-=======
-    "wipe": "tsx scripts/wipe.ts",
-    "seed:reset": "tsx scripts/resetSeed.ts",
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     "ai:check": "tsx scripts/checkAiKey.ts"
   },
   "dependencies": {

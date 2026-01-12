@@ -11,10 +11,7 @@ import { rupeesToPaise } from '../utils/money.js';
 import { toUiOrder } from '../utils/uiMappers.js';
 import { pushOrderEvent, isTerminalAffiliateStatus } from '../services/orderEvents.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
-<<<<<<< HEAD
 import { publishBroadcast } from '../services/realtimeHub.js';
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 export function makeOrdersController() {
   return {
@@ -338,13 +335,10 @@ export function makeOrdersController() {
         res
           .status(201)
           .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
-<<<<<<< HEAD
 
         // Notify UIs (buyer/mediator/brand/admin) that order-related views should refresh.
         publishBroadcast('orders.changed', { orderId: String((finalOrder as any)?._id || (created as any)?._id) });
         publishBroadcast('notifications.changed');
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       } catch (err) {
         next(err);
       } finally {
@@ -424,12 +418,9 @@ export function makeOrdersController() {
         });
 
         res.json(toUiOrder(afterReview.toObject()));
-<<<<<<< HEAD
 
         publishBroadcast('orders.changed', { orderId: String(afterReview._id) });
         publishBroadcast('notifications.changed');
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         return;
       } catch (err) {
         next(err);

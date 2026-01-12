@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-<<<<<<< HEAD
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
@@ -8,10 +7,6 @@ import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
-=======
-import { api } from '../services/api';
-import { User, Campaign, Order, Product } from '../types';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   LayoutDashboard,
   Users,
@@ -19,10 +14,6 @@ import {
   LogOut,
   Building2,
   Plus,
-<<<<<<< HEAD
-=======
-  ArrowUpRight,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   TrendingUp,
   Wallet,
   Search,
@@ -32,7 +23,6 @@ import {
   Link as LinkIcon,
   Menu,
   AlertCircle,
-<<<<<<< HEAD
   AlertTriangle,
   UserPlus,
   Box,
@@ -41,66 +31,24 @@ import {
   Eye,
   FileText,
   Trash2,
-=======
-  UserPlus,
-  Box,
-  IndianRupee,
-  Zap,
-  ChevronRight,
-  Eye,
-  FileText,
-  Filter,
-  PieChart as PieChartIcon,
-  XCircle,
-  Trash2,
-  Calendar,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   CreditCard,
   RefreshCw,
   Send,
   Clock,
-<<<<<<< HEAD
   Check,
   Share2,
   Save,
   Receipt,
   Download,
-=======
-  Award,
-  Activity,
-  Check,
-  BarChart3,
-  ShieldCheck,
-  ChevronLeft,
-  Share2,
-  Save,
-  Building,
-  Receipt,
-  Download,
-  HelpCircle,
-  Bell,
-  Phone,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   ExternalLink,
   Star,
   MessageCircle,
   Banknote,
   Camera,
-<<<<<<< HEAD
   Edit2,
   Lock,
   Hourglass,
   Gift,
-=======
-  ShoppingBag,
-  Edit2,
-  MoreHorizontal,
-  Link,
-  Lock,
-  Hourglass,
-  Gift,
-  CheckCircle2,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   BookmarkPlus,
 } from 'lucide-react';
 import {
@@ -113,13 +61,6 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-<<<<<<< HEAD
-=======
-  Cell,
-  PieChart,
-  Pie,
-  Legend,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 } from 'recharts';
 
 // --- HELPERS ---
@@ -185,10 +126,7 @@ const StatCard = ({ label, value, icon: Icon, trend, colorClass = 'bg-white' }: 
 
 const AgencyProfile = ({ user }: any) => {
   const { updateUser } = useAuth();
-<<<<<<< HEAD
   const { toast } = useToast();
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -235,13 +173,8 @@ const AgencyProfile = ({ user }: any) => {
         },
       });
       setIsEditing(false);
-<<<<<<< HEAD
     } catch {
       toast.error('Failed to update profile.');
-=======
-    } catch (e) {
-      alert('Failed to update profile.');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setLoading(false);
     }
@@ -302,11 +235,7 @@ const AgencyProfile = ({ user }: any) => {
                   className="flex items-center gap-1.5 text-xs font-bold text-slate-500 font-mono bg-slate-50 px-2 py-1 rounded border border-slate-200 cursor-pointer hover:bg-slate-100"
                   onClick={() => {
                     navigator.clipboard.writeText(user?.mediatorCode || '');
-<<<<<<< HEAD
                     toast.success('Code copied');
-=======
-                    alert('Code Copied!');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                   }}
                 >
                   {user?.mediatorCode} <Copy size={12} />
@@ -458,12 +387,8 @@ const AgencyProfile = ({ user }: any) => {
   );
 };
 
-<<<<<<< HEAD
 const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: any) => {
   const { toast } = useToast();
-=======
-const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   // Flatten orders for detailed ledger view
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [newStatus, setNewStatus] = useState<string>('');
@@ -485,7 +410,6 @@ const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
   const handleUpdate = async () => {
     if (!editingOrder) return;
     setIsUpdating(true);
-<<<<<<< HEAD
     // Real update via Ops API.
     try {
       if (newStatus === 'Paid') await api.ops.settleOrderPayment(editingOrder.id);
@@ -496,18 +420,6 @@ const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
       onRefresh();
     } catch {
       toast.error('Update failed');
-=======
-    // Simulate update via API (Using verify/settle as proxy)
-    try {
-      if (newStatus === 'Paid') await api.ops.settleOrderPayment(editingOrder.id);
-      else if (newStatus === 'Pending') await api.ops.verifyOrderClaim(editingOrder.id);
-
-      alert('Ledger updated!');
-      setEditingOrder(null);
-      onRefresh();
-    } catch (e) {
-      alert('Update failed');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsUpdating(false);
     }
@@ -632,11 +544,10 @@ const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
 
         <div className="flex-1 overflow-auto p-0 scrollbar-hide">
           {ledger.length === 0 ? (
-<<<<<<< HEAD
             <div className="p-6">
               {loading ? (
                 <EmptyState
-                  title="Loading transactions…"
+                  title="Loading transactionsâ€¦"
                   description="Syncing the latest financial ledger."
                   icon={<Spinner className="w-5 h-5 text-slate-400" />}
                   className="bg-transparent"
@@ -644,16 +555,11 @@ const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
               ) : (
                 <EmptyState
                   title="No transactions yet"
-                  description="Once orders start flowing through your network, they’ll appear here."
+                  description="Once orders start flowing through your network, theyâ€™ll appear here."
                   icon={<Receipt size={22} className="text-slate-400" />}
                   className="bg-transparent"
                 />
               )}
-=======
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 font-bold text-sm">
-              <Receipt size={32} className="mb-3 opacity-30" />
-              No transactions recorded yet.
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             </div>
           ) : (
             <table className="w-full text-left border-collapse">
@@ -671,11 +577,7 @@ const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
                   <tr key={o.id} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="p-5 pl-8">
                       <div className="font-mono text-xs font-bold text-slate-900 group-hover:text-purple-600 transition-colors">
-<<<<<<< HEAD
                         #{o.id.slice(-6)}
-=======
-                        #{o.id.slice(-8)}
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                       </div>
                       <div className="text-[10px] text-slate-400 font-bold mt-0.5">
                         {new Date(o.createdAt).toLocaleDateString()}
@@ -750,11 +652,7 @@ const FinanceView = ({ allOrders, mediators, onRefresh }: any) => {
             >
               <h3 className="text-lg font-extrabold text-slate-900 mb-2">Update Ledger Entry</h3>
               <p className="text-xs text-slate-500 mb-6 font-mono">
-<<<<<<< HEAD
                 Order #{editingOrder.id.slice(-6)}
-=======
-                Order #{editingOrder.id.slice(-8)}
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
               </p>
 
               <div className="space-y-3 mb-6">
@@ -873,11 +771,7 @@ const BrandsView = () => {
   );
 };
 
-<<<<<<< HEAD
 const PayoutsView = ({ payouts, loading }: any) => {
-=======
-const PayoutsView = ({ payouts }: any) => {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const totalPayouts = payouts.reduce((sum: number, p: any) => sum + p.amount, 0);
 
   const handleExport = () => {
@@ -958,11 +852,10 @@ const PayoutsView = ({ payouts }: any) => {
 
         <div className="flex-1 overflow-auto p-0 scrollbar-hide">
           {payouts.length === 0 ? (
-<<<<<<< HEAD
             <div className="p-6">
               {loading ? (
                 <EmptyState
-                  title="Loading payouts…"
+                  title="Loading payoutsâ€¦"
                   description="Syncing payout history."
                   icon={<Spinner className="w-5 h-5 text-slate-400" />}
                   className="bg-transparent"
@@ -975,11 +868,6 @@ const PayoutsView = ({ payouts }: any) => {
                   className="bg-transparent"
                 />
               )}
-=======
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 font-bold text-sm">
-              <Receipt size={32} className="mb-3 opacity-30" />
-              No payouts recorded yet.
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             </div>
           ) : (
             <table className="w-full text-left border-collapse">
@@ -1048,7 +936,6 @@ const PayoutsView = ({ payouts }: any) => {
 };
 
 const DashboardView = ({ stats, allOrders }: any) => {
-<<<<<<< HEAD
   // Revenue trend: last 30 days based on actual orders.
   const data = useMemo(() => {
     const now = new Date();
@@ -1078,26 +965,6 @@ const DashboardView = ({ stats, allOrders }: any) => {
       val: Math.round(total),
     }));
   }, [allOrders]);
-=======
-  // Extended Chart Data
-  const data = [
-    { name: '1', val: 4000 },
-    { name: '3', val: 3500 },
-    { name: '5', val: 5000 },
-    { name: '7', val: 6200 },
-    { name: '9', val: 5500 },
-    { name: '11', val: 7000 },
-    { name: '13', val: 6800 },
-    { name: '15', val: 8500 },
-    { name: '17', val: 7200 },
-    { name: '19', val: 9000 },
-    { name: '21', val: 10500 },
-    { name: '23', val: 9800 },
-    { name: '25', val: 12000 },
-    { name: '27', val: 11500 },
-    { name: '30', val: 13000 },
-  ];
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   // Calculate Brand Performance
   const brandData = useMemo(() => {
@@ -1173,7 +1040,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
-                  tickFormatter={(v) => `₹${v / 1000}k`}
+                  tickFormatter={(v) => `â‚¹${v / 1000}k`}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1232,12 +1099,8 @@ const DashboardView = ({ stats, allOrders }: any) => {
   );
 };
 
-<<<<<<< HEAD
 const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrders }: any) => {
   const { toast } = useToast();
-=======
-const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any) => {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [subTab, setSubTab] = useState<'inventory' | 'offered'>('inventory');
   const [assignModal, setAssignModal] = useState<Campaign | null>(null);
   const [createModal, setCreateModal] = useState(false);
@@ -1273,21 +1136,13 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
   // New Campaign Form
   const [newCampaign, setNewCampaign] = useState({
     title: '',
-<<<<<<< HEAD
     platform: '',
-=======
-    platform: 'Amazon',
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     dealType: 'Discount',
     price: '',
     payout: '',
     totalSlots: '',
     originalPrice: '',
-<<<<<<< HEAD
     image: '',
-=======
-    image: 'https://placehold.co/100x100.png',
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     productUrl: '',
   });
 
@@ -1307,7 +1162,6 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
   };
 
   const handleCreate = async () => {
-<<<<<<< HEAD
     const title = newCampaign.title.trim();
     const productUrl = newCampaign.productUrl.trim();
     const image = newCampaign.image.trim();
@@ -1376,30 +1230,6 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
       const msg = err instanceof Error ? err.message : 'Failed to create campaign';
       toast.error(msg);
     }
-=======
-    await api.ops.createCampaign({
-      ...newCampaign,
-      price: Number(newCampaign.price),
-      payout: Number(newCampaign.payout),
-      totalSlots: Number(newCampaign.totalSlots),
-      originalPrice: Number(newCampaign.originalPrice),
-      dealType: newCampaign.dealType as any,
-      allowedAgencies: [user.mediatorCode],
-    });
-    setCreateModal(false);
-    setNewCampaign({
-      title: '',
-      platform: 'Amazon',
-      dealType: 'Discount',
-      price: '',
-      payout: '',
-      totalSlots: '',
-      originalPrice: '',
-      image: 'https://placehold.co/100x100.png',
-      productUrl: '',
-    });
-    onRefresh();
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   };
 
   const handleDistributeEvenly = () => {
@@ -1486,11 +1316,10 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
               <tbody className="divide-y divide-slate-50 text-sm">
                 {activeInventory.length === 0 ? (
                   <tr>
-<<<<<<< HEAD
                     <td colSpan={6} className="p-8">
                       {loading ? (
                         <EmptyState
-                          title="Loading inventory…"
+                          title="Loading inventoryâ€¦"
                           description="Fetching campaigns and assignments."
                           icon={<Spinner className="w-5 h-5 text-slate-400" />}
                           className="bg-transparent"
@@ -1503,10 +1332,6 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                           className="bg-transparent"
                         />
                       )}
-=======
-                    <td colSpan={6} className="p-20 text-center text-slate-400 font-bold">
-                      No active inventory being managed. Claim deals from brands to start.
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     </td>
                   </tr>
                 ) : (
@@ -1573,11 +1398,10 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
           ) : (
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-enter">
               {offeredCampaigns.length === 0 ? (
-<<<<<<< HEAD
                 <div className="col-span-full">
                   {loading ? (
                     <EmptyState
-                      title="Loading offers…"
+                      title="Loading offersâ€¦"
                       description="Checking brand campaigns shared with your agency."
                       icon={<Spinner className="w-5 h-5 text-slate-400" />}
                       className="bg-slate-50 border-slate-200 rounded-[2.5rem] py-20"
@@ -1590,16 +1414,6 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                       className="bg-slate-50 border-slate-200 rounded-[2.5rem] py-20"
                     />
                   )}
-=======
-                <div className="col-span-full py-20 text-center bg-slate-50 rounded-[2.5rem] border border-dashed border-slate-200">
-                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm text-slate-300">
-                    <Gift size={32} />
-                  </div>
-                  <h4 className="font-bold text-slate-900">No New Offers</h4>
-                  <p className="text-slate-400 text-sm font-medium mt-1">
-                    Brands haven't shared any campaigns with you recently.
-                  </p>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 </div>
               ) : (
                 offeredCampaigns.map((c: Campaign) => (
@@ -1636,7 +1450,7 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                         <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">
                           Budget
                         </p>
-                        <p className="text-sm font-black text-slate-900">₹{c.payout}/unit</p>
+                        <p className="text-sm font-black text-slate-900">â‚¹{c.payout}/unit</p>
                       </div>
                       <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                         <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">
@@ -1731,12 +1545,7 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                     <option value="Discount">Discount Deal</option>
                     <option value="Review">Review Deal</option>
                     <option value="Rating">Rating Deal</option>
-<<<<<<< HEAD
                     
-=======
-                    <option value="Flash Sale">Flash Sale</option>
-                    <option value="Clearance">Clearance</option>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                   </select>
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                     <ChevronRight className="rotate-90" size={16} />
@@ -1747,7 +1556,7 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Deal Price (₹)
+                    Deal Price (â‚¹)
                   </label>
                   <input
                     type="number"
@@ -1759,7 +1568,7 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Payout (₹)
+                    Payout (â‚¹)
                   </label>
                   <input
                     type="number"
@@ -1888,7 +1697,7 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                       Deal Price
                     </label>
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-11 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
-                      <span className="text-xs font-bold text-slate-400 mr-2">₹</span>
+                      <span className="text-xs font-bold text-slate-400 mr-2">â‚¹</span>
                       <input
                         type="number"
                         value={customPrice}
@@ -1904,7 +1713,7 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                       Agency Payout
                     </label>
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-11 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
-                      <span className="text-xs font-bold text-slate-400 mr-2">₹</span>
+                      <span className="text-xs font-bold text-slate-400 mr-2">â‚¹</span>
                       <input
                         type="number"
                         value={customPayout}
@@ -1949,10 +1758,9 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
             {/* Mediator List */}
             <div className="flex-1 overflow-y-auto scrollbar-hide space-y-2 pr-1 mb-6">
               {mediators.length === 0 ? (
-<<<<<<< HEAD
                 loading ? (
                   <EmptyState
-                    title="Loading mediators…"
+                    title="Loading mediatorsâ€¦"
                     description="Syncing your team roster."
                     icon={<Spinner className="w-5 h-5 text-slate-400" />}
                     className="bg-slate-50/50 border-slate-200"
@@ -1965,12 +1773,6 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                     className="bg-slate-50/50 border-slate-200"
                   />
                 )
-=======
-                <div className="text-center py-16 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200">
-                  <Users size={32} className="mx-auto text-slate-300 mb-2" />
-                  <p className="text-sm font-bold text-slate-400">No active mediators found.</p>
-                </div>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
               ) : (
                 mediators.map((m: User) => {
                   const mediatorOrders = allOrders
@@ -2005,7 +1807,7 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
                       {/* Sales Performance */}
                       <div className="col-span-4 flex flex-col items-center justify-center">
                         <p className="text-base font-black text-slate-900">
-                          ₹{formatCurrency(salesRevenue).replace('₹', '')}
+                          â‚¹{formatCurrency(salesRevenue).replace('â‚¹', '')}
                         </p>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
                           {salesCount} Orders
@@ -2057,12 +1859,8 @@ const InventoryView = ({ campaigns, user, onRefresh, mediators, allOrders }: any
   );
 };
 
-<<<<<<< HEAD
 const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const { toast } = useToast();
-=======
-const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [subTab, setSubTab] = useState<'roster' | 'requests'>('roster');
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -2103,7 +1901,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
 
   const handlePayout = async () => {
     if (!selectedMediator || !payoutAmount) return;
-<<<<<<< HEAD
     if (!selectedMediator.upiId && !selectedMediator.qrCode) {
       toast.error('UPI ID or QR is required to payout');
       return;
@@ -2112,7 +1909,7 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
 
     try {
       await api.ops.payoutMediator(selectedMediator.id, amount);
-      toast.success(`Sent ₹${amount} to ${selectedMediator.name}`);
+      toast.success(`Sent â‚¹${amount} to ${selectedMediator.name}`);
       setPayoutAmount('');
       onRefresh();
       setSelectedMediator(null);
@@ -2127,25 +1924,12 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
     const missingProofs = order.requirements?.missingProofs ?? [];
     const missingVerifications = order.requirements?.missingVerifications ?? [];
 
-=======
-    const amount = Number(payoutAmount);
-
-    await api.ops.payoutMediator(selectedMediator.id, amount);
-    alert(`Sent ₹${amount} to ${selectedMediator.name}`);
-    setPayoutAmount('');
-    onRefresh();
-    setSelectedMediator(null);
-  };
-
-  const getStatusBadge = (order: Order) => {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     if (order.paymentStatus === 'Paid')
       return (
         <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
           <CheckCircle size={10} /> Settled
         </span>
       );
-<<<<<<< HEAD
     if (purchaseVerified && missingProofs.length > 0)
       return (
         <span className="text-[10px] font-bold text-amber-700 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
@@ -2158,8 +1942,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
           <Clock size={10} /> Awaiting Approval
         </span>
       );
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     if (order.affiliateStatus === 'Pending_Cooling')
       return (
         <span className="text-[10px] font-bold text-blue-600 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
@@ -2244,11 +2026,7 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
             <thead className="bg-slate-50 text-slate-400 text-[10px] font-extrabold uppercase tracking-wider sticky top-0 z-10 shadow-sm">
               <tr>
                 <th className="p-5 pl-8">Mediator Profile</th>
-<<<<<<< HEAD
                 <th className="p-5">Status</th>
-=======
-                <th className="p-5">Verification</th>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 <th className="p-5 text-center">Orders</th>
                 <th className="p-5 text-right">Pending Payout</th>
                 {subTab === 'requests' && <th className="p-5 pr-8 text-right">Action</th>}
@@ -2257,11 +2035,10 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
             <tbody className="divide-y divide-slate-50 text-sm">
               {filtered.length === 0 ? (
                 <tr>
-<<<<<<< HEAD
                   <td colSpan={5} className="p-6">
                     {loading ? (
                       <EmptyState
-                        title="Loading mediators…"
+                        title="Loading mediatorsâ€¦"
                         description="Fetching your roster and requests."
                         icon={<Spinner className="w-5 h-5 text-slate-400" />}
                         className="border-slate-200"
@@ -2273,10 +2050,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                         className="border-slate-200"
                       />
                     )}
-=======
-                  <td colSpan={5} className="p-12 text-center text-slate-400 font-bold">
-                    No mediators found matching your search.
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                   </td>
                 </tr>
               ) : (
@@ -2302,7 +2075,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                       </div>
                     </td>
                     <td className="p-5">
-<<<<<<< HEAD
                       {/** Clarify mediator join requests vs KYC */}
                       <span
                         className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase border shadow-sm ${
@@ -2318,12 +2090,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                           : m.kycStatus === 'verified'
                             ? 'Verified Partner'
                             : 'KYC Pending'}
-=======
-                      <span
-                        className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase border shadow-sm ${m.kycStatus === 'verified' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}
-                      >
-                        {m.kycStatus === 'verified' ? 'Verified Partner' : 'Verification Pending'}
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                       </span>
                     </td>
                     <td className="p-5 text-center">
@@ -2396,40 +2162,28 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
             </div>
 
             {/* Modal Content */}
-<<<<<<< HEAD
             <div className="flex-1 min-h-0 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row">
               {/* Order List Side */}
               <div className="flex-1 overflow-visible md:overflow-y-auto p-6 scrollbar-hide border-r border-slate-100">
-=======
-            <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-              {/* Order List Side */}
-              <div className="flex-1 overflow-y-auto p-6 scrollbar-hide border-r border-slate-100">
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <FileText size={18} /> Order History
                 </h3>
                 <div className="space-y-3">
                   {mediatorOrders.length === 0 ? (
-<<<<<<< HEAD
                     loading ? (
                       <EmptyState
-                        title="Loading orders…"
-                        description="Fetching this mediator’s order history."
+                        title="Loading ordersâ€¦"
+                        description="Fetching this mediatorâ€™s order history."
                         icon={<Spinner className="w-5 h-5 text-slate-400" />}
                         className="border-slate-200"
                       />
                     ) : (
                       <EmptyState
                         title="No orders yet"
-                        description="When this mediator’s network completes orders, they’ll show up here."
+                        description="When this mediatorâ€™s network completes orders, theyâ€™ll show up here."
                         className="border-slate-200"
                       />
                     )
-=======
-                    <p className="text-center text-slate-400 text-sm py-10 font-bold">
-                      No orders found.
-                    </p>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                   ) : (
                     mediatorOrders.map((o: Order) => (
                       <div
@@ -2472,13 +2226,8 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
               </div>
 
               {/* Payout Action Side */}
-<<<<<<< HEAD
               <div className="w-full md:w-[28rem] bg-white p-6 flex flex-col shadow-[inset_10px_0_20px_-15px_rgba(0,0,0,0.05)] min-h-0">
                 <div className="flex-1 min-h-0 overflow-y-auto">
-=======
-              <div className="w-full md:w-[28rem] bg-white p-6 flex flex-col justify-between shadow-[inset_10px_0_20px_-15px_rgba(0,0,0,0.05)] h-full overflow-y-auto">
-                <div>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                   <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <Wallet size={18} /> Quick Payout
                   </h3>
@@ -2501,11 +2250,7 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                               className="text-purple-600 hover:text-purple-800 flex items-center gap-1"
                               onClick={() => {
                                 navigator.clipboard.writeText(selectedMediator.upiId || '');
-<<<<<<< HEAD
                                 toast.success('UPI copied');
-=======
-                                alert('UPI Copied');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                               }}
                             >
                               <Copy size={10} /> Copy
@@ -2526,7 +2271,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
 
                       <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 hover:border-purple-200 hover:bg-purple-50/20 transition-all">
                         <p className="text-[9px] text-slate-400 font-bold uppercase mb-2 flex justify-between">
-<<<<<<< HEAD
                           UPI QR
                           {selectedMediator.qrCode && (
                             <button
@@ -2536,24 +2280,11 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                                 toast.success('QR copied');
                               }}
                               title="Copy QR image URL/data"
-=======
-                          Bank Account
-                          {selectedMediator.bankDetails?.accountNumber && (
-                            <button
-                              className="text-purple-600 hover:text-purple-800 flex items-center gap-1"
-                              onClick={() => {
-                                navigator.clipboard.writeText(
-                                  selectedMediator.bankDetails?.accountNumber!
-                                );
-                                alert('Account Copied');
-                              }}
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                             >
                               <Copy size={10} /> Copy
                             </button>
                           )}
                         </p>
-<<<<<<< HEAD
                         {selectedMediator.qrCode ? (
                           <div className="bg-white border border-slate-200 rounded-xl p-3 w-fit">
                             <img
@@ -2577,43 +2308,13 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                   </div>
 
                   <div className="space-y-4 pb-6">
-=======
-                        {selectedMediator.bankDetails ? (
-                          <>
-                            <p className="text-xs font-bold text-slate-800 mb-1">
-                              {selectedMediator.bankDetails.bankName}
-                            </p>
-                            <p className="text-base font-mono font-bold text-slate-900 tracking-widest break-all mb-2 leading-tight">
-                              {selectedMediator.bankDetails.accountNumber}
-                            </p>
-                            <div className="flex gap-2">
-                              <p className="text-[9px] font-mono text-slate-500 font-bold bg-white px-2 py-1 rounded w-fit border border-slate-100">
-                                IFSC: {selectedMediator.bankDetails.ifsc}
-                              </p>
-                              <p className="text-[9px] font-bold text-slate-500 bg-white px-2 py-1 rounded w-fit border border-slate-100 uppercase truncate max-w-[120px]">
-                                {selectedMediator.bankDetails.holderName}
-                              </p>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center gap-2 text-red-500 bg-red-50 px-2 py-1 rounded w-fit">
-                            <AlertCircle size={12} />{' '}
-                            <span className="text-xs font-bold">Details Missing</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     <div>
                       <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">
                         Transfer Amount
                       </label>
                       <div className="relative group">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-lg group-focus-within:text-green-600 transition-colors">
-                          ₹
+                          â‚¹
                         </span>
                         <input
                           type="number"
@@ -2627,7 +2328,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                   </div>
                 </div>
 
-<<<<<<< HEAD
                 <div className="sticky bottom-0 pt-4 bg-white">
                   <button
                     onClick={handlePayout}
@@ -2646,16 +2346,6 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                     <Send size={18} /> Confirm Transfer
                   </button>
                 </div>
-=======
-                <button
-                  onClick={handlePayout}
-                  disabled={!payoutAmount || Number(payoutAmount) <= 0 || !selectedMediator.upiId}
-                  className="w-full py-4 bg-black text-white font-bold rounded-2xl shadow-xl hover:bg-green-600 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:scale-100 disabled:hover:bg-black mt-6"
-                  title={!selectedMediator.upiId ? 'Beneficiary details missing' : 'Send Payout'}
-                >
-                  <Send size={18} /> Confirm Transfer
-                </button>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
               </div>
             </div>
           </div>
@@ -2713,7 +2403,7 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     Total:{' '}
-                    <span className="font-mono font-bold text-zinc-900">₹{proofOrder.total}</span>
+                    <span className="font-mono font-bold text-zinc-900">â‚¹{proofOrder.total}</span>
                   </p>
                 </div>
               </div>
@@ -2804,10 +2494,7 @@ const TeamView = ({ mediators, user, onRefresh, allOrders }: any) => {
 
 export const AgencyDashboard: React.FC = () => {
   const { user, logout } = useAuth();
-<<<<<<< HEAD
   const { connected } = useRealtimeConnection();
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'team' | 'inventory' | 'finance' | 'payouts' | 'brands' | 'profile'
   >('dashboard');
@@ -2819,17 +2506,11 @@ export const AgencyDashboard: React.FC = () => {
   const [mediators, setMediators] = useState<User[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
-<<<<<<< HEAD
   const [isDataLoading, setIsDataLoading] = useState(false);
 
   const fetchData = async () => {
     if (!user?.mediatorCode) return;
     setIsDataLoading(true);
-=======
-
-  const fetchData = async () => {
-    if (!user?.mediatorCode) return;
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     try {
       const [meds, camps, ords, ledger] = await Promise.all([
         api.ops.getMediators(user.mediatorCode),
@@ -2862,11 +2543,8 @@ export const AgencyDashboard: React.FC = () => {
       });
     } catch (e) {
       console.error(e);
-<<<<<<< HEAD
     } finally {
       setIsDataLoading(false);
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     }
   };
 
@@ -2874,7 +2552,6 @@ export const AgencyDashboard: React.FC = () => {
     fetchData();
   }, [user]);
 
-<<<<<<< HEAD
   // Realtime: refresh when backend data changes.
   useEffect(() => {
     if (!user) return;
@@ -3072,153 +2749,5 @@ export const AgencyDashboard: React.FC = () => {
       {activeTab === 'brands' && <BrandsView />}
       {activeTab === 'profile' && <AgencyProfile user={user} />}
     </DesktopShell>
-=======
-  return (
-    <div className="flex h-screen bg-[#F8F9FA] overflow-hidden relative">
-      {/* Sidebar Overlay */}
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`fixed md:relative z-50 h-full w-72 bg-white border-r border-slate-100 shadow-xl shadow-slate-200/50 flex flex-col transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
-      >
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-200">
-              <Building2 size={24} />
-            </div>
-            <div>
-              <h1 className="font-extrabold text-xl text-slate-900 tracking-tight leading-none">
-                Mobo<span className="text-purple-600">Ops</span>
-              </h1>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                Agency Portal
-              </p>
-            </div>
-          </div>
-
-          <nav className="space-y-1">
-            <SidebarItem
-              icon={<LayoutDashboard />}
-              label="Dashboard"
-              active={activeTab === 'dashboard'}
-              onClick={() => {
-                setActiveTab('dashboard');
-                setIsSidebarOpen(false);
-              }}
-            />
-            <SidebarItem
-              icon={<Users />}
-              label="My Team"
-              active={activeTab === 'team'}
-              onClick={() => {
-                setActiveTab('team');
-                setIsSidebarOpen(false);
-              }}
-              badge={mediators.filter((m) => m.kycStatus === 'pending').length}
-            />
-            <SidebarItem
-              icon={<Layers />}
-              label="Inventory"
-              active={activeTab === 'inventory'}
-              onClick={() => {
-                setActiveTab('inventory');
-                setIsSidebarOpen(false);
-              }}
-            />
-            <SidebarItem
-              icon={<FileText />}
-              label="Finance"
-              active={activeTab === 'finance'}
-              onClick={() => {
-                setActiveTab('finance');
-                setIsSidebarOpen(false);
-              }}
-            />
-            <SidebarItem
-              icon={<Banknote />}
-              label="Payouts"
-              active={activeTab === 'payouts'}
-              onClick={() => {
-                setActiveTab('payouts');
-                setIsSidebarOpen(false);
-              }}
-            />
-            <SidebarItem
-              icon={<LinkIcon />}
-              label="Connect Brands"
-              active={activeTab === 'brands'}
-              onClick={() => {
-                setActiveTab('brands');
-                setIsSidebarOpen(false);
-              }}
-            />
-          </nav>
-        </div>
-
-        <div className="mt-auto p-6 border-t border-slate-50">
-          <button
-            onClick={() => {
-              setActiveTab('profile');
-              setIsSidebarOpen(false);
-            }}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all mb-2 ${activeTab === 'profile' ? 'bg-slate-50 border border-slate-200' : 'hover:bg-slate-50'}`}
-          >
-            <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
-              {user?.name.charAt(0)}
-            </div>
-            <div className="text-left min-w-0">
-              <p className="text-sm font-bold text-slate-900 truncate">{user?.name}</p>
-              <p className="text-[10px] text-slate-400 font-mono truncate">{user?.mediatorCode}</p>
-            </div>
-          </button>
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 py-3 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-          >
-            <LogOut size={16} /> Sign Out
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-[#FAFAFA] relative scrollbar-hide p-4 md:p-8">
-        <div className="md:hidden flex items-center justify-between mb-6">
-          <h2 className="text-xl font-black text-slate-900">Agency Portal</h2>
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-2 bg-white rounded-xl shadow-sm border border-slate-100"
-          >
-            <Menu size={20} />
-          </button>
-        </div>
-
-        {activeTab === 'dashboard' && <DashboardView stats={stats} allOrders={orders} />}
-        {activeTab === 'team' && (
-          <TeamView mediators={mediators} user={user} onRefresh={fetchData} allOrders={orders} />
-        )}
-        {activeTab === 'inventory' && (
-          <InventoryView
-            campaigns={campaigns}
-            user={user}
-            onRefresh={fetchData}
-            mediators={mediators}
-            allOrders={orders}
-          />
-        )}
-        {activeTab === 'finance' && (
-          <FinanceView allOrders={orders} mediators={mediators} onRefresh={fetchData} />
-        )}
-        {activeTab === 'payouts' && <PayoutsView payouts={payouts} />}
-        {activeTab === 'brands' && <BrandsView />}
-        {activeTab === 'profile' && <AgencyProfile user={user} />}
-      </main>
-    </div>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   );
 };

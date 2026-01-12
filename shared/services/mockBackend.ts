@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-﻿// Mock backend disabled: production uses real API in shared/services/api.ts
-export {};
-=======
 import { User, Product, Order, Campaign, WithdrawalRequest, Invite, Ticket } from '../types';
 import {
   SEED_USERS,
@@ -678,4 +674,3 @@ export const supportAPI = {
     saveTickets(tickets);
   },
 };
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176

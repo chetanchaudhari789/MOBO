@@ -124,11 +124,7 @@ export const verifyProofWithAI = async (
       },
     });
     return JSON.parse(response.text || '{}');
-<<<<<<< HEAD
   } catch {
-=======
-  } catch (error) {
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     return { confidenceScore: 0, discrepancyNote: 'AI Analysis Failed' };
   }
 };

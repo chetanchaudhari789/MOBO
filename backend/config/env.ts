@@ -8,12 +8,8 @@ const envSchema = z.object({
   // When true, seed + E2E flows may bypass external integrations.
   SEED_E2E: z.coerce.boolean().default(false),
 
-<<<<<<< HEAD
   // When true, seed ONLY the admin account on startup (development/test only).
   SEED_ADMIN: z.coerce.boolean().default(false),
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   MONGODB_URI: z.string().min(1),
   MONGODB_DBNAME: z.string().trim().min(1).optional(),
 
@@ -70,17 +66,10 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
       }
       return value;
     }
-<<<<<<< HEAD
     // In dev/test, prefer stability over strength: if a value is provided and isn't a placeholder,
     // use it as-is (even if short) so JWT sessions remain valid across restarts.
     if (value && !looksPlaceholder(value)) return value;
     return crypto.randomBytes(32).toString('hex');
-=======
-    if (!value || value.length < 20 || looksPlaceholder(value)) {
-      return crypto.randomBytes(32).toString('hex');
-    }
-    return value;
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   };
 
   env.JWT_ACCESS_SECRET = ensureSecret('JWT_ACCESS_SECRET', processEnv.JWT_ACCESS_SECRET);

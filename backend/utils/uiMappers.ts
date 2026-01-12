@@ -137,7 +137,6 @@ export function toUiDeal(d: DealDoc & { _id?: any } | any) {
 }
 
 export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
-<<<<<<< HEAD
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
@@ -163,9 +162,6 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     ...(requiresReview && !reviewVerifiedAt ? (['review'] as const) : []),
     ...(requiresRating && !ratingVerifiedAt ? (['rating'] as const) : []),
   ];
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   return {
     id: String(o._id ?? o.id),
     userId: String(o.userId),
@@ -193,7 +189,6 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     settlementRef: (o as any).settlementRef,
     screenshots: o.screenshots ?? {},
     reviewLink: o.reviewLink,
-<<<<<<< HEAD
     verification: {
       orderVerified: !!orderVerifiedAt,
       orderVerifiedAt: orderVerifiedAt ? orderVerifiedAt.toISOString() : undefined,
@@ -207,8 +202,6 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
       missingProofs,
       missingVerifications,
     },
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     managerName: o.managerName,
     agencyName: o.agencyName,
     buyerName: o.buyerName,
@@ -221,7 +214,6 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
   };
 }
 
-<<<<<<< HEAD
 // Brand must never receive buyer PII or raw proof artifacts.
 export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
@@ -312,9 +304,6 @@ export function toUiTicketForBrand(t: TicketDoc & { _id?: any } | any) {
     createdAt: new Date(t.createdAt ?? Date.now()).toISOString(),
   };
 }
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 export function toUiTicket(t: TicketDoc & { _id?: any } | any) {
   return {
     id: String(t._id ?? t.id),

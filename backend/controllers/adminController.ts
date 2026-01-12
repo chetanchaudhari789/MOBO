@@ -11,12 +11,9 @@ import { DealModel } from '../models/Deal.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../services/orderWorkflow.js';
 import { listMediatorCodesForAgency } from '../services/lineage.js';
-<<<<<<< HEAD
 import { SystemConfigModel } from '../models/SystemConfig.js';
 import { updateSystemConfigSchema } from '../validations/systemConfig.js';
 import { publishBroadcast } from '../services/realtimeHub.js';
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 function roleToDb(role: string): string | null {
   const r = role.toLowerCase();
@@ -31,7 +28,6 @@ function roleToDb(role: string): string | null {
 
 export function makeAdminController() {
   return {
-<<<<<<< HEAD
     getSystemConfig: async (_req: Request, res: Response, next: NextFunction) => {
       try {
         const doc = await SystemConfigModel.findOne({ key: 'system' }).lean();
@@ -60,9 +56,6 @@ export function makeAdminController() {
         next(err);
       }
     },
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     getUsers: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const role = typeof req.query.role === 'string' ? req.query.role : 'all';
@@ -175,13 +168,9 @@ export function makeAdminController() {
         const user = await UserModel.findByIdAndUpdate(body.userId, { status: body.status }, { new: true });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
-<<<<<<< HEAD
-        const statusChanged = !!before && before.status !== user.status;
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
+  const statusChanged = !!before && before.status !== user.status;
         const adminUserId = req.auth?.userId;
-        if (adminUserId && before && before.status !== user.status) {
+  if (adminUserId && statusChanged) {
           if (user.status === 'suspended') {
             await SuspensionModel.create({
               targetUserId: user._id,
@@ -201,10 +190,7 @@ export function makeAdminController() {
             if (roles.includes('mediator') && mediatorCode) {
               await DealModel.updateMany({ mediatorCode, deletedAt: null }, { $set: { active: false } });
               await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminUserId });
-<<<<<<< HEAD
               publishBroadcast('deals.changed', { mediatorCode });
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             }
 
             if (roles.includes('agency') && mediatorCode) {
@@ -212,10 +198,7 @@ export function makeAdminController() {
               if (mediatorCodes.length) {
                 await DealModel.updateMany({ mediatorCode: { $in: mediatorCodes }, deletedAt: null }, { $set: { active: false } });
                 await freezeOrders({ query: { managerName: { $in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminUserId });
-<<<<<<< HEAD
                 publishBroadcast('deals.changed', { agencyCode: mediatorCode, mediatorCodes });
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
               }
             }
 
@@ -246,14 +229,11 @@ export function makeAdminController() {
           entityId: String(user._id),
           metadata: { from: before?.status, to: user.status, reason: body.reason },
         });
-<<<<<<< HEAD
 
         if (statusChanged) {
           publishBroadcast('users.changed', { userId: String(user._id), status: user.status });
           publishBroadcast('notifications.changed');
         }
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);

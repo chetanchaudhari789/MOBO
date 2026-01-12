@@ -228,13 +228,9 @@ type ProofPayload = {
   expectedAmount: number;
 };
 
-<<<<<<< HEAD
 type ExtractOrderPayload = {
   imageBase64: string;
 };
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promise<any> {
   const apiKey = requireGeminiKey(env);
   const ai = new GoogleGenAI({ apiKey });
@@ -299,7 +295,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     };
   }
 }
-<<<<<<< HEAD
+
 
 export async function extractOrderDetailsWithAi(
   env: Env,
@@ -379,5 +375,3 @@ export async function extractOrderDetailsWithAi(
     };
   }
 }
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176

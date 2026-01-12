@@ -80,7 +80,6 @@ describe('ai routes', () => {
     expect(bad.status).toBe(400);
     expect(bad.body?.error?.code).toBe('BAD_REQUEST');
   });
-<<<<<<< HEAD
 
   it('validates extract-order payload and returns 503 when Gemini is not configured', async () => {
     const env = loadEnv({
@@ -103,6 +102,4 @@ describe('ai routes', () => {
     expect(res.status).toBe(503);
     expect(res.body?.error?.code).toBe('AI_NOT_CONFIGURED');
   });
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 });

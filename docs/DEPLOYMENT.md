@@ -1,6 +1,5 @@
-# Deployment
+﻿# Deployment
 
-<<<<<<< HEAD
 This doc is the minimal, copy/paste oriented setup.
 
 If you do not have custom domains yet, use: `docs/DEPLOYMENT_RENDER_VERCEL_NO_DOMAIN.md`.
@@ -12,12 +11,6 @@ Before deploying, verify locally from repo root:
 - Run backend tests: `npm run test:backend`
 - Run E2E tests: `npm run test:e2e`
 
-=======
-This doc complements [DEPLOYMENTS.md](../DEPLOYMENTS.md) with a minimal, copy/paste oriented setup.
-
-If you do not have custom domains yet, use: `docs/DEPLOYMENT_RENDER_VERCEL_NO_DOMAIN.md`.
-
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 ## Backend (Render)
 
 Recommended: Render **Web Service** running Node.

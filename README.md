@@ -1,4 +1,4 @@
-# MOBO
+﻿# MOBO
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
@@ -13,7 +13,7 @@ MOBO is a monorepo for a multi-portal commerce + operations system:
 All portals follow one contract:
 
 - The UI calls `/api/*`
-- Each Next app rewrites `/api/*` → `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*`
+- Each Next app rewrites `/api/*` â†’ `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*`
 
 ```mermaid
 graph TD
@@ -54,25 +54,21 @@ erDiagram
 
 ## Repo layout
 
-- `backend/` — Express API, Mongo models, services, seeds, tests
-- `apps/buyer-app/` — Buyer portal (dev port 3001)
-- `apps/mediator-app/` — Mediator portal (dev port 3002)
-- `apps/agency-web/` — Agency portal (dev port 3003)
-- `apps/brand-web/` — Brand portal (dev port 3004)
-- `apps/admin-web/` — Admin portal (dev port 3005)
-- `shared/` — shared utilities/types used by portals
-- `e2e/` — Playwright end-to-end tests
-- `docs/` — architecture + API + deployment docs
+- `backend/` â€” Express API, Mongo models, services, seeds, tests
+- `apps/buyer-app/` â€” Buyer portal (dev port 3001)
+- `apps/mediator-app/` â€” Mediator portal (dev port 3002)
+- `apps/agency-web/` â€” Agency portal (dev port 3003)
+- `apps/brand-web/` â€” Brand portal (dev port 3004)
+- `apps/admin-web/` â€” Admin portal (dev port 3005)
+- `shared/` â€” shared utilities/types used by portals
+- `e2e/` â€” Playwright end-to-end tests
+- `docs/` â€” architecture + API + deployment docs
 
 ## Docs
 
 - `docs/ARCHITECTURE.md`
 - `docs/API.md` (UI contract endpoints)
-<<<<<<< HEAD
 - `docs/DEPLOYMENT.md` (quick) and `docs/DEPLOYMENT_RENDER_VERCEL_NO_DOMAIN.md` (detailed)
-=======
-- `docs/DEPLOYMENT.md` (quick) and `DEPLOYMENTS.md` (detailed)
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 ## Prerequisites
 
@@ -89,7 +85,7 @@ npm install
 
 2. Configure backend env
 
-- Copy `backend/.env.example` → `backend/.env`
+- Copy `backend/.env.example` â†’ `backend/.env`
 
 For local dev, `MONGODB_URI=<REPLACE_ME>` (the example) uses an in-memory MongoDB.
 
@@ -146,7 +142,6 @@ Notes:
 - Playwright starts a safe E2E backend + all portals automatically.
 - E2E uses deterministic seeding and does not require a real MongoDB.
 
-<<<<<<< HEAD
 ## Cleanup
 
 To remove generated artifacts (build outputs, caches, Playwright traces):
@@ -157,8 +152,6 @@ npm run clean
 
 Details and safe deletion criteria: `docs/CLEANUP.md`.
 
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 ## Deployment
 
 - Backend: Render (or any Node host)
@@ -167,11 +160,7 @@ Details and safe deletion criteria: `docs/CLEANUP.md`.
 Start here:
 
 - `docs/DEPLOYMENT.md`
-<<<<<<< HEAD
 - `docs/DEPLOYMENT_RENDER_VERCEL_NO_DOMAIN.md`
-=======
-- `DEPLOYMENTS.md`
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 ## Troubleshooting
 

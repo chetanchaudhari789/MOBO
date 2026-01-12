@@ -1,5 +1,4 @@
 import { defineConfig } from 'vitest/config';
-<<<<<<< HEAD
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,8 +15,6 @@ if (process.platform === 'win32') {
   process.env.TMP = cacheDir;
   process.env.TEMP = cacheDir;
 }
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 export default defineConfig({
   test: {

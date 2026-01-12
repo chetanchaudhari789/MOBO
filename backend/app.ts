@@ -14,11 +14,8 @@ import { aiRoutes } from './routes/aiRoutes.js';
 import { ordersRoutes } from './routes/ordersRoutes.js';
 import { ticketsRoutes } from './routes/ticketsRoutes.js';
 import { brandRoutes } from './routes/brandRoutes.js';
-<<<<<<< HEAD
 import { notificationsRoutes } from './routes/notificationsRoutes.js';
 import { realtimeRoutes } from './routes/realtimeRoutes.js';
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 
 export function createApp(env: Env) {
@@ -26,7 +23,6 @@ export function createApp(env: Env) {
 
   app.disable('x-powered-by');
 
-<<<<<<< HEAD
   // Most deployments (Render/Vercel/NGINX) run behind a reverse proxy.
   // This ensures `req.ip` and rate-limits behave correctly.
   if (env.NODE_ENV === 'production') {
@@ -46,9 +42,6 @@ export function createApp(env: Env) {
       next();
     });
   }
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   app.use(helmet());
 
   app.use(
@@ -70,11 +63,7 @@ export function createApp(env: Env) {
 
   app.use(express.json({ limit: '10mb' }));
 
-<<<<<<< HEAD
   app.use('/api', healthRoutes(env));
-=======
-  app.use('/api', healthRoutes());
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   app.use('/api/auth', authRoutes(env));
   app.use('/api/admin', adminRoutes(env));
   app.use('/api/ops', opsRoutes(env));
@@ -82,11 +71,8 @@ export function createApp(env: Env) {
   app.use('/api', productsRoutes(env));
   app.use('/api', ordersRoutes(env));
   app.use('/api', ticketsRoutes(env));
-<<<<<<< HEAD
   app.use('/api/notifications', notificationsRoutes(env));
   app.use('/api/realtime', realtimeRoutes(env));
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   app.use('/api/ai', aiRoutes(env));
 
   app.use(notFoundHandler);

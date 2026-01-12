@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+﻿import { defineConfig } from '@playwright/test';
 
 // E2E runs against the Next.js portals, which proxy /api/* to the backend.
 // Tests are partitioned by portal so each spec's `page.goto('/')` resolves correctly.
@@ -14,13 +14,8 @@ export default defineConfig({
   },
   // Start the full stack for E2E. If you already have it running, Playwright will reuse it.
   webServer: {
-<<<<<<< HEAD
     command: 'node scripts/dev-all.mjs --force',
     url: 'http://localhost:8080/api/health/e2e',
-=======
-    command: 'npm run dev:all -- --force',
-    url: 'http://localhost:3001',
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     env: {

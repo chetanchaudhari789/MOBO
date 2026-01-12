@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-﻿// Mock data disabled: production uses Mongo-backed API.
-export {};
-=======
 import { User, Product, Order, Campaign, WithdrawalRequest, KycStatus } from '../types';
 
 // --- CONFIGURATION ---
@@ -553,4 +549,3 @@ const {
 export const SEED_WITHDRAWALS: WithdrawalRequest[] = [];
 
 export { SEED_USERS, SEED_CAMPAIGNS, SEED_PRODUCTS, SEED_ORDERS };
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176

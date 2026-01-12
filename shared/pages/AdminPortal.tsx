@@ -1,15 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-<<<<<<< HEAD
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
-=======
-import { api } from '../services/api';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   LayoutGrid,
   Users,
@@ -18,7 +14,6 @@ import {
   DollarSign,
   Settings,
   LogOut,
-<<<<<<< HEAD
   Menu,
   Download,
   Database,
@@ -27,50 +22,15 @@ import {
   XCircle,
   Ban,
   RefreshCw,
-=======
-  Search,
-  Filter,
-  Download,
-  ChevronRight,
-  ArrowUpRight,
-  ArrowDownRight,
-  Database,
-  Activity,
-  ShieldAlert,
-  CreditCard,
-  CheckCircle2,
-  XCircle,
-  MoreVertical,
-  FileText,
-  Ban,
-  Unlock,
-  RefreshCw,
-  Server,
-  Zap,
-  Globe,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   AlertTriangle,
   Key,
   Copy,
   Plus,
-<<<<<<< HEAD
   IndianRupee,
-=======
-  Bell,
-  Briefcase,
-  TrendingUp,
-  IndianRupee,
-  Truck,
-  Calendar,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   Wallet,
   Save,
   Terminal,
   HeadphonesIcon,
-<<<<<<< HEAD
-=======
-  MessageSquare,
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 } from 'lucide-react';
 import {
   AreaChart,
@@ -80,18 +40,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-<<<<<<< HEAD
 } from 'recharts';
 import { User, Order, Product, Invite, Ticket } from '../types';
-=======
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
-import { User, Order, Product, Campaign, Invite, Ticket } from '../types';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 // --- TYPES & CONSTANTS ---
 type ViewMode =
@@ -201,7 +151,6 @@ const StatusBadge = ({ status }: { status: string }) => {
 
 // --- MAIN PAGE ---
 
-<<<<<<< HEAD
 export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack }) => {
   const { user, loginAdmin, logout } = useAuth();
   const { toast } = useToast();
@@ -215,13 +164,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     setIsSidebarOpen(false);
   };
 
-=======
-export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
-  const { user, login, logout } = useAuth();
-  const [view, setView] = useState<ViewMode>('dashboard');
-  const [isLoading, setIsLoading] = useState(false);
-
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   // Data Stores
   const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -235,10 +177,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [adminId, setAdminId] = useState('');
   const [passkey, setPasskey] = useState('');
   const [authError, setAuthError] = useState('');
-<<<<<<< HEAD
   const [isAuthLoading, setIsAuthLoading] = useState(false);
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   // Filters
   const [userRoleFilter, setUserRoleFilter] = useState<string>('All');
@@ -248,7 +187,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   // Settings State
   const [configEmail, setConfigEmail] = useState('admin@mobo.world');
 
-<<<<<<< HEAD
   const fetchSystemConfig = async () => {
     try {
       const cfg = await api.admin.getConfig();
@@ -323,16 +261,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     setIsLoading(true);
     try {
       const results = await Promise.allSettled([
-=======
-  useEffect(() => {
-    if (user?.role === 'admin') fetchAllData();
-  }, [user]);
-
-  const fetchAllData = async () => {
-    setIsLoading(true);
-    try {
-      const [u, o, p, s, g, i, t] = await Promise.all([
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         api.admin.getUsers('all'),
         api.admin.getFinancials(),
         api.admin.getProducts(),
@@ -341,7 +269,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
         api.admin.getInvites(),
         api.tickets.getAll(),
       ]);
-<<<<<<< HEAD
 
       const [u, o, p, s, g, i, t] = results;
 
@@ -365,15 +292,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
 
       if (t.status === 'fulfilled') setTickets(t.value);
       else console.error('Admin Tickets Fetch Error:', t.reason);
-=======
-      setUsers(u);
-      setOrders(o);
-      setProducts(p);
-      setStats(s);
-      setChartData(g);
-      setInvites(i);
-      setTickets(t);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } catch (e) {
       console.error('Admin Data Fetch Error:', e);
     } finally {
@@ -383,7 +301,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-<<<<<<< HEAD
     setAuthError('');
     setIsAuthLoading(true);
     try {
@@ -396,38 +313,23 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
       setAuthError('Invalid Admin Credentials');
     } finally {
       setIsAuthLoading(false);
-=======
-    try {
-      await login(adminId, passkey);
-    } catch (e) {
-      setAuthError('Invalid Admin Credentials');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     }
   };
 
   const handleGenerateInvite = async () => {
-<<<<<<< HEAD
     if (!inviteLabel.trim()) {
       toast.error("Label required (e.g. 'Nike India')");
       return;
     }
-=======
-    if (!inviteLabel.trim()) return alert("Label required (e.g. 'Nike India')");
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     setIsLoading(true);
     try {
       await api.admin.generateInvite(inviteRole, inviteLabel);
       const updated = await api.admin.getInvites();
       setInvites(updated);
       setInviteLabel('');
-<<<<<<< HEAD
       toast.success('Invite generated');
     } catch (e) {
       toast.error(String((e as any)?.message || 'Failed to generate invite'));
-=======
-    } catch (e) {
-      alert('Failed');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsLoading(false);
     }
@@ -445,7 +347,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     setTickets(tickets.map((t) => (t.id === id ? { ...t, status } : t)));
   };
 
-<<<<<<< HEAD
   const handleSaveConfig = async () => {
     setIsLoading(true);
     try {
@@ -457,20 +358,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     } finally {
       setIsLoading(false);
     }
-=======
-  const handleSaveConfig = () => {
-    alert(`System Configuration Saved Successfully!\n\nAdmin Contact Updated: ${configEmail}`);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   };
 
   const handleExport = (reportType: 'orders' | 'finance') => {
     const dataToExport = orders;
     if (!dataToExport || dataToExport.length === 0) {
-<<<<<<< HEAD
       toast.info('No data available to export.');
-=======
-      alert('No data available to export.');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       return;
     }
 
@@ -577,7 +470,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                 <AlertTriangle size={14} /> {authError}
               </div>
             )}
-<<<<<<< HEAD
             <Input
               tone="dark"
               label="Username"
@@ -597,7 +489,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
               type="password"
               value={passkey}
               onChange={(e) => setPasskey(e.target.value)}
-              placeholder="••••••••"
+              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
               leftIcon={<Key size={18} />}
               className="font-mono text-sm"
               autoComplete="current-password"
@@ -615,64 +507,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
           </form>
 
           
-=======
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
-                Admin ID
-              </label>
-              <div className="relative">
-                <Terminal
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
-                  size={18}
-                />
-                <input
-                  type="text"
-                  value={adminId}
-                  onChange={(e) => setAdminId(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-white pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:border-indigo-500 transition-colors font-mono text-sm placeholder:text-slate-600"
-                  placeholder="root"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
-                Security Key
-              </label>
-              <div className="relative">
-                <Key
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
-                  size={18}
-                />
-                <input
-                  type="password"
-                  value={passkey}
-                  onChange={(e) => setPasskey(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-white pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:border-indigo-500 transition-colors font-mono text-sm placeholder:text-slate-600"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
-            <button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-indigo-600/20 active:scale-[0.98] text-sm tracking-wide">
-              Authenticate Session
-            </button>
-          </form>
-
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="w-full mt-6 text-slate-500 text-xs font-bold hover:text-white transition-colors flex items-center justify-center gap-2"
-            >
-              <LogOut size={12} /> Exit Terminal
-            </button>
-          )}
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         </div>
       </div>
     );
   }
 
   return (
-<<<<<<< HEAD
     <DesktopShell
       isSidebarOpen={isSidebarOpen}
       onSidebarOpenChange={setIsSidebarOpen}
@@ -824,114 +664,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
             >
               <RefreshCw size={20} className={isLoading ? 'animate-spin motion-reduce:animate-none' : ''} />
             </IconButton>
-=======
-    <div className="flex h-screen bg-[#F8F9FA] font-sans overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-72 bg-[#0F172A] flex flex-col border-r border-slate-800 z-20 flex-shrink-0">
-        <div className="p-6 pb-2">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
-              <Database size={20} />
-            </div>
-            <div>
-              <h1 className="text-white font-black text-lg tracking-tight">
-                Mobo<span className="text-indigo-500">Admin</span>
-              </h1>
-              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                v3.0.1 Stable
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <p className="px-4 py-2 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">
-              Main
-            </p>
-            <SidebarItem
-              icon={LayoutGrid}
-              label="Overview"
-              active={view === 'dashboard'}
-              onClick={() => setView('dashboard')}
-            />
-            <SidebarItem
-              icon={Users}
-              label="Users"
-              active={view === 'users'}
-              onClick={() => setView('users')}
-              badge={users.length}
-            />
-            <SidebarItem
-              icon={ShoppingCart}
-              label="Orders"
-              active={view === 'orders'}
-              onClick={() => setView('orders')}
-              badge={orders.length}
-            />
-            <SidebarItem
-              icon={Package}
-              label="Inventory"
-              active={view === 'inventory'}
-              onClick={() => setView('inventory')}
-            />
-
-            <p className="px-4 py-2 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mt-6">
-              System
-            </p>
-            <SidebarItem
-              icon={DollarSign}
-              label="Financials"
-              active={view === 'finance'}
-              onClick={() => setView('finance')}
-            />
-            <SidebarItem
-              icon={HeadphonesIcon}
-              label="Support Desk"
-              active={view === 'support'}
-              onClick={() => setView('support')}
-              badge={tickets.filter((t) => t.status === 'Open').length}
-            />
-            <SidebarItem
-              icon={Key}
-              label="Access Codes"
-              active={view === 'invites'}
-              onClick={() => setView('invites')}
-              badge={invites.filter((i) => i.status === 'active').length}
-            />
-            <SidebarItem
-              icon={Settings}
-              label="Settings"
-              active={view === 'settings'}
-              onClick={() => setView('settings')}
-            />
-          </div>
-        </div>
-
-        <div className="mt-auto p-4 border-t border-slate-800">
-          <button
-            onClick={logout}
-            className="w-full py-3 flex items-center justify-center gap-2 text-rose-400 hover:bg-slate-800 rounded-xl transition-colors text-xs font-bold uppercase tracking-wider"
-          >
-            <LogOut size={16} /> Terminate
-          </button>
-        </div>
-      </aside>
-
-      {/* Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        {/* Header */}
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 flex-none z-10 sticky top-0">
-          <h2 className="text-2xl font-black text-slate-900 capitalize tracking-tight">
-            {view.replace('-', ' ')}
-          </h2>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={fetchAllData}
-              aria-label="Refresh data"
-              className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-            >
-              <RefreshCw size={20} className={isLoading ? 'animate-spin motion-reduce:animate-none' : ''} />
-            </button>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             <div className="w-px h-8 bg-slate-200"></div>
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
@@ -955,14 +687,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <StatCard
                     title="Total Revenue"
-                    value={`₹${((stats?.totalRevenue || 0) / 100000).toFixed(2)}L`}
+                    value={`â‚¹${((stats?.totalRevenue || 0) / 100000).toFixed(2)}L`}
                     subtext="Gross Volume"
                     icon={IndianRupee}
                     colorClass="text-emerald-600"
                   />
                   <StatCard
                     title="Pending Clearance"
-                    value={`₹${((stats?.pendingRevenue || 0) / 100000).toFixed(2)}L`}
+                    value={`â‚¹${((stats?.pendingRevenue || 0) / 100000).toFixed(2)}L`}
                     subtext="In Cooling Period"
                     icon={Wallet}
                     colorClass="text-blue-600"
@@ -1020,7 +752,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                             axisLine={false}
                             tickLine={false}
                             tick={{ fontSize: 11, fontWeight: 600, fill: '#94a3b8' }}
-                            tickFormatter={(v) => `₹${v / 1000}k`}
+                            tickFormatter={(v) => `â‚¹${v / 1000}k`}
                           />
                           <Tooltip
                             cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -1052,14 +784,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                       <div className="space-y-4">
                         {['User', 'Mediator', 'Agency', 'Brand'].map((role, i) => {
                           const count = stats?.counts?.[role.toLowerCase()] || 0;
-<<<<<<< HEAD
                           const total = Math.max(0, stats?.counts?.total || 0);
                           const pctRaw = total > 0 ? Math.round((count / total) * 100) : 0;
                           const pct = Math.max(0, Math.min(100, pctRaw));
-=======
-                          const total = stats?.counts?.total || 1;
-                          const pct = Math.round((count / total) * 100);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                           return (
                             <div key={role}>
                               <div className="flex justify-between text-xs font-bold text-slate-600 mb-1">
@@ -1117,12 +844,11 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-<<<<<<< HEAD
                   {isLoading ? (
                     <div className="col-span-full">
                       <EmptyState
                         title="Loading tickets"
-                        description="Syncing the latest support queue…"
+                        description="Syncing the latest support queueâ€¦"
                         icon={<Spinner className="w-6 h-6 text-slate-400" />}
                         className="border-slate-200"
                       />
@@ -1131,14 +857,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                     <div className="col-span-full">
                       <EmptyState
                         title="No tickets"
-                        description="When users raise disputes or issues, they’ll appear here."
+                        description="When users raise disputes or issues, theyâ€™ll appear here."
                         className="border-slate-200"
                       />
-=======
-                  {tickets.length === 0 ? (
-                    <div className="col-span-full py-20 text-center text-slate-400 font-bold text-sm bg-white rounded-[2rem] border border-dashed border-slate-200">
-                      No tickets found.
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     </div>
                   ) : (
                     tickets.map((t) => (
@@ -1260,7 +981,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                             </span>
                           </td>
                           <td className="p-5 font-mono text-slate-700 font-bold">
-                            ₹{(u.walletBalance || 0).toLocaleString()}
+                            â‚¹{(u.walletBalance || 0).toLocaleString()}
                           </td>
                           <td className="p-5">
                             <StatusBadge status={u.status} />
@@ -1359,11 +1080,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                             <button
                               onClick={() => {
                                 navigator.clipboard.writeText(inv.code);
-<<<<<<< HEAD
                                 toast.success('Copied');
-=======
-                                alert('Copied!');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                               }}
                               className="text-slate-400 hover:text-indigo-600 transition-colors"
                             >
@@ -1406,15 +1123,11 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                     <tbody className="divide-y divide-slate-50 text-sm font-medium">
                       {orders.slice(0, 50).map((o) => (
                         <tr key={o.id} className="hover:bg-slate-50/50 transition-colors">
-<<<<<<< HEAD
                           <td className="p-5 font-mono text-slate-500">#{o.id.slice(-6)}</td>
-=======
-                          <td className="p-5 font-mono text-slate-500">#{o.id.slice(-8)}</td>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                           <td className="p-5 text-slate-600">
                             {new Date(o.createdAt).toLocaleDateString()}
                           </td>
-                          <td className="p-5 font-mono text-slate-900 font-bold">₹{o.total}</td>
+                          <td className="p-5 font-mono text-slate-900 font-bold">â‚¹{o.total}</td>
                           <td className="p-5 text-slate-700">{o.buyerName}</td>
                           <td className="p-5 text-right">
                             <StatusBadge
@@ -1466,9 +1179,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                         <td className="p-5 text-slate-500 uppercase text-xs font-bold">
                           {p.category}
                         </td>
-                        <td className="p-5 text-right font-mono text-slate-900">₹{p.price}</td>
+                        <td className="p-5 text-right font-mono text-slate-900">â‚¹{p.price}</td>
                         <td className="p-5 text-right font-mono text-emerald-600">
-                          +₹{p.commission}
+                          +â‚¹{p.commission}
                         </td>
                         <td className="p-5 text-right">
                           <span
@@ -1526,11 +1239,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
             )}
           </div>
         </div>
-<<<<<<< HEAD
     </DesktopShell>
-=======
-      </main>
-    </div>
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   );
 };

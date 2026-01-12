@@ -1,4 +1,4 @@
-# Logs
+﻿# Logs
 logs
 *.log
 npm-debug.log*
@@ -13,10 +13,7 @@ godmode_report_*.md
 godmode_actions_*.log
 
 node_modules
-<<<<<<< HEAD
 .cache
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 dist
 dist-ssr
 .next

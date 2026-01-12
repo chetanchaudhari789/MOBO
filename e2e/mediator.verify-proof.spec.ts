@@ -1,12 +1,8 @@
-import { test, expect } from '@playwright/test';
+﻿import { test, expect } from '@playwright/test';
 
 const BUYER_MOBILE = '9000000005';
 const MEDIATOR_MOBILE = '9000000002';
-<<<<<<< HEAD
 const OPS_USERNAME = 'root';
-=======
-const OPS_MOBILE = 'admin';
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 const BRAND_MOBILE = '9000000003';
 const PASSWORD = 'ChangeMe_123!';
 
@@ -19,17 +15,11 @@ test('mediator can open verification modal for a newly created buyer order', asy
     }
   });
 
-<<<<<<< HEAD
   const login = async (args: { mobile?: string; username?: string }) => {
     const res = await request.post('/api/auth/login', {
       data: args.username
         ? { username: args.username, password: PASSWORD }
         : { mobile: String(args.mobile || ''), password: PASSWORD },
-=======
-  const login = async (mobile: string) => {
-    const res = await request.post('/api/auth/login', {
-      data: { mobile, password: PASSWORD },
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     });
     expect(res.ok()).toBeTruthy();
     const json = await res.json();
@@ -40,15 +30,9 @@ test('mediator can open verification modal for a newly created buyer order', asy
     };
   };
 
-<<<<<<< HEAD
   const buyer = await login({ mobile: BUYER_MOBILE });
   const ops = await login({ username: OPS_USERNAME });
   const brand = await login({ mobile: BRAND_MOBILE });
-=======
-  const buyer = await login(BUYER_MOBILE);
-  const ops = await login(OPS_MOBILE);
-  const brand = await login(BRAND_MOBILE);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` });
 
@@ -137,11 +121,7 @@ test('mediator can open verification modal for a newly created buyer order', asy
   expect(createRes.ok()).toBeTruthy();
 
   // Sanity check: the order should be visible to the mediator as Unchecked.
-<<<<<<< HEAD
   const mediator = await login({ mobile: MEDIATOR_MOBILE });
-=======
-  const mediator = await login(MEDIATOR_MOBILE);
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const mediatorOrdersRes = await request.get('/api/ops/orders?mediatorCode=MED_TEST', {
     headers: authHeaders(mediator.tokens.accessToken),
   });
@@ -158,13 +138,9 @@ test('mediator can open verification modal for a newly created buyer order', asy
   await page.getByPlaceholder('Mobile Number').fill(MEDIATOR_MOBILE);
   await page.getByPlaceholder('Password').fill(PASSWORD);
   await page.getByRole('button', { name: /^Login$/ }).click();
-<<<<<<< HEAD
 
   // Mediator dashboard keeps background polling/realtime, so `networkidle` can be unreliable.
   await expect(page.getByText('MED_TEST', { exact: false }).first()).toBeVisible({ timeout: 15000 });
-=======
-  await page.waitForLoadState('networkidle');
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   // Ensure inbox is loaded and open verification for the buyer
   // Scope to the actual order card (the UI renders many nested divs, and a broad div
@@ -177,11 +153,7 @@ test('mediator can open verification modal for a newly created buyer order', asy
     .first();
   await expect(buyerCard).toBeVisible({ timeout: 15000 });
 
-<<<<<<< HEAD
   await buyerCard.getByRole('button', { name: /Verify Purchase|Review Steps/i }).click();
-=======
-  await buyerCard.getByRole('button', { name: /Verify Proofs/i }).click();
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   await expect(page.getByText('Verification Station', { exact: true })).toBeVisible();
   await expect(page.getByText(expectedExternalOrderId, { exact: true })).toBeVisible();

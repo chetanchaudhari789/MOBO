@@ -6,10 +6,7 @@ import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
 import { writeAuditLog } from '../services/audit.js';
 import { revokeInvite } from '../services/invites.js';
-<<<<<<< HEAD
 import { publishBroadcast } from '../services/realtimeHub.js';
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 export function makeInviteController() {
   return {
@@ -49,11 +46,7 @@ export function makeInviteController() {
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
-<<<<<<< HEAD
         publishBroadcast('invites.changed', { code: invite.code, role: invite.role });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.status(201).json({
           code: invite.code,
           role: invite.role,
@@ -82,11 +75,7 @@ export function makeInviteController() {
           metadata: { code: invite.code, reason: body.reason },
         });
 
-<<<<<<< HEAD
         publishBroadcast('invites.changed', { code: invite.code, status: 'revoked' });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -156,11 +145,7 @@ export function makeInviteController() {
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
-<<<<<<< HEAD
         publishBroadcast('invites.changed', { code: invite.code, role: invite.role });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.status(201).json({ code: invite.code });
       } catch (err) {
         next(err);
@@ -217,11 +202,7 @@ export function makeInviteController() {
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
-<<<<<<< HEAD
         publishBroadcast('invites.changed', { code: invite.code, role: invite.role });
-
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.status(201).json({ code: invite.code });
       } catch (err) {
         next(err);

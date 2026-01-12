@@ -16,12 +16,10 @@ export function adminRoutes(env: Env): Router {
   router.post('/invites', invites.adminCreateInvite);
   router.post('/invites/revoke', invites.adminRevokeInvite);
 
-<<<<<<< HEAD
+
   router.get('/config', admin.getSystemConfig);
   router.patch('/config', admin.updateSystemConfig);
 
-=======
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   router.get('/users', admin.getUsers);
   router.get('/financials', admin.getFinancials);
   router.get('/stats', admin.getStats);

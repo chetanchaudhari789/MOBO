@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { ExternalLink, Star } from 'lucide-react';
 import { Product } from '../types';
 
@@ -10,17 +10,8 @@ interface ProductCardProps {
 type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
 export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) => {
-<<<<<<< HEAD
   const effectiveOriginal =
     product.originalPrice > product.price ? product.originalPrice : product.price * 1.4;
-=======
-  // Logic: Ensure we show a discount even if data is close
-  const effectiveOriginal =
-    product.originalPrice > product.price ? product.originalPrice : product.price * 1.4;
-  const discountPercentage = Math.round(
-    ((effectiveOriginal - product.price) / effectiveOriginal) * 100
-  );
->>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const handleLinkClick = () => {
     if (product.productUrl) {
@@ -70,7 +61,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
 
           <div>
             <p className="text-xl font-extrabold text-lime-600 leading-none">
-              ₹{product.price.toLocaleString()}
+              â‚¹{product.price.toLocaleString()}
             </p>
           </div>
         </div>
@@ -92,7 +83,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
         <div className="pt-2 border-t border-slate-200 border-dashed flex justify-between items-center">
           <span>Original Price:</span>
           <span className="text-slate-900 font-bold decoration-slice line-through">
-            ₹{effectiveOriginal.toLocaleString()}
+            â‚¹{effectiveOriginal.toLocaleString()}
           </span>
         </div>
 
