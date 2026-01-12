@@ -62,7 +62,11 @@ describe('api smoke', () => {
 
     const adminLoginRes = await request(app)
       .post('/api/auth/login')
+<<<<<<< HEAD
       .send({ username: E2E_ACCOUNTS.admin.username, password: E2E_ACCOUNTS.admin.password });
+=======
+      .send({ mobile: E2E_ACCOUNTS.admin.mobile, password: E2E_ACCOUNTS.admin.password });
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     expect(adminLoginRes.status).toBe(200);
 
     const adminToken = adminLoginRes.body.tokens.accessToken as string;

@@ -68,7 +68,11 @@ erDiagram
 
 - `docs/ARCHITECTURE.md`
 - `docs/API.md` (UI contract endpoints)
+<<<<<<< HEAD
 - `docs/DEPLOYMENT.md` (quick) and `docs/DEPLOYMENT_RENDER_VERCEL_NO_DOMAIN.md` (detailed)
+=======
+- `docs/DEPLOYMENT.md` (quick) and `DEPLOYMENTS.md` (detailed)
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 ## Prerequisites
 
@@ -142,6 +146,7 @@ Notes:
 - Playwright starts a safe E2E backend + all portals automatically.
 - E2E uses deterministic seeding and does not require a real MongoDB.
 
+<<<<<<< HEAD
 ## Cleanup
 
 To remove generated artifacts (build outputs, caches, Playwright traces):
@@ -152,6 +157,8 @@ npm run clean
 
 Details and safe deletion criteria: `docs/CLEANUP.md`.
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 ## Deployment
 
 - Backend: Render (or any Node host)
@@ -160,7 +167,11 @@ Details and safe deletion criteria: `docs/CLEANUP.md`.
 Start here:
 
 - `docs/DEPLOYMENT.md`
+<<<<<<< HEAD
 - `docs/DEPLOYMENT_RENDER_VERCEL_NO_DOMAIN.md`
+=======
+- `DEPLOYMENTS.md`
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 ## Troubleshooting
 

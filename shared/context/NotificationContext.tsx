@@ -5,6 +5,7 @@ import React, {
   ReactNode,
   useCallback,
   useEffect,
+<<<<<<< HEAD
   useMemo,
 } from 'react';
 import { AppNotification } from '../types';
@@ -18,16 +19,28 @@ interface NotificationContextType {
   unreadCount: number;
   markAllRead: () => void;
   refresh: () => Promise<void>;
+=======
+} from 'react';
+import { AppNotification } from '../types';
+
+interface NotificationContextType {
+  notifications: AppNotification[];
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   showNotification: (notification: Omit<AppNotification, 'id'>) => void;
   removeNotification: (id: string) => void;
 }
 
+<<<<<<< HEAD
 const STORAGE_LAST_SEEN = 'mobo_v7_notifications_last_seen';
 const STORAGE_DISMISSED = 'mobo_v7_notifications_dismissed';
+=======
+const STORAGE_KEY = 'mobo_v7_notifications';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
 export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+<<<<<<< HEAD
   const { user } = useAuth();
   const { connected } = useRealtimeConnection();
   const [inbox, setInbox] = useState<AppNotification[]>([]);
@@ -163,10 +176,34 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       }
       return next;
     });
+=======
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  // Load from storage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        setNotifications(JSON.parse(stored));
+      } catch (e) {
+        console.error('Failed to load notifications', e);
+      }
+    }
+  }, []);
+
+  // Save to storage on change
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications));
+  }, [notifications]);
+
+  const removeNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   }, []);
 
   const showNotification = useCallback((notification: Omit<AppNotification, 'id'>) => {
     const id = Date.now().toString();
+<<<<<<< HEAD
     const newNotification: AppNotification = {
       ...notification,
       id,
@@ -182,6 +219,16 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     <NotificationContext.Provider
       value={{ notifications, unreadCount, markAllRead, refresh, showNotification, removeNotification }}
     >
+=======
+    const newNotification = { ...notification, id };
+
+    // History/Inbox style
+    setNotifications((prev) => [newNotification, ...prev].slice(0, 30));
+  }, []);
+
+  return (
+    <NotificationContext.Provider value={{ notifications, showNotification, removeNotification }}>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       {children}
     </NotificationContext.Provider>
   );

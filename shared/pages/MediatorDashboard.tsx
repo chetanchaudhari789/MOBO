@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -7,6 +8,12 @@ import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { User, Campaign, Order, Product, Ticket } from '../types';
+=======
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import { User, Campaign, Order, Ticket } from '../types';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   LayoutGrid,
   Tag,
@@ -15,32 +22,62 @@ import {
   ArrowUpRight,
   X,
   Check,
+<<<<<<< HEAD
+=======
+  Eye,
+  Send,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   Copy,
   CheckCircle2,
   ChevronRight,
   Bell,
+<<<<<<< HEAD
   Star,
   CreditCard,
+=======
+  TrendingUp,
+  Link as LinkIcon,
+  Star,
+  CreditCard,
+  Phone,
+  Calendar,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   ShoppingBag,
   FileText,
   ExternalLink,
   ShieldCheck,
+<<<<<<< HEAD
   RefreshCcw,
   ArrowRightLeft,
+=======
+  IndianRupee,
+  History,
+  RefreshCcw,
+  ArrowRightLeft,
+  Filter,
+  Download,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   QrCode,
   User as UserIcon,
   LogOut,
   Save,
   Camera,
+<<<<<<< HEAD
+=======
+  Building,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   CalendarClock,
   AlertTriangle,
   Sparkles,
   Loader2,
 } from 'lucide-react';
 
+<<<<<<< HEAD
 import { EmptyState, Spinner } from '../components/ui';
 import { MobileTabBar } from '../components/MobileTabBar';
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 // --- UTILS ---
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', {
@@ -59,11 +96,16 @@ const urlToBase64 = async (url: string): Promise<string> => {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+<<<<<<< HEAD
   } catch {
+=======
+  } catch (e) {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     return '';
   }
 };
 
+<<<<<<< HEAD
 const formatRelativeTime = (iso?: string) => {
   if (!iso) return '';
   const t = Date.parse(iso);
@@ -87,6 +129,45 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   // Orders can remain UNDER_REVIEW even after purchase verification if review/rating is still pending.
   const { toast } = useToast();
   const actionRequiredOrders = orders.filter((o: Order) => String(o.workflowStatus || '') === 'UNDER_REVIEW');
+=======
+// --- COMPONENTS ---
+
+const TabButton = ({ icon: Icon, label, active, onClick, badge }: any) => (
+  <button
+    onClick={onClick}
+    aria-pressed={!!active}
+    className={`flex flex-col items-center gap-1 min-w-[50px] transition-all duration-300 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CCF381] focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181B] rounded-xl motion-reduce:transition-none motion-reduce:transform-none ${
+      active ? '-translate-y-1' : 'hover:-translate-y-0.5'
+    }`}
+  >
+    <div
+      className={`p-2.5 rounded-[1rem] transition-all relative ${
+        active
+          ? 'bg-[#CCF381] text-black shadow-[0_4px_12px_-4px_rgba(204,243,129,0.6)] scale-105'
+          : 'bg-transparent text-zinc-500 hover:text-zinc-300'
+      }`}
+    >
+      <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+      {badge > 0 && (
+        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full border border-[#18181B]">
+          {badge}
+        </span>
+      )}
+    </div>
+    <span
+      className={`text-[9px] font-bold tracking-wide ${active ? 'text-[#CCF381] opacity-100' : 'text-zinc-500 opacity-0 scale-0 group-hover:opacity-100 group-hover:scale-100'} transition-all duration-300`}
+    >
+      {label}
+    </span>
+  </button>
+);
+
+// --- VIEWS ---
+
+const InboxView = ({ orders, pendingUsers, tickets, onRefresh, onViewProof }: any) => {
+  // Only 'Unchecked' require action. 'Pending_Cooling' are just waiting.
+  const actionRequiredOrders = orders.filter((o: Order) => o.affiliateStatus === 'Unchecked');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const coolingOrders = orders.filter((o: Order) => o.affiliateStatus === 'Pending_Cooling');
 
   // Identify disputed orders
@@ -163,23 +244,31 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                 </div>
                 <div className="flex gap-1">
                   <button
+<<<<<<< HEAD
                     onClick={() =>
                       api.ops
                         .approveUser(u.id)
                         .then(onRefresh)
                         .catch((e: any) => toast.error(String(e?.message || 'Failed to approve user')))
                     }
+=======
+                    onClick={() => api.ops.approveUser(u.id).then(onRefresh)}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center hover:bg-[#CCF381] hover:text-black transition-all shadow-md active:scale-90"
                   >
                     <Check size={14} strokeWidth={3} />
                   </button>
                   <button
+<<<<<<< HEAD
                     onClick={() =>
                       api.ops
                         .rejectUser(u.id)
                         .then(onRefresh)
                         .catch((e: any) => toast.error(String(e?.message || 'Failed to reject user')))
                     }
+=======
+                    onClick={() => api.ops.rejectUser(u.id).then(onRefresh)}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     className="w-8 h-8 rounded-lg bg-zinc-50 text-zinc-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all active:scale-90"
                   >
                     <X size={14} strokeWidth={3} />
@@ -209,6 +298,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
         </div>
 
         {(viewMode === 'todo' ? actionRequiredOrders : coolingOrders).length === 0 ? (
+<<<<<<< HEAD
           loading ? (
             <EmptyState
               title="Loading orders…"
@@ -232,6 +322,20 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
               }
             />
           )
+=======
+          <div className="flex flex-col items-center justify-center py-12 bg-white rounded-[1.5rem] border border-dashed border-zinc-200">
+            <div className="w-14 h-14 bg-zinc-50 rounded-full flex items-center justify-center mb-3 shadow-inner">
+              {viewMode === 'todo' ? (
+                <CheckCircle2 size={24} className="text-zinc-300" />
+              ) : (
+                <CalendarClock size={24} className="text-zinc-300" />
+              )}
+            </div>
+            <p className="text-zinc-400 font-bold text-xs">
+              {viewMode === 'todo' ? 'No orders to verify.' : 'No orders in cooling.'}
+            </p>
+          </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         ) : (
           <div className="space-y-3">
             {(viewMode === 'todo' ? actionRequiredOrders : coolingOrders).map((o: Order) => {
@@ -240,6 +344,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                 ? new Date(o.expectedSettlementDate).toDateString()
                 : 'N/A';
               const isDisputed = disputedOrderIds.has(o.id);
+<<<<<<< HEAD
               const purchaseVerified = !!o.verification?.orderVerified;
               const missingProofs = o.requirements?.missingProofs ?? [];
               const missingVerifications = o.requirements?.missingVerifications ?? [];
@@ -252,6 +357,8 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                     : missingVerifications.length > 0
                       ? `Awaiting approval: ${missingVerifications.join(' + ')}`
                       : 'Ready';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
               return (
                 <div
@@ -281,11 +388,14 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                           {dealType === 'Discount' ? 'Purchase' : dealType}
                         </span>
                       </div>
+<<<<<<< HEAD
                       {viewMode === 'todo' && (
                         <div className="mt-1 text-[10px] font-bold text-zinc-500">
                           {stepLabel}
                         </div>
                       )}
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                       <div className="mt-1 flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-[11px]">
                           <span className="font-semibold text-zinc-400">Buyer:</span>
@@ -319,7 +429,11 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                           </>
                         ) : (
                           <>
+<<<<<<< HEAD
                             <ShieldCheck size={16} /> {purchaseVerified ? 'Review Steps' : 'Verify Purchase'}
+=======
+                            <ShieldCheck size={16} /> Verify Proofs
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                           </>
                         )}
                       </button>
@@ -342,6 +456,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   );
 };
 
+<<<<<<< HEAD
 const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, onPublish }: any) => {
   const dealByCampaignId = useMemo(() => {
     const m = new Map<string, Product>();
@@ -357,12 +472,16 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
 
   const [mode, setMode] = useState<'published' | 'unpublished'>('published');
 
+=======
+const MarketView = ({ campaigns, user, onRefresh, onPublish }: any) => {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   return (
     <div className="space-y-5 animate-enter pb-28">
       <div className="bg-[#18181B] p-5 rounded-[1.5rem] shadow-xl text-white relative overflow-hidden">
         <div className="absolute top-[-50%] right-[-10%] w-40 h-40 bg-[#CCF381] rounded-full blur-[60px] opacity-20 animate-pulse"></div>
         <div className="relative z-10">
           <h2 className="text-xl font-black mb-1 tracking-tight">Inventory Deck</h2>
+<<<<<<< HEAD
           <p className="text-zinc-400 text-xs font-medium">
             Published deals are separated from unpublished inventory.
           </p>
@@ -548,19 +667,80 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
           </div>
         </div>
       )}
+=======
+          <p className="text-zinc-400 text-xs font-medium">Select a campaign to publish a deal.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        {campaigns.length === 0 ? (
+          <div className="text-center py-16">
+            <Tag size={32} className="mx-auto text-zinc-200 mb-3" />
+            <p className="text-zinc-400 text-sm font-bold">No Inventory Assigned</p>
+          </div>
+        ) : (
+          campaigns.map((c: Campaign) => (
+            <div
+              key={c.id}
+              className="bg-white p-4 rounded-[1.5rem] border border-zinc-100 shadow-sm flex flex-col relative overflow-hidden hover:shadow-lg transition-all duration-300"
+            >
+              <div className="flex gap-4 mb-4">
+                <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
+                  <img src={c.image} className="w-full h-full object-contain mix-blend-multiply" />
+                </div>
+                <div className="flex-1 min-w-0 py-0.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest border border-zinc-100 px-1.5 py-0.5 rounded-md">
+                      {c.platform}
+                    </span>
+                    <span className="bg-[#CCF381]/20 text-[#5f7a28] text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide">
+                      {c.assignments[user.mediatorCode!] || 0} Slots
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-zinc-900 text-base leading-tight line-clamp-1 mb-2">
+                    {c.title}
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                      Cost
+                    </p>
+                    <p className="text-sm font-black text-zinc-900">{formatCurrency(c.price)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => onPublish(c)}
+                className="w-full py-3 bg-[#18181B] text-white rounded-[1rem] font-bold text-xs hover:bg-[#CCF381] hover:text-black transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <ArrowUpRight size={14} strokeWidth={2.5} /> Configure & Publish
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     </div>
   );
 };
 
+<<<<<<< HEAD
 const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders, onRefresh: _onRefresh, onSelectUser }: any) => {
   const { toast } = useToast();
+=======
+const SquadView = ({ user, pendingUsers, verifiedUsers, orders, onRefresh, onSelectUser }: any) => {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   return (
     <div className="space-y-5 animate-enter pb-28">
       <div
         className="bg-[#4F46E5] p-5 rounded-[1.5rem] shadow-xl shadow-indigo-500/20 text-white relative overflow-hidden group active:scale-[0.98] transition-transform cursor-pointer"
         onClick={() => {
           navigator.clipboard.writeText(user.mediatorCode!);
+<<<<<<< HEAD
           toast.success('Code copied');
+=======
+          alert('Code Copied!');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         }}
       >
         <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white rounded-full blur-[60px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
@@ -595,6 +775,7 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
           <h3 className="font-bold text-base text-zinc-900 tracking-tight">Active Roster</h3>
         </div>
         <div className="bg-white rounded-[1.5rem] border border-zinc-100 shadow-sm overflow-hidden min-h-[160px]">
+<<<<<<< HEAD
           {loading ? (
             <div className="p-4">
               <EmptyState
@@ -612,6 +793,12 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
                 icon={<Users size={22} className="text-zinc-400" />}
                 className="bg-transparent border-0 py-10"
               />
+=======
+          {verifiedUsers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full py-8">
+              <Users size={24} className="text-zinc-200 mb-2" />
+              <p className="text-zinc-400 font-bold text-xs">No active buyers yet.</p>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             </div>
           ) : (
             <div className="divide-y divide-zinc-50">
@@ -653,13 +840,20 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
 
 const MediatorProfileView = () => {
   const { user, updateUser, logout } = useAuth();
+<<<<<<< HEAD
   const { toast } = useToast();
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(user?.name || '');
   const [mobile, setMobile] = useState(user?.mobile || '');
   const [upiId, setUpiId] = useState(user?.upiId || '');
+<<<<<<< HEAD
   const [bankDetails] = useState({
+=======
+  const [bankDetails, setBankDetails] = useState({
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     accountNumber: user?.bankDetails?.accountNumber || '',
     ifsc: user?.bankDetails?.ifsc || '',
     bankName: user?.bankDetails?.bankName || '',
@@ -682,9 +876,15 @@ const MediatorProfileView = () => {
         qrCode,
       });
       setIsEditing(false);
+<<<<<<< HEAD
       toast.success('Profile updated');
     } catch (e) {
       toast.error(String((e as any)?.message || 'Update failed'));
+=======
+      alert('Profile Updated Successfully!');
+    } catch (e) {
+      alert('Update Failed');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setLoading(false);
     }
@@ -767,11 +967,16 @@ const MediatorProfileView = () => {
             <input
               type="tel"
               disabled={!isEditing}
+<<<<<<< HEAD
               inputMode="numeric"
               maxLength={10}
               pattern="[0-9]{10}"
               value={mobile}
               onChange={(e) => setMobile(normalizeMobileTo10Digits(e.target.value))}
+=======
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
               className="w-full p-3 bg-zinc-50 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-lime-400 disabled:opacity-70 disabled:bg-transparent disabled:border disabled:border-zinc-100"
             />
           </div>
@@ -852,8 +1057,12 @@ const MediatorProfileView = () => {
   );
 };
 
+<<<<<<< HEAD
 const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
   const { toast } = useToast();
+=======
+const LedgerModal = ({ buyer, orders, onClose, onRefresh }: any) => {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [viewMode, setViewMode] = useState<'pending' | 'settled'>('pending');
   const [settleId, setSettleId] = useState<string | null>(null);
   const [utr, setUtr] = useState('');
@@ -878,18 +1087,30 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
       onRefresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to settle';
+<<<<<<< HEAD
       toast.error(msg);
+=======
+      alert(msg);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     }
   };
 
   const handleRevert = async (orderId: string) => {
     if (confirm('Undo settlement?')) {
       try {
+<<<<<<< HEAD
         await api.ops.unsettleOrderPayment(orderId);
         onRefresh();
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to revert settlement';
         toast.error(msg);
+=======
+        await api.ops.verifyOrderClaim(orderId);
+        onRefresh();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to undo';
+        alert(msg);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       }
     }
   };
@@ -970,7 +1191,11 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(buyer.upiId || '');
+<<<<<<< HEAD
                   toast.success('Copied');
+=======
+                  alert('Copied');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 }}
                 className="p-2 hover:bg-zinc-50 rounded-lg text-zinc-400 hover:text-zinc-900 transition-colors"
               >
@@ -998,6 +1223,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
 
           <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-3 scrollbar-hide">
             {(viewMode === 'pending' ? pendingOrders : settledOrders).length === 0 ? (
+<<<<<<< HEAD
               loading ? (
                 <EmptyState
                   title="Loading settlements…"
@@ -1019,6 +1245,14 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                   className="bg-transparent border-zinc-200/60"
                 />
               )
+=======
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <FileText size={24} className="text-zinc-300" />
+                </div>
+                <p className="text-zinc-400 font-bold text-xs">No records found.</p>
+              </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             ) : (
               (viewMode === 'pending' ? pendingOrders : settledOrders).map((o: any) => (
                 <div
@@ -1147,6 +1381,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
 // --- MAIN LAYOUT ---
 
 export const MediatorDashboard: React.FC = () => {
+<<<<<<< HEAD
   const { user } = useAuth();
   const { toast } = useToast();
   const { connected } = useRealtimeConnection();
@@ -1157,12 +1392,18 @@ export const MediatorDashboard: React.FC = () => {
     removeNotification,
     refresh: refreshNotifications,
   } = useNotification();
+=======
+  const { user, logout } = useAuth();
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [activeTab, setActiveTab] = useState<'inbox' | 'market' | 'squad' | 'profile'>('inbox');
   const [showNotifications, setShowNotifications] = useState(false);
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+<<<<<<< HEAD
   const [deals, setDeals] = useState<Product[]>([]);
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [pendingUsers, setPendingUsers] = useState<User[]>([]);
   const [verifiedUsers, setVerifiedUsers] = useState<User[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -1182,26 +1423,38 @@ export const MediatorDashboard: React.FC = () => {
     loadData();
   }, [user, selectedBuyer]);
 
+<<<<<<< HEAD
   useEffect(() => {
     if (!showNotifications) return;
     refreshNotifications();
   }, [showNotifications, refreshNotifications]);
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const loadData = async () => {
     if (!user) return;
     setLoading(true);
     try {
+<<<<<<< HEAD
       const [ords, camps, publishedDeals, pend, ver, tix] = await Promise.all([
         api.ops.getMediatorOrders(user.mediatorCode || ''),
         api.ops.getCampaigns(user.mediatorCode || ''),
         api.ops.getDeals(user.mediatorCode || ''),
+=======
+      const [ords, camps, pend, ver, tix] = await Promise.all([
+        api.ops.getMediatorOrders(user.mediatorCode || ''),
+        api.ops.getCampaigns(user.mediatorCode || ''),
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         api.ops.getPendingUsers(user.mediatorCode || ''),
         api.ops.getVerifiedUsers(user.mediatorCode || ''),
         api.tickets.getAll(),
       ]);
       setOrders(ords);
       setCampaigns(camps);
+<<<<<<< HEAD
       setDeals(publishedDeals);
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       setPendingUsers(pend);
       setVerifiedUsers(ver);
       setTickets(tix);
@@ -1212,6 +1465,7 @@ export const MediatorDashboard: React.FC = () => {
     }
   };
 
+<<<<<<< HEAD
   // Realtime: refresh queue/dashboard when backend state changes.
   useEffect(() => {
     if (!user) return;
@@ -1241,12 +1495,18 @@ export const MediatorDashboard: React.FC = () => {
     };
   }, [user, showNotifications, refreshNotifications]);
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const handlePublish = async () => {
     if (!dealBuilder || !commission || !user?.mediatorCode) return;
     await api.ops.publishDeal(dealBuilder.id, parseInt(commission), user.mediatorCode);
     setDealBuilder(null);
     setCommission('');
+<<<<<<< HEAD
     toast.success('Deal published');
+=======
+    alert('Deal Published!');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     loadData();
   };
 
@@ -1265,7 +1525,11 @@ export const MediatorDashboard: React.FC = () => {
       setAiAnalysis(result);
     } catch (e) {
       console.error(e);
+<<<<<<< HEAD
       toast.error('Analysis failed. Try again.');
+=======
+      alert('Analysis failed. Try again.');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsAnalyzing(false);
     }
@@ -1278,7 +1542,46 @@ export const MediatorDashboard: React.FC = () => {
     }
   }, [proofModal]);
 
+<<<<<<< HEAD
   const hasNotifications = unreadCount > 0;
+=======
+  const pendingOrdersCount = orders.filter((o: Order) => o.affiliateStatus === 'Unchecked').length;
+  const hasNotifications = pendingUsers.length > 0 || pendingOrdersCount > 0;
+
+  const notifications = [
+    ...(pendingUsers.length > 0
+      ? [
+          {
+            id: 'users',
+            title: 'New Joiners',
+            message: `${pendingUsers.length} buyers waiting for approval`,
+            time: 'Action Required',
+            type: 'alert',
+            action: () => setActiveTab('inbox'),
+          },
+        ]
+      : []),
+    ...(pendingOrdersCount > 0
+      ? [
+          {
+            id: 'orders',
+            title: 'Order Verification',
+            message: `${pendingOrdersCount} orders need verification`,
+            time: 'Action Required',
+            type: 'alert',
+            action: () => setActiveTab('inbox'),
+          },
+        ]
+      : []),
+    {
+      id: 'system',
+      title: 'System Update',
+      message: 'Campaign inventory refreshed for the week.',
+      time: '2h ago',
+      type: 'info',
+    },
+  ];
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   return (
     <div className="flex flex-col h-full bg-[#FAFAFA] font-sans relative overflow-hidden text-zinc-900 select-none">
@@ -1292,6 +1595,7 @@ export const MediatorDashboard: React.FC = () => {
             <h1 className="text-lg font-black text-[#18181B] leading-none tracking-tight">
               {user?.name}
             </h1>
+<<<<<<< HEAD
             <div className="mt-1 flex items-center gap-2">
               <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1">
                 <span className="w-1.5 h-1.5 bg-[#CCF381] rounded-full animate-pulse shadow-[0_0_6px_#CCF381]"></span>{' '}
@@ -1319,6 +1623,12 @@ export const MediatorDashboard: React.FC = () => {
                 ) : null}
               </span>
             </div>
+=======
+            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-1 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-[#CCF381] rounded-full animate-pulse shadow-[0_0_6px_#CCF381]"></span>{' '}
+              {user?.mediatorCode}
+            </p>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           </div>
         </div>
 
@@ -1340,6 +1650,7 @@ export const MediatorDashboard: React.FC = () => {
                 onClick={() => setShowNotifications(false)}
               ></div>
               <div className="absolute right-0 top-12 w-72 bg-white rounded-[1.5rem] shadow-2xl border border-zinc-100 p-4 z-50 animate-enter origin-top-right">
+<<<<<<< HEAD
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="font-black text-sm text-zinc-900">Notifications</h3>
                   <div className="flex items-center gap-2">
@@ -1361,10 +1672,24 @@ export const MediatorDashboard: React.FC = () => {
                 </div>
                 <div className="space-y-2 max-h-[250px] overflow-y-auto scrollbar-hide">
                   {inboxNotifications.length === 0 && (
+=======
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-black text-sm text-zinc-900">Notifications</h3>
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    className="p-1 bg-zinc-50 rounded-full hover:bg-zinc-100"
+                  >
+                    <X size={14} className="text-zinc-400" />
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-[250px] overflow-y-auto scrollbar-hide">
+                  {notifications.length === 0 && (
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     <div className="text-center py-6">
                       <p className="text-zinc-300 font-bold text-xs">All caught up!</p>
                     </div>
                   )}
+<<<<<<< HEAD
                   {inboxNotifications.map((n: any) => (
                     <div
                       key={n.id}
@@ -1373,11 +1698,19 @@ export const MediatorDashboard: React.FC = () => {
                         if (id.startsWith('pending-users:') || id.startsWith('pending-orders:')) {
                           setActiveTab('inbox');
                         }
+=======
+                  {notifications.map((n: any) => (
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        if (n.action) n.action();
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                         setShowNotifications(false);
                       }}
                       className="p-3 bg-zinc-50 rounded-[1rem] hover:bg-zinc-100 transition-colors cursor-pointer flex gap-3 items-start relative overflow-hidden group"
                     >
                       <div
+<<<<<<< HEAD
                         className={`w-1.5 h-full absolute left-0 top-0 bottom-0 ${n.type === 'alert' ? 'bg-red-500' : n.type === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`}
                       ></div>
                       <div className="flex-1 pl-1">
@@ -1405,6 +1738,16 @@ export const MediatorDashboard: React.FC = () => {
                         </div>
                         <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wide mt-1">
                           {n.read ? 'Read' : 'New'}{n.createdAt ? ` • ${formatRelativeTime(n.createdAt)}` : ''}
+=======
+                        className={`w-1.5 h-full absolute left-0 top-0 bottom-0 ${n.type === 'alert' ? 'bg-red-500' : 'bg-blue-500'}`}
+                      ></div>
+                      <div className="flex-1 pl-1">
+                        <p className="text-xs font-bold text-zinc-900 leading-tight mb-0.5">
+                          {n.message}
+                        </p>
+                        <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wide">
+                          {n.time}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                         </p>
                       </div>
                     </div>
@@ -1422,7 +1765,10 @@ export const MediatorDashboard: React.FC = () => {
             orders={orders}
             pendingUsers={pendingUsers}
             tickets={tickets}
+<<<<<<< HEAD
             loading={loading}
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             onRefresh={loadData}
             onViewProof={(order: Order) => {
               setProofModal(order);
@@ -1433,8 +1779,11 @@ export const MediatorDashboard: React.FC = () => {
         {activeTab === 'market' && (
           <MarketView
             campaigns={campaigns}
+<<<<<<< HEAD
             deals={deals}
             loading={loading}
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             user={user}
             onRefresh={loadData}
             onPublish={setDealBuilder}
@@ -1446,7 +1795,10 @@ export const MediatorDashboard: React.FC = () => {
             pendingUsers={pendingUsers}
             verifiedUsers={verifiedUsers}
             orders={orders}
+<<<<<<< HEAD
             loading={loading}
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             onRefresh={loadData}
             onSelectUser={setSelectedBuyer}
           />
@@ -1455,6 +1807,7 @@ export const MediatorDashboard: React.FC = () => {
       </div>
 
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-[260px]">
+<<<<<<< HEAD
         <MobileTabBar
           items={[
             {
@@ -1488,6 +1841,34 @@ export const MediatorDashboard: React.FC = () => {
           variant="dark"
           showLabels
         />
+=======
+        <div className="bg-[#18181B] backdrop-blur-xl border border-white/5 px-5 py-2.5 rounded-[2rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.5)] flex items-center justify-between">
+          <TabButton
+            icon={LayoutGrid}
+            label="Home"
+            active={activeTab === 'inbox'}
+            onClick={() => setActiveTab('inbox')}
+          />
+          <TabButton
+            icon={Tag}
+            label="Market"
+            active={activeTab === 'market'}
+            onClick={() => setActiveTab('market')}
+          />
+          <TabButton
+            icon={Users}
+            label="Squad"
+            active={activeTab === 'squad'}
+            onClick={() => setActiveTab('squad')}
+          />
+          <TabButton
+            icon={UserIcon}
+            label="Profile"
+            active={activeTab === 'profile'}
+            onClick={() => setActiveTab('profile')}
+          />
+        </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       </div>
 
       {/* VERIFICATION MODAL */}
@@ -1577,6 +1958,7 @@ export const MediatorDashboard: React.FC = () => {
 
                     {aiAnalysis && (
                       <div className="space-y-3 animate-fade-in">
+<<<<<<< HEAD
                         {(() => {
                           const n = Number(aiAnalysis.confidenceScore);
                           const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
@@ -1631,6 +2013,56 @@ export const MediatorDashboard: React.FC = () => {
                             </>
                           );
                         })()}
+=======
+                        <div className="flex gap-2">
+                          <div
+                            className={`flex-1 p-2 rounded-lg border ${aiAnalysis.orderIdMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
+                          >
+                            <p
+                              className={`text-[9px] font-bold uppercase ${aiAnalysis.orderIdMatch ? 'text-green-400' : 'text-red-400'}`}
+                            >
+                              Order ID
+                            </p>
+                            <p className="text-xs font-bold text-white">
+                              {aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}
+                            </p>
+                          </div>
+                          <div
+                            className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
+                          >
+                            <p
+                              className={`text-[9px] font-bold uppercase ${aiAnalysis.amountMatch ? 'text-green-400' : 'text-red-400'}`}
+                            >
+                              Amount
+                            </p>
+                            <p className="text-xs font-bold text-white">
+                              {aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="bg-black/30 p-2 rounded-lg">
+                          <p className="text-[10px] text-zinc-400 leading-relaxed">
+                            {aiAnalysis.discrepancyNote ||
+                              'Verified. Details match expected values.'}
+                          </p>
+                        </div>
+                        <div className="flex justify-between items-center pt-1">
+                          <span className="text-[9px] text-indigo-300 font-bold uppercase">
+                            Confidence Score
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${aiAnalysis.confidenceScore > 80 ? 'bg-green-500' : aiAnalysis.confidenceScore > 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                style={{ width: `${aiAnalysis.confidenceScore}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs font-bold text-white">
+                              {aiAnalysis.confidenceScore}%
+                            </span>
+                          </div>
+                        </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                       </div>
                     )}
                   </div>
@@ -1698,6 +2130,7 @@ export const MediatorDashboard: React.FC = () => {
             >
               Later
             </button>
+<<<<<<< HEAD
             {!proofModal?.verification?.orderVerified ? (
               <button
                 onClick={async () => {
@@ -1829,6 +2262,17 @@ export const MediatorDashboard: React.FC = () => {
                 )}
               </>
             )}
+=======
+            <button
+              onClick={() => {
+                api.ops.verifyOrderClaim(proofModal.id).then(loadData);
+                setProofModal(null);
+              }}
+              className="flex-[2] py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 size={18} strokeWidth={3} /> Verify Only
+            </button>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           </div>
         </div>
       )}
@@ -1911,7 +2355,10 @@ export const MediatorDashboard: React.FC = () => {
         <LedgerModal
           buyer={selectedBuyer}
           orders={orders.filter((o) => o.userId === selectedBuyer.id)}
+<<<<<<< HEAD
           loading={loading}
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           onClose={() => setSelectedBuyer(null)}
           onRefresh={loadData}
         />

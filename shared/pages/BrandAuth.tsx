@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+<<<<<<< HEAD
 import { Button, Input, Spinner } from '../components/ui';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   Building2,
   ArrowRight,
@@ -11,6 +14,7 @@ import {
   LayoutDashboard,
   Globe,
   Zap,
+<<<<<<< HEAD
   ChevronLeft,
 } from 'lucide-react';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
@@ -20,6 +24,15 @@ interface BrandAuthProps {
 }
 
 export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
+=======
+} from 'lucide-react';
+
+interface BrandAuthProps {
+  onBack: () => void;
+}
+
+export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack: _onBack }) => {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [view, setView] = useState<'splash' | 'login' | 'register'>('splash');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -30,13 +43,18 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
   const [password, setPassword] = useState('');
   const [brandCode, setBrandCode] = useState('');
 
+<<<<<<< HEAD
   const { login, registerBrand, logout } = useAuth();
+=======
+  const { login, registerBrand } = useAuth();
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
     try {
+<<<<<<< HEAD
       const u = await login(mobile, password);
       if (u?.role !== 'brand') {
         logout();
@@ -44,6 +62,9 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
         setIsLoading(false);
         return;
       }
+=======
+      await login(mobile, password);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } catch (err: any) {
       setError(err.message || 'Login failed');
       setIsLoading(false);
@@ -78,6 +99,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
 
         {/* Content Container */}
         <div className="relative z-10 flex flex-col items-center justify-center w-full h-full p-8">
+<<<<<<< HEAD
           {onBack && (
             <button
               onClick={onBack}
@@ -87,6 +109,8 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
             </button>
           )}
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           <div className="w-24 h-24 bg-gradient-to-tr from-lime-300 to-lime-500 rounded-3xl flex items-center justify-center shadow-2xl shadow-lime-400/20 mb-10 rotate-3 border-t border-white/20">
             <Building2 size={40} className="text-black" />
           </div>
@@ -189,6 +213,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
             )}
 
             {view === 'register' && (
+<<<<<<< HEAD
               <Input
                 label="Organization Name"
                 placeholder="e.g. Nike India"
@@ -257,6 +282,108 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
             >
               {view === 'login' ? 'Login to Portal' : 'Activate License'}
             </Button>
+=======
+              <div className="group">
+                <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-1.5 block">
+                  Organization Name
+                </label>
+                <div className="relative">
+                  <UserIcon
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
+                    size={18}
+                  />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-lime-400 focus:bg-white transition-all"
+                    placeholder="e.g. Nike India"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="group">
+              <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-1.5 block">
+                Mobile Access ID
+              </label>
+              <div className="relative">
+                <Phone
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
+                  size={18}
+                />
+                <input
+                  type="tel"
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-lime-400 focus:bg-white transition-all"
+                  placeholder="9000000000"
+                />
+              </div>
+            </div>
+
+            <div className="group">
+              <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-1.5 block">
+                Password
+              </label>
+              <div className="relative">
+                <Lock
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
+                  size={18}
+                />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-lime-400 focus:bg-white transition-all"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            {view === 'register' && (
+              <div className="group pt-2">
+                <div className="bg-zinc-900 p-5 rounded-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-20 h-20 bg-lime-500/20 rounded-full -mr-6 -mt-6 blur-xl"></div>
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-2">
+                    Unique Brand Code
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <LayoutDashboard size={20} className="text-lime-400" />
+                    <input
+                      type="text"
+                      placeholder="BRD-XXXX"
+                      value={brandCode}
+                      onChange={(e) => setBrandCode(e.target.value.toUpperCase())}
+                      className="bg-transparent w-full outline-none font-mono text-xl font-bold text-white placeholder:text-zinc-700 tracking-widest uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-black text-white h-14 rounded-xl font-bold text-sm mt-6 shadow-xl hover:bg-lime-400 hover:text-black transition-all active:scale-[0.98] flex justify-center items-center gap-2 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            >
+              {isLoading ? (
+                <span className="animate-spin motion-reduce:animate-none w-5 h-5 border-2 border-current border-t-transparent rounded-full"></span>
+              ) : view === 'login' ? (
+                <>
+                  Login to Portal{' '}
+                  <ArrowRight
+                    size={16}
+                    className="group-hover:translate-x-1 transition-transform"
+                  />
+                </>
+              ) : (
+                <>
+                  Activate License <CheckCircle size={16} />
+                </>
+              )}
+            </button>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           </form>
 
           <p className="text-center mt-6 text-xs text-zinc-400 font-medium">

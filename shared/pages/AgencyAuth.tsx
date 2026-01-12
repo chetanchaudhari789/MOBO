@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+<<<<<<< HEAD
 import { Button, Input, Spinner } from '../components/ui';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   Building2,
   ArrowRight,
@@ -30,13 +33,18 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
   const [password, setPassword] = useState('');
   const [adminCode, setAdminCode] = useState('');
 
+<<<<<<< HEAD
   const { login, registerOps, logout } = useAuth();
+=======
+  const { login, registerOps } = useAuth();
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
     try {
+<<<<<<< HEAD
       const u = await login(mobile, password);
       if (u?.role !== 'agency') {
         logout();
@@ -44,6 +52,9 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
         setIsLoading(false);
         return;
       }
+=======
+      await login(mobile, password);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } catch (err: any) {
       setError(err.message || 'Login failed');
       setIsLoading(false);
@@ -189,6 +200,7 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
             )}
 
             {view === 'register' && (
+<<<<<<< HEAD
               <Input
                 label="Agency Name"
                 placeholder="e.g. Alpha Growth"
@@ -256,6 +268,108 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
             >
               {view === 'login' ? 'Login to Ops' : 'Initialize Agency'}
             </Button>
+=======
+              <div className="group">
+                <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-1.5 block">
+                  Agency Name
+                </label>
+                <div className="relative">
+                  <UserIcon
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
+                    size={18}
+                  />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all"
+                    placeholder="e.g. Alpha Growth"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="group">
+              <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-1.5 block">
+                Mobile Access ID
+              </label>
+              <div className="relative">
+                <Phone
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
+                  size={18}
+                />
+                <input
+                  type="tel"
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all"
+                  placeholder="9000000000"
+                />
+              </div>
+            </div>
+
+            <div className="group">
+              <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-1.5 block">
+                Password
+              </label>
+              <div className="relative">
+                <Lock
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
+                  size={18}
+                />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            {view === 'register' && (
+              <div className="group pt-2">
+                <div className="bg-zinc-900 p-5 rounded-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-20 h-20 bg-purple-500/20 rounded-full -mr-6 -mt-6 blur-xl"></div>
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-2">
+                    Admin Invite Code
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <ShieldCheck size={20} className="text-purple-400" />
+                    <input
+                      type="text"
+                      placeholder="ADMIN-XXXX"
+                      value={adminCode}
+                      onChange={(e) => setAdminCode(e.target.value.toUpperCase())}
+                      className="bg-transparent w-full outline-none font-mono text-xl font-bold text-white placeholder:text-zinc-700 tracking-widest uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-black text-white h-14 rounded-xl font-bold text-sm mt-6 shadow-xl hover:bg-purple-600 hover:text-white transition-all active:scale-[0.98] flex justify-center items-center gap-2 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            >
+              {isLoading ? (
+                <span className="animate-spin motion-reduce:animate-none w-5 h-5 border-2 border-current border-t-transparent rounded-full"></span>
+              ) : view === 'login' ? (
+                <>
+                  Login to Ops{' '}
+                  <ArrowRight
+                    size={16}
+                    className="group-hover:translate-x-1 transition-transform"
+                  />
+                </>
+              ) : (
+                <>
+                  Initialize Agency <CheckCircle size={16} />
+                </>
+              )}
+            </button>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           </form>
 
           <p className="text-center mt-6 text-xs text-zinc-400 font-medium">

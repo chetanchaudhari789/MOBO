@@ -9,7 +9,11 @@ import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 async function loginAdmin(app: any) {
   const res = await request(app)
     .post('/api/auth/login')
+<<<<<<< HEAD
     .send({ username: E2E_ACCOUNTS.admin.username, password: E2E_ACCOUNTS.admin.password });
+=======
+    .send({ mobile: E2E_ACCOUNTS.admin.mobile, password: E2E_ACCOUNTS.admin.password });
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   expect(res.status).toBe(200);
   return res.body.tokens.accessToken as string;
 }

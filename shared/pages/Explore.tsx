@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React, { useMemo, useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
@@ -9,6 +10,15 @@ import { Badge, EmptyState, Input, Spinner } from '../components/ui';
 
 export const Explore: React.FC = () => {
   const { connected } = useRealtimeConnection();
+=======
+import React, { useState, useEffect } from 'react';
+import { api } from '../services/api';
+import { Product } from '../types';
+import { ProductCard } from '../components/ProductCard';
+import { Search, Filter, Loader2, RefreshCw } from 'lucide-react';
+
+export const Explore: React.FC = () => {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,6 +26,7 @@ export const Explore: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
+<<<<<<< HEAD
   const categories = useMemo(() => {
     const set = new Set<string>();
     for (const p of products) {
@@ -25,6 +36,9 @@ export const Explore: React.FC = () => {
     const dynamic = Array.from(set).sort((a, b) => a.localeCompare(b));
     return ['All', ...dynamic];
   }, [products]);
+=======
+  const categories = ['All', 'Electronics', 'Fashion', 'Audio', 'Footwear', 'Watches'];
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const fetchDeals = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -44,6 +58,7 @@ export const Explore: React.FC = () => {
   useEffect(() => {
     fetchDeals();
 
+<<<<<<< HEAD
     let timer: any = null;
     const schedule = () => {
       if (timer) return;
@@ -69,6 +84,12 @@ export const Explore: React.FC = () => {
     const heartbeat = setInterval(() => fetchDeals(true), 60_000);
     return () => clearInterval(heartbeat);
   }, [connected]);
+=======
+    // [UI] Live Inventory Sync: Heartbeat refresh every 30 seconds
+    const heartbeat = setInterval(() => fetchDeals(true), 30000);
+    return () => clearInterval(heartbeat);
+  }, []);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   useEffect(() => {
     let result = products;
@@ -103,18 +124,22 @@ export const Explore: React.FC = () => {
     setFiltered(result);
   }, [searchTerm, selectedCategory, products]);
 
+<<<<<<< HEAD
   useEffect(() => {
     if (selectedCategory === 'All') return;
     if (categories.includes(selectedCategory)) return;
     setSelectedCategory('All');
   }, [categories, selectedCategory]);
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   return (
     <div className="flex flex-col h-full bg-[#F4F4F5]">
       {/* Header */}
       <div className="px-6 pt-16 pb-4 bg-white shadow-sm z-10 border-b border-gray-100 sticky top-0">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-extrabold text-slate-900">Explore Deals</h1>
+<<<<<<< HEAD
           <div className="flex items-center gap-2">
             <Badge
               variant={connected ? 'success' : 'warning'}
@@ -144,6 +169,24 @@ export const Explore: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             leftIcon={<Search size={18} />}
             aria-label="Search deals"
+=======
+          {isSyncing && (
+            <div className="flex items-center gap-1 text-[10px] font-bold text-lime-600 bg-lime-50 px-2 py-1 rounded-full animate-pulse motion-reduce:animate-none">
+              <RefreshCw size={10} className="animate-spin motion-reduce:animate-none" /> LIVE SYNC
+            </div>
+          )}
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative mb-4">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <input
+            type="text"
+            placeholder="Search specific items..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full h-12 pl-12 pr-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm text-slate-900 outline-none focus:border-lime-400 transition-all placeholder:text-slate-400"
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           />
         </div>
 
@@ -168,6 +211,7 @@ export const Explore: React.FC = () => {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 pb-32 scrollbar-hide">
         {loading ? (
+<<<<<<< HEAD
           <div className="flex flex-col items-center justify-center py-20 text-slate-500 font-bold text-sm gap-3">
             <Spinner className="w-7 h-7 text-lime-500" />
             Loading inventory...
@@ -178,6 +222,17 @@ export const Explore: React.FC = () => {
             description="Try a different search term or category."
             icon={<Filter size={40} className="text-zinc-300" />}
           />
+=======
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400 font-bold text-sm gap-2">
+            <Loader2 className="animate-spin motion-reduce:animate-none text-lime-500" size={32} />
+            Loading inventory...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-20 text-slate-400 font-bold text-sm flex flex-col items-center">
+            <Filter size={48} className="mb-4 opacity-20" />
+            No deals found matching your criteria.
+          </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         ) : (
           <div className="flex flex-col items-center gap-6">
             {filtered.map((p) => (

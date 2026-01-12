@@ -8,6 +8,7 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
   // other specs (buyer + mediator) also create/verify orders for it.
   // We instead create a unique campaign+deal for this spec.
   const buyerMobile = '9000000004';
+<<<<<<< HEAD
   const opsUsername = 'root';
   const brandMobile = '9000000003';
   const password = 'ChangeMe_123!';
@@ -17,6 +18,15 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
       data: args.username
         ? { username: args.username, password }
         : { mobile: String(args.mobile || ''), password },
+=======
+  const opsMobile = 'admin';
+  const brandMobile = '9000000003';
+  const password = 'ChangeMe_123!';
+
+  const login = async (mobile: string) => {
+    const res = await request.post('/api/auth/login', {
+      data: { mobile, password },
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     });
     expect(res.ok()).toBeTruthy();
     const json = await res.json();
@@ -27,9 +37,15 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
     };
   };
 
+<<<<<<< HEAD
   const buyer = await login({ mobile: buyerMobile });
   const ops = await login({ username: opsUsername });
   const brand = await login({ mobile: brandMobile });
+=======
+  const buyer = await login(buyerMobile);
+  const ops = await login(opsMobile);
+  const brand = await login(brandMobile);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` });
 

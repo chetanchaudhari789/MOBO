@@ -2,11 +2,18 @@ import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../middleware/errors.js';
 import { TicketModel } from '../models/Ticket.js';
 import { createTicketSchema, updateTicketSchema } from '../validations/tickets.js';
+<<<<<<< HEAD
 import { toUiTicket, toUiTicketForBrand } from '../utils/uiMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { OrderModel } from '../models/Order.js';
 import { listMediatorCodesForAgency } from '../services/lineage.js';
 import { publishBroadcast } from '../services/realtimeHub.js';
+=======
+import { toUiTicket } from '../utils/uiMappers.js';
+import { getRequester, isPrivileged } from '../services/authz.js';
+import { OrderModel } from '../models/Order.js';
+import { listMediatorCodesForAgency } from '../services/lineage.js';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 async function getScopedOrderIdsForRequester(params: {
   roles: string[];
@@ -127,11 +134,14 @@ export function makeTicketsController() {
           .limit(5000)
           .lean();
 
+<<<<<<< HEAD
         if (roles.includes('brand')) {
           res.json(tickets.map(toUiTicketForBrand));
           return;
         }
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json(tickets.map(toUiTicket));
       } catch (err) {
         next(err);
@@ -160,9 +170,12 @@ export function makeTicketsController() {
           status: 'Open',
           createdBy: userId as any,
         });
+<<<<<<< HEAD
 
         publishBroadcast('tickets.changed', { ticketId: String((ticket as any)._id) });
         publishBroadcast('notifications.changed');
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.status(201).json(toUiTicket(ticket.toObject()));
       } catch (err) {
         next(err);
@@ -197,9 +210,12 @@ export function makeTicketsController() {
         );
         if (!ticket) throw new AppError(404, 'TICKET_NOT_FOUND', 'Ticket not found');
 
+<<<<<<< HEAD
         publishBroadcast('tickets.changed', { ticketId: String((ticket as any)._id), status: body.status });
         publishBroadcast('notifications.changed');
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json(toUiTicket(ticket.toObject()));
       } catch (err) {
         next(err);

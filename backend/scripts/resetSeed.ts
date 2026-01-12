@@ -4,6 +4,7 @@ loadDotenv();
 
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
+<<<<<<< HEAD
 
 async function runLargeSeedImpl() {
   const mod = await import('../seeds/seed.js');
@@ -12,6 +13,9 @@ async function runLargeSeedImpl() {
   }
   return (mod as any).runLargeSeed as (args: { wipe: boolean }) => Promise<unknown>;
 }
+=======
+import { runLargeSeed } from '../seeds/seed.js';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 function redactMongoUri(uri: string): string {
   const match = uri.match(/^(mongodb(?:\+srv)?:\/\/)(.*)$/i);
@@ -68,7 +72,10 @@ async function main() {
   await connectMongo(env);
 
   // runLargeSeed performs the wipe and then seeds deterministically.
+<<<<<<< HEAD
   const runLargeSeed = await runLargeSeedImpl();
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   await runLargeSeed({ wipe: true });
 }
 

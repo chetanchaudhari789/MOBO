@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+<<<<<<< HEAD
 import { useToast } from '../context/ToastContext';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   LogOut,
   Building2,
@@ -14,7 +17,14 @@ import {
   ChevronRight,
   ArrowUpRight,
   Globe,
+<<<<<<< HEAD
   Wallet,
+=======
+  Layers,
+  Zap,
+  Wallet,
+  BarChart3,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   TrendingUp,
   AlertCircle,
   Lock,
@@ -24,6 +34,13 @@ import {
   XCircle,
   ShoppingBag,
   Eye,
+<<<<<<< HEAD
+=======
+  Filter,
+  Calendar,
+  MoreHorizontal,
+  MousePointerClick,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   X,
   Copy,
   Menu,
@@ -35,8 +52,15 @@ import {
   FileText,
   ExternalLink,
   History,
+<<<<<<< HEAD
   Save,
   Edit2,
+=======
+  ArrowDownLeft,
+  Save,
+  Edit2,
+  ShieldCheck,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   Key,
   Download,
   Phone,
@@ -45,11 +69,15 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
+<<<<<<< HEAD
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
+=======
+import { User, Campaign, Order } from '../types';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import {
   AreaChart,
   Area,
@@ -60,6 +88,13 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+<<<<<<< HEAD
+=======
+  Cell,
+  PieChart,
+  Pie,
+  Legend,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 } from 'recharts';
 
 // --- TYPES ---
@@ -144,7 +179,10 @@ const StatCard = ({ label, value, icon, trend, dark }: any) => (
 
 const BrandProfileView = () => {
   const { user, updateUser } = useAuth();
+<<<<<<< HEAD
   const { toast } = useToast();
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -172,12 +210,20 @@ const BrandProfileView = () => {
     try {
       await updateUser({
         name: form.name,
+<<<<<<< HEAD
+=======
+        mobile: form.mobile,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         email: form.email,
         avatar,
       });
       setIsEditing(false);
     } catch (e) {
+<<<<<<< HEAD
       toast.error(String((e as any)?.message || 'Failed to update profile.'));
+=======
+      alert('Failed to update profile.');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setLoading(false);
     }
@@ -305,15 +351,22 @@ const BrandProfileView = () => {
                 />
                 <input
                   type="tel"
+<<<<<<< HEAD
                   disabled
+=======
+                  disabled={!isEditing}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                   value={form.mobile}
                   onChange={(e) => setForm({ ...form, mobile: e.target.value })}
                   className="w-full pl-12 pr-4 py-4 bg-zinc-50 rounded-2xl font-bold text-zinc-900 outline-none focus:ring-4 focus:ring-lime-100 focus:bg-white transition-all disabled:opacity-70 disabled:bg-zinc-50/50"
                 />
               </div>
+<<<<<<< HEAD
               <p className="text-[10px] text-zinc-400 mt-2 ml-1 font-medium">
                 Mobile number cannot be changed.
               </p>
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             </div>
             <div className="group">
               <label className="text-[11px] font-extrabold text-zinc-400 uppercase tracking-wider ml-1 mb-2 block">
@@ -354,6 +407,7 @@ const DashboardView = ({
   const activeCampaigns = campaigns.filter((c) => c.status === 'Active').length;
   const totalReach = campaigns.reduce((acc, c) => acc + c.totalSlots, 0);
 
+<<<<<<< HEAD
   const formatRupees = (value: number) => {
     const n = Number(value || 0);
     return `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -393,6 +447,17 @@ const DashboardView = ({
 
     return points;
   }, [orders]);
+=======
+  const revenueData = [
+    { name: 'Mon', revenue: totalRevenue * 0.1 },
+    { name: 'Tue', revenue: totalRevenue * 0.15 },
+    { name: 'Wed', revenue: totalRevenue * 0.12 },
+    { name: 'Thu', revenue: totalRevenue * 0.25 },
+    { name: 'Fri', revenue: totalRevenue * 0.2 },
+    { name: 'Sat', revenue: totalRevenue * 0.3 },
+    { name: 'Sun', revenue: totalRevenue * 0.35 },
+  ];
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const campaignPerformance = campaigns.slice(0, 5).map((c) => ({
     name: c.title.split(' ')[0],
@@ -421,6 +486,10 @@ const DashboardView = ({
           label="Total Revenue"
           value={`₹${(totalRevenue / 100000).toFixed(2)}L`}
           icon={<Wallet size={24} />}
+<<<<<<< HEAD
+=======
+          trend="+12.5%"
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           dark
         />
         <StatCard label="Active Campaigns" value={activeCampaigns} icon={<Briefcase size={24} />} />
@@ -428,12 +497,19 @@ const DashboardView = ({
           label="Partner Agencies"
           value={agencies.length}
           icon={<Users size={24} />}
+<<<<<<< HEAD
+=======
+          trend="+2 new"
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         />
         <StatCard
           label="Inventory Reach"
           value={`${(totalReach / 1000).toFixed(1)}k`}
           icon={<Globe size={24} />}
+<<<<<<< HEAD
           dark
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         />
       </div>
 
@@ -471,7 +547,11 @@ const DashboardView = ({
                   tickLine={false}
                   fontSize={12}
                   tick={{ fill: '#a1a1aa' }}
+<<<<<<< HEAD
                   tickFormatter={(v) => formatRupees(Number(v))}
+=======
+                  tickFormatter={(v) => `₹${v}`}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 />
                 <Tooltip
                   cursor={{ stroke: '#d4d4d8', strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -482,7 +562,10 @@ const DashboardView = ({
                     padding: '12px 20px',
                   }}
                   itemStyle={{ color: '#18181b', fontWeight: 'bold' }}
+<<<<<<< HEAD
                   formatter={(value: any) => formatRupees(Number(value))}
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                 />
                 <Area
                   type="monotone"
@@ -559,6 +642,7 @@ const OrdersView = ({ user }: any) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [viewProofOrder, setViewProofOrder] = useState<Order | null>(null);
   const [search, setSearch] = useState('');
+<<<<<<< HEAD
   const [isLoading, setIsLoading] = useState(true);
 
   const getOrderStatusBadge = (o: Order) => {
@@ -612,6 +696,22 @@ const OrdersView = ({ user }: any) => {
     const title = String(o.items?.[0]?.title || '').toLowerCase();
     return o.id.toLowerCase().includes(q) || title.includes(q);
   });
+=======
+
+  useEffect(() => {
+    const fetch = async () => {
+      const data = await api.brand.getBrandOrders(user.name);
+      setOrders(data);
+    };
+    fetch();
+  }, [user]);
+
+  const filtered = orders.filter(
+    (o) =>
+      o.id.toLowerCase().includes(search.toLowerCase()) ||
+      o.items[0].title.toLowerCase().includes(search.toLowerCase())
+  );
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const handleExport = () => {
     const headers = [
@@ -738,6 +838,7 @@ const OrdersView = ({ user }: any) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
+<<<<<<< HEAD
                 {isLoading ? (
                   <tr>
                     <td colSpan={7} className="p-8">
@@ -758,13 +859,23 @@ const OrdersView = ({ user }: any) => {
                         icon={<ShoppingBag size={22} className="text-zinc-400" />}
                         className="bg-transparent"
                       />
+=======
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-12 text-center text-zinc-400 font-bold">
+                      No orders found.
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     </td>
                   </tr>
                 ) : (
                   filtered.map((o) => (
                     <tr key={o.id} className="hover:bg-zinc-50/50 transition-colors group">
                       <td className="p-6 font-mono text-xs font-bold text-zinc-500">
+<<<<<<< HEAD
                         {o.id.slice(-6)}
+=======
+                        {o.id.slice(-8)}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                       </td>
                       <td className="p-6">
                         <div className="flex items-center gap-3">
@@ -781,6 +892,7 @@ const OrdersView = ({ user }: any) => {
                       </td>
                       <td className="p-6">
                         <span className="text-xs font-bold bg-zinc-100 text-zinc-600 px-2 py-1 rounded">
+<<<<<<< HEAD
                           {o.agencyName || 'Direct'}
                         </span>
                       </td>
@@ -790,6 +902,19 @@ const OrdersView = ({ user }: any) => {
                       <td className="p-6 text-right font-bold text-zinc-900">₹{o.total}</td>
                       <td className="p-6 text-right">
                         {getOrderStatusBadge(o)}
+=======
+                          {o.agencyName || 'Direct/Unknown'}
+                        </span>
+                      </td>
+                      <td className="p-6 text-sm font-mono text-zinc-500">{o.managerName}</td>
+                      <td className="p-6 text-right font-bold text-zinc-900">₹{o.total}</td>
+                      <td className="p-6 text-right">
+                        <span
+                          className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase ${o.paymentStatus === 'Paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}
+                        >
+                          {o.paymentStatus}
+                        </span>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                       </td>
                       <td className="p-6 text-right">
                         {o.screenshots?.payment || o.screenshots?.order ? (
@@ -970,10 +1095,16 @@ const OrdersView = ({ user }: any) => {
   );
 };
 
+<<<<<<< HEAD
 const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) => {
   const { toast } = useToast();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [, setDetailView] = useState<Campaign | null>(null);
+=======
+const CampaignsView = ({ campaigns, agencies, user, onRefresh }: any) => {
+  const [view, setView] = useState<'list' | 'create'>('list');
+  const [detailView, setDetailView] = useState<Campaign | null>(null);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -1018,8 +1149,13 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       setEditingId(null);
       setForm(initialForm);
       onRefresh();
+<<<<<<< HEAD
     } catch {
       toast.error('Failed to save campaign');
+=======
+    } catch (e) {
+      alert('Failed to save campaign');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     }
   };
 
@@ -1341,6 +1477,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
         </button>
       </div>
 
+<<<<<<< HEAD
       {loading ? (
         <EmptyState
           title="Loading campaigns"
@@ -1363,6 +1500,24 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
           }
           className="rounded-[2.5rem] py-20"
         />
+=======
+      {campaigns.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[2.5rem] border border-dashed border-zinc-200">
+          <div className="w-20 h-20 bg-zinc-50 rounded-full flex items-center justify-center mb-4">
+            <Briefcase size={32} className="text-zinc-300" />
+          </div>
+          <h3 className="text-lg font-bold text-zinc-900">No Campaigns Yet</h3>
+          <p className="text-zinc-400 text-sm font-medium mb-6">
+            Launch your first campaign to start selling.
+          </p>
+          <button
+            onClick={() => setView('create')}
+            className="px-6 py-3 bg-lime-400 text-black rounded-xl font-bold text-xs hover:bg-lime-300 transition-colors"
+          >
+            Create First Campaign
+          </button>
+        </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
           {campaigns.map((c: Campaign) => (
@@ -1415,12 +1570,16 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                   <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-lime-500 rounded-full transition-all duration-1000"
+<<<<<<< HEAD
                       style={{
                         width: `${Math.min(
                           100,
                           c.totalSlots > 0 ? (c.usedSlots / c.totalSlots) * 100 : 0
                         )}%`,
                       }}
+=======
+                      style={{ width: `${Math.min(100, (c.usedSlots / c.totalSlots) * 100)}%` }}
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                     ></div>
                   </div>
                 </div>
@@ -1442,14 +1601,20 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
 
 export const BrandDashboard: React.FC = () => {
   const { user, logout, updateUser } = useAuth();
+<<<<<<< HEAD
   const { toast } = useToast();
   const { connected } = useRealtimeConnection();
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [agencies, setAgencies] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+<<<<<<< HEAD
   const [isDataLoading, setIsDataLoading] = useState(true);
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   // NEW: Agency Detail Modal State
   const [selectedAgency, setSelectedAgency] = useState<User | null>(null);
@@ -1460,7 +1625,10 @@ export const BrandDashboard: React.FC = () => {
 
   const fetchData = async () => {
     if (!user) return;
+<<<<<<< HEAD
     setIsDataLoading(true);
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     try {
       const [camps, ags, ords, txns] = await Promise.all([
         api.brand.getBrandCampaigns(user.id),
@@ -1474,8 +1642,11 @@ export const BrandDashboard: React.FC = () => {
       setTransactions(txns);
     } catch (e) {
       console.error(e);
+<<<<<<< HEAD
     } finally {
       setIsDataLoading(false);
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     }
   };
 
@@ -1483,6 +1654,7 @@ export const BrandDashboard: React.FC = () => {
     fetchData();
   }, [user]);
 
+<<<<<<< HEAD
   // Realtime: refresh when orders/wallets/users change.
   useEffect(() => {
     if (!user) return;
@@ -1511,18 +1683,28 @@ export const BrandDashboard: React.FC = () => {
     };
   }, [user]);
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const handlePayout = async () => {
     if (!selectedAgency || !payoutAmount || !payoutRef || !user) return;
     setIsProcessing(true);
     try {
       await api.brand.payoutAgency(user.id, selectedAgency.id, Number(payoutAmount), payoutRef);
+<<<<<<< HEAD
       toast.success('Payment recorded');
+=======
+      alert('Payment Recorded!');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       setPayoutAmount('');
       setPayoutRef('');
       setSelectedAgency(null);
       fetchData();
     } catch (e) {
+<<<<<<< HEAD
       toast.error(String((e as any)?.message || 'Payment failed'));
+=======
+      alert('Payment Failed');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     } finally {
       setIsProcessing(false);
     }
@@ -1572,6 +1754,7 @@ export const BrandDashboard: React.FC = () => {
   const pendingRequests = user?.pendingConnections?.length || 0;
 
   return (
+<<<<<<< HEAD
     <DesktopShell
       isSidebarOpen={isSidebarOpen}
       onSidebarOpenChange={setIsSidebarOpen}
@@ -1730,6 +1913,150 @@ export const BrandDashboard: React.FC = () => {
         </>
       }
     >
+=======
+    <div className="flex h-screen bg-[#F4F4F5] font-sans text-zinc-900 overflow-hidden relative">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed md:relative z-50 h-full w-80 bg-white flex flex-col border-r border-zinc-100 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+      >
+        <div className="p-8">
+          <div className="flex items-center justify-between mb-10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-black text-lime-400 rounded-xl flex items-center justify-center shadow-xl shadow-lime-400/20">
+                <Building2 size={22} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h1 className="font-extrabold text-xl tracking-tight leading-none">
+                  Mobo<span className="text-lime-500">Brand</span>
+                </h1>
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
+                  Partner Portal
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              aria-label="Close sidebar"
+              className="md:hidden p-2 text-zinc-400 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            >
+              <X size={24} />
+            </button>
+          </div>
+          <nav className="space-y-1">
+            <SidebarItem
+              icon={<LayoutDashboard />}
+              label="Command Center"
+              active={activeTab === 'dashboard'}
+              onClick={() => {
+                setActiveTab('dashboard');
+                setIsSidebarOpen(false);
+              }}
+            />
+            <SidebarItem
+              icon={<Briefcase />}
+              label="Campaigns"
+              active={activeTab === 'campaigns'}
+              onClick={() => {
+                setActiveTab('campaigns');
+                setIsSidebarOpen(false);
+              }}
+              badge={campaigns.filter((c) => c.status === 'Active').length}
+            />
+            <SidebarItem
+              icon={<ShoppingBag />}
+              label="Order Intelligence"
+              active={activeTab === 'orders'}
+              onClick={() => {
+                setActiveTab('orders');
+                setIsSidebarOpen(false);
+              }}
+            />
+            <SidebarItem
+              icon={<Users />}
+              label="Agency Partners"
+              active={activeTab === 'agencies'}
+              onClick={() => {
+                setActiveTab('agencies');
+                setIsSidebarOpen(false);
+              }}
+            />
+            <SidebarItem
+              icon={<Bell />}
+              label="Requests"
+              active={activeTab === 'requests'}
+              onClick={() => {
+                setActiveTab('requests');
+                setIsSidebarOpen(false);
+              }}
+              badge={pendingRequests}
+            />
+          </nav>
+        </div>
+
+        <div className="mt-auto p-6">
+          {/* Brand Profile Card - Interactive */}
+          <div
+            onClick={() => {
+              setActiveTab('profile');
+              setIsSidebarOpen(false);
+            }}
+            className={`bg-zinc-50 rounded-2xl p-4 border border-zinc-100 mb-4 cursor-pointer transition-all hover:bg-zinc-100 hover:border-zinc-200 group ${activeTab === 'profile' ? 'ring-2 ring-lime-400 ring-offset-2' : ''}`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold shadow-md text-sm shrink-0 overflow-hidden">
+                {user?.avatar ? (
+                  <img src={user.avatar} className="w-full h-full object-cover" />
+                ) : (
+                  user?.name?.charAt(0) || 'B'
+                )}
+              </div>
+              <div className="min-w-0 overflow-hidden flex-1">
+                <p className="text-sm font-bold text-zinc-900 truncate group-hover:text-black">
+                  {user?.name}
+                </p>
+                <p className="text-[10px] text-zinc-500 font-mono bg-white px-1.5 py-0.5 rounded border border-zinc-200 inline-block mt-1 truncate max-w-full group-hover:bg-white/80">
+                  {user?.brandCode}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-zinc-400 group-hover:text-zinc-600" />
+            </div>
+          </div>
+
+          <button
+            onClick={logout}
+            className="w-full py-3 flex items-center justify-center gap-2 text-zinc-400 hover:bg-red-50 hover:text-red-500 rounded-xl font-bold text-xs transition-colors"
+          >
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto bg-[#FAFAFA] relative scrollbar-hide p-4 md:p-8">
+        {/* Mobile Header Trigger */}
+        <div className="md:hidden flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-black text-lime-400 rounded-lg flex items-center justify-center">
+              <Building2 size={16} />
+            </div>
+            <span className="font-extrabold text-lg">MoboBrand</span>
+          </div>
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 bg-white rounded-xl shadow-sm border border-zinc-200"
+          >
+            <Menu size={20} />
+          </button>
+        </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
         {activeTab === 'dashboard' && (
           <DashboardView campaigns={campaigns} agencies={agencies} orders={orders} />
@@ -1739,7 +2066,10 @@ export const BrandDashboard: React.FC = () => {
             campaigns={campaigns}
             agencies={agencies}
             user={user}
+<<<<<<< HEAD
             loading={isDataLoading}
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             onRefresh={fetchData}
           />
         )}
@@ -1751,6 +2081,7 @@ export const BrandDashboard: React.FC = () => {
             <h2 className="text-3xl font-extrabold text-zinc-900 tracking-tight mb-8">
               Partner Agencies
             </h2>
+<<<<<<< HEAD
             {isDataLoading ? (
               <EmptyState
                 title="Loading agencies"
@@ -1765,6 +2096,10 @@ export const BrandDashboard: React.FC = () => {
                 icon={<Users size={22} className="text-zinc-400" />}
                 className="bg-transparent"
               />
+=======
+            {agencies.length === 0 ? (
+              <p className="text-zinc-400 font-bold">No agencies connected.</p>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {agencies.map((ag: User) => (
@@ -1836,6 +2171,7 @@ export const BrandDashboard: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-50">
+<<<<<<< HEAD
                       {isDataLoading ? (
                         <tr>
                           <td colSpan={5} className="p-8">
@@ -1856,6 +2192,12 @@ export const BrandDashboard: React.FC = () => {
                               icon={<History size={22} className="text-zinc-400" />}
                               className="bg-transparent"
                             />
+=======
+                      {transactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-12 text-center text-zinc-400 font-bold">
+                            No transactions recorded.
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                           </td>
                         </tr>
                       ) : (
@@ -1901,6 +2243,7 @@ export const BrandDashboard: React.FC = () => {
             <h2 className="text-3xl font-extrabold text-zinc-900 tracking-tight mb-8">
               Connection Requests
             </h2>
+<<<<<<< HEAD
             {isDataLoading ? (
               <EmptyState
                 title="Loading requests"
@@ -1915,6 +2258,16 @@ export const BrandDashboard: React.FC = () => {
                 icon={<LinkIcon size={22} className="text-zinc-400" />}
                 className="bg-transparent rounded-[2.5rem] py-20"
               />
+=======
+            {!user?.pendingConnections || user.pendingConnections.length === 0 ? (
+              <div className="text-center py-20 bg-white rounded-[2.5rem] border border-dashed border-zinc-200">
+                <p className="text-zinc-400 font-bold">No pending requests.</p>
+                <p className="text-sm text-zinc-300">
+                  Share your Brand Code:{' '}
+                  <span className="text-zinc-900 font-mono font-bold">{user?.brandCode}</span>
+                </p>
+              </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             ) : (
               <div className="space-y-4">
                 {user.pendingConnections.map((req: any) => (
@@ -1992,6 +2345,11 @@ export const BrandDashboard: React.FC = () => {
             )}
           </div>
         )}
+<<<<<<< HEAD
+=======
+      </main>
+
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       {/* AGENCY DETAIL / PAYMENT MODAL */}
       {selectedAgency && (
         <div
@@ -2076,7 +2434,11 @@ export const BrandDashboard: React.FC = () => {
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(selectedAgency.upiId || '');
+<<<<<<< HEAD
                           toast.success('Copied');
+=======
+                          alert('Copied!');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
                         }}
                         className="text-zinc-400 hover:text-black"
                       >
@@ -2134,6 +2496,10 @@ export const BrandDashboard: React.FC = () => {
           </div>
         </div>
       )}
+<<<<<<< HEAD
     </DesktopShell>
+=======
+    </div>
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   );
 };

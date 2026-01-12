@@ -3,6 +3,7 @@ import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 
 import type { Env } from '../config/env.js';
+<<<<<<< HEAD
 import {
   checkGeminiApiKey,
   extractOrderDetailsWithAi,
@@ -10,6 +11,9 @@ import {
   isGeminiConfigured,
   verifyProofWithAi,
 } from '../services/aiService.js';
+=======
+import { checkGeminiApiKey, generateChatUiResponse, isGeminiConfigured, verifyProofWithAi } from '../services/aiService.js';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 
 const chatSchema = z.object({
@@ -30,10 +34,13 @@ const proofSchema = z.object({
   expectedAmount: z.number().finite(),
 });
 
+<<<<<<< HEAD
 const extractOrderSchema = z.object({
   imageBase64: z.string().min(1).max(8_000_000),
 });
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 export function aiRoutes(env: Env): Router {
   const router = Router();
 
@@ -66,6 +73,7 @@ export function aiRoutes(env: Env): Router {
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
   });
 
+<<<<<<< HEAD
   const limiterExtractOrder = rateLimit({
     windowMs: 60_000,
     limit: (req) => {
@@ -77,6 +85,8 @@ export function aiRoutes(env: Env): Router {
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
   });
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const sendKnownError = (err: unknown, res: any): boolean => {
     if (err instanceof z.ZodError) {
       res
@@ -161,6 +171,7 @@ export function aiRoutes(env: Env): Router {
     }
   });
 
+<<<<<<< HEAD
   router.post('/extract-order', limiterExtractOrder, async (req, res, next) => {
     try {
       const payload = extractOrderSchema.parse(req.body);
@@ -183,5 +194,7 @@ export function aiRoutes(env: Env): Router {
     }
   });
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   return router;
 }

@@ -10,8 +10,17 @@ interface ProductCardProps {
 type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
 export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) => {
+<<<<<<< HEAD
   const effectiveOriginal =
     product.originalPrice > product.price ? product.originalPrice : product.price * 1.4;
+=======
+  // Logic: Ensure we show a discount even if data is close
+  const effectiveOriginal =
+    product.originalPrice > product.price ? product.originalPrice : product.price * 1.4;
+  const discountPercentage = Math.round(
+    ((effectiveOriginal - product.price) / effectiveOriginal) * 100
+  );
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
   const handleLinkClick = () => {
     if (product.productUrl) {

@@ -7,7 +7,10 @@ export const TransactionType = [
   'commission_settle',
   'cashback_lock',
   'cashback_settle',
+<<<<<<< HEAD
   'order_settlement_debit',
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   'agency_payout',
   'agency_receipt',
   'payout_request',

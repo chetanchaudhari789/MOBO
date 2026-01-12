@@ -24,7 +24,11 @@ describe('auth', () => {
 
     const loginRes = await request(app)
       .post('/api/auth/login')
+<<<<<<< HEAD
       .send({ username: E2E_ACCOUNTS.admin.username, password: E2E_ACCOUNTS.admin.password });
+=======
+      .send({ mobile: E2E_ACCOUNTS.admin.mobile, password: E2E_ACCOUNTS.admin.password });
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
     expect(loginRes.status).toBe(200);
     expect(loginRes.body).toHaveProperty('user');
@@ -42,6 +46,7 @@ describe('auth', () => {
     expect(meRes.body.user).toHaveProperty('id');
     expect(meRes.body.user).toHaveProperty('mobile', E2E_ACCOUNTS.admin.mobile);
   });
+<<<<<<< HEAD
 
   it('allows profile update when optional fields are blank', async () => {
     const env = loadEnv({
@@ -78,4 +83,6 @@ describe('auth', () => {
     expect(patchRes.body).toHaveProperty('user');
     expect(patchRes.body.user).toHaveProperty('mobile', E2E_ACCOUNTS.mediator.mobile);
   });
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 });

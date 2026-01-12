@@ -16,12 +16,19 @@ import {
   publishDealSchema,
   rejectByIdSchema,
   settleOrderSchema,
+<<<<<<< HEAD
   unsettleOrderSchema,
   verifyOrderRequirementSchema,
   verifyOrderSchema,
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiUser } from '../utils/uiMappers.js';
+=======
+  verifyOrderSchema,
+} from '../validations/ops.js';
+import { rupeesToPaise } from '../utils/money.js';
+import { toUiCampaign, toUiOrder, toUiUser } from '../utils/uiMappers.js';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
 import { listMediatorCodesForAgency, getAgencyCodeForMediatorCode, isAgencyActive, isMediatorActive } from '../services/lineage.js';
@@ -29,7 +36,10 @@ import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
 import { requestBrandConnectionSchema } from '../validations/connections.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
+<<<<<<< HEAD
 import { publishBroadcast, publishRealtime } from '../services/realtimeHub.js';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 function mapUsersWithWallets(users: any[], wallets: any[]) {
   const byUserId = new Map<string, any>();
@@ -37,6 +47,7 @@ function mapUsersWithWallets(users: any[], wallets: any[]) {
   return users.map((u) => toUiUser(u, byUserId.get(String(u._id))));
 }
 
+<<<<<<< HEAD
 function getRequiredStepsForOrder(order: any): Array<'review' | 'rating'> {
   const dealTypes = (order.items ?? [])
     .map((it: any) => String(it?.dealType || ''))
@@ -99,6 +110,8 @@ async function finalizeApprovalIfReady(order: any, actorUserId: string) {
   return { approved: true };
 }
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 export function makeOpsController() {
   return {
     requestBrandConnection: async (req: Request, res: Response, next: NextFunction) => {
@@ -148,11 +161,14 @@ export function makeOpsController() {
           metadata: { agencyCode, brandCode: body.brandCode },
         });
 
+<<<<<<< HEAD
         // Realtime: let the brand (and agency) UIs update without refresh.
         publishBroadcast('users.changed', { userId: String(brand._id) });
         publishBroadcast('users.changed', { userId: String((requester as any)?._id || '') });
         publishBroadcast('notifications.changed');
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -192,6 +208,7 @@ export function makeOpsController() {
 
         const query: any = { deletedAt: null };
         if (code) {
+<<<<<<< HEAD
           // Agency visibility must include campaigns assigned to any of its sub-mediators.
           // Otherwise, ops/admin assigning slots directly to mediator codes makes the campaign
           // invisible to the parent agency portal.
@@ -205,6 +222,12 @@ export function makeOpsController() {
           } else {
             query.$or = [{ allowedAgencyCodes: code }, { [`assignments.${code}`]: { $exists: true } }];
           }
+=======
+          query.$or = [
+            { allowedAgencyCodes: code },
+            { [`assignments.${code}`]: { $exists: true } },
+          ];
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         }
 
         const campaigns = await CampaignModel.find(query).sort({ createdAt: -1 }).limit(5000).lean();
@@ -214,6 +237,7 @@ export function makeOpsController() {
       }
     },
 
+<<<<<<< HEAD
     getDeals: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
@@ -256,6 +280,8 @@ export function makeOpsController() {
       }
     },
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     getOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
@@ -400,6 +426,7 @@ export function makeOpsController() {
 
     approveMediator: async (req: Request, res: Response, next: NextFunction) => {
       try {
+<<<<<<< HEAD
         const { roles, user: requester } = getRequester(req);
         const body = approveByIdSchema.parse(req.body);
         
@@ -417,6 +444,11 @@ export function makeOpsController() {
           throw new AppError(403, 'FORBIDDEN', 'Cannot approve mediators outside your network');
         }
 
+=======
+        const { roles } = getRequester(req);
+        if (!isPrivileged(roles)) throw new AppError(403, 'FORBIDDEN', 'Only admin/ops can approve mediator KYC');
+        const body = approveByIdSchema.parse(req.body);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         const user = await UserModel.findByIdAndUpdate(
           body.id,
           { kycStatus: 'verified', status: 'active' },
@@ -425,6 +457,7 @@ export function makeOpsController() {
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         await writeAuditLog({ req, action: 'MEDIATOR_APPROVED', entityType: 'User', entityId: String(user._id) });
+<<<<<<< HEAD
 
         // Realtime: update agency (who owns the mediator), admin/ops, and any UI that lists pending mediators.
         const agencyCode = String((mediator as any)?.parentCode || '').trim();
@@ -448,6 +481,8 @@ export function makeOpsController() {
           },
         });
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -459,6 +494,7 @@ export function makeOpsController() {
         const body = approveByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
+<<<<<<< HEAD
         const buyerBefore = await UserModel.findById(body.id).select({ parentCode: 1, deletedAt: 1 }).lean();
         if (!buyerBefore || (buyerBefore as any).deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         const upstreamMediatorCode = String((buyerBefore as any).parentCode || '').trim();
@@ -466,6 +502,13 @@ export function makeOpsController() {
         // Mediators can only approve their own buyers.
         if (roles.includes('mediator') && !isPrivileged(roles)) {
           if (String(upstreamMediatorCode) !== String((requester as any)?.mediatorCode)) {
+=======
+        // Mediators can only approve their own buyers.
+        if (roles.includes('mediator') && !isPrivileged(roles)) {
+          const buyer = await UserModel.findById(body.id).lean();
+          if (!buyer || (buyer as any).deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+          if (String((buyer as any).parentCode) !== String((requester as any)?.mediatorCode)) {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             throw new AppError(403, 'FORBIDDEN', 'Cannot approve users outside your network');
           }
         }
@@ -474,6 +517,7 @@ export function makeOpsController() {
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         await writeAuditLog({ req, action: 'BUYER_APPROVED', entityType: 'User', entityId: String(user._id) });
+<<<<<<< HEAD
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
@@ -498,6 +542,8 @@ export function makeOpsController() {
             roles: ['admin', 'ops'],
           },
         });
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -509,12 +555,19 @@ export function makeOpsController() {
         const body = rejectByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
+<<<<<<< HEAD
         const buyerBefore = await UserModel.findById(body.id).select({ parentCode: 1, deletedAt: 1 }).lean();
         if (!buyerBefore || (buyerBefore as any).deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         const upstreamMediatorCode = String((buyerBefore as any).parentCode || '').trim();
 
         if (roles.includes('mediator') && !isPrivileged(roles)) {
           if (String(upstreamMediatorCode) !== String((requester as any)?.mediatorCode)) {
+=======
+        if (roles.includes('mediator') && !isPrivileged(roles)) {
+          const buyer = await UserModel.findById(body.id).lean();
+          if (!buyer || (buyer as any).deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+          if (String((buyer as any).parentCode) !== String((requester as any)?.mediatorCode)) {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
             throw new AppError(403, 'FORBIDDEN', 'Cannot reject users outside your network');
           }
         }
@@ -523,6 +576,7 @@ export function makeOpsController() {
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         await writeAuditLog({ req, action: 'USER_REJECTED', entityType: 'User', entityId: String(user._id) });
+<<<<<<< HEAD
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
@@ -547,6 +601,8 @@ export function makeOpsController() {
             roles: ['admin', 'ops'],
           },
         });
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -569,6 +625,23 @@ export function makeOpsController() {
             if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
               throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
             }
+<<<<<<< HEAD
+=======
+
+            // CRITICAL ANTI-FRAUD: Mediator cannot verify orders from their own buyers
+            // This prevents collusion where mediator approves fake orders
+            const buyerUserId = String(order.userId);
+            const buyer = await UserModel.findById(buyerUserId).select({ parentCode: 1 }).lean();
+            const buyerMediatorCode = String((buyer as any)?.parentCode || '').trim();
+            
+            if (buyerMediatorCode === String((requester as any)?.mediatorCode)) {
+              throw new AppError(
+                403,
+                'SELF_VERIFICATION_FORBIDDEN',
+                'You cannot verify orders from your own buyers. Verification must be done by agency or admin.'
+              );
+            }
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           } else if (roles.includes('agency')) {
             const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
             if (!allowed.includes(String(order.managerName))) {
@@ -595,6 +668,7 @@ export function makeOpsController() {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot verify in state ${wf}`);
         }
 
+<<<<<<< HEAD
         // Step 1: mark purchase proof verified (even if review/rating is still pending).
         (order as any).verification = (order as any).verification ?? {};
         (order as any).verification.order = (order as any).verification.order ?? {};
@@ -604,10 +678,17 @@ export function makeOpsController() {
         const required = getRequiredStepsForOrder(order);
         const missingProofs = required.filter((t) => !hasProofForRequirement(order, t));
 
+=======
+        order.affiliateStatus = 'Pending_Cooling';
+        const settleDate = new Date();
+        settleDate.setDate(settleDate.getDate() + 14);
+        order.expectedSettlementDate = settleDate;
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         order.events = pushOrderEvent(order.events as any, {
           type: 'VERIFIED',
           at: new Date(),
           actorUserId: req.auth?.userId,
+<<<<<<< HEAD
           metadata: { step: 'order', missingProofs },
         }) as any;
         await order.save();
@@ -699,6 +780,22 @@ export function makeOpsController() {
         publishBroadcast('orders.changed', { orderId: String(order._id) });
         publishBroadcast('notifications.changed');
         res.json({ ok: true, approved: (finalize as any).approved, ...(finalize as any) });
+=======
+        }) as any;
+        await order.save();
+
+        await transitionOrderWorkflow({
+          orderId: String(order._id),
+          from: 'UNDER_REVIEW',
+          to: 'APPROVED',
+          actorUserId: String(req.auth?.userId || ''),
+          metadata: { source: 'verifyOrderClaim' },
+        });
+
+        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
+
+        res.json({ ok: true });
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
       } catch (err) {
         next(err);
       }
@@ -707,6 +804,7 @@ export function makeOpsController() {
     settleOrderPayment: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = settleOrderSchema.parse(req.body);
+<<<<<<< HEAD
         const { roles, user } = getRequester(req);
 
         // Privileged: may settle any order.
@@ -742,6 +840,13 @@ export function makeOpsController() {
           }
         }
 
+=======
+        const { roles } = getRequester(req);
+        if (!isPrivileged(roles)) throw new AppError(403, 'FORBIDDEN', 'Only admin/ops can settle payments');
+        const order = await OrderModel.findById(body.orderId);
+        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         if ((order as any).frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
         }
@@ -772,6 +877,7 @@ export function makeOpsController() {
         }
 
         const campaignId = order.items?.[0]?.campaignId;
+<<<<<<< HEAD
         const productId = String(order.items?.[0]?.productId || '').trim();
         const mediatorCode = String(order.managerName || '').trim();
 
@@ -779,6 +885,13 @@ export function makeOpsController() {
 
         let isOverLimit = false;
         if (campaignId && mediatorCode) {
+=======
+        const mediatorCode = order.managerName;
+
+        let isOverLimit = false;
+        if (campaignId && mediatorCode) {
+          const campaign = await CampaignModel.findById(campaignId).lean();
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           if (campaign) {
             const assignmentsObj = campaign.assignments instanceof Map
               ? Object.fromEntries(campaign.assignments)
@@ -800,6 +913,7 @@ export function makeOpsController() {
           }
         }
 
+<<<<<<< HEAD
         // Money movements: enforce conservation on successful settlements.
         // - Debit brand wallet by the Deal payout
         // - Credit buyer commission and mediator margin (payout - commission)
@@ -880,6 +994,8 @@ export function makeOpsController() {
           }
         }
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         order.paymentStatus = 'Paid';
         order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
         if (body.settlementRef) {
@@ -911,6 +1027,7 @@ export function makeOpsController() {
           metadata: { affiliateStatus: order.affiliateStatus },
         });
 
+<<<<<<< HEAD
         await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: String(order._id), metadata: { affiliateStatus: order.affiliateStatus } });
 
         publishBroadcast('orders.changed', { orderId: String(order._id) });
@@ -1105,6 +1222,57 @@ export function makeOpsController() {
         publishBroadcast('orders.changed', { orderId: String(order._id) });
         publishBroadcast('notifications.changed');
         publishBroadcast('wallets.changed');
+=======
+        // Credit wallets if order completed successfully
+        if (!isOverLimit) {
+          const buyerUserId = String(order.createdBy);
+          const buyerCommissionPaise = order.items?.[0]?.commissionPaise || 0;
+
+          // Credit buyer commission
+          if (buyerCommissionPaise > 0) {
+            await ensureWallet(buyerUserId);
+            await applyWalletCredit({
+              idempotencyKey: `order-commission-${order._id}`,
+              type: 'commission_settle',
+              ownerUserId: buyerUserId,
+              amountPaise: buyerCommissionPaise,
+              orderId: String(order._id),
+              metadata: { reason: 'ORDER_COMMISSION' },
+            });
+          }
+
+          // Credit mediator margin (payout - commission)
+          // CRITICAL: Get payout from Deal record (the source of truth)
+          if (campaignId && mediatorCode) {
+            const productId = order.items?.[0]?.productId;
+            const deal = await DealModel.findById(productId).lean();
+            
+            if (deal && !deal.deletedAt) {
+              const mediatorPayoutPaise = deal.payoutPaise || 0;
+              const mediatorMarginPaise = mediatorPayoutPaise - buyerCommissionPaise;
+
+              if (mediatorMarginPaise > 0) {
+                const mediator = await UserModel.findOne({ mediatorCode }).lean();
+                if (mediator && !(mediator as any).deletedAt) {
+                  const mediatorUserId = String(mediator._id);
+                  await ensureWallet(mediatorUserId);
+                  await applyWalletCredit({
+                    idempotencyKey: `order-margin-${order._id}`,
+                    type: 'commission_settle',
+                    ownerUserId: mediatorUserId,
+                    amountPaise: mediatorMarginPaise,
+                    orderId: String(order._id),
+                    metadata: { reason: 'ORDER_MARGIN' },
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: String(order._id), metadata: { affiliateStatus: order.affiliateStatus } });
+
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -1114,6 +1282,7 @@ export function makeOpsController() {
     createCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = createCampaignSchema.parse(req.body);
+<<<<<<< HEAD
         const { roles, userId, user: requester } = getRequester(req);
 
         const allowed = Array.isArray(body.allowedAgencies) ? body.allowedAgencies : [];
@@ -1180,12 +1349,31 @@ export function makeOpsController() {
         const onlySelf = normalizedAllowed.length === 1 && normalizedAllowed[0] === selfCode;
         if (!onlySelf) {
           throw new AppError(403, 'FORBIDDEN', 'Non-privileged users can only create campaigns for their own code');
+=======
+        const { roles } = getRequester(req);
+        if (!isPrivileged(roles)) throw new AppError(403, 'FORBIDDEN', 'Only admin/ops can create campaigns via ops endpoint');
+
+        const brand = await UserModel.findById(body.brandUserId).lean();
+        if (!brand || (brand as any).deletedAt) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
+        if (!((brand as any).roles || []).includes('brand')) throw new AppError(400, 'INVALID_BRAND', 'Invalid brand');
+        if ((brand as any).status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
+
+        const connected = Array.isArray((brand as any).connectedAgencies) ? (brand as any).connectedAgencies : [];
+        const allowed = Array.isArray(body.allowedAgencies) ? body.allowedAgencies : [];
+        if (allowed.length && !allowed.every((c) => connected.includes(String(c)))) {
+          throw new AppError(400, 'INVALID_ALLOWED_AGENCIES', 'allowedAgencies must be connected to brand');
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         }
 
         const campaign = await CampaignModel.create({
           title: body.title,
+<<<<<<< HEAD
           brandUserId: userId as any,
           brandName: String((requester as any).name || 'Inventory'),
+=======
+          brandUserId: (brand as any)._id,
+          brandName: String((brand as any).name || 'Brand'),
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           platform: body.platform,
           image: body.image,
           productUrl: body.productUrl,
@@ -1195,13 +1383,18 @@ export function makeOpsController() {
           totalSlots: body.totalSlots,
           usedSlots: 0,
           status: 'active',
+<<<<<<< HEAD
           allowedAgencyCodes: normalizedAllowed,
+=======
+          allowedAgencyCodes: body.allowedAgencies,
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
           dealType: body.dealType,
           returnWindowDays: body.returnWindowDays ?? 14,
           createdBy: req.auth?.userId as any,
         });
 
         await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: String((campaign as any)._id) });
+<<<<<<< HEAD
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
@@ -1214,6 +1407,8 @@ export function makeOpsController() {
             roles: ['admin', 'ops'],
           },
         });
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.status(201).json(toUiCampaign((campaign as any).toObject ? (campaign as any).toObject() : (campaign as any)));
       } catch (err) {
         next(err);
@@ -1275,6 +1470,7 @@ export function makeOpsController() {
 
         await campaign.save();
         await writeAuditLog({ req, action: 'CAMPAIGN_SLOTS_ASSIGNED', entityType: 'Campaign', entityId: String(campaign._id) });
+<<<<<<< HEAD
 
         const assignmentCodes = Object.keys(body.assignments || {}).map((c) => String(c).trim()).filter(Boolean);
         const inferredAgencyCodes = (
@@ -1301,6 +1497,8 @@ export function makeOpsController() {
             roles: ['admin', 'ops'],
           },
         });
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -1384,8 +1582,11 @@ export function makeOpsController() {
 
         await writeAuditLog({ req, action: 'DEAL_PUBLISHED', entityType: 'Deal', entityId: `${String(campaign._id)}:${body.mediatorCode}`, metadata: { campaignId: String(campaign._id), mediatorCode: body.mediatorCode } });
 
+<<<<<<< HEAD
         publishBroadcast('deals.changed', { campaignId: String(campaign._id), mediatorCode: body.mediatorCode });
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -1395,6 +1596,7 @@ export function makeOpsController() {
     payoutMediator: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = payoutMediatorSchema.parse(req.body);
+<<<<<<< HEAD
         const { roles, user: requester } = getRequester(req);
         const canAny = isPrivileged(roles);
         const canAgency = roles.includes('agency') && !canAny;
@@ -1422,6 +1624,13 @@ export function makeOpsController() {
           }
         }
 
+=======
+        const { roles } = getRequester(req);
+        if (!isPrivileged(roles)) throw new AppError(403, 'FORBIDDEN', 'Only admin/ops can process payouts');
+        const user = await UserModel.findById(body.mediatorId);
+        if (!user || user.deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         if (user.status !== 'active') {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Beneficiary is not active; payouts are blocked');
         }
@@ -1443,6 +1652,7 @@ export function makeOpsController() {
           providerRef: `MANUAL-${Date.now()}`,
           processedAt: new Date(),
           requestedAt: new Date(),
+<<<<<<< HEAD
           createdBy: req.auth?.userId,
           updatedBy: req.auth?.userId,
         });
@@ -1462,6 +1672,20 @@ export function makeOpsController() {
         }
 
         await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payout._id), metadata: { beneficiaryUserId: String(user._id), amountPaise, recordOnly: canAgency } });
+=======
+        });
+
+        await applyWalletDebit({
+          idempotencyKey: `payout_complete:${payout._id}`,
+          type: 'payout_complete',
+          ownerUserId: String(user._id),
+          amountPaise,
+          payoutId: payout._id as any,
+          metadata: { provider: 'manual' },
+        });
+
+        await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payout._id), metadata: { beneficiaryUserId: String(user._id), amountPaise } });
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
         res.json({ ok: true });
       } catch (err) {

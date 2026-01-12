@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 
+<<<<<<< HEAD
 import type { Env } from '../config/env.js';
 import { UserModel } from '../models/User.js';
 
@@ -25,6 +26,9 @@ async function hasE2EUsers(): Promise<boolean> {
 }
 
 export function healthRoutes(env: Env): Router {
+=======
+export function healthRoutes(): Router {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   const router = Router();
 
   router.get('/health', (_req, res) => {
@@ -49,6 +53,7 @@ export function healthRoutes(env: Env): Router {
     });
   });
 
+<<<<<<< HEAD
   // Playwright uses this endpoint as the single source of readiness truth.
   // It is intentionally conservative: only returns 200 once the DB is connected,
   // the E2E seed accounts exist (when SEED_E2E), and all portal dev servers are responding.
@@ -87,5 +92,7 @@ export function healthRoutes(env: Env): Router {
     });
   });
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   return router;
 }

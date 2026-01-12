@@ -1,13 +1,20 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
 import { api } from '../services/api';
+<<<<<<< HEAD
 import { subscribeRealtime, stopRealtime } from '../services/realtime';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+<<<<<<< HEAD
   login: (mobile: string, pass: string) => Promise<User>;
   loginAdmin: (username: string, pass: string) => Promise<User>;
+=======
+  login: (mobile: string, pass: string) => Promise<void>;
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   register: (name: string, mobile: string, pass: string, mediatorCode: string) => Promise<void>;
   registerOps: (
     name: string,
@@ -15,7 +22,11 @@ interface AuthContextType {
     pass: string,
     role: 'agency' | 'mediator',
     code: string
+<<<<<<< HEAD
   ) => Promise<{ pendingApproval?: boolean; message?: string } | void>;
+=======
+  ) => Promise<void>;
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   registerBrand: (name: string, mobile: string, pass: string, brandCode: string) => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   logout: () => void;
@@ -28,6 +39,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+<<<<<<< HEAD
   // Realtime: keep the local user snapshot in sync (approval status, wallet balances, etc.)
   useEffect(() => {
     if (!user?.id) return;
@@ -66,6 +78,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [user?.id]);
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   useEffect(() => {
     const restoreSession = async () => {
       try {
@@ -95,6 +109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (mobile: string, pass: string) => {
+<<<<<<< HEAD
     const loggedInUser = (await api.auth.login(mobile, pass)) as User;
     setUser(loggedInUser);
     localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
@@ -106,6 +121,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(loggedInUser);
     localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
     return loggedInUser;
+=======
+    const loggedInUser = await api.auth.login(mobile, pass);
+    setUser(loggedInUser);
+    localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   };
 
   const register = async (name: string, mobile: string, pass: string, mediatorCode: string) => {
@@ -121,6 +141,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     role: 'agency' | 'mediator',
     code: string
   ) => {
+<<<<<<< HEAD
     const result = await api.auth.registerOps(name, mobile, pass, role, code);
 
     // Pending approval means: create request, but don't authenticate the mediator yet.
@@ -129,6 +150,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const newUser = result as User;
+=======
+    const newUser = await api.auth.registerOps(name, mobile, pass, role, code);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     setUser(newUser);
     localStorage.setItem('mobo_session', JSON.stringify(newUser));
   };
@@ -154,7 +178,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
     localStorage.removeItem('mobo_session');
     localStorage.removeItem('mobo_tokens_v1');
+<<<<<<< HEAD
     stopRealtime();
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   };
 
   return (
@@ -163,7 +190,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         isAuthenticated: !!user,
         login,
+<<<<<<< HEAD
         loginAdmin,
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
         register,
         registerOps,
         registerBrand,

@@ -19,7 +19,10 @@ export function opsRoutes(env: Env): Router {
 
   router.get('/mediators', ops.getMediators);
   router.get('/campaigns', ops.getCampaigns);
+<<<<<<< HEAD
   router.get('/deals', ops.getDeals);
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   router.get('/orders', ops.getOrders);
   router.get('/users/pending', ops.getPendingUsers);
   router.get('/users/verified', ops.getVerifiedUsers);
@@ -29,9 +32,13 @@ export function opsRoutes(env: Env): Router {
   router.post('/users/approve', ops.approveUser);
   router.post('/users/reject', ops.rejectUser);
   router.post('/orders/settle', ops.settleOrderPayment);
+<<<<<<< HEAD
   router.post('/orders/unsettle', ops.unsettleOrderPayment);
   router.post('/verify', ops.verifyOrderClaim);
   router.post('/orders/verify-requirement', ops.verifyOrderRequirement);
+=======
+  router.post('/verify', ops.verifyOrderClaim);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   router.post('/campaigns', ops.createCampaign);
   router.post('/campaigns/assign', ops.assignSlots);
   router.post('/deals/publish', ops.publishDeal);

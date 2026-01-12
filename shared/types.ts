@@ -69,9 +69,12 @@ export interface AppNotification {
   type: 'success' | 'info' | 'alert';
   duration?: number;
   action?: { label: string; onClick: () => void };
+<<<<<<< HEAD
   createdAt?: string;
   read?: boolean;
   source?: 'inbox' | 'local';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 }
 
 export interface Product {
@@ -111,7 +114,10 @@ export interface Order {
   }>;
   total: number;
   status: OrderStatus;
+<<<<<<< HEAD
   workflowStatus?: string;
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   paymentStatus: PaymentStatus;
   affiliateStatus: AffiliateStatus;
   externalOrderId?: string;
@@ -124,6 +130,7 @@ export interface Order {
   brandName?: string;
   createdAt: string;
   expectedSettlementDate?: string;
+<<<<<<< HEAD
 
   // Step-level verification / requirements (optional for backward compatibility)
   verification?: {
@@ -139,6 +146,8 @@ export interface Order {
     missingProofs?: Array<'review' | 'rating'>;
     missingVerifications?: Array<'review' | 'rating'>;
   };
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 }
 
 export interface Campaign {

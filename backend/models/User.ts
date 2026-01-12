@@ -1,5 +1,8 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
+<<<<<<< HEAD
 import { normalizeMobileTo10Digits } from '../utils/mobiles.js';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 export const Roles = ['shopper', 'mediator', 'agency', 'brand', 'admin', 'ops'] as const;
 export type Role = (typeof Roles)[number];
@@ -21,6 +24,7 @@ const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
 
+<<<<<<< HEAD
     // Optional login identifier (used for admin username/password login).
     // Normal users still authenticate via mobile.
     username: {
@@ -35,6 +39,9 @@ const userSchema = new Schema(
     },
 
     mobile: { type: String, required: true, trim: true, match: /^\d{10}$/ },
+=======
+    mobile: { type: String, required: true, trim: true },
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     email: { type: String, trim: true, lowercase: true },
 
     // Never store plaintext passwords
@@ -100,10 +107,13 @@ const userSchema = new Schema(
 );
 
 (userSchema as any).pre('validate', function ensureRoles(this: any) {
+<<<<<<< HEAD
   if (this.mobile != null) {
     this.mobile = normalizeMobileTo10Digits(this.mobile);
   }
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   if (!this.roles || this.roles.length === 0) {
     this.roles = [this.role as Role];
   }

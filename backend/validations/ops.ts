@@ -12,16 +12,20 @@ export const verifyOrderSchema = z.object({
   orderId: z.string().min(1),
 });
 
+<<<<<<< HEAD
 export const verifyOrderRequirementSchema = z.object({
   orderId: z.string().min(1),
   type: z.enum(['review', 'rating']),
 });
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 export const settleOrderSchema = z.object({
   orderId: z.string().min(1),
   settlementRef: z.string().trim().min(2).max(128).optional(),
 });
 
+<<<<<<< HEAD
 export const unsettleOrderSchema = z.object({
   orderId: z.string().min(1),
 });
@@ -30,6 +34,10 @@ export const createCampaignSchema = z.object({
   // For privileged roles (admin/ops): required and must point at a brand user.
   // For non-privileged (agency/mediator): optional; backend will default to requester.
   brandUserId: z.string().min(1).optional(),
+=======
+export const createCampaignSchema = z.object({
+  brandUserId: z.string().min(1),
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
   title: z.string().min(1).max(200),
   platform: z.string().min(1).max(80),
   dealType: z.enum(['Discount', 'Review', 'Rating']).optional(),

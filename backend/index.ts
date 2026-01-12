@@ -2,6 +2,7 @@ import { loadDotenv } from './config/dotenvLoader.js';
 
 loadDotenv();
 import { loadEnv } from './config/env.js';
+<<<<<<< HEAD
 import { connectMongo, disconnectMongo } from './database/mongo.js';
 import { createApp } from './app.js';
 import { createRequire } from 'node:module';
@@ -83,12 +84,19 @@ async function tryRunLargeSeed(wipe: boolean) {
     console.warn('SEED_LARGE requested but seed module is missing (./seeds/seed.js); skipping');
   }
 }
+=======
+import { connectMongo } from './database/mongo.js';
+import { createApp } from './app.js';
+import { seedE2E } from './seeds/e2e.js';
+import { runLargeSeed } from './seeds/seed.js';
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 async function main() {
   const env = loadEnv();
 
   await connectMongo(env);
 
+<<<<<<< HEAD
   const seedAdminRequested = env.SEED_ADMIN || process.env.SEED_ADMIN === 'true';
   const seedE2ERequested = env.SEED_E2E || process.env.SEED_E2E === 'true';
   const isProd = env.NODE_ENV === 'production';
@@ -101,20 +109,37 @@ async function main() {
     if (seedE2ERequested) await tryRunE2ESeed();
     if (!isProd && process.env.SEED_LARGE === 'true') {
       await tryRunLargeSeed(process.env.SEED_WIPE === 'true');
+=======
+  if (env.NODE_ENV !== 'production') {
+    if (process.env.SEED_E2E === 'true') {
+      await seedE2E();
+    }
+    if (process.env.SEED_LARGE === 'true') {
+      await runLargeSeed({
+        wipe: process.env.SEED_WIPE === 'true',
+      });
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     }
   }
 
   const app = createApp(env);
 
+<<<<<<< HEAD
   server = app.listen(env.PORT, () => {
+=======
+  app.listen(env.PORT, () => {
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     // eslint-disable-next-line no-console
     console.log(`Backend listening on :${env.PORT}`);
   });
 }
 
+<<<<<<< HEAD
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 main().catch((err) => {
   // eslint-disable-next-line no-console
   console.error('Fatal startup error:', err);

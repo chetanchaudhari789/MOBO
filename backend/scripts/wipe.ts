@@ -5,8 +5,11 @@ loadDotenv();
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
 
+<<<<<<< HEAD
 import mongoose from 'mongoose';
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
 import { AgencyModel } from '../models/Agency.js';
@@ -77,12 +80,32 @@ function requireWipeConfirmation(env: ReturnType<typeof loadEnv>) {
 }
 
 async function wipeAll() {
+<<<<<<< HEAD
   // Drop the whole DB for a true clean slate (collections + indexes).
   // This is safer than trying to enumerate every collection.
   if (!mongoose.connection?.db) {
     throw new Error('MongoDB not connected; cannot drop database.');
   }
   await mongoose.connection.db.dropDatabase();
+=======
+  await Promise.all([
+    UserModel.deleteMany({}),
+    WalletModel.deleteMany({}),
+    TransactionModel.deleteMany({}),
+    AgencyModel.deleteMany({}),
+    BrandModel.deleteMany({}),
+    MediatorProfileModel.deleteMany({}),
+    ShopperProfileModel.deleteMany({}),
+    CampaignModel.deleteMany({}),
+    DealModel.deleteMany({}),
+    OrderModel.deleteMany({}),
+    TicketModel.deleteMany({}),
+    PayoutModel.deleteMany({}),
+    InviteModel.deleteMany({}),
+    AuditLogModel.deleteMany({}),
+    SuspensionModel.deleteMany({}),
+  ]);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 }
 
 async function main() {

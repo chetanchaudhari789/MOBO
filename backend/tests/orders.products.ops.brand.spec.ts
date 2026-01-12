@@ -5,8 +5,11 @@ import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
+<<<<<<< HEAD
 import { WalletModel } from '../models/Wallet.js';
 import { DealModel } from '../models/Deal.js';
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 
 async function login(app: any, mobile: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ mobile, password });
@@ -17,6 +20,7 @@ async function login(app: any, mobile: string, password: string) {
   };
 }
 
+<<<<<<< HEAD
 async function loginAdmin(app: any, username: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ username, password });
   expect(res.status).toBe(200);
@@ -26,6 +30,8 @@ async function loginAdmin(app: any, username: string, password: string) {
   };
 }
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
 describe('core flows: products -> redirect -> order -> claim -> ops verify/settle -> brand payout/connect', () => {
   afterEach(async () => {
     await disconnectMongo();
@@ -43,7 +49,11 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     const app = createApp(env);
 
     const shopper = await login(app, E2E_ACCOUNTS.shopper.mobile, E2E_ACCOUNTS.shopper.password);
+<<<<<<< HEAD
     const admin = await loginAdmin(app, E2E_ACCOUNTS.admin.username, E2E_ACCOUNTS.admin.password);
+=======
+    const admin = await login(app, E2E_ACCOUNTS.admin.mobile, E2E_ACCOUNTS.admin.password);
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     const brand = await login(app, E2E_ACCOUNTS.brand.mobile, E2E_ACCOUNTS.brand.password);
     const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
 
@@ -59,6 +69,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     const dealId = String(productsRes.body[0].id || productsRes.body[0]._id || '');
     expect(dealId).toBeTruthy();
 
+<<<<<<< HEAD
     const deal = await DealModel.findById(dealId).lean();
     expect(deal).toBeTruthy();
     const payoutPaise = Number((deal as any).payoutPaise ?? 0);
@@ -68,6 +79,8 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(brandWalletBefore).toBeTruthy();
     const brandAvailableBefore = Number((brandWalletBefore as any).availablePaise ?? 0);
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     // Redirect tracking creates a pre-order
     const redirectRes = await request(app)
       .post(`/api/deals/${dealId}/redirect`)
@@ -137,12 +150,15 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(settleRes.status).toBe(200);
     expect(settleRes.body).toHaveProperty('ok', true);
 
+<<<<<<< HEAD
     const brandWalletAfter = await WalletModel.findOne({ ownerUserId: brand.userId, deletedAt: null }).lean();
     expect(brandWalletAfter).toBeTruthy();
     const brandAvailableAfter = Number((brandWalletAfter as any).availablePaise ?? 0);
 
     expect(brandAvailableAfter).toBe(brandAvailableBefore - payoutPaise);
 
+=======
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     // Shopper can fetch own orders
     const myOrdersRes = await request(app)
       .get(`/api/orders/user/${shopper.userId}`)

@@ -16,7 +16,11 @@ const services = [
     name: 'backend',
     cwd: process.cwd(),
     cmd: npmCmd,
+<<<<<<< HEAD
     args: ['--prefix', 'backend', 'run', process.env.SEED_E2E === 'true' ? 'dev:e2e' : 'dev'],
+=======
+    args: ['--prefix', 'backend', 'run', 'dev'],
+>>>>>>> 2409ed58efd6294166fb78b98ede68787df5e176
     port: 8080,
   },
   {
