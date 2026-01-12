@@ -7,7 +7,7 @@ test('admin can view seeded users', async ({ page }) => {
   await page.goto('/');
 
   await page.getByPlaceholder('root').fill(ADMIN_ID);
-  await page.getByPlaceholder('â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢').fill(PASSWORD);
+  await page.getByPlaceholder('').fill(PASSWORD);
   await page.getByRole('button', { name: /Authenticate Session/i }).click();
 
   // Navigate to Users

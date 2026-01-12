@@ -67,7 +67,7 @@ test('brand can see and approve an agency connection request', async ({ page, re
   await page.goto('/');
   await page.getByRole('button', { name: /Access Portal/i }).click();
   await page.getByPlaceholder('9000000000').fill(BRAND_MOBILE);
-  await page.getByPlaceholder('â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢').fill(PASSWORD);
+  await page.getByPlaceholder('').fill(PASSWORD);
   await page.getByRole('button', { name: /Login to Portal/i }).click();
 
   await expect(page.getByText('Partner Portal', { exact: true })).toBeVisible({ timeout: 15000 });

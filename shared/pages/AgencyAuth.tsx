@@ -217,7 +217,7 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
             <Input
               label="Password"
               type="password"
-              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+              placeholder="........"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               leftIcon={<Lock size={18} />}

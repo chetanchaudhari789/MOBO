@@ -489,7 +489,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               type="password"
               value={passkey}
               onChange={(e) => setPasskey(e.target.value)}
-              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+              placeholder="••••••••"
               leftIcon={<Key size={18} />}
               className="font-mono text-sm"
               autoComplete="current-password"
