@@ -5,9 +5,32 @@ const isWindows = process.platform === 'win32';
 const PORTS = [8080, 3001, 3002, 3003, 3004, 3005];
 const HEALTH_E2E_URL = 'http://127.0.0.1:8080/api/health/e2e';
 const AUTH_LOGIN_URL = 'http://127.0.0.1:8080/api/auth/login';
+const VERBOSE = String(process.env.STACK_CHECK_VERBOSE || '').toLowerCase() === 'true';
+const SKIP_PORT_CLEANUP = String(process.env.STACK_CHECK_SKIP_PORT_CLEANUP || '').toLowerCase() === 'true';
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function prefixLines(name, stream, isErr) {
+  let buffer = '';
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk) => {
+    buffer += chunk;
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const out = `[${name}] ${line}`;
+      (isErr ? process.stderr : process.stdout).write(out + '\n');
+    }
+  });
+  stream.on('end', () => {
+    if (buffer.trim()) {
+      const out = `[${name}] ${buffer}`;
+      (isErr ? process.stderr : process.stdout).write(out + '\n');
+    }
+  });
 }
 
 function getListeningPidWindows(port) {
@@ -42,6 +65,7 @@ function killPidTreeWindows(pid) {
 
 function cleanupPortsBestEffort() {
   if (!isWindows) return;
+  if (SKIP_PORT_CLEANUP) return;
   for (const port of PORTS) {
     const pid = getListeningPidWindows(port);
     if (pid) killPidTreeWindows(pid);
@@ -110,9 +134,16 @@ async function main() {
   if (isWindows) cleanupPortsBestEffort();
 
   const child = spawn(process.execPath, ['scripts/dev-all.mjs', '--force'], {
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
   });
+
+  // By default we keep output quiet to avoid noisy CI/terminal issues.
+  // Opt-in: set STACK_CHECK_VERBOSE=true.
+  if (VERBOSE) {
+    if (child.stdout) prefixLines('stack', child.stdout, false);
+    if (child.stderr) prefixLines('stack', child.stderr, true);
+  }
 
   const result = await pollJsonOk(HEALTH_E2E_URL, 120_000);
 

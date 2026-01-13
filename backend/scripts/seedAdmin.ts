@@ -31,7 +31,7 @@ async function main() {
   // eslint-disable-next-line no-console
   console.log(`Admin mobile: ${process.env.ADMIN_SEED_MOBILE || '9000000000'}`);
   // eslint-disable-next-line no-console
-  console.log(`Admin password: ${process.env.ADMIN_SEED_PASSWORD || 'ChangeMe_123!'}`);
+  console.log('Admin password: (set via ADMIN_SEED_PASSWORD)');
 }
 
 main()
