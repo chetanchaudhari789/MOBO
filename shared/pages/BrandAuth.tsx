@@ -217,7 +217,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
             <Input
               label="Password"
               type="password"
-              placeholder="..........."
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               leftIcon={<Lock size={18} />}
