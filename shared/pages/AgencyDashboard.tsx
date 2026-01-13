@@ -547,7 +547,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
             <div className="p-6">
               {loading ? (
                 <EmptyState
-                  title="Loading transactionsâ€¦"
+                  title="Loading transactions"
                   description="Syncing the latest financial ledger."
                   icon={<Spinner className="w-5 h-5 text-slate-400" />}
                   className="bg-transparent"
@@ -555,7 +555,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
               ) : (
                 <EmptyState
                   title="No transactions yet"
-                  description="Once orders start flowing through your network, theyâ€™ll appear here."
+                  description="Once orders start flowing through your network, they'll appear here."
                   icon={<Receipt size={22} className="text-slate-400" />}
                   className="bg-transparent"
                 />
@@ -855,7 +855,7 @@ const PayoutsView = ({ payouts, loading }: any) => {
             <div className="p-6">
               {loading ? (
                 <EmptyState
-                  title="Loading payoutsâ€¦"
+                  title="Loading payouts"
                   description="Syncing payout history."
                   icon={<Spinner className="w-5 h-5 text-slate-400" />}
                   className="bg-transparent"
@@ -1040,7 +1040,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
-                  tickFormatter={(v) => `â‚¹${v / 1000}k`}
+                  tickFormatter={(v) => `${v / 1000}k`}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1319,7 +1319,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     <td colSpan={6} className="p-8">
                       {loading ? (
                         <EmptyState
-                          title="Loading inventoryâ€¦"
+                          title="Loading inventory"
                           description="Fetching campaigns and assignments."
                           icon={<Spinner className="w-5 h-5 text-slate-400" />}
                           className="bg-transparent"
@@ -1401,7 +1401,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 <div className="col-span-full">
                   {loading ? (
                     <EmptyState
-                      title="Loading offersâ€¦"
+                      title="Loading offers"
                       description="Checking brand campaigns shared with your agency."
                       icon={<Spinner className="w-5 h-5 text-slate-400" />}
                       className="bg-slate-50 border-slate-200 rounded-[2.5rem] py-20"
@@ -1450,7 +1450,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                         <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">
                           Budget
                         </p>
-                        <p className="text-sm font-black text-slate-900">â‚¹{c.payout}/unit</p>
+                        <p className="text-sm font-black text-slate-900">{c.payout}/unit</p>
                       </div>
                       <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                         <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">
@@ -1556,7 +1556,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Deal Price (â‚¹)
+                    Deal Price ()
                   </label>
                   <input
                     type="number"
@@ -1568,7 +1568,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Payout (â‚¹)
+                    Payout ()
                   </label>
                   <input
                     type="number"
@@ -1697,7 +1697,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       Deal Price
                     </label>
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-11 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
-                      <span className="text-xs font-bold text-slate-400 mr-2">â‚¹</span>
+                      <span className="text-xs font-bold text-slate-400 mr-2"></span>
                       <input
                         type="number"
                         value={customPrice}
@@ -1713,7 +1713,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       Agency Payout
                     </label>
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-11 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
-                      <span className="text-xs font-bold text-slate-400 mr-2">â‚¹</span>
+                      <span className="text-xs font-bold text-slate-400 mr-2"></span>
                       <input
                         type="number"
                         value={customPayout}
@@ -1760,7 +1760,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               {mediators.length === 0 ? (
                 loading ? (
                   <EmptyState
-                    title="Loading mediatorsâ€¦"
+                    title="Loading mediators"
                     description="Syncing your team roster."
                     icon={<Spinner className="w-5 h-5 text-slate-400" />}
                     className="bg-slate-50/50 border-slate-200"
@@ -1807,7 +1807,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       {/* Sales Performance */}
                       <div className="col-span-4 flex flex-col items-center justify-center">
                         <p className="text-base font-black text-slate-900">
-                          â‚¹{formatCurrency(salesRevenue).replace('â‚¹', '')}
+                          {formatCurrency(salesRevenue).replace('', '')}
                         </p>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
                           {salesCount} Orders
@@ -1909,7 +1909,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
 
     try {
       await api.ops.payoutMediator(selectedMediator.id, amount);
-      toast.success(`Sent â‚¹${amount} to ${selectedMediator.name}`);
+      toast.success(`Sent ${amount} to ${selectedMediator.name}`);
       setPayoutAmount('');
       onRefresh();
       setSelectedMediator(null);
@@ -2038,7 +2038,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   <td colSpan={5} className="p-6">
                     {loading ? (
                       <EmptyState
-                        title="Loading mediatorsâ€¦"
+                        title="Loading mediators"
                         description="Fetching your roster and requests."
                         icon={<Spinner className="w-5 h-5 text-slate-400" />}
                         className="border-slate-200"
@@ -2172,15 +2172,15 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   {mediatorOrders.length === 0 ? (
                     loading ? (
                       <EmptyState
-                        title="Loading ordersâ€¦"
-                        description="Fetching this mediatorâ€™s order history."
+                        title="Loading orders"
+                        description="Fetching this mediator's order history."
                         icon={<Spinner className="w-5 h-5 text-slate-400" />}
                         className="border-slate-200"
                       />
                     ) : (
                       <EmptyState
                         title="No orders yet"
-                        description="When this mediatorâ€™s network completes orders, theyâ€™ll show up here."
+                        description="When this mediators network completes orders, they'll show up here."
                         className="border-slate-200"
                       />
                     )
@@ -2314,7 +2314,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       </label>
                       <div className="relative group">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-lg group-focus-within:text-green-600 transition-colors">
-                          â‚¹
+                          
                         </span>
                         <input
                           type="number"
@@ -2403,7 +2403,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     Total:{' '}
-                    <span className="font-mono font-bold text-zinc-900">â‚¹{proofOrder.total}</span>
+                    <span className="font-mono font-bold text-zinc-900">{proofOrder.total}</span>
                   </p>
                 </div>
               </div>

@@ -356,7 +356,7 @@ const DashboardView = ({
 
   const formatRupees = (value: number) => {
     const n = Number(value || 0);
-    return `â‚¹${Math.round(n).toLocaleString('en-IN')}`;
+    return `${Math.round(n).toLocaleString('en-IN')}`;
   };
 
   const revenueData = useMemo(() => {
@@ -419,7 +419,7 @@ const DashboardView = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           label="Total Revenue"
-          value={`â‚¹${(totalRevenue / 100000).toFixed(2)}L`}
+          value={`${(totalRevenue / 100000).toFixed(2)}L`}
           icon={<Wallet size={24} />}
           dark
         />
@@ -743,7 +743,7 @@ const OrdersView = ({ user }: any) => {
                     <td colSpan={7} className="p-8">
                       <EmptyState
                         title="Loading orders"
-                        description="Fetching the latest ordersâ€¦"
+                        description="Fetching the latest orders"
                         icon={<Spinner className="w-6 h-6 text-zinc-400" />}
                         className="bg-transparent"
                       />
@@ -787,7 +787,7 @@ const OrdersView = ({ user }: any) => {
                       <td className="p-6 text-sm text-zinc-700">
                         <span className="font-mono text-xs text-zinc-500">{o.managerName || '-'}</span>
                       </td>
-                      <td className="p-6 text-right font-bold text-zinc-900">â‚¹{o.total}</td>
+                      <td className="p-6 text-right font-bold text-zinc-900">{o.total}</td>
                       <td className="p-6 text-right">
                         {getOrderStatusBadge(o)}
                       </td>
@@ -863,7 +863,7 @@ const OrdersView = ({ user }: any) => {
                   <p className="text-xs text-zinc-500 mt-1">
                     Value:{' '}
                     <span className="font-mono font-bold text-zinc-900">
-                      â‚¹{viewProofOrder.total}
+                      {viewProofOrder.total}
                     </span>
                   </p>
                 </div>
@@ -1154,7 +1154,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div>
                     <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      MRP (â‚¹)
+                      MRP ()
                     </label>
                     <input
                       type="number"
@@ -1167,7 +1167,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                   </div>
                   <div>
                     <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      Deal Cost (â‚¹)
+                      Deal Cost ()
                     </label>
                     <input
                       type="number"
@@ -1180,7 +1180,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                   </div>
                   <div>
                     <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      Partner Payout (â‚¹)
+                      Partner Payout ()
                     </label>
                     <input
                       type="number"
@@ -1279,10 +1279,10 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                     {form.title || 'Product Title'}
                   </h3>
                   <div className="flex items-center gap-1 mb-1">
-                    <span className="text-[10px] font-bold text-zinc-400">â­â­â­â­â­ (4.8)</span>
+                    <span className="text-[10px] font-bold text-zinc-400">(4.8)</span>
                   </div>
                   <p className="text-xl font-extrabold text-lime-600 leading-none">
-                    â‚¹{Number(form.price).toLocaleString()}
+                    {Number(form.price).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -1294,7 +1294,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                 <div className="pt-2 border-t border-zinc-200 border-dashed flex justify-between items-center">
                   <span>MRP:</span>
                   <span className="text-zinc-900 font-bold decoration-slice line-through">
-                    â‚¹{Number(form.originalPrice).toLocaleString()}
+                    {Number(form.originalPrice).toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -1311,7 +1311,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                 <Wallet size={16} className="text-lime-400" />
               </div>
               <h2 className="text-3xl font-extrabold">
-                â‚¹{(Number(form.payout) * Number(form.totalSlots)).toLocaleString()}
+                {(Number(form.payout) * Number(form.totalSlots)).toLocaleString()}
               </h2>
               <p className="text-xs text-zinc-500 mt-2">Based on payout & total units.</p>
             </div>
@@ -1344,7 +1344,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       {loading ? (
         <EmptyState
           title="Loading campaigns"
-          description="Fetching your latest campaignsâ€¦"
+          description="Fetching your latest campaigns"
           icon={<Spinner className="w-6 h-6 text-zinc-400" />}
           className="bg-transparent"
         />
@@ -1391,12 +1391,12 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                   <div className="flex items-center gap-3">
                     <div className="flex flex-col">
                       <span className="text-[9px] font-bold text-zinc-400 uppercase">Payout</span>
-                      <span className="text-xs font-black text-zinc-900">â‚¹{c.payout}</span>
+                      <span className="text-xs font-black text-zinc-900">{c.payout}</span>
                     </div>
                     <div className="w-[1px] h-6 bg-zinc-100"></div>
                     <div className="flex flex-col">
                       <span className="text-[9px] font-bold text-zinc-400 uppercase">Cost</span>
-                      <span className="text-xs font-black text-zinc-900">â‚¹{c.price}</span>
+                      <span className="text-xs font-black text-zinc-900">{c.price}</span>
                     </div>
                   </div>
                 </div>
@@ -1754,7 +1754,7 @@ export const BrandDashboard: React.FC = () => {
             {isDataLoading ? (
               <EmptyState
                 title="Loading agencies"
-                description="Fetching your connected agenciesâ€¦"
+                description="Fetching your connected agencies"
                 icon={<Spinner className="w-6 h-6 text-zinc-400" />}
                 className="bg-transparent"
               />
@@ -1841,7 +1841,7 @@ export const BrandDashboard: React.FC = () => {
                           <td colSpan={5} className="p-8">
                             <EmptyState
                               title="Loading transactions"
-                              description="Fetching payout ledgerâ€¦"
+                              description="Fetching payout ledger"
                               icon={<Spinner className="w-6 h-6 text-zinc-400" />}
                               className="bg-transparent"
                             />
@@ -1878,7 +1878,7 @@ export const BrandDashboard: React.FC = () => {
                               </div>
                             </td>
                             <td className="p-6 text-right font-mono font-bold text-zinc-900">
-                              â‚¹{tx.amount}
+                              {tx.amount}
                             </td>
                             <td className="p-6 text-right">
                               <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase border border-green-200">
@@ -1904,7 +1904,7 @@ export const BrandDashboard: React.FC = () => {
             {isDataLoading ? (
               <EmptyState
                 title="Loading requests"
-                description="Fetching pending connection requestsâ€¦"
+                description="Fetching pending connection requests"
                 icon={<Spinner className="w-6 h-6 text-zinc-400" />}
                 className="bg-transparent"
               />
@@ -2098,7 +2098,7 @@ export const BrandDashboard: React.FC = () => {
                 <div className="space-y-4">
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-zinc-400">
-                      â‚¹
+                      
                     </span>
                     <input
                       type="number"

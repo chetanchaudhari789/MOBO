@@ -44,7 +44,7 @@ Most non-2xx responses are JSON:
 
 ## Health
 
-- `GET /api/health` â†’ 200 only if Mongo is connected, else 503.
+- `GET /api/health` 200 only if Mongo is connected, else 503.
 
 ## Realtime (`/api/realtime`)
 
@@ -66,7 +66,7 @@ Most non-2xx responses are JSON:
 }
 ```
 
-- `POST /api/auth/register` (buyer) â€“ invite-based via `mediatorCode` (invite code)
+- `POST /api/auth/register` (buyer) invite-based via `mediatorCode` (invite code)
   - Body: `{ name, mobile, password, mediatorCode, email? }`
   - 201: `AuthResponse`
 - `POST /api/auth/login`
@@ -74,17 +74,17 @@ Most non-2xx responses are JSON:
   - 200: `AuthResponse`
 - `GET /api/auth/me` (auth)
   - 200: `{ user }`
-- `POST /api/auth/register-ops` (agency/mediator) â€“ invite-based
+- `POST /api/auth/register-ops` (agency/mediator) invite-based
   - Body: `{ name, mobile, password, role: 'agency'|'mediator', code }`
   - 201: `AuthResponse`
-- `POST /api/auth/register-brand` (brand) â€“ invite-based
+- `POST /api/auth/register-brand` (brand) invite-based
   - Body: `{ name, mobile, password, brandCode }`
   - 201: `AuthResponse`
 - `PATCH /api/auth/profile` (auth)
   - Body: `{ userId, ...updates }` (server applies RBAC/ownership)
   - 200: `{ user }`
 
-## Admin (`/api/admin`) â€” role: `admin`
+## Admin (`/api/admin`) role: `admin`
 
 - `GET /api/admin/invites`
 - `POST /api/admin/invites`
@@ -100,7 +100,7 @@ Most non-2xx responses are JSON:
 - `GET /api/admin/products`
 - `POST /api/admin/orders/reactivate`
 
-## Ops (`/api/ops`) â€” roles: `agency|mediator|ops|admin`
+## Ops (`/api/ops`) roles: `agency|mediator|ops|admin`
 
 - Invites:
 
@@ -113,7 +113,7 @@ Most non-2xx responses are JSON:
 
 - Brand connection:
 
-  - `POST /api/ops/brands/connect` (agency-only) â€“ requests a connection to a brand by `brandCode`
+  - `POST /api/ops/brands/connect` (agency-only) requests a connection to a brand by `brandCode`
     - Body: `{ brandCode }`
     - 200: `{ ok: true, ... }` (shape may include connection/request metadata)
     - Errors: `ALREADY_REQUESTED` is treated as idempotent by the agency portal.
@@ -151,13 +151,13 @@ Most non-2xx responses are JSON:
 - Payouts:
   - `POST /api/ops/payouts` (payout mediator)
 
-## Brand (`/api/brand`) â€” roles: `brand|admin|ops`
+## Brand (`/api/brand`) roles: `brand|admin|ops`
 
 - `GET /api/brand/agencies`
 - `GET /api/brand/campaigns`
 - `GET /api/brand/orders`
 - `GET /api/brand/transactions`
-- `POST /api/brand/payout` (brandâ†’agency wallet transfer)
+- `POST /api/brand/payout` (brand agency wallet transfer)
   - Body: `{ brandId, agencyId, amount, ref }`
   - 200: payout/transfer confirmation payload
 - `POST /api/brand/requests/resolve` (approve/reject pending agency connection)
@@ -170,7 +170,7 @@ Most non-2xx responses are JSON:
 
 - `GET /api/products` (role: buyer/shopper)
   - 200: `Product[]`
-- `POST /api/deals/:dealId/redirect` (role: buyer/shopper) â€“ creates a REDIRECTED pre-order and returns `{ preOrderId, url }`
+- `POST /api/deals/:dealId/redirect` (role: buyer/shopper) creates a REDIRECTED pre-order and returns `{ preOrderId, url }`
 
 ## Orders
 

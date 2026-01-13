@@ -13,7 +13,7 @@ MOBO is a monorepo for a multi-portal commerce + operations system:
 All portals follow one contract:
 
 - The UI calls `/api/*`
-- Each Next app rewrites `/api/*` â†’ `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*`
+- Each Next app rewrites `/api/*` `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*`
 
 ```mermaid
 graph TD
@@ -54,15 +54,15 @@ erDiagram
 
 ## Repo layout
 
-- `backend/` â€” Express API, Mongo models, services, seeds, tests
-- `apps/buyer-app/` â€” Buyer portal (dev port 3001)
-- `apps/mediator-app/` â€” Mediator portal (dev port 3002)
-- `apps/agency-web/` â€” Agency portal (dev port 3003)
-- `apps/brand-web/` â€” Brand portal (dev port 3004)
-- `apps/admin-web/` â€” Admin portal (dev port 3005)
-- `shared/` â€” shared utilities/types used by portals
-- `e2e/` â€” Playwright end-to-end tests
-- `docs/` â€” architecture + API + deployment docs
+- `backend/` Express API, Mongo models, services, seeds, tests
+- `apps/buyer-app/` Buyer portal (dev port 3001)
+- `apps/mediator-app/` Mediator portal (dev port 3002)
+- `apps/agency-web/` Agency portal (dev port 3003)
+- `apps/brand-web/` Brand portal (dev port 3004)
+- `apps/admin-web/` Admin portal (dev port 3005)
+- `shared/` shared utilities/types used by portals
+- `e2e/` Playwright end-to-end tests
+- `docs/` architecture + API + deployment docs
 
 ## Docs
 
@@ -85,7 +85,7 @@ npm install
 
 2. Configure backend env
 
-- Copy `backend/.env.example` â†’ `backend/.env`
+- Copy `backend/.env.example` `backend/.env`
 
 For local dev, `MONGODB_URI=<REPLACE_ME>` (the example) uses an in-memory MongoDB.
 

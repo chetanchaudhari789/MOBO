@@ -184,7 +184,7 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
           <form onSubmit={view === 'login' ? handleLogin : handleRegister} className="space-y-4">
             {error && (
               <div className="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl flex items-center gap-2 border border-red-100">
-                âš ï¸ {error}
+                {error}
               </div>
             )}
 
@@ -217,7 +217,7 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
             <Input
               label="Password"
               type="password"
-              placeholder="........"
+              placeholder="..........."
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               leftIcon={<Lock size={18} />}

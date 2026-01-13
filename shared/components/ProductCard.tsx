@@ -61,7 +61,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
 
           <div>
             <p className="text-xl font-extrabold text-lime-600 leading-none">
-              â‚¹{product.price.toLocaleString()}
+              {product.price.toLocaleString()}
             </p>
           </div>
         </div>
@@ -83,7 +83,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
         <div className="pt-2 border-t border-slate-200 border-dashed flex justify-between items-center">
           <span>Original Price:</span>
           <span className="text-slate-900 font-bold decoration-slice line-through">
-            â‚¹{effectiveOriginal.toLocaleString()}
+            {effectiveOriginal.toLocaleString()}
           </span>
         </div>
 

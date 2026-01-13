@@ -122,7 +122,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
               Today's Profit
             </p>
             <h2 className="text-3xl font-black text-[#CCF381] tracking-tighter leading-none">
-              {formatCurrency(todayEarnings).replace('â‚¹', 'â‚¹')}
+              {formatCurrency(todayEarnings).replace('', '')}
             </h2>
           </div>
         </div>
@@ -211,7 +211,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
         {(viewMode === 'todo' ? actionRequiredOrders : coolingOrders).length === 0 ? (
           loading ? (
             <EmptyState
-              title="Loading ordersâ€¦"
+              title="Loading orders"
               description="Fetching the latest verification queue."
               icon={<Spinner className="w-5 h-5 text-zinc-400" />}
             />
@@ -421,7 +421,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
               <div className="bg-white rounded-[1.5rem] border border-zinc-100 p-4">
                 {loading ? (
                   <EmptyState
-                    title="Loading dealsâ€¦"
+                    title="Loading deals"
                     description="Syncing your published inventory."
                     icon={<Spinner className="w-5 h-5 text-zinc-400" />}
                     className="bg-transparent border-0 py-10"
@@ -491,7 +491,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
               <div className="bg-white rounded-[1.5rem] border border-zinc-100 p-4">
                 {loading ? (
                   <EmptyState
-                    title="Loading inventoryâ€¦"
+                    title="Loading inventory"
                     description="Fetching campaigns and assignments."
                     icon={<Spinner className="w-5 h-5 text-zinc-400" />}
                     className="bg-transparent border-0 py-10"
@@ -598,7 +598,7 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
           {loading ? (
             <div className="p-4">
               <EmptyState
-                title="Loading buyersâ€¦"
+                title="Loading buyers"
                 description="Fetching your active roster."
                 icon={<Spinner className="w-5 h-5 text-zinc-400" />}
                 className="bg-transparent border-0 py-10"
@@ -731,7 +731,7 @@ const MediatorProfileView = () => {
         </div>
         <h2 className="text-xl font-black text-zinc-900">{user?.name}</h2>
         <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest mt-1">
-          Mediator â€¢ {user?.mediatorCode}
+          Mediator  {user?.mediatorCode}
         </p>
       </div>
 
@@ -1000,7 +1000,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             {(viewMode === 'pending' ? pendingOrders : settledOrders).length === 0 ? (
               loading ? (
                 <EmptyState
-                  title="Loading settlementsâ€¦"
+                  title="Loading settlements"
                   description="Fetching the latest payment status."
                   icon={<Spinner className="w-5 h-5 text-zinc-400" />}
                   className="bg-transparent border-zinc-200/60"
@@ -1404,7 +1404,7 @@ export const MediatorDashboard: React.FC = () => {
                           </button>
                         </div>
                         <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wide mt-1">
-                          {n.read ? 'Read' : 'New'}{n.createdAt ? ` â€¢ ${formatRelativeTime(n.createdAt)}` : ''}
+                          {n.read ? 'Read' : 'New'}{n.createdAt ? `${formatRelativeTime(n.createdAt)}` : ''}
                         </p>
                       </div>
                     </div>
@@ -1501,7 +1501,7 @@ export const MediatorDashboard: React.FC = () => {
               <h3 className="font-bold text-base">Verification Station</h3>
               <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-mono mt-0.5">
                 <span>{proofModal.buyerName}</span>
-                <span>â€¢</span>
+                <span></span>
                 <span>{proofModal.id}</span>
               </div>
             </div>
@@ -1532,7 +1532,7 @@ export const MediatorDashboard: React.FC = () => {
                   <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">
                     Expected Price
                   </p>
-                  <p className="text-sm font-bold text-lime-400">â‚¹{proofModal.total}</p>
+                  <p className="text-sm font-bold text-lime-400">{proofModal.total}</p>
                 </div>
               </div>
 
@@ -1882,7 +1882,7 @@ export const MediatorDashboard: React.FC = () => {
             </div>
             <div className="space-y-3 mb-6">
               <label className="text-[10px] font-black text-zinc-900 uppercase ml-2 block tracking-wide">
-                Your Commission (â‚¹)
+                Your Commission ()
               </label>
               <input
                 type="number"

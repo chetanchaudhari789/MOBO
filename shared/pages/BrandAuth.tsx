@@ -155,7 +155,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
           </h2>
           <div className="flex gap-3">
             <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-lg border border-white/5 text-sm font-medium">
-              âœ¨ AI-Powered
+               AI-Powered
             </div>
             <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-lg border border-white/5 text-sm font-medium">
               ðŸ›¡ï¸ Fraud Protection
@@ -184,7 +184,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
           <form onSubmit={view === 'login' ? handleLogin : handleRegister} className="space-y-4">
             {error && (
               <div className="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl flex items-center gap-2 border border-red-100">
-                âš ï¸ {error}
+                 {error}
               </div>
             )}
 
@@ -217,7 +217,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
             <Input
               label="Password"
               type="password"
-              placeholder="........."
+              placeholder="..........."
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               leftIcon={<Lock size={18} />}

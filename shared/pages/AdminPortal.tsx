@@ -687,14 +687,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <StatCard
                     title="Total Revenue"
-                    value={`â‚¹${((stats?.totalRevenue || 0) / 100000).toFixed(2)}L`}
+                    value={`${((stats?.totalRevenue || 0) / 100000).toFixed(2)}L`}
                     subtext="Gross Volume"
                     icon={IndianRupee}
                     colorClass="text-emerald-600"
                   />
                   <StatCard
                     title="Pending Clearance"
-                    value={`â‚¹${((stats?.pendingRevenue || 0) / 100000).toFixed(2)}L`}
+                    value={`${((stats?.pendingRevenue || 0) / 100000).toFixed(2)}L`}
                     subtext="In Cooling Period"
                     icon={Wallet}
                     colorClass="text-blue-600"
@@ -752,7 +752,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             axisLine={false}
                             tickLine={false}
                             tick={{ fontSize: 11, fontWeight: 600, fill: '#94a3b8' }}
-                            tickFormatter={(v) => `â‚¹${v / 1000}k`}
+                            tickFormatter={(v) => `${v / 1000}k`}
                           />
                           <Tooltip
                             cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -848,7 +848,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <div className="col-span-full">
                       <EmptyState
                         title="Loading tickets"
-                        description="Syncing the latest support queueâ€¦"
+                        description="Syncing the latest support queue"
                         icon={<Spinner className="w-6 h-6 text-slate-400" />}
                         className="border-slate-200"
                       />
@@ -857,7 +857,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <div className="col-span-full">
                       <EmptyState
                         title="No tickets"
-                        description="When users raise disputes or issues, theyâ€™ll appear here."
+                        description="When users raise disputes or issues, they'll appear here."
                         className="border-slate-200"
                       />
                     </div>
@@ -981,7 +981,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             </span>
                           </td>
                           <td className="p-5 font-mono text-slate-700 font-bold">
-                            â‚¹{(u.walletBalance || 0).toLocaleString()}
+                            {(u.walletBalance || 0).toLocaleString()}
                           </td>
                           <td className="p-5">
                             <StatusBadge status={u.status} />
@@ -1127,7 +1127,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           <td className="p-5 text-slate-600">
                             {new Date(o.createdAt).toLocaleDateString()}
                           </td>
-                          <td className="p-5 font-mono text-slate-900 font-bold">â‚¹{o.total}</td>
+                          <td className="p-5 font-mono text-slate-900 font-bold">{o.total}</td>
                           <td className="p-5 text-slate-700">{o.buyerName}</td>
                           <td className="p-5 text-right">
                             <StatusBadge
@@ -1179,9 +1179,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                         <td className="p-5 text-slate-500 uppercase text-xs font-bold">
                           {p.category}
                         </td>
-                        <td className="p-5 text-right font-mono text-slate-900">â‚¹{p.price}</td>
+                        <td className="p-5 text-right font-mono text-slate-900">{p.price}</td>
                         <td className="p-5 text-right font-mono text-emerald-600">
-                          +â‚¹{p.commission}
+                          {p.commission}
                         </td>
                         <td className="p-5 text-right">
                           <span

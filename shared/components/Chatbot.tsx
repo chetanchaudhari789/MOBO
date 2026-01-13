@@ -164,7 +164,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           addMessage({
             id: makeMessageId(),
             role: 'model',
-            text: "Sure â€” let's explore some **Loot Deals**.",
+            text: "Sure  let's explore some **Loot Deals**.",
             timestamp: Date.now(),
           });
         } else if (
@@ -537,7 +537,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                               )}
                             </div>
                             <span className="text-sm font-mono font-bold text-slate-900">
-                              â‚¹{order.total}
+                              {order.total}
                             </span>
                           </div>
                         </div>

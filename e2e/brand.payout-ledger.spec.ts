@@ -165,6 +165,6 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
   const ledgerRow = page
     .locator('tbody tr')
     .filter({ hasText: agencyName })
-    .filter({ hasText: `â‚¹${amount}` });
+    .filter({ hasText: `${amount}` });
   await expect(ledgerRow.first()).toBeVisible({ timeout: 15000 });
 });
