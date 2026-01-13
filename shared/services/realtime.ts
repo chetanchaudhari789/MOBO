@@ -32,14 +32,25 @@ function getApiBaseUrl(): string {
       ? String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET)
       : undefined;
 
-  const fromProxy = fromNextProxyTarget
-    ? (() => {
-        const raw = String(fromNextProxyTarget).trim();
-        if (!raw) return undefined;
-        const trimmed = raw.endsWith('/') ? raw.slice(0, -1) : raw;
-        return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-      })()
-    : undefined;
+  // In Next.js deployments we rely on same-origin `/api/*` + Next rewrites.
+  // This avoids CORS/preflight problems when env vars point at a different origin.
+  const preferSameOriginProxy =
+    typeof window !== 'undefined' &&
+    typeof process !== 'undefined' &&
+    (process as any).env &&
+    (String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET || '').trim() ||
+      String((process as any).env.NEXT_PUBLIC_API_URL || '').trim());
+
+  const fromProxy = preferSameOriginProxy
+    ? '/api'
+    : fromNextProxyTarget
+      ? (() => {
+          const raw = String(fromNextProxyTarget).trim();
+          if (!raw) return undefined;
+          const trimmed = raw.endsWith('/') ? raw.slice(0, -1) : raw;
+          return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+        })()
+      : undefined;
 
   let base = (fromGlobal || fromVite || fromNext || fromProxy || '/api').trim();
 
