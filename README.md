@@ -104,6 +104,38 @@ Ports:
 - Brand: http://localhost:3004
 - Admin: http://localhost:3005
 
+## Reset DB (admin only)
+
+This drops the entire MongoDB database (collections + indexes) and then seeds only a single admin user.
+
+1. Set admin seed values in `backend/.env` (recommended) or as environment variables:
+
+- `ADMIN_SEED_USERNAME` (admin login uses username/password)
+- `ADMIN_SEED_PASSWORD`
+- `ADMIN_SEED_MOBILE` (required by the User model; not used for admin login)
+- `ADMIN_SEED_NAME`
+
+2. Confirm the wipe (required safeguards):
+
+- `WIPE_DB=true`
+- `WIPE_DB_CONFIRM=WIPE`
+
+If your `MONGODB_URI` is not local, the script will refuse unless you also set:
+
+- `WIPE_DB_ALLOW_REMOTE=true`
+
+3. Run:
+
+```bash
+npm run db:reset-admin
+```
+
+Windows PowerShell one-liner example (your requested credentials):
+
+```powershell
+$env:ADMIN_SEED_USERNAME='chetan'; $env:ADMIN_SEED_PASSWORD='chetan789'; $env:ADMIN_SEED_MOBILE='9000000000'; $env:ADMIN_SEED_NAME='Chetan Admin'; $env:WIPE_DB='true'; $env:WIPE_DB_CONFIRM='WIPE'; npm run db:reset-admin
+```
+
 ## Environment variables
 
 Backend (`backend/.env`):
