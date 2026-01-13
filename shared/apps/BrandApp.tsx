@@ -6,7 +6,7 @@ import { BrandAuthScreen } from '../pages/BrandAuth';
 import { BrandDashboard } from '../pages/BrandDashboard';
 
 interface BrandAppProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export const BrandApp: React.FC<BrandAppProps> = ({ onBack }) => {

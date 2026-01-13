@@ -7,7 +7,7 @@ import { BrandApp } from '../../../shared/apps/BrandApp';
 export default function Page() {
   return (
     <AuthProvider>
-      <BrandApp onBack={() => {}} />
+      <BrandApp />
     </AuthProvider>
   );
 }
