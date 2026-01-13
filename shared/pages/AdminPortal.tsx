@@ -304,13 +304,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     setAuthError('');
     setIsAuthLoading(true);
     try {
-      const u = await loginAdmin(adminId, passkey);
+      const u = await loginAdmin(String(adminId || '').trim(), String(passkey || '').trim());
       if (u?.role !== 'admin') {
         logout();
         setAuthError('This account is not an admin. Please use the correct portal.');
       }
-    } catch {
-      setAuthError('Invalid Admin Credentials');
+    } catch (err: any) {
+      const msg = String(err?.message || '').trim();
+      setAuthError(msg || 'Invalid Admin Credentials');
     } finally {
       setIsAuthLoading(false);
     }

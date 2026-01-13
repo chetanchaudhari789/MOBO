@@ -95,14 +95,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (mobile: string, pass: string) => {
-    const loggedInUser = (await api.auth.login(mobile, pass)) as User;
+    const cleanMobile = String(mobile || '').trim();
+    const cleanPass = String(pass || '').trim();
+    const loggedInUser = (await api.auth.login(cleanMobile, cleanPass)) as User;
     setUser(loggedInUser);
     localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
     return loggedInUser;
   };
 
   const loginAdmin = async (username: string, pass: string) => {
-    const loggedInUser = (await api.auth.loginAdmin(username, pass)) as User;
+    const cleanUsername = String(username || '').trim();
+    const cleanPass = String(pass || '').trim();
+    const loggedInUser = (await api.auth.loginAdmin(cleanUsername, cleanPass)) as User;
     setUser(loggedInUser);
     localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
     return loggedInUser;
