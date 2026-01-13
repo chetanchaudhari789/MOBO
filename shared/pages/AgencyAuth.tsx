@@ -155,10 +155,10 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
           </h2>
           <div className="flex gap-3">
             <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-lg border border-white/5 text-sm font-medium">
-              ðŸš€ Fast Distribution
+              {'\u{1F680}'} Fast Distribution
             </div>
             <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-lg border border-white/5 text-sm font-medium">
-              ðŸ‘¥ Team Mgmt
+              {'\u{1F465}'} Team Mgmt
             </div>
           </div>
         </div>

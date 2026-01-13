@@ -294,9 +294,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   };
 
   const quickActions = [
-    { emoji: 'ðŸ”¥', text: 'Loot Deals', command: 'Show me the top 5 loot deals' },
-    { emoji: 'ðŸ“¦', text: 'Latest Order', command: 'Where is my latest order?' },
-    { emoji: 'ðŸŽŸï¸', text: 'Tickets', command: 'Check status of my support tickets' },
+    { emoji: '\u{1F525}', text: 'Loot Deals', command: 'Show me the top 5 loot deals' },
+    { emoji: '\u{1F4E6}', text: 'Latest Order', command: 'Where is my latest order?' },
+    { emoji: '\u{1F39F}\u{FE0F}', text: 'Tickets', command: 'Check status of my support tickets' },
   ];
 
   return (

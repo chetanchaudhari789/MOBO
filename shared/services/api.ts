@@ -1,4 +1,5 @@
 ﻿import { User, Product, Order, Ticket } from '../types';
+import { fixMojibakeDeep, maybeFixMojibake } from '../utils/mojibake';
 
 function getApiBaseUrl(): string {
   const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
@@ -94,7 +95,7 @@ function toErrorFromPayload(payload: any, fallback: string): Error {
     payload?.message ||
     (typeof payload === 'string' ? payload : null) ||
     fallback;
-  const err = new Error(String(message));
+  const err = new Error(maybeFixMojibake(String(message)));
   const code = payload?.error?.code || payload?.code;
   if (code) (err as any).code = code;
   return err;
@@ -104,7 +105,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
   const res = await fetch(`${API_URL}${path}`, init);
   const payload = await readPayloadSafe(res);
   if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
-  return payload;
+  return fixMojibakeDeep(payload);
 }
 
 async function fetchOk(path: string, init?: RequestInit): Promise<void> {

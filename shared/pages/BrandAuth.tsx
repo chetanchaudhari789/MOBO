@@ -155,10 +155,10 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
           </h2>
           <div className="flex gap-3">
             <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-lg border border-white/5 text-sm font-medium">
-               AI-Powered
+              AI-Powered
             </div>
             <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-lg border border-white/5 text-sm font-medium">
-              ðŸ›¡ï¸ Fraud Protection
+              {'\u{1F6E1}\u{FE0F}'} Fraud Protection
             </div>
           </div>
         </div>

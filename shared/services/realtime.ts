@@ -1,3 +1,5 @@
+import { fixMojibakeDeep } from '../utils/mojibake';
+
 type Listener = (msg: RealtimeMessage) => void;
 
 export type RealtimeMessage = {
@@ -168,7 +170,7 @@ class RealtimeClient {
               ? (payload as any).payload
               : payload;
 
-          this.dispatch({ type: eventName, ts, payload: innerPayload });
+          this.dispatch({ type: eventName, ts, payload: fixMojibakeDeep(innerPayload) });
           eventName = 'message';
         };
 
