@@ -1765,8 +1765,16 @@ export const BrandDashboard: React.FC = () => {
                     onClick={() => setSelectedAgency(ag)}
                     className="bg-white p-6 rounded-[2rem] border border-zinc-100 shadow-sm hover:shadow-xl transition-all group flex items-center gap-5 relative overflow-hidden cursor-pointer active:scale-[0.99]"
                   >
-                    <div className="w-20 h-20 bg-zinc-50 rounded-[1.5rem] flex items-center justify-center font-bold text-2xl text-zinc-400 shadow-inner">
-                      {ag.name.charAt(0)}
+                    <div className="w-20 h-20 bg-zinc-50 rounded-[1.5rem] flex items-center justify-center font-bold text-2xl text-zinc-400 shadow-inner overflow-hidden">
+                      {ag.avatar ? (
+                        <img
+                          src={ag.avatar}
+                          alt={ag.name ? `${ag.name} avatar` : 'Avatar'}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        ag.name.charAt(0)
+                      )}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -2002,8 +2010,16 @@ export const BrandDashboard: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-4 mb-8">
-              <div className="w-16 h-16 bg-zinc-900 text-white rounded-2xl flex items-center justify-center font-bold text-2xl shadow-lg">
-                {selectedAgency.name.charAt(0)}
+              <div className="w-16 h-16 bg-zinc-900 text-white rounded-2xl flex items-center justify-center font-bold text-2xl shadow-lg overflow-hidden">
+                {selectedAgency.avatar ? (
+                  <img
+                    src={selectedAgency.avatar}
+                    alt={selectedAgency.name ? `${selectedAgency.name} avatar` : 'Avatar'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  selectedAgency.name.charAt(0)
+                )}
               </div>
               <div>
                 <h3 className="text-2xl font-extrabold text-zinc-900 leading-tight">

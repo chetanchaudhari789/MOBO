@@ -1658,31 +1658,31 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
           onClick={() => setAssignModal(null)}
         >
           <div
-            className="bg-white w-[98%] md:w-full max-w-7xl rounded-[2.5rem] p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-slide-up"
+            className="bg-white w-[98%] md:w-full max-w-7xl rounded-2xl p-4 sm:p-5 lg:p-6 2xl:p-8 shadow-2xl relative max-h-[92vh] flex flex-col min-h-0 animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex justify-between items-start gap-4 mb-4 shrink-0">
               <div>
-                <h3 className="text-3xl font-black text-slate-900 tracking-tight">
+                <h3 className="text-2xl 2xl:text-3xl font-black text-slate-900 tracking-tight">
                   Distribute Inventory
                 </h3>
-                <p className="text-sm text-slate-500 font-bold mt-1">
+                <p className="text-xs sm:text-sm text-slate-500 font-bold mt-1">
                   Allocate campaign slots to your team.
                 </p>
               </div>
               <button
                 onClick={() => setAssignModal(null)}
-                className="p-3 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
+                className="p-2.5 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors shrink-0"
               >
                 <X size={20} className="text-slate-500" />
               </button>
             </div>
 
             {/* Campaign Summary & Global Config */}
-            <div className="bg-slate-50 p-6 rounded-3xl mb-8 border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="bg-slate-50 p-4 2xl:p-6 rounded-2xl mb-4 border border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shrink-0">
               <div className="flex gap-4 items-center min-w-0">
-                <div className="w-14 h-14 bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex-shrink-0">
+                <div className="w-12 h-12 bg-white rounded-xl p-2 border border-slate-200 shadow-sm flex-shrink-0">
                   <img
                     src={assignModal.image}
                     className="w-full h-full object-contain mix-blend-multiply"
@@ -1692,7 +1692,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   <p className="text-xs text-slate-400 font-extrabold mb-1 uppercase tracking-widest">
                     Selected Campaign
                   </p>
-                  <h4 className="text-lg font-black text-slate-900 mb-1 leading-tight line-clamp-1">
+                  <h4 className="text-base sm:text-lg font-black text-slate-900 mb-1 leading-tight line-clamp-1">
                     {assignModal.title}
                   </h4>
                   <div className="flex items-center gap-3">
@@ -1707,17 +1707,17 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               </div>
 
               {/* CONFIG OPTIONS: Deal Type, Price, Payout */}
-              <div className="flex flex-wrap gap-x-8 gap-y-4 items-end">
+              <div className="flex flex-wrap gap-x-4 gap-y-3 items-end">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
                     Configure Deal Type
                   </label>
-                  <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm h-11">
+                  <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm h-9">
                     {['Discount', 'Review', 'Rating'].map((type) => (
                       <button
                         key={type}
                         onClick={() => setSelectedDealType(type)}
-                        className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all uppercase whitespace-nowrap ${selectedDealType === type ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all uppercase whitespace-nowrap ${selectedDealType === type ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                       >
                         {type}
                       </button>
@@ -1730,7 +1730,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
                       Deal Price
                     </label>
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-11 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
+                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-9 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
                       <span className="text-xs font-bold text-slate-400 mr-2"></span>
                       <input
                         type="number"
@@ -1746,7 +1746,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
                       Agency Payout
                     </label>
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-11 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
+                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-9 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
                       <span className="text-xs font-bold text-slate-400 mr-2"></span>
                       <input
                         type="number"
@@ -1762,13 +1762,13 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 <div className="flex gap-2 ml-auto">
                   <button
                     onClick={handleDistributeEvenly}
-                    className="px-5 py-3 bg-white text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-100 transition-colors flex items-center gap-2 border border-slate-200 shadow-sm hover:shadow-md h-11"
+                    className="px-4 py-2 bg-white text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-100 transition-colors flex items-center gap-2 border border-slate-200 shadow-sm hover:shadow-md h-9"
                   >
                     <Share2 size={14} /> <span className="hidden sm:inline">Distribute Evenly</span>
                   </button>
                   <button
                     onClick={() => setAssignments({})}
-                    className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-red-500 hover:border-red-200 transition-colors shadow-sm hover:shadow-md h-11 w-11 flex items-center justify-center"
+                    className="p-2 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-red-500 hover:border-red-200 transition-colors shadow-sm hover:shadow-md h-9 w-9 flex items-center justify-center"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -1776,7 +1776,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-4 mb-3">
+            <div className="flex items-center justify-between gap-4 mb-2 shrink-0">
               <div className="flex-1 max-w-md">
                 <div className="relative">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1785,7 +1785,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     value={assignSearch}
                     onChange={(e) => setAssignSearch(e.target.value)}
                     placeholder="Search mediators by name or code..."
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none transition-all placeholder:text-slate-400"
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none transition-all placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -1795,7 +1795,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             </div>
 
             {/* List Header */}
-            <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50 rounded-xl border border-slate-100 mb-2">
+            <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100 mb-2 shrink-0">
               <div className="col-span-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider pl-2">
                 Mediator Profile
               </div>
@@ -1808,7 +1808,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             </div>
 
             {/* Mediator List */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide space-y-2 pr-1 mb-6">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide space-y-2 pr-1 mb-4">
               {activeMediatorsForAssign.length === 0 ? (
                 loading ? (
                   <EmptyState
@@ -1839,11 +1839,11 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   return (
                     <div
                       key={m.id}
-                      className="grid grid-cols-12 gap-4 items-center p-3 border border-slate-100 rounded-2xl hover:border-purple-200 hover:bg-purple-50/10 transition-all bg-white shadow-sm group"
+                      className="grid grid-cols-12 gap-4 items-center p-2 border border-slate-100 rounded-2xl hover:border-purple-200 hover:bg-purple-50/10 transition-all bg-white shadow-sm group"
                     >
                       {/* Profile */}
                       <div className="col-span-5 flex items-center gap-4 pl-2">
-                        <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
+                        <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
                           {m.avatar ? (
                             <img src={m.avatar} className="w-full h-full object-cover" />
                           ) : (
@@ -1875,7 +1875,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                         <div className="relative group/input">
                           <input
                             type="number"
-                            className="w-36 p-3 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all group-hover/input:shadow-md"
+                            className="w-36 p-2 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all group-hover/input:shadow-md"
                             placeholder="0"
                             value={assignments[m.mediatorCode!] || ''}
                             onChange={(e) =>
@@ -1894,16 +1894,16 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             </div>
 
             {/* Footer */}
-            <div className="pt-6 border-t border-slate-100 flex justify-end gap-4">
+            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3 shrink-0">
               <button
                 onClick={() => setAssignModal(null)}
-                className="px-6 py-4 text-slate-500 font-bold text-sm hover:text-slate-800 hover:bg-slate-50 rounded-2xl transition-colors"
+                className="px-5 py-3 text-slate-500 font-bold text-sm hover:text-slate-800 hover:bg-slate-50 rounded-2xl transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAssign}
-                className="px-10 py-4 bg-purple-600 text-white font-bold rounded-2xl hover:bg-purple-700 transition-all shadow-xl hover:shadow-2xl hover:shadow-purple-200 active:scale-95 flex items-center gap-2"
+                className="px-8 py-3 bg-purple-600 text-white font-bold rounded-2xl hover:bg-purple-700 transition-all shadow-xl hover:shadow-2xl hover:shadow-purple-200 active:scale-95 flex items-center gap-2"
               >
                 Confirm Distribution <CheckCircle size={18} />
               </button>
@@ -2118,8 +2118,12 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   >
                     <td className="p-5 pl-8">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center font-black text-slate-500 shadow-inner">
-                          {m.name.charAt(0)}
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center font-black text-slate-500 shadow-inner overflow-hidden">
+                          {m.avatar ? (
+                            <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                          ) : (
+                            m.name.charAt(0)
+                          )}
                         </div>
                         <div>
                           <div className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors">
@@ -2199,8 +2203,16 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             {/* Modal Header */}
             <div className="bg-slate-900 p-6 flex justify-between items-start text-white flex-shrink-0">
               <div className="flex gap-4 items-center">
-                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center font-black text-2xl">
-                  {selectedMediator.name.charAt(0)}
+                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center font-black text-2xl overflow-hidden">
+                  {selectedMediator.avatar ? (
+                    <img
+                      src={selectedMediator.avatar}
+                      alt={selectedMediator.name ? `${selectedMediator.name} avatar` : 'Avatar'}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    selectedMediator.name.charAt(0)
+                  )}
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold">{selectedMediator.name}</h2>
@@ -2748,8 +2760,12 @@ export const AgencyDashboard: React.FC = () => {
               }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all mb-2 ${activeTab === 'profile' ? 'bg-slate-50 border border-slate-200' : 'hover:bg-slate-50'}`}
             >
-              <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
-                {user?.name.charAt(0)}
+              <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm overflow-hidden">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                ) : (
+                  user?.name.charAt(0)
+                )}
               </div>
               <div className="text-left min-w-0">
                 <p className="text-sm font-bold text-slate-900 truncate">{user?.name}</p>

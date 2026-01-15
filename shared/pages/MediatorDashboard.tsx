@@ -152,8 +152,16 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                 className="min-w-[220px] bg-white p-3 rounded-[1.2rem] border border-zinc-100 shadow-sm flex items-center justify-between snap-center"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-[0.8rem] flex items-center justify-center font-black text-sm shadow-inner">
-                    {u.name.charAt(0)}
+                  <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-[0.8rem] flex items-center justify-center font-black text-sm shadow-inner overflow-hidden">
+                    {u.avatar ? (
+                      <img
+                        src={u.avatar}
+                        alt={u.name ? `${u.name} avatar` : 'Avatar'}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      u.name.charAt(0)
+                    )}
                   </div>
                   <div>
                     <h4 className="font-bold text-zinc-900 text-xs line-clamp-1">{u.name}</h4>
@@ -647,8 +655,16 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
                   className="p-3 flex items-center justify-between hover:bg-zinc-50 transition-colors cursor-pointer active:bg-zinc-100"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-zinc-100 rounded-[0.8rem] flex items-center justify-center font-black text-zinc-500 text-sm">
-                      {u.name.charAt(0)}
+                    <div className="w-9 h-9 bg-zinc-100 rounded-[0.8rem] flex items-center justify-center font-black text-zinc-500 text-sm overflow-hidden">
+                      {u.avatar ? (
+                        <img
+                          src={u.avatar}
+                          alt={u.name ? `${u.name} avatar` : 'Avatar'}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        u.name.charAt(0)
+                      )}
                     </div>
                     <div>
                       <p className="font-bold text-xs text-zinc-900">{u.name}</p>
@@ -943,8 +959,16 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
           <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-6"></div>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-[0.8rem] bg-white/10 flex items-center justify-center font-bold text-sm">
-                {buyer.name.charAt(0)}
+              <div className="w-10 h-10 rounded-[0.8rem] bg-white/10 flex items-center justify-center font-bold text-sm overflow-hidden">
+                {buyer.avatar ? (
+                  <img
+                    src={buyer.avatar}
+                    alt={buyer.name ? `${buyer.name} avatar` : 'Avatar'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  buyer.name.charAt(0)
+                )}
               </div>
               <div>
                 <h3 className="text-xl font-black leading-none">{buyer.name}</h3>
@@ -1364,8 +1388,16 @@ export const MediatorDashboard: React.FC = () => {
       {/* Top Bar */}
       <div className="pt-safe-top pt-6 px-4 pb-2 bg-[#FAFAFA] z-30 flex justify-between items-center sticky top-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-[0.8rem] bg-[#18181B] text-white flex items-center justify-center font-black text-lg shadow-lg border-2 border-white">
-            {user?.name.charAt(0)}
+          <div className="w-10 h-10 rounded-[0.8rem] bg-[#18181B] text-white flex items-center justify-center font-black text-lg shadow-lg border-2 border-white overflow-hidden">
+            {user?.avatar ? (
+              <img
+                src={user.avatar}
+                alt={user?.name ? `${user.name} avatar` : 'Avatar'}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              user?.name.charAt(0)
+            )}
           </div>
           <div>
             <h1 className="text-lg font-black text-[#18181B] leading-none tracking-tight">
