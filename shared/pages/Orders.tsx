@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { Order, Product } from '../types';
-import { Badge, Button, EmptyState, Spinner } from '../components/ui';
+import { Button, EmptyState, RealtimeStatusBadge, Spinner } from '../components/ui';
 import {
   Clock,
   CheckCircle2,
@@ -276,18 +276,7 @@ export const Orders: React.FC = () => {
           <h1 className="text-2xl font-extrabold text-slate-900">My Orders</h1>
           <div className="flex items-center gap-2">
             <p className="text-sm text-slate-500 font-medium">Track purchases & cashback.</p>
-            <Badge
-              variant={connected ? 'success' : 'warning'}
-              title={connected ? 'Realtime connected' : 'Realtime reconnecting'}
-              className="gap-2"
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  connected ? 'bg-emerald-500 animate-pulse motion-reduce:animate-none' : 'bg-amber-500'
-                }`}
-              />
-              {connected ? 'LIVE' : 'OFFLINE'}
-            </Badge>
+            <RealtimeStatusBadge connected={connected} />
           </div>
         </div>
         <Button

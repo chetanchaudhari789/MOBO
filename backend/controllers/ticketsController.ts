@@ -1,12 +1,51 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../middleware/errors.js';
+import type { Role } from '../middleware/auth.js';
 import { TicketModel } from '../models/Ticket.js';
 import { createTicketSchema, updateTicketSchema } from '../validations/tickets.js';
 import { toUiTicket, toUiTicketForBrand } from '../utils/uiMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { OrderModel } from '../models/Order.js';
-import { listMediatorCodesForAgency } from '../services/lineage.js';
-import { publishBroadcast } from '../services/realtimeHub.js';
+import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
+import { publishRealtime } from '../services/realtimeHub.js';
+
+async function buildTicketAudience(ticket: any) {
+  const privilegedRoles: Role[] = ['admin', 'ops'];
+
+  const userIds = new Set<string>();
+  const ticketOwnerUserId = String(ticket?.userId || '').trim();
+  if (ticketOwnerUserId) userIds.add(ticketOwnerUserId);
+
+  let mediatorCodes: string[] | undefined;
+  let agencyCodes: string[] | undefined;
+
+  const orderId = String(ticket?.orderId || '').trim();
+  if (orderId) {
+    const order = await OrderModel.findById(orderId)
+      .select({ userId: 1, brandUserId: 1, managerName: 1, deletedAt: 1 })
+      .lean();
+    if (order && !(order as any).deletedAt) {
+      const buyerUserId = String((order as any).userId || '').trim();
+      const brandUserId = String((order as any).brandUserId || '').trim();
+      if (buyerUserId) userIds.add(buyerUserId);
+      if (brandUserId) userIds.add(brandUserId);
+
+      const mediatorCode = String((order as any).managerName || '').trim();
+      if (mediatorCode) {
+        mediatorCodes = [mediatorCode];
+        const agencyCode = (await getAgencyCodeForMediatorCode(mediatorCode)) || '';
+        if (agencyCode) agencyCodes = [String(agencyCode).trim()];
+      }
+    }
+  }
+
+  return {
+    roles: privilegedRoles,
+    userIds: Array.from(userIds),
+    mediatorCodes,
+    agencyCodes,
+  };
+}
 
 async function getScopedOrderIdsForRequester(params: {
   roles: string[];
@@ -160,8 +199,14 @@ export function makeTicketsController() {
           createdBy: userId as any,
         });
 
-        publishBroadcast('tickets.changed', { ticketId: String((ticket as any)._id) });
-        publishBroadcast('notifications.changed');
+        const audience = await buildTicketAudience(ticket);
+        publishRealtime({
+          type: 'tickets.changed',
+          ts: new Date().toISOString(),
+          payload: { ticketId: String((ticket as any)._id) },
+          audience,
+        });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.status(201).json(toUiTicket(ticket.toObject()));
       } catch (err) {
         next(err);
@@ -196,8 +241,14 @@ export function makeTicketsController() {
         );
         if (!ticket) throw new AppError(404, 'TICKET_NOT_FOUND', 'Ticket not found');
 
-        publishBroadcast('tickets.changed', { ticketId: String((ticket as any)._id), status: body.status });
-        publishBroadcast('notifications.changed');
+        const audience = await buildTicketAudience(ticket);
+        publishRealtime({
+          type: 'tickets.changed',
+          ts: new Date().toISOString(),
+          payload: { ticketId: String((ticket as any)._id), status: body.status },
+          audience,
+        });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json(toUiTicket(ticket.toObject()));
       } catch (err) {
         next(err);

@@ -7,9 +7,10 @@ test('admin can authenticate and see sidebar', async ({ page }) => {
   await page.goto('/');
 
   await page.getByPlaceholder('root').fill(ADMIN_ID);
-  await page.getByPlaceholder('').fill(PASSWORD);
+  await page.getByRole('textbox', { name: 'Security Key' }).fill(PASSWORD);
   await page.getByRole('button', { name: /Authenticate Session/i }).click();
 
-  await expect(page.getByText(/Mobo.*Admin/i)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible();
+  // Cold-start Next compilation can make the first post-login render slow.
+  await expect(page.getByText(/Mobo.*Admin/i)).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 45_000 });
 });

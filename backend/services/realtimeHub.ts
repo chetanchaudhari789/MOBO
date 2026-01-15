@@ -5,7 +5,7 @@ export type RealtimeEvent = {
   type: string;
   ts: string;
   payload?: any;
-  audience?: {
+  audience: {
     broadcast?: boolean;
     userIds?: string[];
     roles?: Role[];

@@ -20,12 +20,13 @@ export function notFoundHandler(req: Request, res: Response): void {
       code: 'NOT_FOUND',
       message: `Route not found: ${req.method} ${req.path}`,
     },
+    requestId: String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim(),
   });
 }
 
 export function errorHandler(
   err: unknown,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void {
@@ -65,11 +66,33 @@ export function errorHandler(
     return;
   }
 
-  const message = err instanceof Error ? err.message : 'Unexpected error';
+  // Malformed JSON from express.json() / body-parser should never be a 500.
+  // This commonly appears as a SyntaxError with type='entity.parse.failed'.
+  if (anyErr && (anyErr.type === 'entity.parse.failed' || (anyErr instanceof SyntaxError && anyErr.status === 400))) {
+    res.status(400).json({
+      error: {
+        code: 'BAD_JSON',
+        message: 'Malformed JSON body',
+      },
+    });
+    return;
+  }
+
+  const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // eslint-disable-next-line no-console
+  console.error(
+    `[${requestId || '-'}] Unhandled error on ${req.method} ${req.originalUrl}:`,
+    err
+  );
+
+  const message = isProd ? 'Unexpected error' : err instanceof Error ? err.message : 'Unexpected error';
   res.status(500).json({
     error: {
       code: 'INTERNAL_SERVER_ERROR',
       message,
     },
+    requestId,
   });
 }

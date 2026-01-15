@@ -16,7 +16,7 @@ async function runSeedAdmin() {
   const password = process.env.ADMIN_SEED_PASSWORD;
   const name = process.env.ADMIN_SEED_NAME;
 
-  await (mod as any).seedAdminOnly({ mobile, username, password, name });
+  await (mod as any).seedAdminOnly({ mobile, username, password, name, forcePassword: true, forceUsername: true });
 }
 
 async function main() {

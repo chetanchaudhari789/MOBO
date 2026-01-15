@@ -1,4 +1,5 @@
 ﻿import { test, expect } from '@playwright/test';
+import { loginAndGetAccessToken } from './_apiAuth';
 
 // This spec drives the critical money-moving lifecycle via HTTP APIs.
 // It relies on the backend E2E seed users and runs against the buyer project by default.
@@ -12,24 +13,13 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
   const brandMobile = '9000000003';
   const password = 'ChangeMe_123!';
 
-  const login = async (args: { mobile?: string; username?: string }) => {
-    const res = await request.post('/api/auth/login', {
-      data: args.username
-        ? { username: args.username, password }
-        : { mobile: String(args.mobile || ''), password },
-    });
-    expect(res.ok()).toBeTruthy();
-    const json = await res.json();
-    expect(json?.tokens?.accessToken).toBeTruthy();
-    return json as {
-      user: { id: string; roles: string[] };
-      tokens: { accessToken: string };
-    };
-  };
+  const buyerLogin = await loginAndGetAccessToken(request, { mobile: buyerMobile, password });
+  const opsLogin = await loginAndGetAccessToken(request, { username: opsUsername, password });
+  const brandLogin = await loginAndGetAccessToken(request, { mobile: brandMobile, password });
 
-  const buyer = await login({ mobile: buyerMobile });
-  const ops = await login({ username: opsUsername });
-  const brand = await login({ mobile: brandMobile });
+  const buyer = { user: buyerLogin.user, tokens: { accessToken: buyerLogin.accessToken } };
+  const ops = { user: opsLogin.user, tokens: { accessToken: opsLogin.accessToken } };
+  const brand = { user: brandLogin.user, tokens: { accessToken: brandLogin.accessToken } };
 
   const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` });
 

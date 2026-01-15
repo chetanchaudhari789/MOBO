@@ -33,10 +33,30 @@ Required env vars:
 - `JWT_ACCESS_SECRET=...` (>= 20 chars)
 - `JWT_REFRESH_SECRET=...` (>= 20 chars)
 - `CORS_ORIGINS=https://<buyer>,https://<mediator>,https://<agency>,https://<brand>,https://<admin>`
+  - Recommended: exact origins.
+  - Wildcards/hostname entries are supported if needed (less strict), e.g. `https://*.vercel.app` or `.vercel.app`.
 
 Health check:
 
 - `GET /api/health`
+
+## Admin login (production)
+
+Admin/ops login is **username/password** (not mobile).
+
+To ensure the admin exists in production, set these env vars on Render:
+
+- `ADMIN_SEED_USERNAME`
+- `ADMIN_SEED_PASSWORD`
+- `ADMIN_SEED_MOBILE`
+- `ADMIN_SEED_NAME`
+
+Then either:
+
+- Temporarily set `SEED_ADMIN=true` for one deploy (recommended), verify login, then remove it.
+- Or run `npm -w @mobo/backend run seed:admin` manually against the production DB.
+
+Note: in `NODE_ENV=production`, the seed refuses to run if the admin seed variables are missing/placeholder.
 
 ## Frontends (Vercel)
 

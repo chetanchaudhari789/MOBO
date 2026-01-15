@@ -6,7 +6,8 @@ import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
 import { writeAuditLog } from '../services/audit.js';
 import { revokeInvite } from '../services/invites.js';
-import { publishBroadcast } from '../services/realtimeHub.js';
+import type { Role } from '../middleware/auth.js';
+import { publishRealtime } from '../services/realtimeHub.js';
 
 export function makeInviteController() {
   return {
@@ -46,7 +47,8 @@ export function makeInviteController() {
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
-        publishBroadcast('invites.changed', { code: invite.code, role: invite.role });
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.status(201).json({
           code: invite.code,
           role: invite.role,
@@ -75,7 +77,8 @@ export function makeInviteController() {
           metadata: { code: invite.code, reason: body.reason },
         });
 
-        publishBroadcast('invites.changed', { code: invite.code, status: 'revoked' });
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -145,7 +148,8 @@ export function makeInviteController() {
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
-        publishBroadcast('invites.changed', { code: invite.code, role: invite.role });
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.status(201).json({ code: invite.code });
       } catch (err) {
         next(err);
@@ -202,7 +206,8 @@ export function makeInviteController() {
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
-        publishBroadcast('invites.changed', { code: invite.code, role: invite.role });
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.status(201).json({ code: invite.code });
       } catch (err) {
         next(err);

@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../middleware/errors.js';
+import type { Role } from '../middleware/auth.js';
 import { UserModel } from '../models/User.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { OrderModel } from '../models/Order.js';
@@ -11,7 +12,7 @@ import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../va
 import { payoutAgencySchema } from '../validations/brand.js';
 import { TransactionModel } from '../models/Transaction.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
-import { publishBroadcast, publishRealtime } from '../services/realtimeHub.js';
+import { publishRealtime } from '../services/realtimeHub.js';
 
 async function recordManualPayoutLedger(args: {
   idempotencyKey: string;
@@ -282,8 +283,13 @@ export function makeBrandController() {
           metadata: { agencyId: String(body.agencyId), agencyCode, amountPaise, ref },
         });
 
-        publishBroadcast('wallets.changed', { brandId: String(brandId), agencyId: String(body.agencyId) });
-        publishBroadcast('notifications.changed');
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        const audience = {
+          roles: privilegedRoles,
+          userIds: [String(brandId), String(body.agencyId)].filter(Boolean),
+        };
+        publishRealtime({ type: 'wallets.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true });
       } catch (err) {
         next(err);

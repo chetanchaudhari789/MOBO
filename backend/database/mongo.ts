@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import type { Env } from '../config/env.js';
+import path from 'node:path';
+import fs from 'node:fs';
 
 let memoryServer: { stop: () => Promise<unknown>; getUri: () => string } | null = null;
 let memoryServerInit: Promise<{ stop: () => Promise<unknown>; getUri: () => string }> | null = null;
@@ -35,6 +37,24 @@ function looksPlaceholderMongoUri(uri: string | undefined): boolean {
   return false;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+  });
+}
+
 export async function connectMongo(env: Env): Promise<void> {
   if (mongoose.connection.readyState >= 1) return;
   if (connectInFlight) return connectInFlight;
@@ -61,16 +81,61 @@ export async function connectMongo(env: Env): Promise<void> {
     if (env.NODE_ENV !== 'production' && looksPlaceholderMongoUri(mongoUri)) {
       const { MongoMemoryReplSet } = await import('mongodb-memory-server');
 
+      // Prefer a stable, workspace-local cache directory on Windows to avoid temp-drive issues.
+      // This is also set in vitest.config.ts, but we keep this here so test helpers and other
+      // entrypoints that call connectMongo() remain deterministic.
+      const cacheDir =
+        process.env.MONGOMS_DOWNLOAD_DIR ||
+        process.env.TMP ||
+        process.env.TEMP;
+      const resolvedCacheDir = cacheDir ? path.resolve(cacheDir) : undefined;
+
       if (!memoryServer) {
         if (!memoryServerInit) {
-          memoryServerInit = MongoMemoryReplSet.create({
+          const launchTimeout = (() => {
+            const raw = Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS || '');
+            if (Number.isFinite(raw) && raw >= 1000) return Math.floor(raw);
+            return 60_000;
+          })();
+
+          // Important: do not reuse a fixed dbPath across separate test runs.
+          // On Windows, reusing a shared directory can leave stale lock files and cause mongod
+          // to exit early (seen as a "connection ... closed" error during replset init).
+          const dbPath = resolvedCacheDir ? fs.mkdtempSync(path.join(resolvedCacheDir, 'data-')) : undefined;
+
+          const createPromise = MongoMemoryReplSet.create({
             replSet: { count: 1, storageEngine: 'wiredTiger' },
-            // Only pin when explicitly requested (Windows can be flaky with certain pinned versions).
-            ...(process.env.MONGOMS_VERSION ? { binary: { version: process.env.MONGOMS_VERSION } } : {}),
+            ...(resolvedCacheDir
+              ? {
+                  binary: {
+                    ...(process.env.MONGOMS_VERSION ? { version: process.env.MONGOMS_VERSION } : {}),
+                    downloadDir: resolvedCacheDir,
+                  },
+                  instanceOpts: [
+                    {
+                      dbPath,
+                      launchTimeout,
+                    },
+                  ],
+                }
+              : {
+                  // Only pin when explicitly requested (Windows can be flaky with certain pinned versions).
+                  ...(process.env.MONGOMS_VERSION ? { binary: { version: process.env.MONGOMS_VERSION } } : {}),
+                  instanceOpts: [{ launchTimeout }],
+                }),
           }) as any;
+
+          // If mongodb-memory-server gets stuck (download/extract/start), fail fast instead of hanging
+          // the entire test run forever.
+          memoryServerInit = withTimeout(createPromise, 180_000, 'MongoMemoryReplSet.create()');
         }
-        memoryServer = await memoryServerInit;
-        memoryServerInit = null;
+        try {
+          memoryServer = await memoryServerInit;
+          memoryServerInit = null;
+        } catch (err) {
+          memoryServerInit = null;
+          throw err;
+        }
       }
 
       const ms = memoryServer;

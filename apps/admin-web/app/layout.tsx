@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import './globals.css';
 import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
 export const metadata: Metadata = {
-  title: 'Admin Web',
-  description: 'Minimal Next.js admin web scaffold',
+  title: 'MOBO Admin',
+  description: 'Admin portal for system configuration, users, orders, financials, and support.',
+  robots: { index: false, follow: false },
   icons: {
     icon: '/favicon.svg',
   },

@@ -85,7 +85,37 @@ Example **without custom domains** (use your actual Vercel URLs):
 Notes:
 
 - `CORS_ORIGINS` must be **origins only** (scheme + host), not paths.
-- Keep it tight; do not use a wildcard in production.
+- Recommended: keep it tight (exact portal origins).
+- If you use many preview deployments and need flexibility, wildcard/hostname entries are supported (less strict), e.g. `https://*.vercel.app` or `.vercel.app`.
+
+## Step 1.5 — Seed ONLY the admin user (production)
+
+Your backend supports an **admin-only seed** that creates (or updates) a single admin user.
+
+Recommended approach:
+
+1. In Render env vars, set:
+
+- `ADMIN_SEED_USERNAME`
+- `ADMIN_SEED_PASSWORD`
+- `ADMIN_SEED_MOBILE` (required by the schema; admin login still uses username/password)
+- `ADMIN_SEED_NAME`
+
+2. Temporarily set `SEED_ADMIN=true` and redeploy the backend.
+3. After you verify admin login, set `SEED_ADMIN=false` (or remove it) and redeploy again.
+
+Why temporarily?
+
+- With `SEED_ADMIN=true`, the backend may update the admin profile on every restart.
+- Once the admin exists, leaving `SEED_ADMIN` off avoids unintended credential drift.
+
+Alternative:
+
+- Run `npm -w @mobo/backend run seed:admin` against the production DB from a trusted machine that has the same environment variables set.
+
+Important:
+
+- In `NODE_ENV=production`, the seed will refuse to run if `ADMIN_SEED_USERNAME` or `ADMIN_SEED_PASSWORD` are missing/placeholder.
 
 ## Step 2 — Frontends on Vercel (5 projects)
 

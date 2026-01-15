@@ -44,7 +44,7 @@ export function MobileTabBar({
               aria-label={item.ariaLabel || item.label}
               aria-pressed={active}
               className={cn(
-                'flex flex-col items-center gap-1 min-w-[50px] transition-all duration-300 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CCF381] focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181B] rounded-xl motion-reduce:transition-none motion-reduce:transform-none',
+                'flex flex-col items-center gap-1 min-w-[50px] transition-all duration-300 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181B] rounded-xl motion-reduce:transition-none motion-reduce:transform-none',
                 active ? '-translate-y-1' : 'hover:-translate-y-0.5'
               )}
               type="button"
@@ -53,7 +53,7 @@ export function MobileTabBar({
                 className={cn(
                   'p-2.5 rounded-[1rem] transition-all relative',
                   active
-                    ? 'bg-[#CCF381] text-black shadow-[0_4px_12px_-4px_rgba(204,243,129,0.6)] scale-105'
+                    ? 'bg-indigo-500 text-white shadow-[0_6px_18px_-8px_rgba(99,102,241,0.65)] scale-105'
                     : 'bg-transparent text-zinc-500 hover:text-zinc-300'
                 )}
               >
@@ -68,7 +68,7 @@ export function MobileTabBar({
                 className={cn(
                   'text-[9px] font-bold tracking-wide transition-all duration-300',
                   active
-                    ? 'text-[#CCF381] opacity-100'
+                    ? 'text-indigo-300 opacity-100'
                     : 'text-zinc-500 opacity-0 scale-0 group-hover:opacity-100 group-hover:scale-100'
                 )}
               >
@@ -85,9 +85,9 @@ export function MobileTabBar({
             aria-label={item.ariaLabel || item.label}
             aria-pressed={active}
             className={cn(
-              'relative p-3 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F2F2F7] motion-reduce:transition-none motion-reduce:transform-none',
+              'relative p-3 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F2F2F7] motion-reduce:transition-none motion-reduce:transform-none',
               active
-                ? 'bg-black text-lime-400 shadow-lg -translate-y-2 scale-110'
+                ? 'bg-indigo-600 text-white shadow-lg -translate-y-2 scale-110'
                 : 'text-slate-400 hover:text-slate-600 hover:-translate-y-1'
             )}
             type="button"

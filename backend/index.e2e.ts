@@ -30,7 +30,7 @@ async function tryRunE2ESeed() {
 async function main() {
   const replSet = await MongoMemoryReplSet.create({
     replSet: { count: 1 },
-    instanceOpts: [{ dbName: 'mobo_e2e' }],
+    instanceOpts: [{ dbName: 'mobo_e2e', launchTimeout: 60_000 }],
   });
 
   process.env.MONGODB_URI = replSet.getUri();

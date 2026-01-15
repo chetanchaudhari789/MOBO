@@ -10,6 +10,11 @@ if (!subcommand) {
   process.exit(2);
 }
 
+// Next 15.5.x may try to patch npm lockfiles to add missing optional SWC entries.
+// In workspace setups this can fail (Next performs network fetches), breaking dev/build/start.
+// We already install the platform SWC package for this OS, so skip the patcher.
+process.env.NEXT_IGNORE_INCORRECT_LOCKFILE = '1';
+
 // Next.js warns (and can misbehave) if users set a non-standard NODE_ENV.
 // Force a safe value for production-only commands.
 if (subcommand === 'build' || subcommand === 'start') {

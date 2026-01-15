@@ -1,4 +1,5 @@
 ﻿import { test, expect, type APIRequestContext } from '@playwright/test';
+import { loginAndGetAccessToken } from './_apiAuth';
 
 const BRAND_MOBILE = '9000000003';
 const AGENCY_MOBILE = '9000000001';
@@ -8,14 +9,11 @@ const BRAND_CODE = 'BRD_TEST';
 const AGENCY_CODE = 'AG_TEST';
 
 async function loginApi(request: APIRequestContext, mobile: string) {
-  const res = await request.post('/api/auth/login', {
-    data: { mobile, password: PASSWORD },
+  const { accessToken, user } = await loginAndGetAccessToken(request, {
+    mobile,
+    password: PASSWORD,
   });
-  expect(res.ok()).toBeTruthy();
-  const json = (await res.json()) as any;
-  const token = String(json?.tokens?.accessToken || '');
-  expect(token).toBeTruthy();
-  return { token, user: json.user };
+  return { token: accessToken, user };
 }
 
 test('brand can see and approve an agency connection request', async ({ page, request }) => {
@@ -67,7 +65,7 @@ test('brand can see and approve an agency connection request', async ({ page, re
   await page.goto('/');
   await page.getByRole('button', { name: /Access Portal/i }).click();
   await page.getByPlaceholder('9000000000').fill(BRAND_MOBILE);
-  await page.getByPlaceholder('').fill(PASSWORD);
+  await page.getByPlaceholder('Password').fill(PASSWORD);
   await page.getByRole('button', { name: /Login to Portal/i }).click();
 
   await expect(page.getByText('Partner Portal', { exact: true })).toBeVisible({ timeout: 15000 });

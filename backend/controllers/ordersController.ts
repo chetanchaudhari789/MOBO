@@ -11,7 +11,8 @@ import { rupeesToPaise } from '../utils/money.js';
 import { toUiOrder } from '../utils/uiMappers.js';
 import { pushOrderEvent, isTerminalAffiliateStatus } from '../services/orderEvents.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
-import { publishBroadcast } from '../services/realtimeHub.js';
+import type { Role } from '../middleware/auth.js';
+import { publishRealtime } from '../services/realtimeHub.js';
 
 export function makeOrdersController() {
   return {
@@ -337,8 +338,16 @@ export function makeOrdersController() {
           .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
 
         // Notify UIs (buyer/mediator/brand/admin) that order-related views should refresh.
-        publishBroadcast('orders.changed', { orderId: String((finalOrder as any)?._id || (created as any)?._id) });
-        publishBroadcast('notifications.changed');
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        const audience = {
+          roles: privilegedRoles,
+          userIds: [String(user._id), String((campaign as any).brandUserId || '')].filter(Boolean),
+          mediatorCodes: upstreamMediatorCode ? [upstreamMediatorCode] : undefined,
+          agencyCodes: upstreamAgencyCode ? [upstreamAgencyCode] : undefined,
+        };
+
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
       } catch (err) {
         next(err);
       } finally {
@@ -419,8 +428,24 @@ export function makeOrdersController() {
 
         res.json(toUiOrder(afterReview.toObject()));
 
-        publishBroadcast('orders.changed', { orderId: String(afterReview._id) });
-        publishBroadcast('notifications.changed');
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        const managerCode = String((order as any).managerName || '').trim();
+        const mediatorUser = managerCode
+          ? await UserModel.findOne({ roles: 'mediator', mediatorCode: managerCode, deletedAt: null })
+              .select({ parentCode: 1 })
+              .lean()
+          : null;
+        const upstreamAgencyCode = String((mediatorUser as any)?.parentCode || '').trim();
+
+        const audience = {
+          roles: privilegedRoles,
+          userIds: [String((order as any).userId || ''), String((order as any).brandUserId || '')].filter(Boolean),
+          mediatorCodes: managerCode ? [managerCode] : undefined,
+          agencyCodes: upstreamAgencyCode ? [upstreamAgencyCode] : undefined,
+        };
+
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         return;
       } catch (err) {
         next(err);

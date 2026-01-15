@@ -4,7 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
-import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
+import { Button, EmptyState, IconButton, Input, RealtimeStatusBadge, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutGrid,
@@ -60,6 +60,7 @@ const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 const SidebarItem = ({ icon: Icon, label, active, onClick, badge }: any) => (
   <button
+    type="button"
     onClick={onClick}
     aria-current={active ? 'page' : undefined}
     className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 motion-reduce:transition-none motion-reduce:transform-none ${
@@ -538,27 +539,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
                       v3.0.1 Stable
                     </p>
-                    <span
-                      className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                        connected
-                          ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
-                          : 'text-orange-300 bg-orange-500/10 border-orange-500/20'
-                      }`}
-                      title={connected ? 'Realtime connected' : 'Realtime reconnecting'}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          connected
-                            ? 'bg-emerald-400 animate-pulse motion-reduce:animate-none'
-                            : 'bg-orange-400'
-                        }`}
-                      ></span>
-                      {connected ? 'LIVE' : 'OFFLINE'}
-                    </span>
+                    <RealtimeStatusBadge connected={connected} className="border-white/10 bg-white/5 text-white" />
                   </div>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setIsSidebarOpen(false)}
                 aria-label="Close sidebar"
                 className="md:hidden p-2 text-slate-400 hover:text-white rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
@@ -632,6 +618,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
           <div className="mt-auto p-4 border-t border-slate-800">
             <button
+              type="button"
               onClick={logout}
               className="w-full py-3 flex items-center justify-center gap-2 text-rose-400 hover:bg-slate-800 rounded-xl transition-colors text-xs font-bold uppercase tracking-wider"
             >
@@ -903,6 +890,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           {t.status === 'Open' && (
                             <div className="flex gap-2">
                               <button
+                                type="button"
                                 onClick={() => resolveTicket(t.id, 'Resolved')}
                                 className="p-2 bg-emerald-100 text-emerald-600 rounded-lg hover:bg-emerald-200 transition-colors"
                                 title="Resolve"
@@ -910,6 +898,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                                 <CheckCircle2 size={16} />
                               </button>
                               <button
+                                type="button"
                                 onClick={() => resolveTicket(t.id, 'Rejected')}
                                 className="p-2 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-100 hover:text-rose-500 transition-colors"
                                 title="Reject"
@@ -934,6 +923,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     {['All', 'Brand', 'Agency', 'Mediator', 'User'].map((role) => (
                       <button
                         key={role}
+                        type="button"
                         onClick={() => setUserRoleFilter(role)}
                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
                           userRoleFilter === role
@@ -990,6 +980,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           <td className="p-5 text-right">
                             {u.role !== 'admin' && (
                               <button
+                                type="button"
                                 onClick={() => toggleUserStatus(u)}
                                 className={`p-2 rounded-lg transition-colors border ${
                                   u.status === 'active'
@@ -1040,6 +1031,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={handleGenerateInvite}
                     disabled={isLoading}
                     className="px-8 py-3.5 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-600 transition-all active:scale-95 flex items-center gap-2 whitespace-nowrap"
@@ -1079,10 +1071,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           </td>
                           <td className="p-6 text-right">
                             <button
+                              type="button"
                               onClick={() => {
                                 navigator.clipboard.writeText(inv.code);
                                 toast.success('Copied');
                               }}
+                              aria-label="Copy access code"
                               className="text-slate-400 hover:text-indigo-600 transition-colors"
                             >
                               <Copy size={18} />
@@ -1104,6 +1098,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     {view === 'finance' ? 'Global Ledger' : 'Order Management'}
                   </h3>
                   <button
+                    type="button"
                     onClick={() => handleExport(view === 'finance' ? 'finance' : 'orders')}
                     className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100 transition-colors"
                   >
@@ -1168,10 +1163,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-5">
                           <div className="flex items-center gap-3">
-                            <img
-                              src={p.image}
-                              className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-100 p-1"
-                            />
+                            <img src={p.image} alt={p.title ? String(p.title) : 'Product image'} className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-100 p-1" />
                             <span className="truncate max-w-[200px] text-slate-900 font-bold">
                               {p.title}
                             </span>
@@ -1229,6 +1221,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                   </div>
                   <div className="pt-4 border-t border-slate-100">
                     <button
+                      type="button"
                       onClick={handleSaveConfig}
                       className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all active:scale-95 flex items-center justify-center gap-2"
                     >

@@ -16,11 +16,16 @@ if (process.platform === 'win32') {
   process.env.TEMP = cacheDir;
 }
 
+const isWin32 = process.platform === 'win32';
+
 export default defineConfig({
   test: {
     include: ['tests/**/*.spec.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/build/**', '**/coverage/**'],
     environment: 'node',
+    // On Windows (and especially on newer Node versions), the default worker pool can intermittently
+    // fail to collect tests and report "No test suite found". vmThreads is the most stable option.
+    pool: isWin32 ? 'vmThreads' : 'threads',
     // Tests share a singleton mongoose connection + in-memory mongod instance.
     // Keep a single worker and disable isolation to avoid start/stop races.
     maxWorkers: 1,

@@ -380,11 +380,11 @@ export const api = {
         body: JSON.stringify({ id }),
       });
     },
-    settleOrderPayment: async (orderId: string, settlementRef?: string) => {
+    settleOrderPayment: async (orderId: string, settlementRef?: string, settlementMode?: 'wallet' | 'external') => {
       await fetchOk('/ops/orders/settle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ orderId, settlementRef }),
+        body: JSON.stringify({ orderId, settlementRef, settlementMode }),
       });
     },
     unsettleOrderPayment: async (orderId: string) => {

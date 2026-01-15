@@ -15,7 +15,16 @@ test('buyer can login and view deals in Explore', async ({ page }) => {
 
   await page.getByPlaceholder('Mobile Number').fill(SHOPPER_MOBILE);
   await page.getByPlaceholder('Password').fill(SHOPPER_PASSWORD);
+
+  const loginResPromise = page.waitForResponse(
+    (res) => res.url().includes('/api/auth/login') && res.request().method() === 'POST'
+  );
   await page.getByRole('button', { name: 'Sign In' }).click();
+  const loginRes = await loginResPromise;
+  expect(loginRes.ok(), `Login failed: ${loginRes.status()} ${loginRes.statusText()}`).toBeTruthy();
+
+  // Wait for the post-login shell to render (bottom tab bar).
+  await expect(page.getByRole('button', { name: 'Explore' })).toBeVisible();
 
   // Navigate to Explore via bottom nav
   await page.getByRole('button', { name: 'Explore' }).click();

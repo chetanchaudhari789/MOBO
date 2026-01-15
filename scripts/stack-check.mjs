@@ -5,6 +5,7 @@ const isWindows = process.platform === 'win32';
 const PORTS = [8080, 3001, 3002, 3003, 3004, 3005];
 const HEALTH_E2E_URL = 'http://127.0.0.1:8080/api/health/e2e';
 const AUTH_LOGIN_URL = 'http://127.0.0.1:8080/api/auth/login';
+const REALTIME_STREAM_URL = 'http://127.0.0.1:8080/api/realtime/stream';
 const VERBOSE = String(process.env.STACK_CHECK_VERBOSE || '').toLowerCase() === 'true';
 const SKIP_PORT_CLEANUP = String(process.env.STACK_CHECK_SKIP_PORT_CLEANUP || '').toLowerCase() === 'true';
 
@@ -96,9 +97,7 @@ async function verifyAdminLoginBestEffort() {
   const username = String(process.env.ADMIN_SEED_USERNAME || '').trim();
   const password = String(process.env.ADMIN_SEED_PASSWORD || '').trim();
 
-  if (!username || !password) {
-    return { attempted: false, ok: true };
-  }
+  if (!username || !password) return { attempted: false, ok: true, accessToken: null };
 
   try {
     const res = await fetch(AUTH_LOGIN_URL, {
@@ -114,18 +113,70 @@ async function verifyAdminLoginBestEffort() {
       } catch {
         // ignore
       }
-      return { attempted: true, ok: false, status: res.status, detail: text.slice(0, 500) };
+      return { attempted: true, ok: false, status: res.status, detail: text.slice(0, 500), accessToken: null };
     }
 
     const json = await res.json();
     const access = json?.tokens?.accessToken;
     if (typeof access !== 'string' || access.length < 20) {
-      return { attempted: true, ok: false, status: res.status, detail: 'Missing tokens.accessToken in response' };
+      return { attempted: true, ok: false, status: res.status, detail: 'Missing tokens.accessToken in response', accessToken: null };
     }
 
-    return { attempted: true, ok: true, status: res.status };
+    return { attempted: true, ok: true, status: res.status, accessToken: access };
   } catch (err) {
+    return { attempted: true, ok: false, status: 0, detail: String(err?.message || err), accessToken: null };
+  }
+}
+
+async function verifyRealtimeSseBestEffort(accessToken) {
+  if (!accessToken) return { attempted: false, ok: true };
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 6_000);
+  try {
+    const res = await fetch(REALTIME_STREAM_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'text/event-stream',
+      },
+      signal: ctrl.signal,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return { attempted: true, ok: false, status: res.status, detail: text.slice(0, 300) };
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) return { attempted: true, ok: false, status: res.status, detail: 'Missing response body reader' };
+
+    const decoder = new TextDecoder('utf-8');
+    let buf = '';
+    const deadline = Date.now() + 4_000;
+
+    while (Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      buf += decoder.decode(value, { stream: true });
+      if (buf.includes('event: ready')) {
+        try {
+          ctrl.abort();
+        } catch {
+          // ignore
+        }
+        return { attempted: true, ok: true, status: res.status };
+      }
+    }
+
+    return { attempted: true, ok: false, status: res.status, detail: 'Timed out waiting for SSE ready event' };
+  } catch (err) {
+    if (String(err?.name || '') === 'AbortError') {
+      return { attempted: true, ok: true, status: 200 };
+    }
     return { attempted: true, ok: false, status: 0, detail: String(err?.message || err) };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -169,11 +220,20 @@ async function main() {
   const db = s?.database || {};
 
   const adminLogin = await verifyAdminLoginBestEffort();
+  const realtimeSse = await verifyRealtimeSseBestEffort(adminLogin.accessToken);
 
   if (adminLogin.attempted && !adminLogin.ok) {
     console.error(
       `\nAdmin login check FAILED: POST /api/auth/login returned ${adminLogin.status}.\n` +
         `Details: ${adminLogin.detail || '<no details>'}`
+    );
+    process.exitCode = 1;
+  }
+
+  if (realtimeSse.attempted && !realtimeSse.ok) {
+    console.error(
+      `\nRealtime SSE check FAILED: GET /api/realtime/stream did not produce 'ready'.\n` +
+        `Status: ${realtimeSse.status}. Details: ${realtimeSse.detail || '<no details>'}`
     );
     process.exitCode = 1;
   }
@@ -184,6 +244,7 @@ async function main() {
     `- Database: ok=${db.ok} readyState=${db.readyState}`,
     `- Portals: buyer=${portals.buyer} mediator=${portals.mediator} agency=${portals.agency} brand=${portals.brand} admin=${portals.admin}`,
     ...(adminLogin.attempted ? [`- Admin login: ${adminLogin.ok ? 'ok' : 'failed'}`] : []),
+    ...(realtimeSse.attempted ? [`- Realtime SSE: ${realtimeSse.ok ? 'ok' : 'failed'}`] : []),
   ];
   console.log(lines.join('\n'));
 }

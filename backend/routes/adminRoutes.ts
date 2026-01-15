@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import type { Env } from '../config/env.js';
 import { requireAuth, requireRoles } from '../middleware/auth.js';
 import { makeInviteController } from '../controllers/inviteController.js';
@@ -12,10 +13,18 @@ export function adminRoutes(env: Env): Router {
   router.use(requireAuth(env));
   router.use(requireRoles('admin'));
 
+  const adminLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: env.NODE_ENV === 'production' ? 900 : 10_000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'rate_limited' },
+  });
+  router.use(adminLimiter);
+
   router.get('/invites', invites.adminListInvites);
   router.post('/invites', invites.adminCreateInvite);
   router.post('/invites/revoke', invites.adminRevokeInvite);
-
 
   router.get('/config', admin.getSystemConfig);
   router.patch('/config', admin.updateSystemConfig);

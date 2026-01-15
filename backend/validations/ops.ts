@@ -19,6 +19,7 @@ export const verifyOrderRequirementSchema = z.object({
 export const settleOrderSchema = z.object({
   orderId: z.string().min(1),
   settlementRef: z.string().trim().min(2).max(128).optional(),
+  settlementMode: z.enum(['wallet', 'external']).optional(),
 });
 
 export const unsettleOrderSchema = z.object({

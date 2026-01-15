@@ -5,12 +5,18 @@ This system provides **server-sent events (SSE)** for real-time UI refresh.
 ## Endpoint
 
 - `GET /api/realtime/stream`
+
   - Auth: `Authorization: Bearer <accessToken>`
   - Response: `text/event-stream`
   - Notes:
     - Server sends `ready` once connected.
     - Server sends `ping` every ~25s.
     - Clients should reconnect with backoff.
+
+- `GET /api/realtime/health`
+  - Auth: none
+  - Response: `{ "status": "ok" }`
+  - Notes: lightweight health check (does not open an SSE stream).
 
 ## Message shape
 
@@ -74,7 +80,10 @@ Domain refresh events:
 
 ## Audience / scoping
 
-The backend may scope delivery using audience selectors.
+The backend scopes delivery using audience selectors.
+
+Important: events **must** include an explicit `audience` (fail-closed).
+Broadcasts must be explicit (`{ audience: { broadcast: true } }`).
 
 - `broadcast: true` — deliver to all connected users (avoid for high-volume events)
 - `userIds: string[]` — deliver to specific users by `_id`
@@ -93,5 +102,11 @@ The shared SSE client is in `shared/services/realtime.ts`.
 - Uses `fetch()` with `Accept: text/event-stream`
 - Parses `event:` and `data:` frames
 - Implements reconnect with exponential backoff
+
+Production note:
+
+- The client prefers connecting **directly to the backend** for the SSE stream when an absolute backend URL is available (e.g. via `NEXT_PUBLIC_API_PROXY_TARGET`).
+  - This avoids hosting proxies/CDNs that may buffer or disrupt long-lived streaming responses.
+  - Ensure the backend `CORS_ORIGINS` allows the portal origins.
 
 UIs generally subscribe and then schedule a debounced `fetchData()` when receiving relevant event types.

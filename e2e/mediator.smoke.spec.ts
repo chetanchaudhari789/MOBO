@@ -11,9 +11,12 @@ test('mediator can login and open Market', async ({ page }) => {
 
   await page.getByPlaceholder('Mobile Number').fill(MEDIATOR_MOBILE);
   await page.getByPlaceholder('Password').fill(PASSWORD);
+  const loginResPromise = page.waitForResponse(
+    (res) => res.url().includes('/api/auth/login') && res.request().method() === 'POST'
+  );
   await page.getByRole('button', { name: /^Login$/ }).click();
-
-  await page.waitForLoadState('networkidle');
+  const loginRes = await loginResPromise;
+  expect(loginRes.ok(), `Login failed: ${loginRes.status()} ${loginRes.statusText()}`).toBeTruthy();
 
   // Landing assertions (avoid brittle user-name text; wait for a stable navigation entry)
   await expect(page.getByRole('button', { name: 'Market' })).toBeVisible({ timeout: 15000 });

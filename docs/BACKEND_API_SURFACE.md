@@ -26,6 +26,11 @@ Roles observed: `admin`, `ops`, `brand`, `agency`, `mediator`, `shopper`.
 
 ### Realtime (`/api/realtime/*`)
 
+- `GET /api/realtime/health`
+
+  - Auth: none
+  - Behavior: lightweight health check for the realtime subsystem.
+
 - `GET /api/realtime/stream`
   - Auth: `requireAuth`
   - Behavior: Server-sent events (SSE) stream used by the portals for live refresh/invalidation.

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import type { Env } from '../config/env.js';
 import { requireAuth, requireRoles } from '../middleware/auth.js';
 import { makeInviteController } from '../controllers/inviteController.js';
@@ -11,6 +12,15 @@ export function opsRoutes(env: Env): Router {
 
   router.use(requireAuth(env));
   router.use(requireRoles('agency', 'mediator', 'ops', 'admin'));
+
+  const opsLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: env.NODE_ENV === 'production' ? 1200 : 10_000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'rate_limited' },
+  });
+  router.use(opsLimiter);
 
   router.post('/invites/generate', invites.opsGenerateMediatorInvite);
   router.post('/invites/generate-buyer', invites.opsGenerateBuyerInvite);

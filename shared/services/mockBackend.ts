@@ -1,10 +1,9 @@
-import { User, Product, Order, Campaign, WithdrawalRequest, Invite, Ticket } from '../types';
+import { User, Product, Order, Campaign, Invite, Ticket } from '../types';
 import {
   SEED_USERS,
   SEED_PRODUCTS,
   SEED_CAMPAIGNS,
   SEED_ORDERS,
-  SEED_WITHDRAWALS,
 } from './mockData';
 
 const MOCK_DELAY = 400;
@@ -30,7 +29,7 @@ const getItem = <T>(key: string, seed: T): T => {
 const setItem = (key: string, data: any) => {
   try {
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${key}`, JSON.stringify(data));
-  } catch (e: any) {}
+  } catch {}
 };
 
 // --- Recommendation 5: Fraud Registry (In-memory mock for session/local) ---
@@ -65,7 +64,6 @@ const getOrders = (): Order[] => {
   const now = new Date();
 
   const users = getUsers();
-  const campaigns = getCampaigns();
   const tickets = getTickets();
 
   const updatedOrders = orders.map((order) => {
@@ -124,7 +122,7 @@ const saveBrandLedger = (ledger: any[]) => setItem('brand_ledger', ledger);
 // --- API Implementation ---
 
 export const authAPI = {
-  login: async (mobile: string, pass: string): Promise<User> => {
+  login: async (mobile: string, _pass: string): Promise<User> => {
     await delay(MOCK_DELAY);
     const users = getUsers();
     const user = users.find((u) => u.mobile === mobile);
@@ -135,7 +133,7 @@ export const authAPI = {
   register: async (
     name: string,
     mobile: string,
-    pass: string,
+    _pass: string,
     mediatorCode: string
   ): Promise<User> => {
     await delay(MOCK_DELAY);
@@ -164,7 +162,7 @@ export const authAPI = {
   registerOps: async (
     name: string,
     mobile: string,
-    pass: string,
+    _pass: string,
     role: 'agency' | 'mediator',
     code: string
   ): Promise<User> => {
@@ -212,7 +210,7 @@ export const authAPI = {
   registerBrand: async (
     name: string,
     mobile: string,
-    pass: string,
+    _pass: string,
     brandCode: string
   ): Promise<User> => {
     await delay(MOCK_DELAY);
@@ -356,7 +354,7 @@ export const ordersAPI = {
       saveOrders(orders);
     }
   },
-  extractDetails: async (file: File) => {
+  extractDetails: async (_file: File) => {
     return { orderId: 'MOCK-123', amount: 1000 };
   },
 };
@@ -366,7 +364,7 @@ export const opsAPI = {
     await delay(MOCK_DELAY);
     return getUsers().filter((u) => u.role === 'mediator' && u.parentCode === agencyCode);
   },
-  getCampaigns: async (agencyCode?: string) => {
+  getCampaigns: async (_agencyCode?: string) => {
     await delay(MOCK_DELAY);
     return getCampaigns();
   },
@@ -423,7 +421,11 @@ export const opsAPI = {
     }
   },
 
-  settleOrderPayment: async (orderId: string, settlementRef?: string): Promise<void> => {
+  settleOrderPayment: async (
+    orderId: string,
+    settlementRef?: string,
+    _settlementMode?: 'wallet' | 'external'
+  ): Promise<void> => {
     await delay(MOCK_DELAY);
     const orders = getOrders();
     const order = orders.find((o) => o.id === orderId);
@@ -604,27 +606,27 @@ export const opsAPI = {
       saveLedger(ledger);
     }
   },
-  generateMediatorInvite: async (id: string) => {
+  generateMediatorInvite: async (_id: string) => {
     return `INV-${Math.random().toString(36).substring(7).toUpperCase()}`;
   },
-  requestBrandConnection: async (agencyId: string, brandCode: string) => {},
+  requestBrandConnection: async (_agencyId: string, _brandCode: string) => {},
 };
 
 export const brandAPI = {
-  getConnectedAgencies: async (brandId: string) => {
+  getConnectedAgencies: async (_brandId: string) => {
     await delay(MOCK_DELAY);
     return getUsers().filter((u) => u.role === 'agency');
   },
   getBrandCampaigns: async (id: string) => {
     return getCampaigns().filter((c) => c.brandId === id);
   },
-  getBrandOrders: async (name: string) => {
+  getBrandOrders: async (_name: string) => {
     return getOrders();
   },
-  getTransactions: async (id: string) => {
+  getTransactions: async (_id: string) => {
     return getBrandLedger();
   },
-  payoutAgency: async (bid: string, aid: string, amt: number, ref: string) => {
+  payoutAgency: async (_bid: string, _aid: string, amt: number, ref: string) => {
     const l = getBrandLedger();
     l.unshift({
       id: `TX-${Date.now()}`,
@@ -635,24 +637,24 @@ export const brandAPI = {
     });
     saveBrandLedger(l);
   },
-  resolveConnectionRequest: async (brandId: string, agencyId: string, action: string) => {},
-  removeAgency: async (brandId: string, agencyCode: string) => {},
+  resolveConnectionRequest: async (_brandId: string, _agencyId: string, _action: string) => {},
+  removeAgency: async (_brandId: string, _agencyCode: string) => {},
   createCampaign: async (d: any) => opsAPI.createCampaign(d),
-  updateCampaign: async (campaignId: string, data: any) => {},
-  connectAgency: async (brandId: string, agencyCode: string) => {},
-  getAnalytics: async (brandId: string) => ({}),
-  getAgencyFinancials: async (brandId: string) => [],
-  assignCampaignToAgency: async (campaignId: string, agencyCode: string) => {},
+  updateCampaign: async (_campaignId: string, _data: any) => {},
+  connectAgency: async (_brandId: string, _agencyCode: string) => {},
+  getAnalytics: async (_brandId: string) => ({}),
+  getAgencyFinancials: async (_brandId: string) => [],
+  assignCampaignToAgency: async (_campaignId: string, _agencyCode: string) => {},
 };
 
 export const adminAPI = {
-  getUsers: async (r: string) => getUsers(),
+  getUsers: async (_r: string) => getUsers(),
   getFinancials: async () => getOrders(),
   getStats: async () => ({}),
   getGrowthAnalytics: async () => [],
   getInvites: async () => getInvites(),
-  generateInvite: async (role?: string, label?: string) => ({ code: '123' }) as any,
-  updateUserStatus: async (userId: string, status: string) => {},
+  generateInvite: async (_role?: string, _label?: string) => ({ code: '123' }) as any,
+  updateUserStatus: async (_userId: string, _status: string) => {},
 };
 
 export const supportAPI = {

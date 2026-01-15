@@ -10,10 +10,11 @@ import { SuspensionModel } from '../models/Suspension.js';
 import { DealModel } from '../models/Deal.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../services/orderWorkflow.js';
-import { listMediatorCodesForAgency } from '../services/lineage.js';
+import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
 import { SystemConfigModel } from '../models/SystemConfig.js';
 import { updateSystemConfigSchema } from '../validations/systemConfig.js';
-import { publishBroadcast } from '../services/realtimeHub.js';
+import type { Role } from '../middleware/auth.js';
+import { publishRealtime } from '../services/realtimeHub.js';
 
 function roleToDb(role: string): string | null {
   const r = role.toLowerCase();
@@ -190,7 +191,18 @@ export function makeAdminController() {
             if (roles.includes('mediator') && mediatorCode) {
               await DealModel.updateMany({ mediatorCode, deletedAt: null }, { $set: { active: false } });
               await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminUserId });
-              publishBroadcast('deals.changed', { mediatorCode });
+              const agencyCode = (await getAgencyCodeForMediatorCode(mediatorCode)) || '';
+              publishRealtime({
+                type: 'deals.changed',
+                ts: new Date().toISOString(),
+                payload: { mediatorCode },
+                audience: {
+                  roles: ['admin', 'ops'],
+                  mediatorCodes: [mediatorCode],
+                  parentCodes: [mediatorCode],
+                  ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
+                },
+              });
             }
 
             if (roles.includes('agency') && mediatorCode) {
@@ -198,7 +210,17 @@ export function makeAdminController() {
               if (mediatorCodes.length) {
                 await DealModel.updateMany({ mediatorCode: { $in: mediatorCodes }, deletedAt: null }, { $set: { active: false } });
                 await freezeOrders({ query: { managerName: { $in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminUserId });
-                publishBroadcast('deals.changed', { agencyCode: mediatorCode, mediatorCodes });
+                publishRealtime({
+                  type: 'deals.changed',
+                  ts: new Date().toISOString(),
+                  payload: { agencyCode: mediatorCode, mediatorCodes },
+                  audience: {
+                    roles: ['admin', 'ops'],
+                    agencyCodes: [mediatorCode],
+                    mediatorCodes,
+                    parentCodes: mediatorCodes,
+                  },
+                });
               }
             }
 
@@ -231,8 +253,15 @@ export function makeAdminController() {
         });
 
         if (statusChanged) {
-          publishBroadcast('users.changed', { userId: String(user._id), status: user.status });
-          publishBroadcast('notifications.changed');
+          publishRealtime({
+            type: 'users.changed',
+            ts: new Date().toISOString(),
+            payload: { userId: String(user._id), status: user.status },
+            audience: { roles: ['admin', 'ops'], userIds: [String(user._id)] },
+          });
+          const privilegedRoles: Role[] = ['admin', 'ops'];
+          const audience = { roles: privilegedRoles, userIds: [String(user._id)] };
+          publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         }
         res.json({ ok: true });
       } catch (err) {

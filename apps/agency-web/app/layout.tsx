@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import './globals.css';
 import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
 export const metadata: Metadata = {
-  title: 'Agency Web',
-  description: 'Minimal Next.js agency web scaffold',
+  title: 'MOBO Agency',
+  description: 'Agency portal for managing mediators, campaigns, deals, and ops workflows.',
+  robots: { index: false, follow: false },
   icons: {
     icon: '/favicon.svg',
   },

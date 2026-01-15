@@ -6,3 +6,5 @@ export * from './Badge';
 export * from './Spinner';
 export * from './EmptyState';
 export * from './IconButton';
+export * from './RealtimeStatusBadge';
+export * from './FullPage';

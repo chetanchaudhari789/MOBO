@@ -19,7 +19,7 @@ import { consumeInvite } from '../services/invites.js';
 import { ensureWallet } from '../services/walletService.js';
 import { toUiUser } from '../utils/uiMappers.js';
 import { ensureRoleDocumentsForUser } from '../services/roleDocuments.js';
-import { publishBroadcast, publishRealtime } from '../services/realtimeHub.js';
+import { publishRealtime } from '../services/realtimeHub.js';
 import { getAgencyCodeForMediatorCode } from '../services/lineage.js';
 
 export function makeAuthController(env: Env) {
@@ -157,7 +157,12 @@ export function makeAuthController(env: Env) {
           });
 
           // Realtime: keep admin invite list accurate (status/useCount/usedAt).
-          publishBroadcast('invites.changed', { code: consumed.code, role: consumed.role, status: consumed.status });
+          // Do not broadcast invite codes; scope to privileged roles.
+          publishRealtime({
+            type: 'invites.changed',
+            ts: new Date().toISOString(),
+            audience: { roles: ['admin', 'ops'] },
+          });
         }
 
         const accessToken = signAccessToken(env, String(user._id), user.roles as any);
@@ -394,7 +399,11 @@ export function makeAuthController(env: Env) {
             metadata: { code: consumed.code, role: consumed.role, usedBy: String(user._id) },
           });
 
-          publishBroadcast('invites.changed', { code: consumed.code, role: consumed.role, status: consumed.status });
+          publishRealtime({
+            type: 'invites.changed',
+            ts: new Date().toISOString(),
+            audience: { roles: ['admin', 'ops'] },
+          });
         }
 
         // If mediator joined via agency code, the account is pending and must be approved by agency.
@@ -506,7 +515,11 @@ export function makeAuthController(env: Env) {
           metadata: { code: consumed.code, role: consumed.role, usedBy: String(user._id) },
         });
 
-        publishBroadcast('invites.changed', { code: consumed.code, role: consumed.role, status: consumed.status });
+        publishRealtime({
+          type: 'invites.changed',
+          ts: new Date().toISOString(),
+          audience: { roles: ['admin', 'ops'] },
+        });
         const accessToken = signAccessToken(env, String(user._id), user.roles as any);
         const refreshToken = signRefreshToken(env, String(user._id), user.roles as any);
 
@@ -569,7 +582,12 @@ export function makeAuthController(env: Env) {
         await ensureRoleDocumentsForUser({ user });
 
         // Realtime: reflect profile changes on other devices/sessions.
-        publishBroadcast('users.changed', { userId: String(user._id) });
+        publishRealtime({
+          type: 'users.changed',
+          ts: new Date().toISOString(),
+          payload: { userId: String(user._id) },
+          audience: { roles: ['admin', 'ops'], userIds: [String(user._id)] },
+        });
         const wallet = await ensureWallet(String(user._id));
         res.json({ user: toUiUser(user, wallet) });
       } catch (err) {

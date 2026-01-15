@@ -38,7 +38,7 @@ import {
   Loader2,
 } from 'lucide-react';
 
-import { EmptyState, Spinner } from '../components/ui';
+import { EmptyState, IconButton, RealtimeStatusBadge, Spinner } from '../components/ui';
 import { MobileTabBar } from '../components/MobileTabBar';
 
 // --- UTILS ---
@@ -163,6 +163,9 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                 </div>
                 <div className="flex gap-1">
                   <button
+                    type="button"
+                    aria-label={`Approve ${u.name}`}
+                    title="Approve"
                     onClick={() =>
                       api.ops
                         .approveUser(u.id)
@@ -174,6 +177,9 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                     <Check size={14} strokeWidth={3} />
                   </button>
                   <button
+                    type="button"
+                    aria-label={`Reject ${u.name}`}
+                    title="Reject"
                     onClick={() =>
                       api.ops
                         .rejectUser(u.id)
@@ -195,12 +201,16 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
       <section>
         <div className="flex gap-2 mb-4 bg-zinc-100 p-1 rounded-xl">
           <button
+            type="button"
+            aria-pressed={viewMode === 'todo'}
             onClick={() => setViewMode('todo')}
             className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'todo' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
           >
             Verify ({actionRequiredOrders.length})
           </button>
           <button
+            type="button"
+            aria-pressed={viewMode === 'cooling'}
             onClick={() => setViewMode('cooling')}
             className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'cooling' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
           >
@@ -267,6 +277,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                     <div className="w-14 h-14 bg-[#F4F4F5] rounded-[1rem] p-1.5 flex-shrink-0 relative overflow-hidden">
                       <img
                         src={o.items[0].image}
+                        alt={o.items[0].title}
                         className="w-full h-full object-contain mix-blend-multiply relative z-10"
                       />
                     </div>
@@ -305,6 +316,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                   {viewMode === 'todo' ? (
                     <div className="grid grid-cols-1 p-1 pt-0">
                       <button
+                        type="button"
                         onClick={() => !isDisputed && onViewProof(o)}
                         disabled={isDisputed}
                         className={`py-3 rounded-[1rem] font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 ${
@@ -372,6 +384,8 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
       <div className="bg-white rounded-[1.5rem] border border-zinc-100 shadow-sm p-1">
         <div className="grid grid-cols-2 gap-1">
           <button
+            type="button"
+            aria-pressed={mode === 'published'}
             onClick={() => setMode('published')}
             className={`px-4 py-3 rounded-[1.2rem] font-black text-xs transition-all flex items-center justify-center gap-2 ${
               mode === 'published'
@@ -389,6 +403,8 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
             </span>
           </button>
           <button
+            type="button"
+            aria-pressed={mode === 'unpublished'}
             onClick={() => setMode('unpublished')}
             className={`px-4 py-3 rounded-[1.2rem] font-black text-xs transition-all flex items-center justify-center gap-2 ${
               mode === 'unpublished'
@@ -443,7 +459,11 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                      <img src={d.image} className="w-full h-full object-contain mix-blend-multiply" />
+                        <img
+                          src={d.image}
+                          alt={d.title}
+                          className="w-full h-full object-contain mix-blend-multiply"
+                        />
                     </div>
                     <div className="flex-1 min-w-0 py-0.5">
                       <div className="flex items-center justify-between mb-1.5">
@@ -467,6 +487,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
                   </div>
 
                   <button
+                    type="button"
                     disabled
                     className="w-full py-3 bg-zinc-100 text-zinc-400 rounded-[1rem] font-bold text-xs shadow-inner flex items-center justify-center gap-1.5 cursor-not-allowed"
                   >
@@ -513,7 +534,11 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                      <img src={c.image} className="w-full h-full object-contain mix-blend-multiply" />
+                        <img
+                          src={c.image}
+                          alt={c.title}
+                          className="w-full h-full object-contain mix-blend-multiply"
+                        />
                     </div>
                     <div className="flex-1 min-w-0 py-0.5">
                       <div className="flex items-center justify-between mb-1.5">
@@ -537,6 +562,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => onPublish(c)}
                     className="w-full py-3 bg-[#18181B] text-white rounded-[1rem] font-bold text-xs hover:bg-[#CCF381] hover:text-black transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
                   >
@@ -711,7 +737,11 @@ const MediatorProfileView = () => {
         >
           <div className="w-24 h-24 rounded-full bg-zinc-100 border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
             {avatar ? (
-              <img src={avatar} className="w-full h-full object-cover" />
+              <img
+                src={avatar}
+                alt={user?.name ? `${user.name} avatar` : 'Avatar'}
+                className="w-full h-full object-cover"
+              />
             ) : (
               <UserIcon size={32} className="text-zinc-300" />
             )}
@@ -742,6 +772,7 @@ const MediatorProfileView = () => {
               <UserIcon size={16} /> Personal Info
             </h3>
             <button
+              type="button"
               onClick={() => setIsEditing(!isEditing)}
               className="text-xs font-bold text-lime-600 uppercase hover:underline"
             >
@@ -802,7 +833,11 @@ const MediatorProfileView = () => {
           >
             {qrCode ? (
               <div className="relative">
-                <img src={qrCode} className="h-32 w-32 object-contain rounded-lg" />
+                <img
+                  src={qrCode}
+                  alt="Payment QR"
+                  className="h-32 w-32 object-contain rounded-lg"
+                />
                 {isEditing && (
                   <div className="absolute inset-0 bg-black/20 flex items-center justify-center text-white font-bold text-xs rounded-lg">
                     Change
@@ -827,6 +862,7 @@ const MediatorProfileView = () => {
 
         {isEditing ? (
           <button
+            type="button"
             onClick={handleSave}
             disabled={loading}
             className="w-full py-4 bg-lime-400 text-black font-extrabold rounded-2xl shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -841,6 +877,7 @@ const MediatorProfileView = () => {
           </button>
         ) : (
           <button
+            type="button"
             onClick={logout}
             className="w-full py-4 bg-zinc-900 text-white font-bold rounded-2xl shadow-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
           >
@@ -872,7 +909,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
   const handleSettle = async () => {
     if (!settleId) return;
     try {
-      await api.ops.settleOrderPayment(settleId, utr.trim() || undefined);
+      await api.ops.settleOrderPayment(settleId, utr.trim() || undefined, 'external');
       setSettleId(null);
       setUtr('');
       onRefresh();
@@ -918,6 +955,8 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
               </div>
             </div>
             <button
+              type="button"
+              aria-label="Close ledger"
               onClick={onClose}
               className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"
             >
@@ -961,6 +1000,8 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             <div className="flex items-center gap-1">
               {buyer.qrCode && (
                 <button
+                  type="button"
+                  aria-label="Show payment QR"
                   onClick={() => setShowQr(true)}
                   className="p-2 hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600 rounded-lg transition-colors"
                 >
@@ -968,6 +1009,8 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                 </button>
               )}
               <button
+                type="button"
+                aria-label="Copy UPI address"
                 onClick={() => {
                   navigator.clipboard.writeText(buyer.upiId || '');
                   toast.success('Copied');
@@ -983,12 +1026,16 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
         <div className="flex-1 flex flex-col min-h-0 pt-6">
           <div className="px-5 mb-4 flex items-center gap-2">
             <button
+              type="button"
+              aria-pressed={viewMode === 'pending'}
               onClick={() => setViewMode('pending')}
               className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${viewMode === 'pending' ? 'bg-black text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}
             >
               Unsettled ({pendingOrders.length})
             </button>
             <button
+              type="button"
+              aria-pressed={viewMode === 'settled'}
               onClick={() => setViewMode('settled')}
               className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${viewMode === 'settled' ? 'bg-black text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}
             >
@@ -1030,6 +1077,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                       <div className="w-10 h-10 bg-zinc-50 rounded-[0.8rem] p-1.5 flex-shrink-0">
                         <img
                           src={o.items[0].image}
+                          alt={o.items[0].title}
                           className="w-full h-full object-contain mix-blend-multiply"
                         />
                       </div>
@@ -1067,6 +1115,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
 
                     {viewMode === 'pending' && (
                       <button
+                        type="button"
                         onClick={() => setSettleId(o.id)}
                         className="px-4 py-2 bg-black text-white rounded-xl text-[10px] font-bold hover:bg-zinc-800 transition-colors active:scale-95 flex items-center gap-1"
                       >
@@ -1075,6 +1124,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                     )}
                     {viewMode === 'settled' && (
                       <button
+                        type="button"
                         onClick={() => handleRevert(o.id)}
                         className="text-[10px] font-bold text-zinc-400 hover:text-red-500 flex items-center gap-1 transition-colors"
                       >
@@ -1095,12 +1145,14 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                       />
                       <div className="flex gap-2">
                         <button
+                          type="button"
                           onClick={() => setSettleId(null)}
                           className="flex-1 py-2 bg-white border border-zinc-200 rounded-lg text-[10px] font-bold hover:bg-zinc-100"
                         >
                           Cancel
                         </button>
                         <button
+                          type="button"
                           onClick={handleSettle}
                           className="flex-1 py-2 bg-[#CCF381] text-black rounded-lg text-[10px] font-black hover:brightness-90 shadow-sm"
                         >
@@ -1126,6 +1178,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             onClick={(e) => e.stopPropagation()}
           >
             <button
+              type="button"
               onClick={() => setShowQr(false)}
               className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-900"
             >
@@ -1167,6 +1220,7 @@ export const MediatorDashboard: React.FC = () => {
   const [verifiedUsers, setVerifiedUsers] = useState<User[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(false);
+  const loadingRef = useRef(false);
 
   // Modals
   const [proofModal, setProofModal] = useState<Order | null>(null);
@@ -1187,8 +1241,16 @@ export const MediatorDashboard: React.FC = () => {
     refreshNotifications();
   }, [showNotifications, refreshNotifications]);
 
-  const loadData = async () => {
+  const loadData = async (opts?: unknown) => {
     if (!user) return;
+    if (loadingRef.current) return;
+    const silent =
+      !!opts &&
+      typeof opts === 'object' &&
+      Object.prototype.hasOwnProperty.call(opts, 'silent') &&
+      Boolean((opts as any).silent);
+
+    loadingRef.current = true;
     setLoading(true);
     try {
       const [ords, camps, publishedDeals, pend, ver, tix] = await Promise.all([
@@ -1205,9 +1267,28 @@ export const MediatorDashboard: React.FC = () => {
       setPendingUsers(pend);
       setVerifiedUsers(ver);
       setTickets(tix);
+
+      // Keep the open buyer/ledger view in sync with realtime profile updates
+      // (e.g., UPI/QR updates emitted via `users.changed`).
+      setSelectedBuyer((prev) => {
+        if (!prev) return prev;
+        const updated = [...pend, ...ver].find((u: any) => u?.id === (prev as any).id);
+        if (!updated) return prev;
+        const changed =
+          updated.name !== (prev as any).name ||
+          updated.mobile !== (prev as any).mobile ||
+          updated.upiId !== (prev as any).upiId ||
+          updated.qrCode !== (prev as any).qrCode;
+        return changed ? updated : prev;
+      });
     } catch (e) {
       console.error(e);
+      if (!silent) {
+        const msg = (e as any)?.message ? String((e as any).message) : 'Failed to refresh dashboard.';
+        toast.error(msg);
+      }
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   };
@@ -1220,7 +1301,7 @@ export const MediatorDashboard: React.FC = () => {
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        loadData();
+        loadData({ silent: true });
         if (showNotifications) refreshNotifications();
       }, 600);
     };
@@ -1297,33 +1378,37 @@ export const MediatorDashboard: React.FC = () => {
                 <span className="w-1.5 h-1.5 bg-[#CCF381] rounded-full animate-pulse shadow-[0_0_6px_#CCF381]"></span>{' '}
                 {user?.mediatorCode}
               </p>
-              <span
-                className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                  connected
-                    ? 'text-lime-700 bg-lime-50 border-lime-100'
-                    : 'text-orange-700 bg-orange-50 border-orange-100'
-                }`}
-                title={connected ? 'Realtime connected' : 'Realtime reconnecting'}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    connected ? 'bg-lime-500 animate-pulse motion-reduce:animate-none' : 'bg-orange-500'
-                  }`}
-                ></span>
-                {connected ? 'LIVE' : 'OFFLINE'}
+              <RealtimeStatusBadge connected={connected} className="py-0.5">
                 {loading ? (
                   <span className="inline-flex items-center gap-1 ml-1">
                     <Spinner className="w-3.5 h-3.5 text-current" />
                     <span className="hidden sm:inline">SYNC</span>
                   </span>
                 ) : null}
-              </span>
+              </RealtimeStatusBadge>
             </div>
           </div>
         </div>
 
-        <div className="relative">
+        <div className="relative flex items-center gap-2">
+          <IconButton
+            type="button"
+            variant="neutral"
+            onClick={() => {
+              loadData();
+              if (showNotifications) refreshNotifications();
+            }}
+            disabled={loading}
+            aria-label="Refresh dashboard"
+            title={loading ? 'Refreshing…' : 'Refresh'}
+            className="rounded-[0.8rem] h-10 w-10 border-zinc-100 shadow-md"
+          >
+            <RefreshCcw size={18} strokeWidth={2.5} className={loading ? 'animate-spin' : undefined} />
+          </IconButton>
+
           <button
+            type="button"
+            aria-label="Open notifications"
             onClick={() => setShowNotifications(!showNotifications)}
             className="w-10 h-10 rounded-[0.8rem] bg-white border border-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-50 transition-all active:scale-95 shadow-md relative"
           >
@@ -1506,6 +1591,8 @@ export const MediatorDashboard: React.FC = () => {
               </div>
             </div>
             <button
+              type="button"
+              aria-label="Close verification modal"
               onClick={() => setProofModal(null)}
               className="w-9 h-9 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors"
             >
@@ -1555,6 +1642,7 @@ export const MediatorDashboard: React.FC = () => {
                       </h4>
                       {!aiAnalysis && !isAnalyzing && (
                         <button
+                          type="button"
                           onClick={runAnalysis}
                           className="bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]"
                         >
@@ -1670,7 +1758,7 @@ export const MediatorDashboard: React.FC = () => {
                 {proofModal.reviewLink ? (
                   <a
                     href={proofModal.reviewLink}
-                    target="_blank"
+                    target="_blank" rel="noreferrer"
                     className="flex items-center justify-between p-4 bg-purple-900/20 border border-purple-500/30 rounded-xl hover:bg-purple-900/40 transition-colors group"
                   >
                     <span className="text-xs font-bold text-purple-300 truncate pr-4">

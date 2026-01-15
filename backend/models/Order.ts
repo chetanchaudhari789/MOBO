@@ -81,6 +81,9 @@ const orderSchema = new Schema(
     // Optional payout/settlement reference (e.g., UTR) recorded during settlement.
     settlementRef: { type: String, trim: true },
 
+    // Settlement mode: 'wallet' enforces internal wallet conservation; 'external' records an off-platform payout.
+    settlementMode: { type: String, enum: ['wallet', 'external'], default: 'wallet', index: true },
+
     screenshots: {
       order: { type: String },
       payment: { type: String },

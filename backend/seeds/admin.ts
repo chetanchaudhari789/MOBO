@@ -6,6 +6,8 @@ export type SeedAdminArgs = {
   username?: string;
   password?: string;
   name?: string;
+  forcePassword?: boolean;
+  forceUsername?: boolean;
 };
 
 export async function seedAdminOnly(args: SeedAdminArgs = {}) {
@@ -16,12 +18,35 @@ export async function seedAdminOnly(args: SeedAdminArgs = {}) {
   const password = String(args.password ?? process.env.ADMIN_SEED_PASSWORD ?? 'ChangeMe_123!');
   const name = String(args.name ?? process.env.ADMIN_SEED_NAME ?? 'Root Admin').trim();
 
+  const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+  const looksPlaceholder = (value: string | undefined) => {
+    if (!value) return true;
+    const v = value.trim();
+    if (!v) return true;
+    if (v.includes('REPLACE_ME')) return true;
+    if (v.toLowerCase().includes('changeme')) return true;
+    if (v.startsWith('<') && v.endsWith('>')) return true;
+    return false;
+  };
+
   if (!username) throw new Error('seedAdminOnly: username is required');
   if (!mobile) throw new Error('seedAdminOnly: mobile is required');
   if (!password) throw new Error('seedAdminOnly: password is required');
   if (!name) throw new Error('seedAdminOnly: name is required');
 
-  const passwordHash = await hashPassword(password);
+  // Production safety: never silently seed a weak/default admin password.
+  // You can still run seeding in production, but env vars must be set intentionally.
+  if (isProd) {
+    if (looksPlaceholder(process.env.ADMIN_SEED_USERNAME) && !args.username) {
+      throw new Error('seedAdminOnly: ADMIN_SEED_USERNAME must be set in production');
+    }
+    if (looksPlaceholder(process.env.ADMIN_SEED_PASSWORD) && !args.password) {
+      throw new Error('seedAdminOnly: ADMIN_SEED_PASSWORD must be set in production');
+    }
+  }
+
+  const shouldForcePassword = args.forcePassword === true;
+  const shouldForceUsername = args.forceUsername === true;
 
   // Prefer to find by username first (admin login is username/password).
   let user = await UserModel.findOne({ username, deletedAt: null });
@@ -38,6 +63,7 @@ export async function seedAdminOnly(args: SeedAdminArgs = {}) {
   }
 
   if (!user) {
+    const passwordHash = await hashPassword(password);
     user = new UserModel({
       name,
       username,
@@ -50,9 +76,11 @@ export async function seedAdminOnly(args: SeedAdminArgs = {}) {
     });
   } else {
     user.name = name;
-    user.username = username;
+    if (!user.username || shouldForceUsername) user.username = username;
     user.mobile = mobile;
-    user.passwordHash = passwordHash;
+    if (shouldForcePassword) {
+      user.passwordHash = await hashPassword(password);
+    }
     (user as any).role = 'admin';
     (user as any).roles = Array.from(new Set(['admin', ...((user as any).roles ?? [])]));
     (user as any).status = 'active';

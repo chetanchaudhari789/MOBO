@@ -34,7 +34,7 @@ export const Input = React.forwardRef<HTMLInputElement, Props>(function Input(
           'relative rounded-2xl transition-all',
           isDark
             ? 'bg-slate-900 border border-slate-700 focus-within:ring-2 focus-within:ring-indigo-400/50 focus-within:border-indigo-400'
-            : 'bg-zinc-50 border border-zinc-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-lime-400/50 focus-within:border-lime-300',
+            : 'bg-zinc-50 border border-zinc-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-400/40 focus-within:border-indigo-300',
           error
             ? isDark
               ? 'border-rose-500/40 focus-within:ring-rose-400/40 focus-within:border-rose-400/60'

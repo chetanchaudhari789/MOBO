@@ -48,7 +48,7 @@ import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
-import { EmptyState, Spinner } from '../components/ui';
+import { EmptyState, RealtimeStatusBadge, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   AreaChart,
@@ -208,7 +208,11 @@ const BrandProfileView = () => {
             <div className="w-36 h-36 rounded-[2rem] bg-white p-2 shadow-2xl border border-zinc-100 rotate-3 transition-transform group-hover:rotate-0">
               <div className="w-full h-full bg-zinc-100 rounded-[1.5rem] flex items-center justify-center text-5xl font-black text-zinc-300 overflow-hidden relative">
                 {avatar ? (
-                  <img src={avatar} className="w-full h-full object-cover" />
+                  <img
+                    src={avatar}
+                    alt={user?.name ? `${user.name} avatar` : 'Avatar'}
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   user?.name?.charAt(0)
                 )}
@@ -854,6 +858,7 @@ const OrdersView = ({ user }: any) => {
               <div className="flex gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
                 <img
                   src={viewProofOrder.items[0].image}
+                  alt={viewProofOrder.items[0].title}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-zinc-100 p-1"
                 />
                 <div>
@@ -876,7 +881,11 @@ const OrdersView = ({ user }: any) => {
                 </div>
                 {viewProofOrder.screenshots?.order ? (
                   <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
-                    <img src={viewProofOrder.screenshots.order} className="w-full h-auto block" />
+                    <img
+                      src={viewProofOrder.screenshots.order}
+                      alt="Order Proof"
+                      className="w-full h-auto block"
+                    />
                   </div>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
@@ -899,6 +908,7 @@ const OrdersView = ({ user }: any) => {
                       </div>
                       <img
                         src={viewProofOrder.screenshots.rating}
+                        alt="Rating Proof"
                         className="w-full h-auto block"
                       />
                     </div>
@@ -921,7 +931,7 @@ const OrdersView = ({ user }: any) => {
                   {viewProofOrder.reviewLink ? (
                     <a
                       href={viewProofOrder.reviewLink}
-                      target="_blank"
+                      target="_blank" rel="noreferrer"
                       className="flex items-center justify-between p-4 bg-purple-50 text-purple-700 rounded-2xl font-bold text-xs border border-purple-100 hover:bg-purple-100 transition-colors group"
                     >
                       <span className="truncate flex-1 mr-2">{viewProofOrder.reviewLink}</span>
@@ -948,6 +958,7 @@ const OrdersView = ({ user }: any) => {
                     <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
                       <img
                         src={viewProofOrder.screenshots.payment}
+                        alt="Payment Proof"
                         className="w-full h-auto block"
                       />
                     </div>
@@ -1612,23 +1623,7 @@ export const BrandDashboard: React.FC = () => {
                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                       Partner Portal
                     </p>
-                    <span
-                      className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                        connected
-                          ? 'text-lime-700 bg-lime-50 border-lime-100'
-                          : 'text-orange-700 bg-orange-50 border-orange-100'
-                      }`}
-                      title={connected ? 'Realtime connected' : 'Realtime reconnecting'}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          connected
-                            ? 'bg-lime-500 animate-pulse motion-reduce:animate-none'
-                            : 'bg-orange-500'
-                        }`}
-                      ></span>
-                      {connected ? 'LIVE' : 'OFFLINE'}
-                    </span>
+                    <RealtimeStatusBadge connected={connected} className="py-0.5" />
                   </div>
                 </div>
               </div>

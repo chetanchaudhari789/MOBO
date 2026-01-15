@@ -29,5 +29,14 @@ describe('health', () => {
     expect(res.body).toMatchObject({ status: 'ok' });
     expect(res.body.database).toMatchObject({ status: 'connected', readyState: 1 });
     expect(typeof res.body.timestamp).toBe('string');
+    expect(typeof res.headers['x-request-id']).toBe('string');
+    expect(String(res.headers['x-request-id'])).toBeTruthy();
+  });
+
+  it('echoes X-Request-Id when provided', async () => {
+    const res = await request(app).get('/api/health').set('x-request-id', 'test-request-id-123');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['x-request-id']).toBe('test-request-id-123');
   });
 });

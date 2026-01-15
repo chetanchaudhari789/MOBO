@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
-import { EmptyState, Spinner } from '../components/ui';
+import { EmptyState, RealtimeStatusBadge, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutDashboard,
@@ -201,7 +201,11 @@ const AgencyProfile = ({ user }: any) => {
             <div className="w-32 h-32 rounded-[2rem] bg-white p-2 shadow-lg border border-slate-100 flex-shrink-0">
               <div className="w-full h-full bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-4xl font-black text-white overflow-hidden relative group-hover:scale-[1.02] transition-transform duration-500">
                 {avatar ? (
-                  <img src={avatar} className="w-full h-full object-cover" />
+                  <img
+                    src={avatar}
+                    alt={user?.name ? `${user.name} avatar` : 'Avatar'}
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   user?.name?.charAt(0)
                 )}
@@ -412,7 +416,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
     setIsUpdating(true);
     // Real update via Ops API.
     try {
-      if (newStatus === 'Paid') await api.ops.settleOrderPayment(editingOrder.id);
+      if (newStatus === 'Paid') await api.ops.settleOrderPayment(editingOrder.id, undefined, 'external');
       else if (newStatus === 'Pending') await api.ops.unsettleOrderPayment(editingOrder.id);
 
       toast.success('Ledger updated');
@@ -2363,6 +2367,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             onClick={(e) => e.stopPropagation()}
           >
             <button
+              type="button"
               onClick={() => setProofOrder(null)}
               className="absolute top-4 right-4 p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
             >
@@ -2395,6 +2400,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               <div className="flex gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <img
                   src={proofOrder.items[0].image}
+                  alt={proofOrder.items[0].title}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-slate-100 p-1"
                 />
                 <div>
@@ -2415,7 +2421,11 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 </div>
                 {proofOrder.screenshots?.order ? (
                   <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
-                    <img src={proofOrder.screenshots.order} className="w-full h-auto block" />
+                    <img
+                      src={proofOrder.screenshots.order}
+                      alt="Order Proof"
+                      className="w-full h-auto block"
+                    />
                   </div>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
@@ -2436,7 +2446,11 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       <div className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-2 py-1 rounded-lg">
                         5 Stars
                       </div>
-                      <img src={proofOrder.screenshots.rating} className="w-full h-auto block" />
+                      <img
+                        src={proofOrder.screenshots.rating}
+                        alt="Rating Proof"
+                        className="w-full h-auto block"
+                      />
                     </div>
                   ) : (
                     <div className="p-6 border-2 border-dashed border-orange-200 bg-orange-50 rounded-2xl text-center">
@@ -2457,7 +2471,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   {proofOrder.reviewLink ? (
                     <a
                       href={proofOrder.reviewLink}
-                      target="_blank"
+                      target="_blank" rel="noreferrer"
                       className="flex items-center justify-between p-4 bg-purple-50 text-purple-700 rounded-2xl font-bold text-xs border border-purple-100 hover:bg-purple-100 transition-colors group"
                     >
                       <span className="truncate flex-1 mr-2">{proofOrder.reviewLink}</span>
@@ -2611,23 +2625,7 @@ export const AgencyDashboard: React.FC = () => {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                     Agency Portal
                   </p>
-                  <span
-                    className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                      connected
-                        ? 'text-lime-700 bg-lime-50 border-lime-100'
-                        : 'text-orange-700 bg-orange-50 border-orange-100'
-                    }`}
-                    title={connected ? 'Realtime connected' : 'Realtime reconnecting'}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        connected
-                          ? 'bg-lime-500 animate-pulse motion-reduce:animate-none'
-                          : 'bg-orange-500'
-                      }`}
-                    ></span>
-                    {connected ? 'LIVE' : 'OFFLINE'}
-                  </span>
+                  <RealtimeStatusBadge connected={connected} />
                 </div>
               </div>
             </div>

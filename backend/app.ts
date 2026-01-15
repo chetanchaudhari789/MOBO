@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import crypto from 'node:crypto';
 
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
@@ -18,10 +19,66 @@ import { notificationsRoutes } from './routes/notificationsRoutes.js';
 import { realtimeRoutes } from './routes/realtimeRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 
+function isOriginAllowed(origin: string, allowed: string[]): boolean {
+  if (!origin) return true;
+  if (!allowed.length) return true;
+  if (allowed.includes('*')) return true;
+
+  let originUrl: URL | null = null;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    // If Origin is not a valid URL, fail closed.
+    return false;
+  }
+
+  const originHost = originUrl.hostname;
+
+  return allowed.some((entryRaw) => {
+    const entry = String(entryRaw || '').trim();
+    if (!entry) return false;
+
+    // Exact match (full origin string).
+    if (!entry.includes('*') && (entry.startsWith('http://') || entry.startsWith('https://'))) {
+      return entry === origin;
+    }
+
+    // Wildcard support.
+    // Examples:
+    // - https://*.vercel.app
+    // - *.vercel.app
+    // - https://mobobuyer.vercel.app
+    if (entry.includes('*')) {
+      const escaped = entry
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*');
+      const re = new RegExp(`^${escaped}$`);
+      return re.test(origin) || re.test(originHost);
+    }
+
+    // Hostname-only entry support.
+    // Examples:
+    // - mobobuyer.vercel.app
+    // - .vercel.app (suffix)
+    if (entry.startsWith('.')) return originHost.endsWith(entry);
+    return originHost === entry;
+  });
+}
+
 export function createApp(env: Env) {
   const app = express();
 
   app.disable('x-powered-by');
+
+  // Ensure every response carries a request identifier for log correlation.
+  // If a caller provides X-Request-Id, we echo it back (within a safe length).
+  app.use((req, res, next) => {
+    const provided = String(req.header('x-request-id') || '').trim();
+    const requestId = provided && provided.length <= 128 ? provided : crypto.randomUUID();
+    res.setHeader('x-request-id', requestId);
+    res.locals.requestId = requestId;
+    next();
+  });
 
   // Most deployments (Render/Vercel/NGINX) run behind a reverse proxy.
   // This ensures `req.ip` and rate-limits behave correctly.
@@ -37,12 +94,21 @@ export function createApp(env: Env) {
       res.on('finish', () => {
         const ms = Date.now() - start;
         // eslint-disable-next-line no-console
-        console.log(`${req.method} ${req.originalUrl} -> ${res.statusCode} (${ms}ms)`);
+        console.log(`[${String(res.locals.requestId || '-')}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${ms}ms)`);
       });
       next();
     });
   }
-  app.use(helmet());
+  // Helmet defaults are good, but for an API service we explicitly:
+  // - disable CSP (frontends are served separately)
+  // - only enable HSTS in production
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      hsts: env.NODE_ENV === 'production',
+    })
+  );
 
   app.use(
     rateLimit({
@@ -54,14 +120,30 @@ export function createApp(env: Env) {
   );
 
   const corsOrigins = parseCorsOrigins(env.CORS_ORIGINS);
+
+  // If a request presents an Origin header and it is not allowed, fail closed.
+  // This complements the CORS middleware (which otherwise may simply omit headers
+  // while still allowing the request to be processed server-side).
+  app.use((req, res, next) => {
+    const origin = req.header('origin');
+    if (origin && !isOriginAllowed(origin, corsOrigins)) {
+      return res.status(403).json({
+        error: 'origin_not_allowed',
+        requestId: String(res.locals.requestId || ''),
+      });
+    }
+    next();
+  });
   app.use(
     cors({
-      origin: corsOrigins.length ? corsOrigins : true,
+      origin: (origin, cb) => cb(null, isOriginAllowed(String(origin || ''), corsOrigins)),
       credentials: true,
+      optionsSuccessStatus: 204,
     })
   );
 
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }));
+  app.use(express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT }));
 
   app.use('/api', healthRoutes(env));
   app.use('/api/auth', authRoutes(env));

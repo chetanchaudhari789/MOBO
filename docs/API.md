@@ -48,6 +48,10 @@ Most non-2xx responses are JSON:
 
 ## Realtime (`/api/realtime`)
 
+- `GET /api/realtime/health` (no auth)
+
+  - Lightweight health check for the realtime subsystem
+
 - `GET /api/realtime/stream` (auth)
   - SSE stream used by portals for live refresh
   - Events: `ready`, `ping`, plus domain events like `deals.changed`, `users.changed`, `orders.changed`, `wallets.changed`, `tickets.changed`, `notifications.changed`

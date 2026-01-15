@@ -2,13 +2,15 @@
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
+import { useToast } from '../context/ToastContext';
 import { Product } from '../types';
 import { ProductCard } from '../components/ProductCard';
 import { Search, Filter, RefreshCw } from 'lucide-react';
-import { Badge, EmptyState, Input, Spinner } from '../components/ui';
+import { Badge, EmptyState, IconButton, Input, RealtimeStatusBadge, Spinner } from '../components/ui';
 
 export const Explore: React.FC = () => {
   const { connected } = useRealtimeConnection();
+  const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,6 +37,7 @@ export const Explore: React.FC = () => {
     } catch (err) {
       console.error(err);
       setProducts([]);
+      if (!silent) toast.error('Failed to load deals. Please try again.');
     } finally {
       setLoading(false);
       setIsSyncing(false);
@@ -116,18 +119,16 @@ export const Explore: React.FC = () => {
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-extrabold text-slate-900">Explore Deals</h1>
           <div className="flex items-center gap-2">
-            <Badge
-              variant={connected ? 'success' : 'warning'}
-              title={connected ? 'Realtime connected' : 'Realtime reconnecting'}
-              className="gap-2"
+            <RealtimeStatusBadge connected={connected} />
+            <IconButton
+              type="button"
+              aria-label="Refresh deals"
+              disabled={loading || isSyncing}
+              onClick={() => fetchDeals(true)}
+              className="h-9 w-9"
             >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  connected ? 'bg-emerald-500 animate-pulse motion-reduce:animate-none' : 'bg-amber-500'
-                }`}
-              />
-              {connected ? 'LIVE' : 'OFFLINE'}
-            </Badge>
+              <RefreshCw size={16} className={isSyncing ? 'animate-spin motion-reduce:animate-none' : ''} />
+            </IconButton>
             {isSyncing && (
               <Badge variant="info" className="gap-2">
                 <RefreshCw size={12} className="animate-spin motion-reduce:animate-none" /> SYNCING
@@ -152,7 +153,9 @@ export const Explore: React.FC = () => {
           {categories.map((cat) => (
             <button
               key={cat}
+              type="button"
               onClick={() => setSelectedCategory(cat)}
+              aria-pressed={selectedCategory === cat}
               className={`px-5 py-2.5 rounded-full text-xs font-bold transition-all border whitespace-nowrap ${
                 selectedCategory === cat
                   ? 'bg-black text-white border-black shadow-lg'

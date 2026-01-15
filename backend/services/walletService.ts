@@ -18,20 +18,31 @@ export type WalletMutationInput = {
 
 export async function ensureWallet(ownerUserId: string) {
   // Concurrency-safe wallet creation: multiple requests may race during onboarding/settlement.
-  return WalletModel.findOneAndUpdate(
-    { ownerUserId, deletedAt: null },
-    {
-      $setOnInsert: {
-        ownerUserId,
-        currency: 'INR',
-        availablePaise: 0,
-        pendingPaise: 0,
-        lockedPaise: 0,
-        version: 0,
+  try {
+    return await WalletModel.findOneAndUpdate(
+      { ownerUserId, deletedAt: null },
+      {
+        $setOnInsert: {
+          ownerUserId,
+          currency: 'INR',
+          availablePaise: 0,
+          pendingPaise: 0,
+          lockedPaise: 0,
+          version: 0,
+        },
       },
-    },
-    { upsert: true, new: true }
-  );
+      { upsert: true, new: true }
+    );
+  } catch (err: any) {
+    // In rare races, two upserts may attempt an insert concurrently and one loses with E11000.
+    // If so, just read the wallet that won.
+    const code = Number(err?.code ?? err?.errorResponse?.code);
+    if (code === 11000) {
+      const existing = await WalletModel.findOne({ ownerUserId, deletedAt: null });
+      if (existing) return existing;
+    }
+    throw err;
+  }
 }
 
 export async function applyWalletCredit(input: WalletMutationInput) {

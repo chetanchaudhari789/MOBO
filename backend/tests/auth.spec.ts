@@ -27,6 +27,7 @@ describe('auth', () => {
       .send({ username: E2E_ACCOUNTS.admin.username, password: E2E_ACCOUNTS.admin.password });
 
     expect(loginRes.status).toBe(200);
+    expect(String(loginRes.header['cache-control'] || '')).toContain('no-store');
     expect(loginRes.body).toHaveProperty('user');
     expect(loginRes.body).toHaveProperty('tokens');
     expect(typeof loginRes.body.tokens?.accessToken).toBe('string');

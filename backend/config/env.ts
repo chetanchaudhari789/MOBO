@@ -5,6 +5,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(8080),
 
+  // Express body parser limits.
+  // Use values supported by the `bytes` package syntax (e.g. '1mb', '500kb').
+  REQUEST_BODY_LIMIT: z.string().trim().min(1).default('10mb'),
+
   // When true, seed + E2E flows may bypass external integrations.
   SEED_E2E: z.coerce.boolean().default(false),
 
@@ -79,6 +83,17 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(
       'Invalid environment configuration:\nMONGODB_URI: must be set to a real MongoDB connection string in production'
     );
+  }
+
+  // Production safety: do not default to "allow all origins".
+  // The API is consumed by multiple portals, so an explicit allowlist should always be configured.
+  if (env.NODE_ENV === 'production') {
+    const cors = parseCorsOrigins(env.CORS_ORIGINS);
+    if (!cors.length) {
+      throw new Error(
+        'Invalid environment configuration:\nCORS_ORIGINS: must be set to a comma-separated list of allowed origins/hosts in production'
+      );
+    }
   }
 
   return env;

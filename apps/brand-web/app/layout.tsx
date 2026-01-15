@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import './globals.css';
 import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
 export const metadata: Metadata = {
-  title: 'Brand Web',
-  description: 'Minimal Next.js brand web scaffold',
+  title: 'MOBO Brand',
+  description: 'Brand portal for inventory, orders, payouts, and brand operations.',
+  robots: { index: false, follow: false },
   icons: {
     icon: '/favicon.svg',
   },

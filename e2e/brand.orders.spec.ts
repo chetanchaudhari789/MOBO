@@ -10,7 +10,7 @@ test('brand can open Order Intelligence', async ({ page }) => {
   await page.getByRole('button', { name: /Access Portal/i }).click();
 
   await page.getByPlaceholder('9000000000').fill(BRAND_MOBILE);
-  await page.getByPlaceholder('••••••••').fill(PASSWORD);
+  await page.getByPlaceholder('Password').fill(PASSWORD);
   await page.getByRole('button', { name: /Login to Portal/i }).click();
 
   await page.getByRole('button', { name: 'Order Intelligence' }).click();

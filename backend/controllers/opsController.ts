@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../middleware/errors.js';
+import type { Role } from '../middleware/auth.js';
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
 import { CampaignModel } from '../models/Campaign.js';
@@ -29,7 +30,22 @@ import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
 import { requestBrandConnectionSchema } from '../validations/connections.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
-import { publishBroadcast, publishRealtime } from '../services/realtimeHub.js';
+import { publishRealtime } from '../services/realtimeHub.js';
+
+function buildOrderAudience(order: any, agencyCode?: string) {
+  const privilegedRoles: Role[] = ['admin', 'ops'];
+  const managerCode = String(order?.managerName || '').trim();
+  const brandUserId = String(order?.brandUserId || '').trim();
+  const buyerUserId = String(order?.userId || '').trim();
+  const normalizedAgencyCode = String(agencyCode || '').trim();
+
+  return {
+    roles: privilegedRoles,
+    userIds: [buyerUserId, brandUserId].filter(Boolean),
+    mediatorCodes: managerCode ? [managerCode] : undefined,
+    agencyCodes: normalizedAgencyCode ? [normalizedAgencyCode] : undefined,
+  };
+}
 
 function mapUsersWithWallets(users: any[], wallets: any[]) {
   const byUserId = new Map<string, any>();
@@ -148,9 +164,20 @@ export function makeOpsController() {
         });
 
         // Realtime: let the brand (and agency) UIs update without refresh.
-        publishBroadcast('users.changed', { userId: String(brand._id) });
-        publishBroadcast('users.changed', { userId: String((requester as any)?._id || '') });
-        publishBroadcast('notifications.changed');
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        const audience = {
+          roles: privilegedRoles,
+          userIds: [String(brand._id), String((requester as any)?._id || '')].filter(Boolean),
+          agencyCodes: agencyCode ? [agencyCode] : undefined,
+        };
+        publishRealtime({ type: 'users.changed', ts: new Date().toISOString(), payload: { userId: String(brand._id) }, audience });
+        publishRealtime({
+          type: 'users.changed',
+          ts: new Date().toISOString(),
+          payload: { userId: String((requester as any)?._id || '') },
+          audience,
+        });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -611,8 +638,9 @@ export function makeOpsController() {
 
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
 
-        publishBroadcast('orders.changed', { orderId: String(order._id) });
-        publishBroadcast('notifications.changed');
+        const audience = buildOrderAudience(order, agencyCode);
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true, approved: (finalize as any).approved, ...(finalize as any) });
       } catch (err) {
         next(err);
@@ -690,8 +718,9 @@ export function makeOpsController() {
         const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''));
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
 
-        publishBroadcast('orders.changed', { orderId: String(order._id) });
-        publishBroadcast('notifications.changed');
+        const audience = buildOrderAudience(order, agencyCode);
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true, approved: (finalize as any).approved, ...(finalize as any) });
       } catch (err) {
         next(err);
@@ -702,6 +731,7 @@ export function makeOpsController() {
       try {
         const body = settleOrderSchema.parse(req.body);
         const { roles, user } = getRequester(req);
+        const settlementMode = (body as any).settlementMode === 'external' ? 'external' : 'wallet';
 
         // Privileged: may settle any order.
         // Non-privileged: may settle only within their scope.
@@ -793,11 +823,11 @@ export function makeOpsController() {
           }
         }
 
-        // Money movements: enforce conservation on successful settlements.
+        // Money movements (wallet mode only): enforce conservation on successful settlements.
         // - Debit brand wallet by the Deal payout
         // - Credit buyer commission and mediator margin (payout - commission)
         // Idempotency keys prevent double-moves on retries.
-        if (!isOverLimit) {
+        if (!isOverLimit && settlementMode === 'wallet') {
           if (!productId) {
             throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
           }
@@ -874,6 +904,7 @@ export function makeOpsController() {
         }
         order.paymentStatus = 'Paid';
         order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
+        (order as any).settlementMode = settlementMode;
         if (body.settlementRef) {
           (order as any).settlementRef = body.settlementRef;
         }
@@ -881,7 +912,10 @@ export function makeOpsController() {
           type: isOverLimit ? 'CAP_EXCEEDED' : 'SETTLED',
           at: new Date(),
           actorUserId: req.auth?.userId,
-          metadata: body.settlementRef ? { settlementRef: body.settlementRef } : undefined,
+          metadata: {
+            ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
+            settlementMode,
+          },
         }) as any;
         await order.save();
 
@@ -905,9 +939,12 @@ export function makeOpsController() {
 
         await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: String(order._id), metadata: { affiliateStatus: order.affiliateStatus } });
 
-        publishBroadcast('orders.changed', { orderId: String(order._id) });
-        publishBroadcast('notifications.changed');
-        publishBroadcast('wallets.changed');
+        const audience = buildOrderAudience(order, agencyCode);
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+        if (settlementMode === 'wallet') {
+          publishRealtime({ type: 'wallets.changed', ts: new Date().toISOString(), audience });
+        }
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -963,8 +1000,9 @@ export function makeOpsController() {
           throw new AppError(409, 'NOT_SETTLED', 'Order is not settled');
         }
 
-        // Reverse money movements if this was a normal settlement.
+        // Reverse money movements if this was a wallet settlement.
         // If CAP_EXCEEDED path was used, no money movement occurred; reversal is a no-op.
+        // If settlementMode=external, reversal is a no-op.
         const productId = String(order.items?.[0]?.productId || '').trim();
         const campaignId = order.items?.[0]?.campaignId;
         const mediatorCode = String(order.managerName || '').trim();
@@ -973,8 +1011,9 @@ export function makeOpsController() {
         const brandId = String((order as any).brandUserId || (campaign as any)?.brandUserId || '').trim();
 
         const isCapExceeded = String(order.affiliateStatus) === 'Cap_Exceeded';
+        const settlementMode = String((order as any).settlementMode || 'wallet');
 
-        if (!isCapExceeded) {
+        if (!isCapExceeded && settlementMode !== 'external') {
           if (!productId) throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
           const deal = await DealModel.findById(productId).lean();
           if (!deal || (deal as any).deletedAt) throw new AppError(409, 'DEAL_NOT_FOUND', 'Cannot revert: deal not found');
@@ -1065,6 +1104,7 @@ export function makeOpsController() {
         order.paymentStatus = 'Pending';
         order.affiliateStatus = 'Pending_Cooling';
         (order as any).settlementRef = undefined;
+        (order as any).settlementMode = 'wallet';
 
         order.events = pushOrderEvent(order.events as any, {
           type: 'STATUS_CHANGED',
@@ -1094,9 +1134,14 @@ export function makeOpsController() {
           metadata: { previousWorkflow: wf, previousAffiliateStatus: prevAffiliateStatus },
         });
 
-        publishBroadcast('orders.changed', { orderId: String(order._id) });
-        publishBroadcast('notifications.changed');
-        publishBroadcast('wallets.changed');
+        const managerCode = String(order.managerName || '').trim();
+        const agencyCode = managerCode ? ((await getAgencyCodeForMediatorCode(managerCode)) || '') : '';
+        const audience = buildOrderAudience(order, agencyCode);
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+        if (settlementMode !== 'external') {
+          publishRealtime({ type: 'wallets.changed', ts: new Date().toISOString(), audience });
+        }
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -1376,7 +1421,18 @@ export function makeOpsController() {
 
         await writeAuditLog({ req, action: 'DEAL_PUBLISHED', entityType: 'Deal', entityId: `${String(campaign._id)}:${body.mediatorCode}`, metadata: { campaignId: String(campaign._id), mediatorCode: body.mediatorCode } });
 
-        publishBroadcast('deals.changed', { campaignId: String(campaign._id), mediatorCode: body.mediatorCode });
+        const agencyCode = (await getAgencyCodeForMediatorCode(body.mediatorCode)) || '';
+        publishRealtime({
+          type: 'deals.changed',
+          ts: new Date().toISOString(),
+          payload: { campaignId: String(campaign._id), mediatorCode: body.mediatorCode },
+          audience: {
+            roles: ['admin', 'ops'],
+            mediatorCodes: [body.mediatorCode],
+            parentCodes: [body.mediatorCode],
+            ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
+          },
+        });
         res.json({ ok: true });
       } catch (err) {
         next(err);
