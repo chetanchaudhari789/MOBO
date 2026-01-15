@@ -3,9 +3,8 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
-import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { Order, Product } from '../types';
-import { Button, EmptyState, RealtimeStatusBadge, Spinner } from '../components/ui';
+import { Button, EmptyState, Spinner } from '../components/ui';
 import {
   Clock,
   CheckCircle2,
@@ -24,7 +23,6 @@ import {
 } from 'lucide-react';
 
 export const Orders: React.FC = () => {
-  const { connected } = useRealtimeConnection();
   const { user } = useAuth();
   const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -276,7 +274,6 @@ export const Orders: React.FC = () => {
           <h1 className="text-2xl font-extrabold text-slate-900">My Orders</h1>
           <div className="flex items-center gap-2">
             <p className="text-sm text-slate-500 font-medium">Track purchases & cashback.</p>
-            <RealtimeStatusBadge connected={connected} />
           </div>
         </div>
         <Button

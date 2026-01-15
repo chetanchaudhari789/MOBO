@@ -3,8 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
-import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
-import { Button, EmptyState, IconButton, Input, RealtimeStatusBadge, Spinner } from '../components/ui';
+import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutGrid,
@@ -21,7 +20,6 @@ import {
   CheckCircle2,
   XCircle,
   Ban,
-  RefreshCw,
   AlertTriangle,
   Key,
   Copy,
@@ -155,7 +153,6 @@ const StatusBadge = ({ status }: { status: string }) => {
 export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack }) => {
   const { user, loginAdmin, logout } = useAuth();
   const { toast } = useToast();
-  const { connected } = useRealtimeConnection();
   const [view, setView] = useState<ViewMode>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -539,7 +536,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
                       v3.0.1 Stable
                     </p>
-                    <RealtimeStatusBadge connected={connected} className="border-white/10 bg-white/5 text-white" />
                   </div>
                 </div>
               </div>
@@ -644,14 +640,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
             </h2>
           </div>
           <div className="flex items-center gap-4">
-            <IconButton
-              onClick={fetchAllData}
-              aria-label="Refresh data"
-              title="Refresh data"
-              className="text-slate-400 hover:text-indigo-600 hover:border-indigo-200"
-            >
-              <RefreshCw size={20} className={isLoading ? 'animate-spin motion-reduce:animate-none' : ''} />
-            </IconButton>
             <div className="w-px h-8 bg-slate-200"></div>
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
@@ -836,7 +824,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <div className="col-span-full">
                       <EmptyState
                         title="Loading tickets"
-                        description="Syncing the latest support queue"
+                        description="Loading the latest support queue"
                         icon={<Spinner className="w-6 h-6 text-slate-400" />}
                         className="border-slate-200"
                       />
@@ -1036,11 +1024,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     disabled={isLoading}
                     className="px-8 py-3.5 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-600 transition-all active:scale-95 flex items-center gap-2 whitespace-nowrap"
                   >
-                    {isLoading ? (
-                      <RefreshCw className="animate-spin motion-reduce:animate-none" size={18} />
-                    ) : (
-                      <Plus size={18} />
-                    )}
+                    <Plus size={18} />
                     Generate Code
                   </button>
                 </div>

@@ -37,7 +37,7 @@ import {
   Loader2,
 } from 'lucide-react';
 
-import { EmptyState, IconButton, Spinner } from '../components/ui';
+import { EmptyState, Spinner } from '../components/ui';
 import { MobileTabBar } from '../components/MobileTabBar';
 
 // --- UTILS ---
@@ -437,7 +437,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
                 {loading ? (
                   <EmptyState
                     title="Loading deals"
-                    description="Syncing your published inventory."
+                    description="Loading your published inventory."
                     icon={<Spinner className="w-5 h-5 text-zinc-400" />}
                     className="bg-transparent border-0 py-10"
                   />
@@ -1376,32 +1376,11 @@ export const MediatorDashboard: React.FC = () => {
                 <span className="w-1.5 h-1.5 bg-[#CCF381] rounded-full animate-pulse shadow-[0_0_6px_#CCF381]"></span>{' '}
                 {user?.mediatorCode}
               </p>
-              {loading ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                  <Spinner className="w-3.5 h-3.5 text-zinc-400" />
-                  Syncing
-                </span>
-              ) : null}
             </div>
           </div>
         </div>
 
         <div className="relative flex items-center gap-2">
-          <IconButton
-            type="button"
-            variant="neutral"
-            onClick={() => {
-              loadData();
-              if (showNotifications) refreshNotifications();
-            }}
-            disabled={loading}
-            aria-label="Refresh dashboard"
-            title={loading ? 'Refreshing…' : 'Refresh'}
-            className="rounded-[0.8rem] h-10 w-10 border-zinc-100 shadow-md"
-          >
-            <RefreshCcw size={18} strokeWidth={2.5} className={loading ? 'animate-spin' : undefined} />
-          </IconButton>
-
           <button
             type="button"
             aria-label="Open notifications"

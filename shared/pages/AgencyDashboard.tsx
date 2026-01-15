@@ -32,7 +32,6 @@ import {
   FileText,
   Trash2,
   CreditCard,
-  RefreshCw,
   Send,
   Clock,
   Check,
@@ -248,11 +247,10 @@ const AgencyProfile = ({ user }: any) => {
             </div>
             <button
               onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
+              disabled={loading}
               className={`px-6 py-3 rounded-xl font-bold text-sm shadow-lg transition-all active:scale-95 flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${isEditing ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
             >
-              {loading ? (
-                <RefreshCw className="animate-spin motion-reduce:animate-none" size={18} />
-              ) : isEditing ? (
+              {isEditing ? (
                 <>
                   <Save size={18} /> Save Changes
                 </>
@@ -552,7 +550,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
               {loading ? (
                 <EmptyState
                   title="Loading transactions"
-                  description="Syncing the latest financial ledger."
+                  description="Loading the latest financial ledger."
                   icon={<Spinner className="w-5 h-5 text-slate-400" />}
                   className="bg-transparent"
                 />
@@ -751,11 +749,7 @@ const BrandsView = () => {
             disabled={loading || !brandCode}
             className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold text-sm hover:bg-purple-700 transition-colors shadow-lg active:scale-95 disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-2"
           >
-            {loading ? (
-              <RefreshCw className="animate-spin motion-reduce:animate-none" size={18} />
-            ) : (
-              <Send size={18} />
-            )}
+            <Send size={18} />
             Send Connection Request
           </button>
 
@@ -860,7 +854,7 @@ const PayoutsView = ({ payouts, loading }: any) => {
               {loading ? (
                 <EmptyState
                   title="Loading payouts"
-                  description="Syncing payout history."
+                  description="Loading payout history."
                   icon={<Spinner className="w-5 h-5 text-slate-400" />}
                   className="bg-transparent"
                 />
@@ -1765,7 +1759,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 loading ? (
                   <EmptyState
                     title="Loading mediators"
-                    description="Syncing your team roster."
+                    description="Loading your team roster."
                     icon={<Spinner className="w-5 h-5 text-slate-400" />}
                     className="bg-slate-50/50 border-slate-200"
                   />

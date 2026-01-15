@@ -14,7 +14,6 @@ import {
   ShieldCheck,
   Plus,
   CheckCircle,
-  RefreshCcw,
 } from 'lucide-react';
 import { Order } from '../types';
 
@@ -248,16 +247,6 @@ export const Profile: React.FC = () => {
             <h3 className="font-extrabold text-xl text-zinc-900 flex items-center gap-2">
               <CreditCard size={24} className="text-zinc-300" /> Wallet
             </h3>
-            <button
-              type="button"
-              onClick={() => refreshStats()}
-              disabled={isStatsLoading}
-              aria-label="Refresh wallet stats"
-              className="w-10 h-10 rounded-full bg-zinc-50 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              title={isStatsLoading ? 'Refreshing…' : 'Refresh'}
-            >
-              <RefreshCcw size={18} className={isStatsLoading ? 'animate-spin motion-reduce:animate-none' : undefined} />
-            </button>
           </div>
 
           <div className="flex-1 flex flex-col justify-center items-center text-center mb-8">
@@ -265,14 +254,7 @@ export const Profile: React.FC = () => {
               Total Spent
             </p>
             <h2 className="text-5xl font-black text-zinc-900 tracking-tighter">
-              {isStatsLoading ? (
-                <span className="inline-flex items-center gap-2">
-                  <span className="inline-block w-5 h-5 border-2 border-current/20 border-t-current rounded-full animate-spin motion-reduce:animate-none" />
-                  <span className="text-2xl font-black text-zinc-400">Loading…</span>
-                </span>
-              ) : (
-                `₹${totalSpent.toLocaleString()}`
-              )}
+              {`₹${totalSpent.toLocaleString()}`}
             </h2>
             <div className="flex items-center gap-2 mt-4 bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold border border-green-100">
               <TrendingUp size={14} /> +{orders.length} lifetime orders

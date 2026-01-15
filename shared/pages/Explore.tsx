@@ -1,22 +1,20 @@
-﻿import React, { useMemo, useState, useEffect } from 'react';
+﻿import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
-import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { useToast } from '../context/ToastContext';
 import { Product } from '../types';
 import { ProductCard } from '../components/ProductCard';
-import { Search, Filter, RefreshCw } from 'lucide-react';
-import { Badge, EmptyState, IconButton, Input, RealtimeStatusBadge, Spinner } from '../components/ui';
+import { Search, Filter } from 'lucide-react';
+import { EmptyState, Input, Spinner } from '../components/ui';
 
 export const Explore: React.FC = () => {
-  const { connected } = useRealtimeConnection();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const silentSyncRef = useRef(false);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -29,8 +27,12 @@ export const Explore: React.FC = () => {
   }, [products]);
 
   const fetchDeals = async (silent = false) => {
-    if (!silent) setLoading(true);
-    else setIsSyncing(true);
+    if (silent) {
+      if (silentSyncRef.current) return;
+      silentSyncRef.current = true;
+    } else {
+      setLoading(true);
+    }
     try {
       const data = await api.products.getAll();
       setProducts(Array.isArray(data) ? data : []);
@@ -40,7 +42,7 @@ export const Explore: React.FC = () => {
       if (!silent) toast.error('Failed to load deals. Please try again.');
     } finally {
       setLoading(false);
-      setIsSyncing(false);
+      silentSyncRef.current = false;
     }
   };
 
@@ -65,13 +67,6 @@ export const Explore: React.FC = () => {
       if (timer) clearTimeout(timer);
     };
   }, []);
-
-  // Fallback: when realtime is disconnected, refresh occasionally.
-  useEffect(() => {
-    if (connected) return;
-    const heartbeat = setInterval(() => fetchDeals(true), 60_000);
-    return () => clearInterval(heartbeat);
-  }, [connected]);
 
   useEffect(() => {
     let result = products;
@@ -118,23 +113,6 @@ export const Explore: React.FC = () => {
       <div className="px-6 pt-16 pb-4 bg-white shadow-sm z-10 border-b border-gray-100 sticky top-0">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-extrabold text-slate-900">Explore Deals</h1>
-          <div className="flex items-center gap-2">
-            <RealtimeStatusBadge connected={connected} />
-            <IconButton
-              type="button"
-              aria-label="Refresh deals"
-              disabled={loading || isSyncing}
-              onClick={() => fetchDeals(true)}
-              className="h-9 w-9"
-            >
-              <RefreshCw size={16} className={isSyncing ? 'animate-spin motion-reduce:animate-none' : ''} />
-            </IconButton>
-            {isSyncing && (
-              <Badge variant="info" className="gap-2">
-                <RefreshCw size={12} className="animate-spin motion-reduce:animate-none" /> SYNCING
-              </Badge>
-            )}
-          </div>
         </div>
 
         {/* Search Bar */}

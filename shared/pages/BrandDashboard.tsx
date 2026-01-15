@@ -42,7 +42,6 @@ import {
   Phone,
   Mail,
   Camera,
-  RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
@@ -244,11 +243,10 @@ const BrandProfileView = () => {
           </div>
           <button
             onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
+            disabled={loading}
             className={`px-8 py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${isEditing ? 'bg-black text-white hover:bg-zinc-800' : 'bg-zinc-100 text-zinc-900 hover:bg-zinc-200'}`}
           >
-            {loading ? (
-              <RefreshCw className="animate-spin motion-reduce:animate-none" size={18} />
-            ) : isEditing ? (
+            {isEditing ? (
               <>
                 <Save size={18} /> Save Changes
               </>
