@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
-import { EmptyState, RealtimeStatusBadge, Spinner } from '../components/ui';
+import { EmptyState, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutDashboard,
@@ -1872,12 +1872,8 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [payoutAmount, setPayoutAmount] = useState('');
   const [proofOrder, setProofOrder] = useState<Order | null>(null);
 
-  const activeMediators = mediators.filter(
-    (m: User) => m.kycStatus === 'verified' || m.status === 'active'
-  );
-  const pendingMediators = mediators.filter(
-    (m: User) => m.kycStatus === 'pending' && m.status !== 'active'
-  );
+  const activeMediators = mediators.filter((m: User) => m.status === 'active');
+  const pendingMediators = mediators.filter((m: User) => m.status === 'pending');
 
   const filtered = (subTab === 'roster' ? activeMediators : pendingMediators).filter(
     (m: User) =>
@@ -2079,21 +2075,20 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       </div>
                     </td>
                     <td className="p-5">
-                      {/** Clarify mediator join requests vs KYC */}
                       <span
                         className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase border shadow-sm ${
-                          m.status !== 'active'
+                          m.status === 'pending'
                             ? 'bg-blue-50 text-blue-700 border-blue-100'
-                            : m.kycStatus === 'verified'
+                            : m.status === 'active'
                               ? 'bg-green-50 text-green-700 border-green-100'
                               : 'bg-amber-50 text-amber-700 border-amber-100'
                         }`}
                       >
-                        {m.status !== 'active'
+                        {m.status === 'pending'
                           ? 'Awaiting Agency Approval'
-                          : m.kycStatus === 'verified'
-                            ? 'Verified Partner'
-                            : 'KYC Pending'}
+                          : m.status === 'active'
+                            ? 'Active'
+                            : 'Suspended'}
                       </span>
                     </td>
                     <td className="p-5 text-center">
@@ -2508,7 +2503,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
 
 export const AgencyDashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const { connected } = useRealtimeConnection();
+  useRealtimeConnection();
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'team' | 'inventory' | 'finance' | 'payouts' | 'brands' | 'profile'
   >('dashboard');
@@ -2625,7 +2620,6 @@ export const AgencyDashboard: React.FC = () => {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                     Agency Portal
                   </p>
-                  <RealtimeStatusBadge connected={connected} />
                 </div>
               </div>
             </div>

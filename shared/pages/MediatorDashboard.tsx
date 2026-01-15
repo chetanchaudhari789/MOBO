@@ -4,7 +4,6 @@ import { useNotification } from '../context/NotificationContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
-import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { User, Campaign, Order, Product, Ticket } from '../types';
 import {
@@ -38,7 +37,7 @@ import {
   Loader2,
 } from 'lucide-react';
 
-import { EmptyState, IconButton, RealtimeStatusBadge, Spinner } from '../components/ui';
+import { EmptyState, IconButton, Spinner } from '../components/ui';
 import { MobileTabBar } from '../components/MobileTabBar';
 
 // --- UTILS ---
@@ -112,7 +111,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   };
 
   return (
-    <div className="space-y-6 animate-enter pb-28">
+    <div className="space-y-6 animate-enter">
       {/* Header Stats */}
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide px-1 snap-x">
         <div className="min-w-[150px] bg-[#18181B] p-4 rounded-[1.5rem] shadow-xl relative overflow-hidden snap-center flex-1">
@@ -370,7 +369,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
   const [mode, setMode] = useState<'published' | 'unpublished'>('published');
 
   return (
-    <div className="space-y-5 animate-enter pb-28">
+    <div className="space-y-5 animate-enter">
       <div className="bg-[#18181B] p-5 rounded-[1.5rem] shadow-xl text-white relative overflow-hidden">
         <div className="absolute top-[-50%] right-[-10%] w-40 h-40 bg-[#CCF381] rounded-full blur-[60px] opacity-20 animate-pulse"></div>
         <div className="relative z-10">
@@ -581,7 +580,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
 const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders, onRefresh: _onRefresh, onSelectUser }: any) => {
   const { toast } = useToast();
   return (
-    <div className="space-y-5 animate-enter pb-28">
+    <div className="space-y-5 animate-enter">
       <div
         className="bg-[#4F46E5] p-5 rounded-[1.5rem] shadow-xl shadow-indigo-500/20 text-white relative overflow-hidden group active:scale-[0.98] transition-transform cursor-pointer"
         onClick={() => {
@@ -729,7 +728,7 @@ const MediatorProfileView = () => {
   };
 
   return (
-    <div className="animate-enter pb-28">
+    <div className="animate-enter">
       <div className="flex flex-col items-center pt-6 pb-8 bg-white rounded-b-[2.5rem] shadow-sm mb-6 border border-zinc-100">
         <div
           className="relative mb-4 group cursor-pointer"
@@ -1202,7 +1201,6 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
 export const MediatorDashboard: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { connected } = useRealtimeConnection();
   const {
     notifications: inboxNotifications,
     unreadCount,
@@ -1362,7 +1360,7 @@ export const MediatorDashboard: React.FC = () => {
   const hasNotifications = unreadCount > 0;
 
   return (
-    <div className="flex flex-col h-full bg-[#FAFAFA] font-sans relative overflow-hidden text-zinc-900 select-none">
+    <div className="flex flex-col h-[100dvh] min-h-0 bg-[#FAFAFA] font-sans relative overflow-hidden text-zinc-900 select-none">
       {/* Top Bar */}
       <div className="pt-safe-top pt-6 px-4 pb-2 bg-[#FAFAFA] z-30 flex justify-between items-center sticky top-0">
         <div className="flex items-center gap-3">
@@ -1378,14 +1376,12 @@ export const MediatorDashboard: React.FC = () => {
                 <span className="w-1.5 h-1.5 bg-[#CCF381] rounded-full animate-pulse shadow-[0_0_6px_#CCF381]"></span>{' '}
                 {user?.mediatorCode}
               </p>
-              <RealtimeStatusBadge connected={connected} className="py-0.5">
-                {loading ? (
-                  <span className="inline-flex items-center gap-1 ml-1">
-                    <Spinner className="w-3.5 h-3.5 text-current" />
-                    <span className="hidden sm:inline">SYNC</span>
-                  </span>
-                ) : null}
-              </RealtimeStatusBadge>
+              {loading ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                  <Spinner className="w-3.5 h-3.5 text-zinc-400" />
+                  Syncing
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1501,7 +1497,7 @@ export const MediatorDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 scrollbar-hide pb-[calc(7.5rem+env(safe-area-inset-bottom))]">
         {activeTab === 'inbox' && (
           <InboxView
             orders={orders}
@@ -1539,39 +1535,42 @@ export const MediatorDashboard: React.FC = () => {
         {activeTab === 'profile' && <MediatorProfileView />}
       </div>
 
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-[260px]">
+      <div className="fixed left-1/2 -translate-x-1/2 z-40 w-[92vw] max-w-[360px] bottom-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <MobileTabBar
           items={[
             {
               id: 'inbox',
               label: 'Home',
               ariaLabel: 'Home',
-              icon: <LayoutGrid size={20} strokeWidth={activeTab === 'inbox' ? 2.5 : 2} />,
+              icon: <LayoutGrid size={22} strokeWidth={activeTab === 'inbox' ? 2.5 : 2} />,
               badge: unreadCount,
             },
             {
               id: 'market',
               label: 'Market',
               ariaLabel: 'Market',
-              icon: <Tag size={20} strokeWidth={activeTab === 'market' ? 2.5 : 2} />,
+              icon: <Tag size={22} strokeWidth={activeTab === 'market' ? 2.5 : 2} />,
             },
             {
               id: 'squad',
               label: 'Squad',
               ariaLabel: 'Squad',
-              icon: <Users size={20} strokeWidth={activeTab === 'squad' ? 2.5 : 2} />,
+              icon: <Users size={22} strokeWidth={activeTab === 'squad' ? 2.5 : 2} />,
             },
             {
               id: 'profile',
               label: 'Profile',
               ariaLabel: 'Profile',
-              icon: <UserIcon size={20} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />,
+              icon: <UserIcon size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />,
             },
           ]}
           activeId={activeTab}
-          onChange={(id) => setActiveTab(id as any)}
-          variant="dark"
-          showLabels
+          onChange={(id) => {
+            setActiveTab(id as any);
+            setShowNotifications(false);
+          }}
+          variant="darkGlass"
+          showLabels={false}
         />
       </div>
 

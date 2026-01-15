@@ -2,8 +2,6 @@
 import { useAuth } from '../context/AuthContext';
 import { ToastProvider } from '../context/ToastContext';
 import { PortalGuard } from '../components/PortalGuard';
-import { RealtimeStatusBadge } from '../components/ui';
-import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { BrandAuthScreen } from '../pages/BrandAuth';
 import { BrandDashboard } from '../pages/BrandDashboard';
 
@@ -13,7 +11,6 @@ interface BrandAppProps {
 
 export const BrandApp: React.FC<BrandAppProps> = ({ onBack }) => {
   const { user, logout } = useAuth();
-  const { connected } = useRealtimeConnection();
 
   if (!user) {
     return <BrandAuthScreen onBack={onBack} />;
@@ -35,9 +32,6 @@ export const BrandApp: React.FC<BrandAppProps> = ({ onBack }) => {
   return (
     <ToastProvider>
       <div className="relative">
-        <div className="absolute top-[calc(1rem+env(safe-area-inset-top))] right-4 z-50 pointer-events-none">
-          <RealtimeStatusBadge connected={connected} />
-        </div>
         <BrandDashboard />
       </div>
     </ToastProvider>

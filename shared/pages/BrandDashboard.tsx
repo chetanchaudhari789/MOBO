@@ -48,7 +48,7 @@ import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
-import { EmptyState, RealtimeStatusBadge, Spinner } from '../components/ui';
+import { EmptyState, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   AreaChart,
@@ -1454,7 +1454,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
 export const BrandDashboard: React.FC = () => {
   const { user, logout, updateUser } = useAuth();
   const { toast } = useToast();
-  const { connected } = useRealtimeConnection();
+  useRealtimeConnection();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [agencies, setAgencies] = useState<User[]>([]);
@@ -1623,7 +1623,6 @@ export const BrandDashboard: React.FC = () => {
                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                       Partner Portal
                     </p>
-                    <RealtimeStatusBadge connected={connected} className="py-0.5" />
                   </div>
                 </div>
               </div>

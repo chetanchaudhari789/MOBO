@@ -89,18 +89,18 @@ export const ConsumerApp: React.FC<ConsumerAppProps> = ({ onBack }) => {
       <CartProvider>
         <ChatProvider>
           <NotificationProvider>
-            <div className="flex flex-col h-full bg-[#F2F2F7] relative overflow-hidden font-sans">
+            <div className="flex flex-col min-h-[100dvh] bg-[#F2F2F7] relative font-sans">
               <div className="absolute top-[calc(1rem+env(safe-area-inset-top))] right-4 z-50 pointer-events-none">
                 <RealtimeStatusBadge connected={connected} />
               </div>
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto scrollbar-hide pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
                 {activeTab === 'home' && <Home onVoiceNavigate={setActiveTab} />}
                 {activeTab === 'explore' && <Explore />}
                 {activeTab === 'orders' && <Orders />}
                 {activeTab === 'profile' && <Profile />}
               </div>
 
-              <div className="absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-40">
+              <div className="fixed left-1/2 -translate-x-1/2 z-40 w-[92vw] max-w-[360px] bottom-[calc(0.75rem+env(safe-area-inset-bottom))]">
                 <MobileTabBar
                   items={[
                     { id: 'home', label: 'Home', ariaLabel: 'Home', icon: <HomeIcon size={22} strokeWidth={2.5} /> },
