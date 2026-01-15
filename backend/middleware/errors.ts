@@ -68,7 +68,11 @@ export function errorHandler(
 
   // Malformed JSON from express.json() / body-parser should never be a 500.
   // This commonly appears as a SyntaxError with type='entity.parse.failed'.
-  if (anyErr && (anyErr.type === 'entity.parse.failed' || (anyErr instanceof SyntaxError && anyErr.status === 400))) {
+  if (
+    anyErr &&
+    (anyErr.type === 'entity.parse.failed' ||
+      (anyErr instanceof SyntaxError && Number((anyErr as any).status) === 400))
+  ) {
     res.status(400).json({
       error: {
         code: 'BAD_JSON',
