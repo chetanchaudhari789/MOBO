@@ -1103,6 +1103,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [assignModal, setAssignModal] = useState<Campaign | null>(null);
   const [createModal, setCreateModal] = useState(false);
   const [assignments, setAssignments] = useState<Record<string, number>>({});
+  const [assignSearch, setAssignSearch] = useState('');
   const [selectedDealType, setSelectedDealType] = useState<string>('Discount');
   const [customPrice, setCustomPrice] = useState<string>('');
   const [customPayout, setCustomPayout] = useState<string>('');
@@ -1146,17 +1147,37 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
   const handleAssign = async () => {
     if (!assignModal) return;
-    // Updated API call to include dealType, price, and payout
-    await api.ops.assignSlots(
-      assignModal.id,
-      assignments,
-      selectedDealType,
-      Number(customPrice),
-      Number(customPayout)
+    const positiveAssignments = Object.fromEntries(
+      Object.entries(assignments || {}).filter(([, v]) => Number(v) > 0)
     );
-    setAssignModal(null);
-    setAssignments({});
-    onRefresh();
+    if (Object.keys(positiveAssignments).length === 0) {
+      toast.error('Please allocate at least 1 unit to someone');
+      return;
+    }
+
+    const price = customPrice.trim() ? Number(customPrice) : undefined;
+    const payout = customPayout.trim() ? Number(customPayout) : undefined;
+
+    if (typeof price !== 'undefined' && (!Number.isFinite(price) || price < 0)) {
+      toast.error('Deal price must be 0 or more');
+      return;
+    }
+    if (typeof payout !== 'undefined' && (!Number.isFinite(payout) || payout < 0)) {
+      toast.error('Payout must be 0 or more');
+      return;
+    }
+
+    try {
+      // Updated API call to include dealType, price, and payout
+      await api.ops.assignSlots(assignModal.id, positiveAssignments, selectedDealType, price, payout);
+      toast.success('Distribution saved');
+      setAssignModal(null);
+      setAssignments({});
+      onRefresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to distribute inventory';
+      toast.error(msg);
+    }
   };
 
   const handleCreate = async () => {
@@ -1233,20 +1254,24 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const handleDistributeEvenly = () => {
     if (!assignModal || mediators.length === 0) return;
 
+    const active = mediators.filter((m: User) => m.status === 'active' && !!m.mediatorCode);
+    if (active.length === 0) {
+      toast.error('No active mediators available');
+      return;
+    }
+
     const available = assignModal.totalSlots - assignModal.usedSlots;
     if (available <= 0) return;
 
-    const count = mediators.length;
+    const count = active.length;
     const perUser = Math.floor(available / count);
     const remainder = available % count;
 
     const newAssignments: Record<string, number> = {};
-    mediators.forEach((m: User, index: number) => {
-      if (m.mediatorCode) {
-        let amount = perUser;
-        if (index < remainder) amount += 1;
-        newAssignments[m.mediatorCode] = amount;
-      }
+    active.forEach((m: User, index: number) => {
+      let amount = perUser;
+      if (index < remainder) amount += 1;
+      newAssignments[m.mediatorCode!] = amount;
     });
     setAssignments(newAssignments);
   };
@@ -1257,6 +1282,17 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     setCustomPayout(c.payout.toString());
     setAssignModal(c);
   };
+
+  const activeMediatorsForAssign = useMemo(() => {
+    const q = assignSearch.trim().toLowerCase();
+    const active = (mediators as User[]).filter((m: User) => m.status === 'active' && !!m.mediatorCode);
+    if (!q) return active;
+    return active.filter(
+      (m: User) =>
+        m.name.toLowerCase().includes(q) ||
+        String(m.mediatorCode || '').toLowerCase().includes(q)
+    );
+  }, [mediators, assignSearch]);
 
   return (
     <div className="space-y-6 animate-enter h-full flex flex-col">
@@ -1622,7 +1658,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
           onClick={() => setAssignModal(null)}
         >
           <div
-            className="bg-white w-[95%] md:w-full max-w-5xl rounded-[2.5rem] p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-slide-up"
+            className="bg-white w-[98%] md:w-full max-w-7xl rounded-[2.5rem] p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -1740,6 +1776,24 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               </div>
             </div>
 
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <div className="flex-1 max-w-md">
+                <div className="relative">
+                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={assignSearch}
+                    onChange={(e) => setAssignSearch(e.target.value)}
+                    placeholder="Search mediators by name or code..."
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none transition-all placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+              <div className="text-xs font-bold text-slate-500">
+                Showing {activeMediatorsForAssign.length} mediator(s)
+              </div>
+            </div>
+
             {/* List Header */}
             <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50 rounded-xl border border-slate-100 mb-2">
               <div className="col-span-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider pl-2">
@@ -1755,7 +1809,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
             {/* Mediator List */}
             <div className="flex-1 overflow-y-auto scrollbar-hide space-y-2 pr-1 mb-6">
-              {mediators.length === 0 ? (
+              {activeMediatorsForAssign.length === 0 ? (
                 loading ? (
                   <EmptyState
                     title="Loading mediators"
@@ -1772,7 +1826,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   />
                 )
               ) : (
-                mediators.map((m: User) => {
+                activeMediatorsForAssign.map((m: User) => {
                   const mediatorOrders = allOrders
                     ? allOrders.filter((o: Order) => o.managerName === m.mediatorCode)
                     : [];
@@ -1789,8 +1843,12 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     >
                       {/* Profile */}
                       <div className="col-span-5 flex items-center gap-4 pl-2">
-                        <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner">
-                          {m.name.charAt(0)}
+                        <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
+                          {m.avatar ? (
+                            <img src={m.avatar} className="w-full h-full object-cover" />
+                          ) : (
+                            m.name.charAt(0)
+                          )}
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-slate-900 group-hover:text-purple-700 transition-colors truncate">
@@ -1817,7 +1875,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                         <div className="relative group/input">
                           <input
                             type="number"
-                            className="w-24 p-3 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all group-hover/input:shadow-md"
+                            className="w-36 p-3 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all group-hover/input:shadow-md"
                             placeholder="0"
                             value={assignments[m.mediatorCode!] || ''}
                             onChange={(e) =>
@@ -1888,9 +1946,14 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
 
   const handleApproval = async (e: React.MouseEvent, id: string, action: 'approve' | 'reject') => {
     e.stopPropagation(); // Prevents opening the modal row
-    if (action === 'approve') await api.ops.approveMediator(id);
-    else await api.auth.updateProfile(id, { status: 'suspended', kycStatus: 'rejected' });
-    onRefresh();
+    try {
+      if (action === 'approve') await api.ops.approveMediator(id);
+      else await api.ops.rejectMediator(id);
+      onRefresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update mediator request';
+      toast.error(msg);
+    }
   };
 
   const handlePayout = async () => {

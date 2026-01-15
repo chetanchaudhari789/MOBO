@@ -530,18 +530,19 @@ export function makeBrandController() {
         const { roles, userId, user } = getRequester(req);
         let previousAllowed: string[] = [];
         let previousBrandUserId: string | null = null;
+        const existing = await CampaignModel.findById(id)
+          .select({ brandUserId: 1, brandName: 1, allowedAgencyCodes: 1, locked: 1 })
+          .lean();
+        if (!existing) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+
+        previousBrandUserId = String((existing as any).brandUserId || '') || null;
+        previousAllowed = Array.isArray((existing as any).allowedAgencyCodes)
+          ? (existing as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+          : [];
+
         if (!isPrivileged(roles)) {
-          const existing = await CampaignModel.findById(id)
-            .select({ brandUserId: 1, brandName: 1, allowedAgencyCodes: 1 })
-            .lean();
-          if (!existing) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
           const ok = String((existing as any).brandUserId || '') === String(userId);
           if (!ok) throw new AppError(403, 'FORBIDDEN', 'Cannot modify campaigns outside your brand');
-
-          previousBrandUserId = String((existing as any).brandUserId || '') || null;
-          previousAllowed = Array.isArray((existing as any).allowedAgencyCodes)
-            ? (existing as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
-            : [];
 
           if (typeof (req.body as any)?.allowedAgencies !== 'undefined') {
             const allowed = Array.isArray((req.body as any).allowedAgencies) ? (req.body as any).allowedAgencies : [];
@@ -574,13 +575,20 @@ export function makeBrandController() {
         const hasOrders = await OrderModel.exists({ 'items.campaignId': id, deletedAt: null });
         const requestedKeys = Object.keys(body || {});
         const onlyStatus = requestedKeys.length === 1 && requestedKeys[0] === 'status';
-        
-        // CRITICAL: Also check if campaign is locked via slot assignment
-        const campaignCheck = await CampaignModel.findById(id).select({ locked: 1 }).lean();
-        if ((campaignCheck as any)?.locked && !onlyStatus) {
+
+        // Campaign economics/capacity become immutable after the first slot assignment.
+        // Allow status-only changes while locked.
+        const attemptingLockedTerms =
+          typeof body.price !== 'undefined' ||
+          typeof body.originalPrice !== 'undefined' ||
+          typeof body.payout !== 'undefined' ||
+          typeof body.totalSlots !== 'undefined' ||
+          typeof body.dealType !== 'undefined';
+
+        if ((existing as any).locked && attemptingLockedTerms && !onlyStatus) {
           throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is locked after slot assignment; create a new campaign to change terms');
         }
-        
+
         if (hasOrders && !onlyStatus) {
           throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is locked after first order; create a new campaign to change terms');
         }

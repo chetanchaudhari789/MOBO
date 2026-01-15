@@ -173,11 +173,15 @@ export interface WithdrawalRequest {
 
 export interface Invite {
   code: string;
-  role: 'agency' | 'brand' | 'mediator';
+  role: 'agency' | 'brand' | 'mediator' | 'shopper';
   label: string;
-  status: 'active' | 'used';
+  status: 'active' | 'used' | 'revoked' | 'expired';
   createdAt: string;
   parentCode?: string;
+
+  maxUses?: number;
+  useCount?: number;
+  expiresAt?: string;
 }
 
 export interface Ticket {

@@ -36,6 +36,7 @@ export function opsRoutes(env: Env): Router {
   router.get('/ledger', ops.getLedger);
 
   router.post('/mediators/approve', ops.approveMediator);
+  router.post('/mediators/reject', ops.rejectMediator);
   router.post('/users/approve', ops.approveUser);
   router.post('/users/reject', ops.rejectUser);
   router.post('/orders/settle', ops.settleOrderPayment);

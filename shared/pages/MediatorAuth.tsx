@@ -35,6 +35,15 @@ export const MediatorAuthScreen: React.FC<MediatorAuthProps> = ({ onBack }) => {
         return;
       }
     } catch (err: any) {
+      const code = (err as any)?.code;
+      if (code === 'USER_NOT_ACTIVE') {
+        setPendingMessage(
+          'Your account is not active yet. If you joined using an agency code, please wait for agency approval.'
+        );
+        setView('pending');
+        setIsLoading(false);
+        return;
+      }
       setError(err.message || 'Login failed');
       setIsLoading(false);
     }

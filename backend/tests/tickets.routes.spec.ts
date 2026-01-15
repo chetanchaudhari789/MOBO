@@ -81,4 +81,48 @@ describe('tickets routes', () => {
     expect(Array.isArray(listAdminRes.body)).toBe(true);
     expect(listAdminRes.body.some((t: any) => t.id === ticketId)).toBe(true);
   });
+
+  it('allows deleting tickets only after resolved/rejected', async () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
+    });
+
+    await connectMongo(env);
+    await seedE2E();
+
+    const app = createApp(env);
+
+    const shopperToken = await login(app, E2E_ACCOUNTS.shopper.mobile, E2E_ACCOUNTS.shopper.password);
+    const adminToken = await loginAdmin(app, E2E_ACCOUNTS.admin.username, E2E_ACCOUNTS.admin.password);
+
+    const createRes = await request(app)
+      .post('/api/tickets')
+      .set('Authorization', `Bearer ${shopperToken}`)
+      .send({ issueType: 'Payment', description: 'E2E delete test ticket' });
+    expect(createRes.status).toBe(201);
+    const ticketId = createRes.body.id as string;
+
+    const deleteOpenRes = await request(app)
+      .delete(`/api/tickets/${ticketId}`)
+      .set('Authorization', `Bearer ${shopperToken}`);
+    expect(deleteOpenRes.status).toBe(409);
+
+    const resolveRes = await request(app)
+      .patch(`/api/tickets/${ticketId}`)
+      .set('Authorization', `Bearer ${shopperToken}`)
+      .send({ status: 'Resolved' });
+    expect(resolveRes.status).toBe(200);
+
+    const deleteResolvedRes = await request(app)
+      .delete(`/api/tickets/${ticketId}`)
+      .set('Authorization', `Bearer ${shopperToken}`);
+    expect(deleteResolvedRes.status).toBe(200);
+
+    const listAdminRes = await request(app)
+      .get('/api/tickets')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(listAdminRes.status).toBe(200);
+    expect(listAdminRes.body.some((t: any) => t.id === ticketId)).toBe(false);
+  });
 });

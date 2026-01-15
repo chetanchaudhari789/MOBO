@@ -94,6 +94,42 @@ export function makeInviteController() {
       }
     },
 
+    adminDeleteInvite: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const code = String(req.params.code || '').trim();
+        if (!code) throw new AppError(400, 'INVALID_INVITE_CODE', 'Invite code required');
+
+        const invite = await InviteModel.findOne({ code });
+        if (!invite) throw new AppError(404, 'INVITE_NOT_FOUND', 'Invite not found');
+
+        if (invite.status !== 'active') {
+          throw new AppError(409, 'INVITE_NOT_ACTIVE', 'Invite is not active');
+        }
+
+        const useCount = Number((invite as any).useCount ?? 0);
+        const usesLen = Array.isArray((invite as any).uses) ? (invite as any).uses.length : 0;
+        if (useCount > 0 || usesLen > 0 || (invite as any).usedBy) {
+          throw new AppError(409, 'INVITE_ALREADY_USED', 'Cannot delete an invite that has been used');
+        }
+
+        await writeAuditLog({
+          req,
+          action: 'INVITE_DELETED',
+          entityType: 'Invite',
+          entityId: String(invite._id),
+          metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
+        });
+
+        await invite.deleteOne();
+
+        const privilegedRoles: Role[] = ['admin', 'ops'];
+        publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
     opsGenerateMediatorInvite: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = opsGenerateInviteSchema.parse(req.body);

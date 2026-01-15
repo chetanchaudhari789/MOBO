@@ -25,6 +25,7 @@ export function adminRoutes(env: Env): Router {
   router.get('/invites', invites.adminListInvites);
   router.post('/invites', invites.adminCreateInvite);
   router.post('/invites/revoke', invites.adminRevokeInvite);
+  router.delete('/invites/:code', invites.adminDeleteInvite);
 
   router.get('/config', admin.getSystemConfig);
   router.patch('/config', admin.updateSystemConfig);

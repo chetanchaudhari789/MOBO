@@ -10,6 +10,7 @@ export function ticketsRoutes(env: Env): Router {
   router.get('/tickets', requireAuth(env), tickets.listTickets);
   router.post('/tickets', requireAuth(env), tickets.createTicket);
   router.patch('/tickets/:id', requireAuth(env), tickets.updateTicket);
+  router.delete('/tickets/:id', requireAuth(env), tickets.deleteTicket);
 
   return router;
 }

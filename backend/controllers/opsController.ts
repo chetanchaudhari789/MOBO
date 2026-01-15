@@ -476,6 +476,60 @@ export function makeOpsController() {
       }
     },
 
+    rejectMediator: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { roles, user: requester } = getRequester(req);
+        const body = rejectByIdSchema.parse(req.body);
+
+        const mediator = await UserModel.findById(body.id).lean();
+        if (!mediator || (mediator as any).deletedAt) {
+          throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
+        }
+
+        // Allow admin/ops OR parent agency to reject
+        const canReject =
+          isPrivileged(roles) ||
+          (roles.includes('agency') && String((mediator as any).parentCode) === String((requester as any)?.mediatorCode));
+        if (!canReject) {
+          throw new AppError(403, 'FORBIDDEN', 'Cannot reject mediators outside your network');
+        }
+
+        const user = await UserModel.findByIdAndUpdate(
+          body.id,
+          { kycStatus: 'rejected', status: 'suspended' },
+          { new: true }
+        );
+        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+
+        await writeAuditLog({ req, action: 'MEDIATOR_REJECTED', entityType: 'User', entityId: String(user._id) });
+
+        const agencyCode = String((mediator as any)?.parentCode || '').trim();
+        const ts = new Date().toISOString();
+        publishRealtime({
+          type: 'users.changed',
+          ts,
+          payload: { userId: String(user._id), kind: 'mediator', status: 'suspended', agencyCode },
+          audience: {
+            ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
+            roles: ['admin', 'ops'],
+          },
+        });
+        publishRealtime({
+          type: 'notifications.changed',
+          ts,
+          payload: { source: 'mediator.rejected', userId: String(user._id), agencyCode },
+          audience: {
+            ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
+            roles: ['admin', 'ops'],
+          },
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
     approveUser: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = approveByIdSchema.parse(req.body);
@@ -1264,9 +1318,16 @@ export function makeOpsController() {
         const campaign = await CampaignModel.findById(body.id);
         if (!campaign || campaign.deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
-        // CRITICAL: Lock campaign on first slot assignment OR first order (whichever comes first)
+        // Campaign terms become immutable after the first real slot assignment.
+        // Allow reassigning limits, but disallow changing economics once locked.
         if ((campaign as any).locked) {
-          throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is permanently locked after slot assignment');
+          const attemptingTermChange =
+            typeof (body as any).dealType !== 'undefined' ||
+            typeof (body as any).price !== 'undefined' ||
+            typeof (body as any).payout !== 'undefined';
+          if (attemptingTermChange) {
+            throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is locked after slot assignment; create a new campaign to change terms');
+          }
         }
 
         const hasOrders = await OrderModel.exists({ 'items.campaignId': campaign._id, deletedAt: null });
@@ -1275,17 +1336,49 @@ export function makeOpsController() {
         }
 
         // Agency can only assign slots for campaigns explicitly allowed for that agency.
-        if (roles.includes('agency') && !isPrivileged(roles)) {
-          const agencyCode = String((requester as any)?.mediatorCode || '').trim();
+        const agencyCode = roles.includes('agency') && !isPrivileged(roles)
+          ? String((requester as any)?.mediatorCode || '').trim()
+          : '';
+
+        if (agencyCode) {
           const allowed = Array.isArray(campaign.allowedAgencyCodes) ? campaign.allowedAgencyCodes : [];
           if (!allowed.includes(agencyCode)) {
             throw new AppError(403, 'FORBIDDEN', 'Campaign not assigned to this agency');
           }
         }
 
+        // Filter down to only meaningful assignments (limit > 0).
+        const positiveEntries = Object.entries(body.assignments || {}).filter(([, assignment]) => {
+          if (typeof assignment === 'number') return assignment > 0;
+          const limit = Number((assignment as any)?.limit ?? 0);
+          return Number.isFinite(limit) && limit > 0;
+        });
+        if (positiveEntries.length === 0) {
+          throw new AppError(400, 'NO_ASSIGNMENTS', 'At least one allocation (limit > 0) is required');
+        }
+
+        // Security: agency can only assign to active mediators under its own code.
+        if (agencyCode) {
+          const assignmentCodes = positiveEntries.map(([code]) => String(code).trim()).filter(Boolean);
+          const mediators = await UserModel.find({
+            roles: 'mediator',
+            mediatorCode: { $in: assignmentCodes },
+            parentCode: agencyCode,
+            status: 'active',
+            deletedAt: null,
+          })
+            .select({ mediatorCode: 1 })
+            .lean();
+          const allowedCodes = new Set(mediators.map((m: any) => String(m.mediatorCode || '').trim()).filter(Boolean));
+          const invalid = assignmentCodes.filter((c) => !allowedCodes.has(String(c).trim()));
+          if (invalid.length) {
+            throw new AppError(403, 'INVALID_MEDIATOR_CODE', 'One or more mediators are not active or not in your team');
+          }
+        }
+
         // NEW SCHEMA: assignments is Map<string, { limit: number, payout?: number }>
         const current = campaign.assignments instanceof Map ? campaign.assignments : new Map();
-        for (const [code, assignment] of Object.entries(body.assignments)) {
+        for (const [code, assignment] of positiveEntries) {
           // Support both old format (number) and new format ({ limit, payout })
           const assignmentObj = typeof assignment === 'number'
             ? { limit: assignment, payout: campaign.payoutPaise }
@@ -1305,15 +1398,17 @@ export function makeOpsController() {
         if (typeof body.price !== 'undefined') campaign.pricePaise = rupeesToPaise(body.price);
         if (typeof body.payout !== 'undefined') campaign.payoutPaise = rupeesToPaise(body.payout);
 
-        // LOCK THE CAMPAIGN PERMANENTLY
-        (campaign as any).locked = true;
-        (campaign as any).lockedAt = new Date();
-        (campaign as any).lockedReason = 'SLOT_ASSIGNMENT';
+        // Once we have at least one real assignment, lock the campaign terms.
+        if (!(campaign as any).locked) {
+          (campaign as any).locked = true;
+          (campaign as any).lockedAt = new Date();
+          (campaign as any).lockedReason = 'SLOT_ASSIGNMENT';
+        }
 
         await campaign.save();
         await writeAuditLog({ req, action: 'CAMPAIGN_SLOTS_ASSIGNED', entityType: 'Campaign', entityId: String(campaign._id) });
 
-        const assignmentCodes = Object.keys(body.assignments || {}).map((c) => String(c).trim()).filter(Boolean);
+        const assignmentCodes = positiveEntries.map(([c]) => String(c).trim()).filter(Boolean);
         const inferredAgencyCodes = (
           await Promise.all(assignmentCodes.map((c) => getAgencyCodeForMediatorCode(c)))
         ).filter((c): c is string => typeof c === 'string' && !!c);

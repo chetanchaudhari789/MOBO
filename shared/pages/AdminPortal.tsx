@@ -29,6 +29,7 @@ import {
   Save,
   Terminal,
   HeadphonesIcon,
+  Trash2,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -344,6 +345,43 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const resolveTicket = async (id: string, status: 'Resolved' | 'Rejected') => {
     await api.tickets.update(id, status);
     setTickets(tickets.map((t) => (t.id === id ? { ...t, status } : t)));
+  };
+
+  const deleteTicket = async (id: string) => {
+    const t = tickets.find((x) => x.id === id);
+    if (!t) return;
+    if (t.status === 'Open') {
+      toast.error('Resolve or reject the ticket before deleting');
+      return;
+    }
+    const ok = window.confirm('Delete this ticket? This cannot be undone.');
+    if (!ok) return;
+    try {
+      await api.tickets.delete(id);
+      setTickets(tickets.filter((x) => x.id !== id));
+      toast.success('Ticket deleted');
+    } catch (e: any) {
+      toast.error(String(e?.message || 'Failed to delete ticket'));
+    }
+  };
+
+  const deleteInvite = async (code: string) => {
+    const inv: any = invites.find((x: any) => x.code === code);
+    if (!inv) return;
+    const useCount = Number(inv.useCount ?? 0);
+    if (String(inv.status) !== 'active' || useCount > 0) {
+      toast.error('Only unused active codes can be deleted');
+      return;
+    }
+    const ok = window.confirm('Delete this access code? This cannot be undone.');
+    if (!ok) return;
+    try {
+      await api.admin.deleteInvite(code);
+      setInvites(invites.filter((x) => x.code !== code));
+      toast.success('Access code deleted');
+    } catch (e: any) {
+      toast.error(String(e?.message || 'Failed to delete access code'));
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -895,6 +933,19 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                               </button>
                             </div>
                           )}
+
+                          {t.status !== 'Open' && (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => deleteTicket(t.id)}
+                                className="p-2 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-100 hover:text-rose-500 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))
@@ -1054,17 +1105,30 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             <StatusBadge status={inv.status} />
                           </td>
                           <td className="p-6 text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(inv.code);
-                                toast.success('Copied');
-                              }}
-                              aria-label="Copy access code"
-                              className="text-slate-400 hover:text-indigo-600 transition-colors"
-                            >
-                              <Copy size={18} />
-                            </button>
+                            <div className="flex items-center justify-end gap-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(inv.code);
+                                  toast.success('Copied');
+                                }}
+                                aria-label="Copy access code"
+                                className="text-slate-400 hover:text-indigo-600 transition-colors"
+                              >
+                                <Copy size={18} />
+                              </button>
+
+                              {inv.status === 'active' && Number((inv as any).useCount ?? 0) === 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => deleteInvite(inv.code)}
+                                  aria-label="Delete access code"
+                                  className="text-slate-400 hover:text-rose-500 transition-colors"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}

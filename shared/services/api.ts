@@ -366,6 +366,13 @@ export const api = {
         body: JSON.stringify({ id }),
       });
     },
+    rejectMediator: async (id: string) => {
+      await fetchOk('/ops/mediators/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id }),
+      });
+    },
     approveUser: async (id: string) => {
       await fetchOk('/ops/users/approve', {
         method: 'POST',
@@ -584,6 +591,12 @@ export const api = {
         body: JSON.stringify({ role, label }),
       });
     },
+    deleteInvite: async (code: string) => {
+      await fetchOk(`/admin/invites/${encodeURIComponent(code)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      });
+    },
     updateUserStatus: async (userId: string, status: string) => {
       await fetchOk('/admin/users/status', {
         method: 'PATCH',
@@ -610,6 +623,12 @@ export const api = {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ status }),
+      });
+    },
+    delete: async (id: string) => {
+      await fetchOk(`/tickets/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
       });
     },
   },

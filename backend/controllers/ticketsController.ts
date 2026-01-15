@@ -254,5 +254,51 @@ export function makeTicketsController() {
         next(err);
       }
     },
+
+    deleteTicket: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const id = String(req.params.id || '').trim();
+        if (!id) throw new AppError(400, 'INVALID_TICKET_ID', 'Invalid ticket id');
+
+        const { roles, userId, user } = getRequester(req);
+
+        const existing = await TicketModel.findById(id).lean();
+        if (!existing || (existing as any).deletedAt) throw new AppError(404, 'TICKET_NOT_FOUND', 'Ticket not found');
+
+        const status = String((existing as any).status || '').trim();
+        if (status === 'Open') {
+          throw new AppError(409, 'TICKET_NOT_CLOSED', 'Ticket must be resolved or rejected before deletion');
+        }
+
+        // Owners can delete their own tickets; privileged can delete any; otherwise require order-scope.
+        if (!isPrivileged(roles) && String((existing as any).userId) !== String(userId)) {
+          if ((existing as any).orderId) {
+            await assertCanReferenceOrder({ orderId: String((existing as any).orderId), requesterId: userId, roles, user });
+          } else {
+            throw new AppError(403, 'FORBIDDEN', 'Not allowed');
+          }
+        }
+
+        const ticket = await TicketModel.findByIdAndUpdate(
+          id,
+          { deletedAt: new Date(), deletedBy: userId as any },
+          { new: true }
+        );
+        if (!ticket) throw new AppError(404, 'TICKET_NOT_FOUND', 'Ticket not found');
+
+        const audience = await buildTicketAudience(ticket);
+        publishRealtime({
+          type: 'tickets.changed',
+          ts: new Date().toISOString(),
+          payload: { ticketId: String((ticket as any)._id), deleted: true },
+          audience,
+        });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
   };
 }
