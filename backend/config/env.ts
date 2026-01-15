@@ -100,8 +100,46 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
 }
 
 export function parseCorsOrigins(raw: string): string[] {
+  const stripOuterQuotes = (value: string) => {
+    const v = value.trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      return v.slice(1, -1).trim();
+    }
+    return v;
+  };
+
+  const normalizeEntry = (value: string): string | null => {
+    let v = stripOuterQuotes(value);
+    if (!v) return null;
+
+    // Remove obvious trailing slashes early.
+    v = v.replace(/\/+$/, '');
+    if (!v) return null;
+
+    // If it looks like a concrete URL (no wildcard), normalize it to origin-only.
+    // This makes configs like "https://example.com/" or "https://example.com/api" safe.
+    if ((v.startsWith('http://') || v.startsWith('https://')) && !v.includes('*')) {
+      try {
+        const url = new URL(v);
+        return `${url.protocol}//${url.host}`;
+      } catch {
+        // Fall through to the more permissive normalization below.
+      }
+    }
+
+    // For wildcard/hostname forms, strip any accidental path segment.
+    // Examples:
+    // - moboadmin.vercel.app/ -> moboadmin.vercel.app
+    // - .vercel.app/ -> .vercel.app
+    const slashIdx = v.indexOf('/');
+    if (slashIdx !== -1) v = v.slice(0, slashIdx);
+
+    v = v.replace(/\/+$/, '').trim();
+    return v || null;
+  };
+
   return raw
     .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+    .map((s) => normalizeEntry(s))
+    .filter((s): s is string => Boolean(s));
 }

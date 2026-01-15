@@ -41,4 +41,23 @@ describe('CORS origin enforcement', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ status: 'ok' });
   });
+
+  it('normalizes entries with trailing slashes/paths/quotes', async () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: '<REPLACE_ME>',
+      CORS_ORIGINS: '"https://allowed.example/",https://allowed.example/api',
+    });
+
+    await disconnectMongo();
+    await connectMongo(env);
+    const app2 = createApp(env);
+
+    const res = await request(app2)
+      .get('/api/health')
+      .set('Origin', 'https://allowed.example');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'ok' });
+  });
 });
