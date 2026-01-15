@@ -28,10 +28,10 @@ export function MobileTabBar({
 }) {
   const containerClass =
     variant === 'dark'
-      ? 'bg-[#18181B] backdrop-blur-xl border border-white/5 px-5 py-2.5 rounded-[2rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.5)] flex items-center justify-between'
+      ? 'bg-[#18181B] backdrop-blur-xl border border-white/5 px-5 py-2.5 rounded-[2rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.5)] flex items-center'
       : variant === 'darkGlass'
-        ? 'bg-[#18181B]/90 backdrop-blur-xl border border-white/10 px-6 py-3 rounded-full flex items-center gap-6 shadow-2xl'
-        : 'glass px-6 py-3 rounded-full flex items-center gap-6 shadow-2xl border border-white/40';
+        ? 'bg-[#18181B]/90 backdrop-blur-xl border border-white/10 px-6 py-3 rounded-full flex items-center shadow-2xl'
+        : 'glass px-6 py-3 rounded-full flex items-center shadow-2xl border border-white/40';
 
   const ringOffsetClass = variant === 'glass' ? 'focus-visible:ring-offset-[#F2F2F7]' : 'focus-visible:ring-offset-[#18181B]';
 
@@ -83,35 +83,36 @@ export function MobileTabBar({
         }
 
         return (
-          <button
-            key={item.id}
-            onClick={() => onChange(item.id)}
-            aria-label={item.ariaLabel || item.label}
-            aria-pressed={active}
-            className={cn(
-              'relative p-3 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 motion-reduce:transition-none motion-reduce:transform-none',
-              ringOffsetClass,
-              active
-                ? variant === 'darkGlass'
-                  ? 'bg-[#CCF381] text-black shadow-lg -translate-y-2 scale-110'
-                  : 'bg-indigo-600 text-white shadow-lg -translate-y-2 scale-110'
-                : variant === 'darkGlass'
-                  ? 'text-white/50 hover:text-white/80 hover:-translate-y-1'
-                  : 'text-slate-400 hover:text-slate-600 hover:-translate-y-1',
-            )}
-            type="button"
-          >
-            <span className="sr-only">{item.label}</span>
-            {item.icon}
-            {(item.badge ?? 0) > 0 ? (
-              <span
-                className={cn(
-                  'absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2',
-                  variant === 'darkGlass' ? 'border-[#18181B]' : 'border-white'
-                )}
-              ></span>
-            ) : null}
-          </button>
+          <div key={item.id} className="flex-1 flex justify-center">
+            <button
+              onClick={() => onChange(item.id)}
+              aria-label={item.ariaLabel || item.label}
+              aria-pressed={active}
+              className={cn(
+                'relative p-3 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 motion-reduce:transition-none motion-reduce:transform-none',
+                ringOffsetClass,
+                active
+                  ? variant === 'darkGlass'
+                    ? 'bg-[#CCF381] text-black shadow-lg scale-110'
+                    : 'bg-indigo-600 text-white shadow-lg scale-110'
+                  : variant === 'darkGlass'
+                    ? 'text-white/60 hover:text-white/85'
+                    : 'text-slate-400 hover:text-slate-600'
+              )}
+              type="button"
+            >
+              <span className="sr-only">{item.label}</span>
+              {item.icon}
+              {(item.badge ?? 0) > 0 ? (
+                <span
+                  className={cn(
+                    'absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2',
+                    variant === 'darkGlass' ? 'border-[#18181B]' : 'border-white'
+                  )}
+                ></span>
+              ) : null}
+            </button>
+          </div>
         );
       })}
     </div>
