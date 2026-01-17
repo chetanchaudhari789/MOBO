@@ -92,7 +92,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
           </div>
 
           <h1 className="text-7xl font-extrabold text-center tracking-tighter mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
-            Mobo<span className="text-lime-400">Brand</span>
+            BUZZMA<span className="text-lime-400">Brand</span>
           </h1>
 
           <p className="text-zinc-400 text-center max-w-lg text-lg leading-relaxed mb-12">
@@ -236,7 +236,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
                 className="font-mono tracking-widest uppercase"
                 required
                 autoCapitalize="characters"
-                hint="Provided by MOBO admin"
+                hint="Provided by BUZZMA admin"
               />
             )}
 

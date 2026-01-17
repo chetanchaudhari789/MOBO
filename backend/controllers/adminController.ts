@@ -33,7 +33,7 @@ export function makeAdminController() {
       try {
         const doc = await SystemConfigModel.findOne({ key: 'system' }).lean();
         res.json({
-          adminContactEmail: doc?.adminContactEmail ?? 'admin@mobo.world',
+          adminContactEmail: doc?.adminContactEmail ?? 'admin@buzzma.world',
         });
       } catch (err) {
         next(err);
@@ -52,7 +52,7 @@ export function makeAdminController() {
           { upsert: true, new: true }
         ).lean();
 
-        res.json({ adminContactEmail: doc?.adminContactEmail ?? body.adminContactEmail ?? 'admin@mobo.world' });
+        res.json({ adminContactEmail: doc?.adminContactEmail ?? body.adminContactEmail ?? 'admin@buzzma.world' });
       } catch (err) {
         next(err);
       }

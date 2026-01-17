@@ -5,7 +5,7 @@ import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
 export const metadata: Metadata = {
-  title: 'MOBO Mediator',
+  title: 'BUZZMA Mediator',
   description: 'Mediator portal for managing buyers, approvals, and order lifecycle workflows.',
   robots: { index: false, follow: false },
   icons: {

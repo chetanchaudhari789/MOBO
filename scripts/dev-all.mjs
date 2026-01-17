@@ -129,12 +129,42 @@ function getListeningPidWindows(port) {
         '-ExecutionPolicy',
         'Bypass',
         '-Command',
-        `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen | Select-Object -First 1; if ($null -ne $c) { $c.OwningProcess }`,
+        `$c = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq ${port} } | Select-Object -First 1; if ($null -ne $c) { $c.OwningProcess }`,
       ],
       { encoding: 'utf8' }
     ).trim();
 
     const pid = Number.parseInt(stdout, 10);
+    return Number.isFinite(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function getListeningPidWindowsNetstat(port) {
+  try {
+    const stdout = execFileSync(
+      'cmd',
+      [
+        '/d',
+        '/c',
+        // Match both IPv4 and IPv6 listeners.
+        `netstat -ano -p TCP | findstr /R /C:":${port} .*LISTENING"`,
+      ],
+      { encoding: 'utf8' }
+    ).trim();
+
+    if (!stdout) return null;
+
+    // netstat output example:
+    // TCP    0.0.0.0:3002           0.0.0.0:0              LISTENING       1234
+    // TCP    [::]:3002              [::]:0                 LISTENING       1234
+    const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return null;
+    const last = lines[0];
+    const parts = last.split(/\s+/);
+    const pidStr = parts[parts.length - 1];
+    const pid = Number.parseInt(pidStr, 10);
     return Number.isFinite(pid) ? pid : null;
   } catch {
     return null;
@@ -170,7 +200,7 @@ async function ensureServiceNotStale(svc) {
     return;
   }
 
-  const pid = getListeningPidWindows(svc.port);
+  const pid = getListeningPidWindows(svc.port) ?? getListeningPidWindowsNetstat(svc.port);
   if (!pid) {
     process.stdout.write(
       `[${svc.name}] already listening on ${svc.port} but PID lookup failed; proceeding without killing\n`

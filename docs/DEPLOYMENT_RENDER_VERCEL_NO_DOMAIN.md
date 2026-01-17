@@ -159,7 +159,6 @@ If a portal loads but API calls fail in the browser:
 When you attach custom domains in Vercel, you must update **only** these places:
 
 1. Render `CORS_ORIGINS`
-
    - Add the new custom domain origins for each portal.
    - Keep the old `*.vercel.app` origins until you’re sure traffic is no longer using them.
 

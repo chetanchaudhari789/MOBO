@@ -92,7 +92,7 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
           </div>
 
           <h1 className="text-7xl font-extrabold text-center tracking-tighter mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
-            Mobo<span className="text-purple-400">Ops</span>
+            BUZZMA<span className="text-purple-400">Ops</span>
           </h1>
 
           <p className="text-zinc-400 text-center max-w-lg text-lg leading-relaxed mb-12">

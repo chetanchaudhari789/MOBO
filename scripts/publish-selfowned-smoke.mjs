@@ -24,7 +24,8 @@ async function fetchJson(url, init) {
     json = null;
   }
   if (!res.ok) {
-    const detail = json?.message || json?.error || text || `HTTP ${res.status}`;
+    const rawDetail = json?.message ?? json?.error ?? text ?? `HTTP ${res.status}`;
+    const detail = typeof rawDetail === 'string' ? rawDetail : JSON.stringify(rawDetail);
     const err = new Error(detail);
     err.status = res.status;
     err.body = json ?? text;
@@ -102,5 +103,11 @@ main().catch((err) => {
   console.error('SMOKE_FAIL');
   console.error(err?.message || String(err));
   if (err?.status) console.error(`status=${err.status}`);
+  if (err?.status === 401) {
+    console.error(
+      'hint=401 usually means the backend DB is not seeded with the E2E accounts (mobile 9000000002 / ChangeMe_123!). Start backend in E2E mode and retry.'
+    );
+  }
+  if (err?.body) console.error(`body=${typeof err.body === 'string' ? err.body : JSON.stringify(err.body)}`);
   process.exitCode = 1;
 });

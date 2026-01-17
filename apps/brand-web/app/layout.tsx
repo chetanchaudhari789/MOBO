@@ -5,7 +5,7 @@ import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
 export const metadata: Metadata = {
-  title: 'MOBO Brand',
+  title: 'BUZZMA Brand',
   description: 'Brand portal for inventory, orders, payouts, and brand operations.',
   robots: { index: false, follow: false },
   icons: {

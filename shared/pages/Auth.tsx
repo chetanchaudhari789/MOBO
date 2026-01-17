@@ -132,7 +132,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
           <ArrowRight className="rotate-180" size={20} />
         </Button>
         <h2 className="text-4xl font-extrabold text-gray-900 mb-2 tracking-tight">
-          {view === 'login' ? 'Welcome Back' : 'Join Mobo'}
+          {view === 'login' ? 'Welcome Back' : 'Join BUZZMA'}
         </h2>
         <p className="text-gray-500 text-lg font-medium">
           {view === 'login' ? 'Enter your mobile to sign in.' : 'Create your free account.'}

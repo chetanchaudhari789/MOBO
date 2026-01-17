@@ -5,7 +5,7 @@ import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
 export const metadata: Metadata = {
-  title: 'MOBO Admin',
+  title: 'BUZZMA Admin',
   description: 'Admin portal for system configuration, users, orders, financials, and support.',
   robots: { index: false, follow: false },
   icons: {

@@ -1,6 +1,6 @@
 # Production readiness checklist
 
-This is a concise, actionable checklist for preparing MOBO for production deployments.
+This is a concise, actionable checklist for preparing BUZZMA for production deployments.
 
 ## Build + test (must be green)
 

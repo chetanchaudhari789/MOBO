@@ -16,7 +16,6 @@ All endpoints are rooted at `/api`.
 All portals proxy `/api/:path*` to the backend using `next.config.js` rewrites.
 
 - Recommended local setup:
-
   - Create `apps/<portal>/.env.local` with:
 
     `NEXT_PUBLIC_API_PROXY_TARGET=http://localhost:8080`
@@ -49,7 +48,6 @@ Most non-2xx responses are JSON:
 ## Realtime (`/api/realtime`)
 
 - `GET /api/realtime/health` (no auth)
-
   - Lightweight health check for the realtime subsystem
 
 - `GET /api/realtime/stream` (auth)
@@ -107,7 +105,6 @@ Most non-2xx responses are JSON:
 ## Ops (`/api/ops`) roles: `agency|mediator|ops|admin`
 
 - Invites:
-
   - `POST /api/ops/invites/generate` (mediator invites; agency self or privileged)
     - Body: `{ agencyId }`
     - 201: `{ code }`
@@ -116,14 +113,12 @@ Most non-2xx responses are JSON:
     - 201: `{ code }`
 
 - Brand connection:
-
   - `POST /api/ops/brands/connect` (agency-only) requests a connection to a brand by `brandCode`
     - Body: `{ brandCode }`
     - 200: `{ ok: true, ... }` (shape may include connection/request metadata)
     - Errors: `ALREADY_REQUESTED` is treated as idempotent by the agency portal.
 
 - Network + operations:
-
   - `GET /api/ops/mediators` (scope depends on role; privileged can query arbitrary)
   - `GET /api/ops/campaigns`
   - `GET /api/ops/orders`
@@ -132,7 +127,6 @@ Most non-2xx responses are JSON:
   - `GET /api/ops/ledger`
 
 - Approvals + workflow:
-
   - `POST /api/ops/mediators/approve` (privileged)
   - `POST /api/ops/users/approve`
   - `POST /api/ops/users/reject`
@@ -144,7 +138,6 @@ Most non-2xx responses are JSON:
     - Money invariants: settlement creates an idempotent **brand debit** and then credits buyer+mediator.
 
 - Campaign + deals:
-
   - `POST /api/ops/campaigns` (creates campaigns)
     - Body: campaign details; scoping enforced (non-privileged can only create for self/network)
   - `POST /api/ops/campaigns/assign` (assign slots; locks campaign terms)

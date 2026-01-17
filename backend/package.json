@@ -17,6 +17,7 @@
     "seed": "tsx scripts/seedAdmin.ts",
     "seed:large": "tsx seeds/seed.ts",
     "seed:e2e": "tsx scripts/seedE2E.ts",
+    "seed:dev": "tsx scripts/seedDev.ts",
     "seed:admin": "tsx scripts/seedAdmin.ts",
     "wipe": "tsx scripts/wipe.ts",
     "reset:admin": "tsx scripts/resetToAdmin.ts",

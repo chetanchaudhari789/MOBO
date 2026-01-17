@@ -435,11 +435,11 @@ export const api = {
         body: JSON.stringify({ id, assignments, dealType, price, payout }),
       });
     },
-    publishDeal: async (id: string, commission: number, mediatorCode: string) => {
+    publishDeal: async (id: string, commission: number | undefined, mediatorCode: string) => {
       await fetchOk('/ops/deals/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ id, commission, mediatorCode }),
+        body: JSON.stringify({ id, commission: Number.isFinite(commission as number) ? commission : 0, mediatorCode }),
       });
     },
     payoutMediator: async (mediatorId: string, amount: number) => {

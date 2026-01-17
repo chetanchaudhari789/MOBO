@@ -10,7 +10,7 @@ export const Navbar: React.FC = () => {
           <div className="bg-lime-400 text-black p-1.5 rounded-lg shadow-sm">
             <Package size={20} />
           </div>
-          <span className="font-extrabold text-xl tracking-tight text-slate-900">Mobo</span>
+          <span className="font-extrabold text-xl tracking-tight text-slate-900">BUZZMA</span>
         </div>
 
         {/* Optional Menu Icon for future expansion */}

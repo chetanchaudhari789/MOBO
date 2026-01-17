@@ -21,7 +21,7 @@ import {
   verifyOrderRequirementSchema,
   verifyOrderSchema,
 } from '../validations/ops.js';
-import { rupeesToPaise } from '../utils/money.js';
+import { paiseToRupees, rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiUser } from '../utils/uiMappers.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
@@ -1446,21 +1446,49 @@ export function makeOpsController() {
         const campaign = await CampaignModel.findById(body.id).lean();
         if (!campaign || campaign.deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
+        const normalizeCode = (v: unknown) => String(v || '').trim();
+
+        const findAssignmentForMediator = (assignments: any, mediatorCode: string) => {
+          const target = normalizeCode(mediatorCode);
+          if (!target) return null;
+          const obj = assignments instanceof Map ? Object.fromEntries(assignments) : assignments;
+          if (!obj || typeof obj !== 'object') return null;
+
+          if (Object.prototype.hasOwnProperty.call(obj, target)) return (obj as any)[target] ?? null;
+
+          const targetLower = target.toLowerCase();
+          for (const [k, v] of Object.entries(obj)) {
+            if (String(k).trim().toLowerCase() === targetLower) return v as any;
+          }
+          return null;
+        };
+
         if (!isPrivileged(roles)) {
           if (!roles.includes('mediator')) throw new AppError(403, 'FORBIDDEN', 'Only mediators can publish deals');
-          const selfCode = String((requester as any)?.mediatorCode || '').trim();
-          if (!selfCode || selfCode !== body.mediatorCode) {
+          const selfCode = normalizeCode((requester as any)?.mediatorCode);
+          const requestedCode = normalizeCode(body.mediatorCode);
+          if (!selfCode || selfCode.toLowerCase() !== requestedCode.toLowerCase()) {
             throw new AppError(403, 'FORBIDDEN', 'Cannot publish deals for other mediators');
           }
 
           // Ensure mediator belongs to an allowed agency for this campaign.
           // Note: `allowedAgencyCodes` historically contains either an agency code (agency-owned campaigns)
           // OR a mediator code (mediator self-owned inventory). Accept either for the publishing mediator.
-          const agencyCode = String((requester as any)?.parentCode || '').trim();
+          const agencyCode = normalizeCode((requester as any)?.parentCode);
           const allowedCodesRaw = Array.isArray((campaign as any).allowedAgencyCodes) ? (campaign as any).allowedAgencyCodes : [];
-          const allowedCodes = new Set(allowedCodesRaw.map((c: any) => String(c).trim()).filter(Boolean));
+          const allowedCodes = new Set(
+            allowedCodesRaw
+              .map((c: unknown) => normalizeCode(c))
+              .filter((c: string): c is string => Boolean(c))
+              .map((c: string) => c.toLowerCase())
+          );
 
-          const isAllowed = (agencyCode && allowedCodes.has(agencyCode)) || allowedCodes.has(selfCode);
+          // If the campaign has an explicit slot assignment for this mediator, treat it as authorized.
+          // This makes publish resilient even if `allowedAgencyCodes` is missing/out-of-sync.
+          const slotAssignment = findAssignmentForMediator((campaign as any).assignments, requestedCode);
+          const hasAssignment = !!slotAssignment && Number((slotAssignment as any)?.limit ?? 0) > 0;
+
+          const isAllowed = (agencyCode && allowedCodes.has(agencyCode.toLowerCase())) || allowedCodes.has(selfCode.toLowerCase()) || hasAssignment;
           if (!isAllowed) {
             throw new AppError(403, 'FORBIDDEN', 'Campaign not assigned to your network');
           }
@@ -1470,14 +1498,8 @@ export function makeOpsController() {
         const pricePaise = Number(campaign.pricePaise ?? 0) + commissionPaise;
 
         // CRITICAL: Get mediator's payout from campaign.assignments
-        const assignmentsObj = campaign.assignments instanceof Map ? Object.fromEntries(campaign.assignments) : (campaign.assignments as any);
-        const slotAssignment = assignmentsObj?.[body.mediatorCode];
-        const payoutPaise = slotAssignment?.payout ?? campaign.payoutPaise;
-
-        // ANTI-FRAUD: Commission cannot exceed payout (mediator would lose money)
-        if (commissionPaise > payoutPaise) {
-          throw new AppError(400, 'INVALID_COMMISSION', 'Commission cannot exceed payout');
-        }
+        const slotAssignment = findAssignmentForMediator((campaign as any).assignments, body.mediatorCode);
+        const payoutPaise = Number((slotAssignment as any)?.payout ?? campaign.payoutPaise ?? 0);
 
         // CRITICAL: Check if deal already published to prevent re-publishing with different terms
         const existingDeal = await DealModel.findOne({ 

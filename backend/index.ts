@@ -62,6 +62,7 @@ async function tryRunAdminSeed() {
     if (typeof (mod as any).seedAdminOnly === 'function') {
       await (mod as any).seedAdminOnly({
         mobile: process.env.ADMIN_SEED_MOBILE,
+        username: process.env.ADMIN_SEED_USERNAME,
         password: process.env.ADMIN_SEED_PASSWORD,
         name: process.env.ADMIN_SEED_NAME,
       });
@@ -69,6 +70,18 @@ async function tryRunAdminSeed() {
   } catch {
     // eslint-disable-next-line no-console
     console.warn('SEED_ADMIN requested but seed module is missing (./seeds/admin.js); skipping');
+  }
+}
+
+async function tryRunDevSeed() {
+  try {
+    const mod = await import('./seeds/dev.js');
+    if (typeof (mod as any).seedDev === 'function') {
+      await (mod as any).seedDev();
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('SEED_DEV seed failed; skipping', err);
   }
 }
 
@@ -91,12 +104,19 @@ async function main() {
 
   const seedAdminRequested = env.SEED_ADMIN || process.env.SEED_ADMIN === 'true';
   const seedE2ERequested = env.SEED_E2E || process.env.SEED_E2E === 'true';
+  const seedDevRequested = env.SEED_DEV || process.env.SEED_DEV === 'true';
   const isProd = env.NODE_ENV === 'production';
 
   // E2E/admin seeding is idempotent and explicitly opt-in.
   // Allow it even when NODE_ENV=production so Playwright (and similar harnesses) work
   // in environments that default NODE_ENV to production.
   if (!isProd || seedAdminRequested || seedE2ERequested) {
+    if (seedDevRequested) {
+      if (isProd) {
+        throw new Error('SEED_DEV is not allowed in production');
+      }
+      await tryRunDevSeed();
+    }
     if (seedAdminRequested) await tryRunAdminSeed();
     if (seedE2ERequested) await tryRunE2ESeed();
     if (!isProd && process.env.SEED_LARGE === 'true') {

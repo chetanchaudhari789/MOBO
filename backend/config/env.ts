@@ -12,6 +12,10 @@ const envSchema = z.object({
   // When true, seed + E2E flows may bypass external integrations.
   SEED_E2E: z.coerce.boolean().default(false),
 
+  // When true, seed baseline demo data for all portals (development/test only).
+  // This seed is designed to be idempotent and non-destructive.
+  SEED_DEV: z.coerce.boolean().default(false),
+
   // When true, seed ONLY the admin account on startup (development/test only).
   SEED_ADMIN: z.coerce.boolean().default(false),
   MONGODB_URI: z.string().min(1),

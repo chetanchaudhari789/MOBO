@@ -1594,7 +1594,7 @@ export const BrandDashboard: React.FC = () => {
           <div className="w-8 h-8 bg-black text-lime-400 rounded-lg flex items-center justify-center">
             <Building2 size={16} />
           </div>
-          <span className="font-extrabold text-lg">MoboBrand</span>
+          <span className="font-extrabold text-lg">BUZZMA Brand</span>
         </div>
       }
       mobileMenuButton={
@@ -1615,7 +1615,7 @@ export const BrandDashboard: React.FC = () => {
                 </div>
                 <div>
                   <h1 className="font-extrabold text-xl tracking-tight leading-none">
-                    Mobo<span className="text-lime-500">Brand</span>
+                    BUZZMA<span className="text-lime-500">Brand</span>
                   </h1>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">

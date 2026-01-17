@@ -1345,12 +1345,19 @@ export const MediatorDashboard: React.FC = () => {
   }, [user, showNotifications, refreshNotifications]);
 
   const handlePublish = async () => {
-    if (!dealBuilder || !commission || !user?.mediatorCode) return;
-    await api.ops.publishDeal(dealBuilder.id, parseInt(commission), user.mediatorCode);
-    setDealBuilder(null);
-    setCommission('');
-    toast.success('Deal published');
-    loadData();
+    if (!dealBuilder || !user?.mediatorCode) return;
+    try {
+      const commissionValue = Math.max(0, Math.trunc(Number(commission || 0)));
+      await api.ops.publishDeal(dealBuilder.id, commissionValue, user.mediatorCode);
+      setDealBuilder(null);
+      setCommission('');
+      toast.success('Deal published');
+      loadData();
+    } catch (e) {
+      console.error(e);
+      const msg = (e as any)?.message ? String((e as any).message) : 'Failed to publish deal.';
+      toast.error(msg);
+    }
   };
 
   const runAnalysis = async () => {
@@ -1980,23 +1987,29 @@ export const MediatorDashboard: React.FC = () => {
             </div>
             <div className="space-y-3 mb-6">
               <label className="text-[10px] font-black text-zinc-900 uppercase ml-2 block tracking-wide">
-                Your Commission ()
+                Buyer commission (₹)
               </label>
               <input
                 type="number"
                 autoFocus
                 value={commission}
-                onChange={(e) => setCommission(e.target.value)}
+                min={0}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === '') {
+                    setCommission('');
+                    return;
+                  }
+                  const n = Math.max(0, Math.trunc(Number(raw)));
+                  setCommission(String(n));
+                }}
                 className="w-full bg-white border-2 border-zinc-100 rounded-[1.5rem] p-4 text-2xl font-black text-center focus:border-[#CCF381] focus:ring-4 focus:ring-[#CCF381]/20 outline-none transition-all placeholder:text-zinc-200"
                 placeholder="0"
               />
-              <p className="text-center text-[10px] text-zinc-400 font-bold">
-                This will be added to the product price.
-              </p>
             </div>
             <button
               onClick={handlePublish}
-              disabled={!commission || parseInt(commission) <= 0}
+              disabled={!user?.mediatorCode}
               className="w-full py-4 bg-[#18181B] text-white rounded-[1.5rem] font-black text-base shadow-xl hover:bg-[#CCF381] hover:text-black transition-all disabled:opacity-50 disabled:scale-100 active:scale-95 flex items-center justify-center gap-2"
             >
               Publish Deal <Tag size={16} strokeWidth={3} className="fill-current" />

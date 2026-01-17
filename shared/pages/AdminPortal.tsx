@@ -184,7 +184,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [inviteLabel, setInviteLabel] = useState('');
 
   // Settings State
-  const [configEmail, setConfigEmail] = useState('admin@mobo.world');
+  const [configEmail, setConfigEmail] = useState('admin@buzzma.world');
 
   const fetchSystemConfig = async () => {
     try {
@@ -469,7 +469,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mobo_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `buzzma_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -568,7 +568,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 </div>
                 <div>
                   <h1 className="text-white font-black text-lg tracking-tight">
-                    Mobo<span className="text-indigo-500">Admin</span>
+                    BUZZMA<span className="text-indigo-500">Admin</span>
                   </h1>
                   <div className="flex items-center gap-2">
                     <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
@@ -1260,7 +1260,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <input
                       type="text"
                       readOnly
-                      value="Mobo Ecosystem"
+                      value="BUZZMA Ecosystem"
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700"
                     />
                   </div>

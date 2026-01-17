@@ -1,8 +1,8 @@
-﻿# MOBO
+﻿# BUZZMA
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
-MOBO is a monorepo for a multi-portal commerce + operations system:
+BUZZMA is a monorepo for a multi-portal commerce + operations system:
 
 - Backend API: Express + TypeScript + MongoDB
 - Portals (Next.js): Buyer, Mediator, Agency, Brand, Admin

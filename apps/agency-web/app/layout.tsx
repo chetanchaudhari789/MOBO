@@ -5,7 +5,7 @@ import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 
 export const metadata: Metadata = {
-  title: 'MOBO Agency',
+  title: 'BUZZMA Agency',
   description: 'Agency portal for managing mediators, campaigns, deals, and ops workflows.',
   robots: { index: false, follow: false },
   icons: {

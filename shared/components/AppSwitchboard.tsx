@@ -28,7 +28,7 @@ export const AppSwitchboard: React.FC<{ onSelect: (role: string) => void }> = ({
           <Sparkles size={10} /> Next-Gen Ecosystem
         </div>
         <h1 className="text-6xl md:text-8xl font-black tracking-tighter mb-4">
-          MOBO<span className="text-lime-400">OS</span>
+          BUZZMA<span className="text-lime-400">OS</span>
         </h1>
         <p className="text-slate-400 text-lg md:text-xl font-medium max-w-xl mx-auto leading-relaxed">
           A unified commerce framework powering global brands, performance agencies, and savvy

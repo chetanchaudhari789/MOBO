@@ -2683,7 +2683,7 @@ export const AgencyDashboard: React.FC = () => {
               </div>
               <div>
                 <h1 className="font-extrabold text-xl text-slate-900 tracking-tight leading-none">
-                  Mobo<span className="text-purple-600">Ops</span>
+                  BUZZMA<span className="text-purple-600">Ops</span>
                 </h1>
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
