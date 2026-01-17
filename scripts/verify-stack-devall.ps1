@@ -18,7 +18,9 @@ function Kill-Port([int]$port) {
   if (-not $processId) { return }
 
   try {
-    taskkill /PID $processId /T /F | Out-Null
+    if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+      & taskkill /PID $processId /T /F 2>$null | Out-Null
+    }
   } catch {
     # best-effort
   }
@@ -39,7 +41,11 @@ function Try-HttpGet([string]$url, [int]$attempts, [int]$sleepMs, [int]$timeoutS
 
 function Cleanup([System.Diagnostics.Process]$proc) {
   if ($proc -and -not $proc.HasExited) {
-    try { taskkill /PID $proc.Id /T /F | Out-Null } catch { }
+    try {
+      if (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue) {
+        & taskkill /PID $proc.Id /T /F 2>$null | Out-Null
+      }
+    } catch { }
   }
   foreach ($pt in $ports) { Kill-Port $pt }
 }

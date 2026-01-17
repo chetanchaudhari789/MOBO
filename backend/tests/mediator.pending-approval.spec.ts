@@ -27,7 +27,7 @@ describe('mediator pending approval flow', () => {
   });
 
   it('mediator joins via agency code → pending → agency approves → mediator can login', async () => {
-    const { app, seeded } = await setup();
+    const { app, seeded: _seeded } = await setup();
 
     // 1. Mediator registers using agency code
     const mediatorMobile = '9111222333';
@@ -107,7 +107,7 @@ describe('mediator pending approval flow', () => {
   });
 
   it('prevents non-parent agencies from approving mediators', async () => {
-    const { app, seeded } = await setup();
+    const { app, seeded: _seeded } = await setup();
 
     // Create a mediator under the first agency
     const mediatorMobile = '9111444555';

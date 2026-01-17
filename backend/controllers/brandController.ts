@@ -527,7 +527,7 @@ export function makeBrandController() {
         const id = String(req.params.campaignId || '');
         if (!id) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
 
-        const { roles, userId, user } = getRequester(req);
+        const { roles, userId } = getRequester(req);
         let previousAllowed: string[] = [];
         let previousBrandUserId: string | null = null;
         const existing = await CampaignModel.findById(id)

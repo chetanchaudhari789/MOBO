@@ -6,21 +6,6 @@ import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
 
 import mongoose from 'mongoose';
-import { UserModel } from '../models/User.js';
-import { WalletModel } from '../models/Wallet.js';
-import { AgencyModel } from '../models/Agency.js';
-import { BrandModel } from '../models/Brand.js';
-import { MediatorProfileModel } from '../models/MediatorProfile.js';
-import { ShopperProfileModel } from '../models/ShopperProfile.js';
-import { CampaignModel } from '../models/Campaign.js';
-import { DealModel } from '../models/Deal.js';
-import { OrderModel } from '../models/Order.js';
-import { TicketModel } from '../models/Ticket.js';
-import { PayoutModel } from '../models/Payout.js';
-import { TransactionModel } from '../models/Transaction.js';
-import { InviteModel } from '../models/Invite.js';
-import { AuditLogModel } from '../models/AuditLog.js';
-import { SuspensionModel } from '../models/Suspension.js';
 
 function redactMongoUri(uri: string): string {
   // Avoid leaking secrets; keep protocol + host(s) only.

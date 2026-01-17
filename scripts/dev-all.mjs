@@ -290,4 +290,9 @@ await startAll();
 if (smokeMode) {
   // Give children a moment to start; then shut everything down.
   setTimeout(() => shutdown(), 2500);
+} else {
+  // Keep the parent process alive so child dev servers stay up.
+  // Without this, Node can exit after startup, closing stdio pipes and
+  // causing children to terminate.
+  await new Promise(() => {});
 }

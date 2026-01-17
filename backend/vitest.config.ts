@@ -23,9 +23,9 @@ export default defineConfig({
     include: ['tests/**/*.spec.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/build/**', '**/coverage/**'],
     environment: 'node',
-    // On Windows (and especially on newer Node versions), the default worker pool can intermittently
-    // fail to collect tests and report "No test suite found". vmThreads is the most stable option.
-    pool: isWin32 ? 'vmThreads' : 'threads',
+    // On Windows (and especially on newer Node versions), thread-based pools can intermittently
+    // hang with test files stuck in "[queued]". Forks is the most stable option.
+    pool: isWin32 ? 'forks' : 'threads',
     // Tests share a singleton mongoose connection + in-memory mongod instance.
     // Keep a single worker and disable isolation to avoid start/stop races.
     maxWorkers: 1,

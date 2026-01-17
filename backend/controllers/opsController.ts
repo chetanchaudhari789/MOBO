@@ -21,7 +21,7 @@ import {
   verifyOrderRequirementSchema,
   verifyOrderSchema,
 } from '../validations/ops.js';
-import { paiseToRupees, rupeesToPaise } from '../utils/money.js';
+import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiUser } from '../utils/uiMappers.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
