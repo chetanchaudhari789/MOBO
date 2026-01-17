@@ -1454,10 +1454,15 @@ export function makeOpsController() {
           }
 
           // Ensure mediator belongs to an allowed agency for this campaign.
+          // Note: `allowedAgencyCodes` historically contains either an agency code (agency-owned campaigns)
+          // OR a mediator code (mediator self-owned inventory). Accept either for the publishing mediator.
           const agencyCode = String((requester as any)?.parentCode || '').trim();
-          const allowedAgencies = Array.isArray((campaign as any).allowedAgencyCodes) ? (campaign as any).allowedAgencyCodes : [];
-          if (!allowedAgencies.includes(agencyCode)) {
-            throw new AppError(403, 'FORBIDDEN', 'Campaign not assigned to your agency');
+          const allowedCodesRaw = Array.isArray((campaign as any).allowedAgencyCodes) ? (campaign as any).allowedAgencyCodes : [];
+          const allowedCodes = new Set(allowedCodesRaw.map((c: any) => String(c).trim()).filter(Boolean));
+
+          const isAllowed = (agencyCode && allowedCodes.has(agencyCode)) || allowedCodes.has(selfCode);
+          if (!isAllowed) {
+            throw new AppError(403, 'FORBIDDEN', 'Campaign not assigned to your network');
           }
         }
 
