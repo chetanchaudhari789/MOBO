@@ -112,7 +112,23 @@ function toErrorFromPayload(payload: any, fallback: string): Error {
   return err;
 }
 
+function isPwaGuardEnabled(): boolean {
+  return typeof window !== 'undefined' && (globalThis as any).__MOBO_ENABLE_PWA_GUARDS__ === true;
+}
+
+function assertOnlineForWrite(init?: RequestInit) {
+  if (!isPwaGuardEnabled()) return;
+
+  const method = String(init?.method || 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+
+  if (typeof navigator !== 'undefined' && navigator && 'onLine' in navigator && !navigator.onLine) {
+    throw new Error('You appear to be offline. This action requires an internet connection.');
+  }
+}
+
 async function fetchJson(path: string, init?: RequestInit): Promise<any> {
+  assertOnlineForWrite(init);
   const res = await fetch(`${API_URL}${path}`, init);
   const payload = await readPayloadSafe(res);
   if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
@@ -120,6 +136,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
 }
 
 async function fetchOk(path: string, init?: RequestInit): Promise<void> {
+  assertOnlineForWrite(init);
   const res = await fetch(`${API_URL}${path}`, init);
   const payload = await readPayloadSafe(res);
   if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);

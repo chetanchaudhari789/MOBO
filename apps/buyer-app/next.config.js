@@ -1,3 +1,5 @@
+import withPWAInit from '@ducanh2912/next-pwa';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -18,4 +20,98 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+const withPWA = withPWAInit({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+  disable: process.env.NODE_ENV === 'development',
+  fallbacks: {
+    document: '/offline',
+  },
+  runtimeCaching: [
+    // Safety: never cache non-GET (no background sync / no replay of writes).
+    {
+      urlPattern: ({ request }) => request.method !== 'GET',
+      handler: 'NetworkOnly',
+      options: { cacheName: 'no-cache-write-ops' },
+    },
+
+    // App shell & pages.
+    {
+      urlPattern: ({ request }) => request.mode === 'navigate',
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'pages',
+        networkTimeoutSeconds: 3,
+        expiration: { maxEntries: 50, maxAgeSeconds: 7 * 24 * 60 * 60 },
+        cacheableResponse: { statuses: [0, 200] },
+      },
+    },
+
+    // Next.js static build artifacts.
+    {
+      urlPattern: ({ url }) => url.pathname.startsWith('/_next/static/'),
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'next-static',
+        expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 },
+        cacheableResponse: { statuses: [0, 200] },
+      },
+    },
+
+    // Next.js image optimizer.
+    {
+      urlPattern: ({ url }) => url.pathname.startsWith('/_next/image'),
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'next-image',
+        expiration: { maxEntries: 100, maxAgeSeconds: 7 * 24 * 60 * 60 },
+        cacheableResponse: { statuses: [0, 200] },
+      },
+    },
+
+    // API: always network (avoid stale/auth-sensitive caching).
+    {
+      urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+      handler: 'NetworkOnly',
+      options: { cacheName: 'api-network-only' },
+    },
+
+    // Fonts.
+    {
+      urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//,
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'google-fonts',
+        expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 60 * 60 },
+        cacheableResponse: { statuses: [0, 200] },
+      },
+    },
+
+    // Other static assets.
+    {
+      urlPattern: ({ request }) =>
+        request.destination === 'style' ||
+        request.destination === 'script' ||
+        request.destination === 'worker',
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'assets',
+        expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 },
+        cacheableResponse: { statuses: [0, 200] },
+      },
+    },
+    {
+      urlPattern: ({ request }) =>
+        request.destination === 'image' || request.destination === 'font',
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'media',
+        expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 },
+        cacheableResponse: { statuses: [0, 200] },
+      },
+    },
+  ],
+});
+
+export default withPWA(nextConfig);
