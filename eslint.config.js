@@ -9,6 +9,7 @@ export default [
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
+      '**/public/**',
       '**/playwright-report/**',
       '**/test-results/**',
       '**/.turbo/**',

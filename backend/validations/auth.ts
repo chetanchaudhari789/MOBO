@@ -54,9 +54,9 @@ export const updateProfileSchema = z.object({
   name: optionalNonEmptyString(120),
   email: z.preprocess(emptyStringToUndefined, z.string().email().optional()),
   // Data URLs / base64 images can be large; allow a reasonable limit.
-  avatar: optionalNonEmptyString(2_000_000),
+  avatar: optionalNonEmptyString(5_000_000),
   upiId: optionalNonEmptyString(128),
-  qrCode: optionalNonEmptyString(2_000_000),
+  qrCode: optionalNonEmptyString(5_000_000),
   bankDetails: z
     .object({
       accountNumber: optionalNonEmptyString(64),
@@ -65,4 +65,8 @@ export const updateProfileSchema = z.object({
       holderName: optionalNonEmptyString(120),
     })
     .optional(),
+});
+
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(1).max(5000),
 });

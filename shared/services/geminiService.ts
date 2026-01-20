@@ -5,7 +5,7 @@ import { Product, Order, Ticket } from '../types';
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * MOBOT: THE INTELLIGENT ASSISTANT
+ * BUZZMA: THE INTELLIGENT ASSISTANT
  * Handles intent classification, deal recommendations, and status updates.
  */
 export const generateBotResponse = async (
@@ -29,7 +29,7 @@ export const generateBotResponse = async (
       .join('\n');
 
     const systemPrompt = `
-      You are 'Mobo', a world-class AI shopping strategist for ${userName}.
+      You are 'BUZZMA', a world-class AI shopping strategist for ${userName}.
       
       CONTEXT:
       - DEALS: ${dealContext}
@@ -80,7 +80,7 @@ export const generateBotResponse = async (
 
     return JSON.parse(response.text || '{}');
   } catch (error) {
-    console.error('Mobo Engine Error:', error);
+    console.error('BUZZMA Engine Error:', error);
     return {
       responseText: "I'm having trouble right now. Please try again.",
       intent: 'unknown',

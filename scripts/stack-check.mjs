@@ -5,6 +5,7 @@ const isWindows = process.platform === 'win32';
 const PORTS = [8080, 3001, 3002, 3003, 3004, 3005];
 const HEALTH_E2E_URL = 'http://127.0.0.1:8080/api/health/e2e';
 const AUTH_LOGIN_URL = 'http://127.0.0.1:8080/api/auth/login';
+const AUTH_LOGIN_FALLBACK_URL = 'http://127.0.0.1:3005/api/auth/login';
 const REALTIME_STREAM_URL = 'http://127.0.0.1:8080/api/realtime/stream';
 const VERBOSE = String(process.env.STACK_CHECK_VERBOSE || '').toLowerCase() === 'true';
 const SKIP_PORT_CLEANUP = String(process.env.STACK_CHECK_SKIP_PORT_CLEANUP || '').toLowerCase() === 'true';
@@ -94,38 +95,68 @@ async function pollJsonOk(url, timeoutMs) {
 }
 
 async function verifyAdminLoginBestEffort() {
-  const username = String(process.env.ADMIN_SEED_USERNAME || '').trim();
-  const password = String(process.env.ADMIN_SEED_PASSWORD || '').trim();
+  const useSeedE2E = String(process.env.SEED_E2E || '').toLowerCase() === 'true';
+  const nodeEnv = String(process.env.NODE_ENV || '').toLowerCase();
+  const isNonProd = nodeEnv !== 'production';
+  const mongoRaw = String(process.env.MONGODB_URI || '').trim();
+  const mongoPlaceholder = !mongoRaw || mongoRaw.includes('REPLACE_ME') || (mongoRaw.startsWith('<') && mongoRaw.endsWith('>'));
+  let username = String(process.env.ADMIN_SEED_USERNAME || '').trim();
+  let password = String(process.env.ADMIN_SEED_PASSWORD || '').trim();
+
+  if ((!username || !password) && (useSeedE2E || (isNonProd && mongoPlaceholder))) {
+    username = 'root';
+    password = 'ChangeMe_123!';
+  }
 
   if (!username || !password) return { attempted: false, ok: true, accessToken: null };
 
-  try {
-    const res = await fetch(AUTH_LOGIN_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
+  const deadline = Date.now() + 15_000;
+  let lastStatus = 0;
+  let lastDetail = '';
+  const urls = [AUTH_LOGIN_URL, AUTH_LOGIN_FALLBACK_URL];
 
-    if (!res.ok) {
-      let text = '';
+  while (Date.now() < deadline) {
+    for (const url of urls) {
       try {
-        text = await res.text();
-      } catch {
-        // ignore
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+
+        lastStatus = res.status;
+
+        if (!res.ok) {
+          let text = '';
+          try {
+            text = await res.text();
+          } catch {
+            // ignore
+          }
+          lastDetail = text.slice(0, 500);
+
+          if (res.status >= 500 || res.status === 404) {
+            continue;
+          }
+        } else {
+          const json = await res.json();
+          const access = json?.tokens?.accessToken;
+          if (typeof access === 'string' && access.length >= 20) {
+            return { attempted: true, ok: true, status: res.status, accessToken: access };
+          }
+          lastDetail = 'Missing tokens.accessToken in response';
+        }
+      } catch (err) {
+        lastStatus = 0;
+        lastDetail = String(err?.message || err);
+        continue;
       }
-      return { attempted: true, ok: false, status: res.status, detail: text.slice(0, 500), accessToken: null };
     }
 
-    const json = await res.json();
-    const access = json?.tokens?.accessToken;
-    if (typeof access !== 'string' || access.length < 20) {
-      return { attempted: true, ok: false, status: res.status, detail: 'Missing tokens.accessToken in response', accessToken: null };
-    }
-
-    return { attempted: true, ok: true, status: res.status, accessToken: access };
-  } catch (err) {
-    return { attempted: true, ok: false, status: 0, detail: String(err?.message || err), accessToken: null };
+    await sleep(300);
   }
+
+  return { attempted: true, ok: false, status: lastStatus, detail: lastDetail || 'Login timed out', accessToken: null };
 }
 
 async function verifyRealtimeSseBestEffort(accessToken) {
@@ -184,9 +215,12 @@ async function main() {
   // Proactively stop anything stale so checks are deterministic.
   if (isWindows) cleanupPortsBestEffort();
 
+  const env = { ...process.env };
+  if (!env.SEED_E2E) env.SEED_E2E = 'true';
+
   const child = spawn(process.execPath, ['scripts/dev-all.mjs', '--force'], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env,
+    env,
   });
 
   // By default we keep output quiet to avoid noisy CI/terminal issues.
@@ -197,21 +231,22 @@ async function main() {
   }
 
   const result = await pollJsonOk(HEALTH_E2E_URL, 120_000);
-
-  // Always shut down the stack after the check.
-  try {
-    if (isWindows) {
-      cleanupPortsBestEffort();
-    } else {
-      child.kill('SIGINT');
+  const shutdown = () => {
+    try {
+      if (isWindows) {
+        cleanupPortsBestEffort();
+      } else {
+        child.kill('SIGINT');
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
-  }
+  };
 
   if (!result.ok) {
     console.error(`\nStack check FAILED: ${HEALTH_E2E_URL} did not become ready within timeout.`);
     process.exitCode = 1;
+    shutdown();
     return;
   }
 
@@ -247,6 +282,7 @@ async function main() {
     ...(realtimeSse.attempted ? [`- Realtime SSE: ${realtimeSse.ok ? 'ok' : 'failed'}`] : []),
   ];
   console.log(lines.join('\n'));
+  shutdown();
 }
 
 main().catch((err) => {

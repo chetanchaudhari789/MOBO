@@ -44,6 +44,7 @@ const campaignSchema = new Schema(
         {
           limit: { type: Number, required: true, min: 0 },
           payout: { type: Number, min: 0 }, // Optional override; defaults to campaign.payoutPaise
+          commissionPaise: { type: Number, min: 0 }, // Optional buyer commission override for this assignment
         },
         { _id: false }
       ),

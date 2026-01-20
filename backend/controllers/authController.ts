@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 import mongoose, { type ClientSession } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
@@ -10,6 +11,7 @@ import {
   registerBrandSchema,
   registerOpsSchema,
   registerSchema,
+  refreshSchema,
   updateProfileSchema,
 } from '../validations/auth.js';
 import { InviteModel } from '../models/Invite.js';
@@ -250,6 +252,47 @@ export function makeAuthController(env: Env) {
         res.json({
           user: toUiUser(user, wallet),
           tokens: { accessToken, refreshToken },
+        });
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    refresh: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const body = refreshSchema.parse(req.body);
+        const refreshToken = String(body.refreshToken || '').trim();
+        if (!refreshToken) throw new AppError(401, 'UNAUTHENTICATED', 'Missing refresh token');
+
+        let decoded: jwt.JwtPayload;
+        try {
+          decoded = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET) as jwt.JwtPayload;
+        } catch {
+          throw new AppError(401, 'UNAUTHENTICATED', 'Invalid or expired refresh token');
+        }
+
+        if (decoded?.typ !== 'refresh') {
+          throw new AppError(401, 'UNAUTHENTICATED', 'Invalid refresh token');
+        }
+
+        const userId = String(decoded.sub || '').trim();
+        if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Invalid refresh token');
+
+        const user = await UserModel.findById(userId).lean();
+        if (!user || (user as any).deletedAt) {
+          throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
+        }
+        if (user.status !== 'active') {
+          throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
+        }
+
+        const accessToken = signAccessToken(env, String(user._id), user.roles as any);
+        const newRefreshToken = signRefreshToken(env, String(user._id), user.roles as any);
+        const wallet = await ensureWallet(String(user._id));
+
+        res.json({
+          user: toUiUser(user, wallet),
+          tokens: { accessToken, refreshToken: newRefreshToken },
         });
       } catch (err) {
         next(err);

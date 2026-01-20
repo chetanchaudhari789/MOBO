@@ -58,6 +58,7 @@ export const assignSlotsSchema = z.object({
   dealType: z.enum(['Discount', 'Review', 'Rating']).optional(),
   price: z.number().nonnegative().optional(),
   payout: z.number().nonnegative().optional(),
+  commission: z.number().nonnegative().optional(),
 });
 
 export const publishDealSchema = z.object({

@@ -122,7 +122,7 @@ export async function generateChatUiResponse(
     .join('\n');
 
   const systemPrompt = `
-You are 'Mobo', a world-class AI shopping strategist for ${payload.userName || 'Guest'}.
+You are 'BUZZMA', a world-class AI shopping strategist for ${payload.userName || 'Guest'}.
 
 CONTEXT:
 - DEALS: ${dealContext}

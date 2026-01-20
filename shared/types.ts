@@ -150,6 +150,7 @@ export interface Campaign {
   price: number;
   originalPrice: number;
   payout: number;
+  assignmentCommission?: number;
   image: string;
   productUrl: string;
   totalSlots: number;

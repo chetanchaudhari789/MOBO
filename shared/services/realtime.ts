@@ -116,6 +116,75 @@ function readAccessToken(): string | null {
   }
 }
 
+function readRefreshToken(): string | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const token = parsed?.refreshToken;
+    return typeof token === 'string' && token.trim() ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeTokens(tokens: { accessToken: string; refreshToken?: string }) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+  } catch {
+    // ignore
+  }
+}
+
+function clearTokens() {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = readRefreshToken();
+  if (!refreshToken) return false;
+
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (!res.ok) return false;
+        const payload = await res.json().catch(() => null);
+        const tokens = payload?.tokens;
+        if (tokens?.accessToken) {
+          writeTokens({
+            accessToken: String(tokens.accessToken),
+            refreshToken: tokens.refreshToken ? String(tokens.refreshToken) : refreshToken,
+          });
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+
+  const ok = await refreshPromise;
+  if (!ok) clearTokens();
+  return ok;
+}
+
 class RealtimeClient {
   private listeners = new Set<Listener>();
   private controller: AbortController | null = null;
@@ -201,10 +270,13 @@ class RealtimeClient {
         });
 
         if (!res.ok) {
-          // Auth errors should not spin hot.
+          // Auth errors should not spin hot. Try refresh once.
           if (res.status === 401 || res.status === 403) {
-            this.dispatch({ type: 'auth.error', ts: new Date().toISOString(), payload: { status: res.status } });
-            await this.sleep(3000);
+            const refreshed = await refreshAccessToken();
+            if (!refreshed) {
+              this.dispatch({ type: 'auth.error', ts: new Date().toISOString(), payload: { status: res.status } });
+              await this.sleep(3000);
+            }
           } else {
             await this.sleep(this.backoffMs);
           }

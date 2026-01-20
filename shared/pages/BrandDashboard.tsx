@@ -1163,7 +1163,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div>
                     <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      MRP ()
+                      MRP (₹)
                     </label>
                     <input
                       type="number"
@@ -1176,7 +1176,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                   </div>
                   <div>
                     <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      Deal Cost ()
+                      Deal Price (₹)
                     </label>
                     <input
                       type="number"
@@ -1188,8 +1188,8 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      Partner Payout ()
+                    <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block whitespace-nowrap">
+                      Agency Commission (₹)
                     </label>
                     <input
                       type="number"
@@ -1322,7 +1322,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
               <h2 className="text-3xl font-extrabold">
                 {(Number(form.payout) * Number(form.totalSlots)).toLocaleString()}
               </h2>
-              <p className="text-xs text-zinc-500 mt-2">Based on payout & total units.</p>
+              <p className="text-xs text-zinc-500 mt-2">Based on commission to agency & total units.</p>
             </div>
           </div>
         </div>

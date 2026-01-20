@@ -25,7 +25,7 @@
     "test": "npm run test:backend && npm run test:e2e",
     "test:backend": "npm -w @mobo/backend test",
     "test:e2e": "node --max-old-space-size=4096 node_modules/@playwright/test/cli.js test --pass-with-no-tests",
-    "lint": "eslint .",
+    "lint": "eslint . --ignore-pattern '**/public/**'",
     "clean": "node scripts/clean.mjs",
     "clean:root": "node scripts/clean.mjs root",
     "clean:backend": "node scripts/clean.mjs backend",

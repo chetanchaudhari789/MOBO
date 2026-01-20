@@ -309,7 +309,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
             <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-[3px] border-white rounded-full z-20"></div>
           </div>
           <h1 className="font-extrabold text-lg text-slate-900 leading-none tracking-tight">
-            Mobo
+            BUZZMA
           </h1>
         </div>
 
@@ -558,7 +558,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
             <div
               role="status"
               aria-live="polite"
-              aria-label="Mobo is typing"
+              aria-label="BUZZMA is typing"
               className="ml-11 flex gap-1.5 p-3 items-center bg-white w-fit rounded-2xl rounded-tl-sm border border-slate-100 shadow-sm"
             >
               <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce motion-reduce:animate-none"></span>

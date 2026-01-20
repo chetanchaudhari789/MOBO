@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
+import { DisableNumberScroll } from '../../../shared/components/DisableNumberScroll';
 
 export const metadata: Metadata = {
   title: 'BUZZMA Admin',
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <MoboHead />
       </head>
       <body className={BODY_CLASSNAME} suppressHydrationWarning>
+        <DisableNumberScroll />
         {children}
       </body>
     </html>

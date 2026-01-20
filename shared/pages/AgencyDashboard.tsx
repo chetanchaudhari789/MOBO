@@ -1107,6 +1107,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [selectedDealType, setSelectedDealType] = useState<string>('Discount');
   const [customPrice, setCustomPrice] = useState<string>('');
   const [customPayout, setCustomPayout] = useState<string>('');
+  const [commissionOnDeal, setCommissionOnDeal] = useState<string>('');
+  const [commissionToMediator, setCommissionToMediator] = useState<string>('');
 
   // Get list of mediator codes for this agency to verify if campaign is active in network
   const myMediatorCodes = useMemo(
@@ -1138,7 +1140,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     platform: '',
     dealType: 'Discount',
     price: '',
-    payout: '',
+    payout: '0',
     totalSlots: '',
     originalPrice: '',
     image: '',
@@ -1155,21 +1157,22 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       return;
     }
 
-    const price = customPrice.trim() ? Number(customPrice) : undefined;
-    const payout = customPayout.trim() ? Number(customPayout) : undefined;
-
-    if (typeof price !== 'undefined' && (!Number.isFinite(price) || price < 0)) {
-      toast.error('Deal price must be 0 or more');
+    const isInternal = String(assignModal.brandId || '') === String(user?.id || '');
+    const mediatorCommission = commissionToMediator.trim() ? Number(commissionToMediator) : 0;
+    const commission = isInternal ? 0 : commissionOnDeal.trim() ? Number(commissionOnDeal) : 0;
+    if (!Number.isFinite(mediatorCommission) || mediatorCommission < 0) {
+      toast.error('Commission to mediator must be 0 or more');
       return;
     }
-    if (typeof payout !== 'undefined' && (!Number.isFinite(payout) || payout < 0)) {
-      toast.error('Payout must be 0 or more');
+    if (!isInternal && (!Number.isFinite(commission) || commission < 0)) {
+      toast.error('Commission on deal must be 0 or more');
       return;
     }
+    const dealType = selectedDealType !== (assignModal.dealType || 'Discount') ? selectedDealType : undefined;
 
     try {
       // Updated API call to include dealType, price, and payout
-      await api.ops.assignSlots(assignModal.id, positiveAssignments, selectedDealType, price, payout);
+      await api.ops.assignSlots(assignModal.id, positiveAssignments, dealType, undefined, undefined, commission);
       toast.success('Distribution saved');
       setAssignModal(null);
       setAssignments({});
@@ -1185,7 +1188,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     const productUrl = newCampaign.productUrl.trim();
     const image = newCampaign.image.trim();
     const price = Number(newCampaign.price);
-    const payout = Number(newCampaign.payout);
+    const payout = 0;
     const totalSlots = Number(newCampaign.totalSlots);
     const originalPrice = Number(newCampaign.originalPrice);
 
@@ -1207,10 +1210,6 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     }
     if (!Number.isFinite(originalPrice) || originalPrice < 0) {
       toast.error('Original price is required');
-      return;
-    }
-    if (!Number.isFinite(payout) || payout < 0) {
-      toast.error('Payout must be 0 or more');
       return;
     }
     if (!Number.isFinite(totalSlots) || totalSlots < 0) {
@@ -1238,7 +1237,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         platform: '',
         dealType: 'Discount',
         price: '',
-        payout: '',
+        payout: '0',
         totalSlots: '',
         originalPrice: '',
         image: '',
@@ -1280,19 +1279,24 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     setSelectedDealType(c.dealType || 'Discount');
     setCustomPrice(c.price.toString());
     setCustomPayout(c.payout.toString());
+    setCommissionOnDeal('0');
+    setCommissionToMediator(c.payout.toString());
     setAssignModal(c);
   };
 
   const activeMediatorsForAssign = useMemo(() => {
     const q = assignSearch.trim().toLowerCase();
-    const active = (mediators as User[]).filter((m: User) => m.status === 'active' && !!m.mediatorCode);
-    if (!q) return active;
-    return active.filter(
+    const all = (mediators as User[]).filter((m: User) => !!m.mediatorCode);
+    if (!q) return all;
+    return all.filter(
       (m: User) =>
         m.name.toLowerCase().includes(q) ||
         String(m.mediatorCode || '').toLowerCase().includes(q)
     );
   }, [mediators, assignSearch]);
+
+  const isAgencyCampaign =
+    !!assignModal && String(assignModal.brandId || '') === String(user?.id || '');
 
   return (
     <div className="space-y-6 animate-enter h-full flex flex-col">
@@ -1380,6 +1384,11 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                           <span className="font-bold text-slate-900 truncate max-w-[200px]">
                             {c.title}
                           </span>
+                          {String(c.brandId || '') === String(user.id || '') && (
+                            <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                              Agency Campaign
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="p-5">
@@ -1418,6 +1427,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                             setSelectedDealType(c.dealType || 'Discount');
                             setCustomPrice(c.price.toString());
                             setCustomPayout(c.payout.toString());
+                            setCommissionOnDeal('0');
+                            setCommissionToMediator(c.payout.toString());
                           }}
                           className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95"
                         >
@@ -1587,10 +1598,22 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Deal Price ()
+                    MRP (₹)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-purple-200 focus:bg-white focus:ring-4 focus:ring-purple-50 transition-all"
+                    value={newCampaign.originalPrice}
+                    onChange={(e) => setNewCampaign({ ...newCampaign, originalPrice: e.target.value })}
+                    placeholder="2000"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                    Deal Price (₹)
                   </label>
                   <input
                     type="number"
@@ -1598,18 +1621,6 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     value={newCampaign.price}
                     onChange={(e) => setNewCampaign({ ...newCampaign, price: e.target.value })}
                     placeholder="1000"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    Payout ()
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-purple-200 focus:bg-white focus:ring-4 focus:ring-purple-50 transition-all"
-                    value={newCampaign.payout}
-                    onChange={(e) => setNewCampaign({ ...newCampaign, payout: e.target.value })}
-                    placeholder="100"
                   />
                 </div>
               </div>
@@ -1658,7 +1669,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
           onClick={() => setAssignModal(null)}
         >
           <div
-            className="bg-white w-[98%] md:w-full max-w-7xl rounded-2xl p-4 sm:p-5 lg:p-6 2xl:p-8 shadow-2xl relative max-h-[92vh] flex flex-col min-h-0 animate-slide-up"
+            className="bg-white w-[98%] md:w-full max-w-7xl rounded-2xl p-4 sm:p-5 lg:p-6 2xl:p-8 shadow-2xl relative h-[95vh] flex flex-col min-h-0 animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -1695,6 +1706,11 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   <h4 className="text-base sm:text-lg font-black text-slate-900 mb-1 leading-tight line-clamp-1">
                     {assignModal.title}
                   </h4>
+                  {isAgencyCampaign && (
+                    <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                      Agency Campaign
+                    </span>
+                  )}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
                       Total Stock: {assignModal.totalSlots}
@@ -1725,39 +1741,83 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   </div>
                 </div>
 
-                <div className="flex items-end gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
-                      Deal Price
-                    </label>
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-9 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
-                      <span className="text-xs font-bold text-slate-400 mr-2"></span>
-                      <input
-                        type="number"
-                        value={customPrice}
-                        onChange={(e) => setCustomPrice(e.target.value)}
-                        className="w-16 bg-transparent text-xs font-bold text-slate-900 outline-none"
-                        placeholder="0"
-                      />
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-end gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
+                        Deal Price (₹)
+                      </label>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg shadow-sm h-8 px-2 flex items-center">
+                        <span className="text-xs font-bold text-slate-400 mr-2"></span>
+                        <input
+                          type="number"
+                          value={customPrice}
+                          readOnly
+                          aria-readonly="true"
+                          tabIndex={-1}
+                          className="w-12 bg-transparent text-[11px] font-bold text-slate-600 outline-none cursor-not-allowed"
+                          placeholder="0"
+                        />
+                      </div>
                     </div>
+
+                    {!isAgencyCampaign && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
+                          Commission from Brand (₹)
+                        </label>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg shadow-sm h-8 px-2 flex items-center">
+                          <span className="text-xs font-bold text-slate-400 mr-2"></span>
+                          <input
+                            type="number"
+                            value={customPayout}
+                            readOnly
+                            aria-readonly="true"
+                            tabIndex={-1}
+                            className="w-12 bg-transparent text-[11px] font-bold text-slate-600 outline-none cursor-not-allowed"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
-                      Agency Payout
-                    </label>
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-9 px-3 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
-                      <span className="text-xs font-bold text-slate-400 mr-2"></span>
-                      <input
-                        type="number"
-                        value={customPayout}
-                        onChange={(e) => setCustomPayout(e.target.value)}
-                        className="w-16 bg-transparent text-xs font-bold text-slate-900 outline-none"
-                        placeholder="0"
-                      />
+                  <div className="flex items-end gap-3">
+                    {!isAgencyCampaign && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
+                          Commission on Deal (₹)
+                        </label>
+                        <div className="bg-white border border-slate-200 rounded-lg shadow-sm h-8 px-2 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
+                          <span className="text-xs font-bold text-slate-400 mr-2"></span>
+                          <input
+                            type="number"
+                            value={commissionOnDeal}
+                            onChange={(e) => setCommissionOnDeal(e.target.value)}
+                            className="w-16 bg-transparent text-[11px] font-bold text-slate-900 outline-none"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
+                        Commission to Mediator (₹)
+                      </label>
+                      <div className="bg-white border border-slate-200 rounded-lg shadow-sm h-8 px-2 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
+                        <span className="text-xs font-bold text-slate-400 mr-2"></span>
+                        <input
+                          type="number"
+                          value={commissionToMediator}
+                          onChange={(e) => setCommissionToMediator(e.target.value)}
+                          className="w-16 bg-transparent text-[11px] font-bold text-slate-900 outline-none"
+                          placeholder="0"
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
+              </div>
 
                 <div className="flex gap-2 ml-auto">
                   <button
@@ -1776,7 +1836,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-4 mb-2 shrink-0">
+            <div className="flex items-center justify-between gap-4 mb-1 shrink-0">
               <div className="flex-1 max-w-md">
                 <div className="relative">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1808,7 +1868,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             </div>
 
             {/* Mediator List */}
-            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide space-y-2 pr-1 mb-4">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide space-y-2 pr-1 mb-2">
               {activeMediatorsForAssign.length === 0 ? (
                 loading ? (
                   <EmptyState
@@ -1835,11 +1895,12 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     (sum: number, o: Order) => sum + o.total,
                     0
                   );
+                  const isActive = m.status === 'active';
 
                   return (
                     <div
                       key={m.id}
-                      className="grid grid-cols-12 gap-4 items-center p-2 border border-slate-100 rounded-2xl hover:border-purple-200 hover:bg-purple-50/10 transition-all bg-white shadow-sm group"
+                      className={`grid grid-cols-12 gap-4 items-center p-2 border border-slate-100 rounded-2xl transition-all bg-white shadow-sm group ${isActive ? 'hover:border-purple-200 hover:bg-purple-50/10' : 'opacity-70'}`}
                     >
                       {/* Profile */}
                       <div className="col-span-5 flex items-center gap-4 pl-2">
@@ -1854,9 +1915,16 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                           <p className="text-sm font-bold text-slate-900 group-hover:text-purple-700 transition-colors truncate">
                             {m.name}
                           </p>
-                          <p className="text-[10px] text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded w-fit mt-0.5 border border-slate-100">
-                            {m.mediatorCode}
-                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[10px] text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded w-fit border border-slate-100">
+                              {m.mediatorCode}
+                            </p>
+                            {!isActive && (
+                              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                                {m.status || 'inactive'}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -1875,9 +1943,10 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                         <div className="relative group/input">
                           <input
                             type="number"
-                            className="w-36 p-2 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all group-hover/input:shadow-md"
+                            className={`w-36 p-2 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none transition-all group-hover/input:shadow-md ${isActive ? 'focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100' : 'cursor-not-allowed'}`}
                             placeholder="0"
                             value={assignments[m.mediatorCode!] || ''}
+                            disabled={!isActive}
                             onChange={(e) =>
                               setAssignments({
                                 ...assignments,

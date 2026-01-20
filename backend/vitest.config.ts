@@ -19,13 +19,18 @@ if (process.platform === 'win32') {
 const isWin32 = process.platform === 'win32';
 
 export default defineConfig({
+  // Pool configuration is top-level in Vitest v4.
+  pool: 'threads',
+  poolOptions: {
+    threads: {
+      minThreads: isWin32 ? 1 : undefined,
+      maxThreads: isWin32 ? 1 : undefined,
+    },
+  },
   test: {
     include: ['tests/**/*.spec.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/build/**', '**/coverage/**'],
     environment: 'node',
-    // On Windows (and especially on newer Node versions), thread-based pools can intermittently
-    // hang with test files stuck in "[queued]". Forks is the most stable option.
-    pool: isWin32 ? 'forks' : 'threads',
     // Tests share a singleton mongoose connection + in-memory mongod instance.
     // Keep a single worker and disable isolation to avoid start/stop races.
     maxWorkers: 1,

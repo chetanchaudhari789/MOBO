@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
+import { DisableNumberScroll } from '../../../shared/components/DisableNumberScroll';
 import { PwaRuntime } from './PwaRuntime';
 
 export const metadata: Metadata = {
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#A3E635" />
       </head>
       <body className={BODY_CLASSNAME} suppressHydrationWarning>
+            <DisableNumberScroll />
         <PwaRuntime app="mediator" />
         {children}
       </body>

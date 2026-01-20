@@ -233,7 +233,32 @@ export function makeOpsController() {
         }
 
         const campaigns = await CampaignModel.find(query).sort({ createdAt: -1 }).limit(5000).lean();
-        res.json(campaigns.map(toUiCampaign));
+        const requesterMediatorCode = roles.includes('mediator') ? String((user as any)?.mediatorCode || '').trim() : '';
+
+        const normalizeCode = (v: unknown) => String(v || '').trim();
+        const findAssignmentForMediator = (assignments: any, mediatorCode: string) => {
+          const target = normalizeCode(mediatorCode);
+          if (!target) return null;
+          const obj = assignments instanceof Map ? Object.fromEntries(assignments) : assignments;
+          if (!obj || typeof obj !== 'object') return null;
+          if (Object.prototype.hasOwnProperty.call(obj, target)) return (obj as any)[target] ?? null;
+          const targetLower = target.toLowerCase();
+          for (const [k, v] of Object.entries(obj)) {
+            if (String(k).trim().toLowerCase() === targetLower) return v as any;
+          }
+          return null;
+        };
+
+        const ui = campaigns.map((c: any) => {
+          const mapped = toUiCampaign(c);
+          if (requesterMediatorCode) {
+            const assignment = findAssignmentForMediator(c.assignments, requesterMediatorCode);
+            const commissionPaise = Number((assignment as any)?.commissionPaise ?? 0);
+            (mapped as any).assignmentCommission = Math.round(commissionPaise) / 100;
+          }
+          return mapped;
+        });
+        res.json(ui);
       } catch (err) {
         next(err);
       }
@@ -1376,7 +1401,10 @@ export function makeOpsController() {
           }
         }
 
-        // NEW SCHEMA: assignments is Map<string, { limit: number, payout?: number }>
+        const commissionPaise =
+          typeof body.commission !== 'undefined' ? rupeesToPaise(body.commission) : undefined;
+
+        // NEW SCHEMA: assignments is Map<string, { limit: number, payout?: number, commissionPaise?: number }>
         const current = campaign.assignments instanceof Map ? campaign.assignments : new Map();
         for (const [code, assignment] of positiveEntries) {
           // Support both old format (number) and new format ({ limit, payout })
@@ -1390,6 +1418,9 @@ export function makeOpsController() {
                     ? rupeesToPaise((assignment as any).payout)
                     : campaign.payoutPaise,
               };
+          if (typeof commissionPaise !== 'undefined') {
+            (assignmentObj as any).commissionPaise = commissionPaise;
+          }
           current.set(code, assignmentObj as any);
         }
         campaign.assignments = current as any;
@@ -1494,11 +1525,12 @@ export function makeOpsController() {
           }
         }
 
-        const commissionPaise = rupeesToPaise(body.commission);
+        const slotAssignment = findAssignmentForMediator((campaign as any).assignments, body.mediatorCode);
+        const assignmentCommissionPaise = Number((slotAssignment as any)?.commissionPaise ?? -1);
+        const commissionPaise = assignmentCommissionPaise >= 0 ? assignmentCommissionPaise : rupeesToPaise(body.commission);
         const pricePaise = Number(campaign.pricePaise ?? 0) + commissionPaise;
 
         // CRITICAL: Get mediator's payout from campaign.assignments
-        const slotAssignment = findAssignmentForMediator((campaign as any).assignments, body.mediatorCode);
         const payoutPaise = Number((slotAssignment as any)?.payout ?? campaign.payoutPaise ?? 0);
 
         // CRITICAL: Check if deal already published to prevent re-publishing with different terms

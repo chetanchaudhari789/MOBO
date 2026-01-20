@@ -63,6 +63,8 @@ const TOKEN_STORAGE_KEY = 'mobo_tokens_v1';
 
 type TokenPair = { accessToken: string; refreshToken?: string };
 
+let refreshPromise: Promise<TokenPair | null> | null = null;
+
 const canUseStorage = () => typeof window !== 'undefined' && !!window.localStorage;
 
 function readTokens(): TokenPair | null {
@@ -87,6 +89,15 @@ function writeTokens(tokens: TokenPair) {
   }
 }
 
+function clearTokens() {
+  if (!canUseStorage()) return;
+  try {
+    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function authHeaders(): Record<string, string> {
   const tokens = readTokens();
   return tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {};
@@ -98,6 +109,48 @@ async function readPayloadSafe(res: Response): Promise<any> {
   } catch {
     return null;
   }
+}
+
+function isAuthError(res: Response, payload: any): boolean {
+  const code = payload?.error?.code || payload?.code;
+  return res.status === 401 || code === 'UNAUTHENTICATED' || code === 'INVALID_TOKEN';
+}
+
+async function refreshTokens(): Promise<TokenPair | null> {
+  if (!canUseStorage()) return null;
+  const current = readTokens();
+  const refreshToken = current?.refreshToken;
+  if (!refreshToken) return null;
+
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        const payload = await readPayloadSafe(res);
+        if (!res.ok) throw toErrorFromPayload(payload, `Refresh failed: ${res.status}`);
+
+        const tokens = payload?.tokens;
+        if (tokens?.accessToken) {
+          writeTokens({
+            accessToken: String(tokens.accessToken),
+            refreshToken: tokens.refreshToken ? String(tokens.refreshToken) : refreshToken,
+          });
+        }
+        return readTokens();
+      } catch {
+        clearTokens();
+        return null;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+
+  return refreshPromise;
 }
 
 function toErrorFromPayload(payload: any, fallback: string): Error {
@@ -131,6 +184,21 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
   assertOnlineForWrite(init);
   const res = await fetch(`${API_URL}${path}`, init);
   const payload = await readPayloadSafe(res);
+
+  if (!res.ok && isAuthError(res, payload)) {
+    const refreshed = await refreshTokens();
+    if (refreshed?.accessToken) {
+      const retryInit: RequestInit = {
+        ...init,
+        headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
+      };
+      const retryRes = await fetch(`${API_URL}${path}`, retryInit);
+      const retryPayload = await readPayloadSafe(retryRes);
+      if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
+      return fixMojibakeDeep(retryPayload);
+    }
+  }
+
   if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
   return fixMojibakeDeep(payload);
 }
@@ -139,6 +207,21 @@ async function fetchOk(path: string, init?: RequestInit): Promise<void> {
   assertOnlineForWrite(init);
   const res = await fetch(`${API_URL}${path}`, init);
   const payload = await readPayloadSafe(res);
+
+  if (!res.ok && isAuthError(res, payload)) {
+    const refreshed = await refreshTokens();
+    if (refreshed?.accessToken) {
+      const retryInit: RequestInit = {
+        ...init,
+        headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
+      };
+      const retryRes = await fetch(`${API_URL}${path}`, retryInit);
+      const retryPayload = await readPayloadSafe(retryRes);
+      if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
+      return;
+    }
+  }
+
   if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
 }
 
@@ -444,12 +527,13 @@ export const api = {
       assignments: any,
       dealType?: string,
       price?: number,
-      payout?: number
+      payout?: number,
+      commission?: number
     ) => {
       await fetchOk('/ops/campaigns/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ id, assignments, dealType, price, payout }),
+        body: JSON.stringify({ id, assignments, dealType, price, payout, commission }),
       });
     },
     publishDeal: async (id: string, commission: number | undefined, mediatorCode: string) => {
