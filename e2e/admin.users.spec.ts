@@ -4,14 +4,14 @@ const ADMIN_ID = 'root';
 const PASSWORD = 'ChangeMe_123!';
 
 test('admin can view seeded users', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 180_000 });
 
   await page.getByPlaceholder('root').fill(ADMIN_ID);
   await page.getByRole('textbox', { name: 'Security Key' }).fill(PASSWORD);
   await page.getByRole('button', { name: /Authenticate Session/i }).click();
 
   // Cold-start Next compilation can make the first post-login render slow.
-  await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 120_000 });
 
   // Navigate to Users
   await page.getByRole('button', { name: 'Users' }).click({ timeout: 45_000 });

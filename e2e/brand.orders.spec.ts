@@ -4,7 +4,7 @@ const BRAND_MOBILE = '9000000003';
 const PASSWORD = 'ChangeMe_123!';
 
 test('brand can open Order Intelligence', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 180_000 });
 
   // Splash -> Login
   await page.getByRole('button', { name: /Access Portal/i }).click();
