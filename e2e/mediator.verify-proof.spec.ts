@@ -156,5 +156,5 @@ test('mediator can open verification modal for a newly created buyer order', asy
   await buyerCard.getByRole('button', { name: /Verify Purchase|Review Steps/i }).click();
 
   await expect(page.getByText('Verification Station', { exact: true })).toBeVisible();
-  await expect(page.getByText(expectedExternalOrderId, { exact: true })).toBeVisible();
+  await expect(page.getByText(expectedExternalOrderId, { exact: true }).first()).toBeVisible();
 });
