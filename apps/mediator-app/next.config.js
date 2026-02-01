@@ -9,6 +9,12 @@ const nextConfig = {
   experimental: {
     externalDir: true,
   },
+  webpack: (config, { dev }) => {
+    if (!dev) {
+      config.cache = { type: 'memory' };
+    }
+    return config;
+  },
   async rewrites() {
     const backendBase = process.env.NEXT_PUBLIC_API_PROXY_TARGET || 'http://localhost:8080';
     return [

@@ -22,6 +22,16 @@ import {
   Zap,
 } from 'lucide-react';
 
+const getPrimaryOrderId = (order: Order) =>
+  String(order.externalOrderId || order.id || '').trim();
+
+const getSecondaryOrderId = (order: Order) => {
+  const primary = getPrimaryOrderId(order);
+  const internal = String(order.id || '').trim();
+  if (!primary || primary === internal) return '';
+  return internal;
+};
+
 export const Orders: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -355,8 +365,13 @@ export const Orders: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
-                        #{order.id.slice(-6)}
+                        {getPrimaryOrderId(order)}
                       </span>
+                      {getSecondaryOrderId(order) && (
+                        <span className="text-[9px] text-slate-400 font-mono">
+                          SYS {getSecondaryOrderId(order)}
+                        </span>
+                      )}
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${isReview ? 'bg-purple-50 text-purple-600' : isRating ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}
                       >
@@ -726,7 +741,12 @@ export const Orders: React.FC = () => {
               <AlertTriangle className="text-red-500" /> Dispute Order
             </h3>
             <p className="text-xs text-slate-500 font-bold uppercase mb-6">
-              Order #{ticketModal.id.slice(-6)}
+              Order {getPrimaryOrderId(ticketModal)}
+              {getSecondaryOrderId(ticketModal) && (
+                <span className="text-[10px] text-slate-400 font-mono ml-2">
+                  SYS {getSecondaryOrderId(ticketModal)}
+                </span>
+              )}
             </p>
             <div className="space-y-4">
               <div>
@@ -825,7 +845,12 @@ export const Orders: React.FC = () => {
               {uploadType === 'review' ? 'Submit Review Link' : 'Upload Proof'}
             </h3>
             <p className="text-xs text-slate-500 font-bold uppercase mb-5">
-              Order #{selectedOrder.id.slice(-6)}
+              Order {getPrimaryOrderId(selectedOrder)}
+              {getSecondaryOrderId(selectedOrder) && (
+                <span className="text-[10px] text-slate-400 font-mono ml-2">
+                  SYS {getSecondaryOrderId(selectedOrder)}
+                </span>
+              )}
             </p>
 
             {uploadType === 'review' ? (

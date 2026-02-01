@@ -64,6 +64,16 @@ import {
 // --- TYPES ---
 type Tab = 'dashboard' | 'agencies' | 'campaigns' | 'requests' | 'orders' | 'profile';
 
+const getPrimaryOrderId = (order: Order) =>
+  String(order.externalOrderId || order.id || '').trim();
+
+const getSecondaryOrderId = (order: Order) => {
+  const primary = getPrimaryOrderId(order);
+  const internal = String(order.id || '').trim();
+  if (!primary || primary === internal) return '';
+  return internal;
+};
+
 // --- COMPONENTS ---
 
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
@@ -612,7 +622,9 @@ const OrdersView = ({ user }: any) => {
   const filtered = orders.filter((o) => {
     const q = search.toLowerCase();
     const title = String(o.items?.[0]?.title || '').toLowerCase();
-    return o.id.toLowerCase().includes(q) || title.includes(q);
+    const internal = String(o.id || '').toLowerCase();
+    const external = String(o.externalOrderId || '').toLowerCase();
+    return internal.includes(q) || external.includes(q) || title.includes(q);
   });
 
   const handleExport = () => {
@@ -634,7 +646,7 @@ const OrdersView = ({ user }: any) => {
       'Status',
       'Payment Status',
       'Verification Status',
-      'External Order ID',
+      'System Order ID',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -650,7 +662,7 @@ const OrdersView = ({ user }: any) => {
       const item = o.items[0];
 
       const row = [
-        o.id,
+        getPrimaryOrderId(o),
         date,
         time,
         `"${(item?.title || '').replace(/"/g, '""')}"`,
@@ -667,7 +679,7 @@ const OrdersView = ({ user }: any) => {
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
-        o.externalOrderId || 'N/A',
+        o.id,
         o.screenshots?.order ? 'Yes' : 'No',
         o.screenshots?.payment ? 'Yes' : 'No',
         o.screenshots?.rating ? 'Yes' : 'No',
@@ -765,8 +777,15 @@ const OrdersView = ({ user }: any) => {
                 ) : (
                   filtered.map((o) => (
                     <tr key={o.id} className="hover:bg-zinc-50/50 transition-colors group">
-                      <td className="p-6 font-mono text-xs font-bold text-zinc-500">
-                        {o.id.slice(-6)}
+                      <td className="p-6">
+                        <div className="font-mono text-xs font-bold text-zinc-500">
+                          {getPrimaryOrderId(o)}
+                        </div>
+                        {getSecondaryOrderId(o) && (
+                          <div className="text-[10px] text-zinc-400 font-mono">
+                            SYS {getSecondaryOrderId(o)}
+                          </div>
+                        )}
                       </td>
                       <td className="p-6">
                         <div className="flex items-center gap-3">
@@ -834,8 +853,13 @@ const OrdersView = ({ user }: any) => {
               <h3 className="font-extrabold text-lg text-zinc-900 mb-1">Proof of Performance</h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-zinc-500 font-bold">
-                  Order #{viewProofOrder.id.slice(-6)}
+                  Order {getPrimaryOrderId(viewProofOrder)}
                 </span>
+                {getSecondaryOrderId(viewProofOrder) && (
+                  <span className="text-[10px] text-zinc-400 font-mono">
+                    SYS {getSecondaryOrderId(viewProofOrder)}
+                  </span>
+                )}
                 <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
                 <span
                   className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${

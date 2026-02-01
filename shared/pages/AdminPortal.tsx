@@ -422,7 +422,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       'Verification Status',
       'Mediator Code',
       'Agency Name',
-      'External Order ID',
+      'System Order ID',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -438,7 +438,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       const item = order.items[0];
 
       const row = [
-        order.id,
+        order.externalOrderId || order.id,
         dateStr,
         timeStr,
         `"${(order.buyerName || '').replace(/"/g, '""')}"`,
@@ -455,7 +455,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.affiliateStatus,
         order.managerName || 'N/A',
         `"${(order.agencyName || 'Partner Agency').replace(/"/g, '""')}"`,
-        order.externalOrderId || 'N/A',
+        order.id,
         order.screenshots?.order ? 'Yes' : 'No',
         order.screenshots?.payment ? 'Yes' : 'No',
         order.screenshots?.rating ? 'Yes' : 'No',
@@ -1175,7 +1175,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <tbody className="divide-y divide-slate-50 text-sm font-medium">
                       {orders.slice(0, 50).map((o) => (
                         <tr key={o.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-5 font-mono text-slate-500">#{o.id.slice(-6)}</td>
+                          <td className="p-5">
+                            <div className="font-mono text-slate-500">
+                              {o.externalOrderId || o.id}
+                            </div>
+                            {o.externalOrderId && (
+                              <div className="text-[10px] text-slate-400 font-mono">SYS {o.id}</div>
+                            )}
+                          </td>
                           <td className="p-5 text-slate-600">
                             {new Date(o.createdAt).toLocaleDateString()}
                           </td>

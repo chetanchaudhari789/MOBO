@@ -70,6 +70,16 @@ const formatCurrency = (val: number) =>
     maximumFractionDigits: 0,
   }).format(val);
 
+const getPrimaryOrderId = (order: Order) =>
+  String(order.externalOrderId || order.id || '').trim();
+
+const getSecondaryOrderId = (order: Order) => {
+  const primary = getPrimaryOrderId(order);
+  const internal = String(order.id || '').trim();
+  if (!primary || primary === internal) return '';
+  return internal;
+};
+
 // --- COMPONENTS ---
 
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
@@ -446,7 +456,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Status',
       'Payment Status',
       'Verification Status',
-      'External Order ID',
+      'System Order ID',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -462,7 +472,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       const item = o.items[0];
 
       const row = [
-        o.id,
+        getPrimaryOrderId(o),
         date,
         time,
         `"${(item.title || '').replace(/"/g, '""')}"`,
@@ -479,7 +489,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
-        o.externalOrderId || 'N/A',
+        o.id,
         o.screenshots?.order ? 'Yes' : 'No',
         o.screenshots?.payment ? 'Yes' : 'No',
         o.screenshots?.rating ? 'Yes' : 'No',
@@ -587,8 +597,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                   <tr key={o.id} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="p-5 pl-8">
                       <div className="font-mono text-xs font-bold text-slate-900 group-hover:text-purple-600 transition-colors">
-                        #{o.id.slice(-6)}
+                        {getPrimaryOrderId(o)}
                       </div>
+                      {getSecondaryOrderId(o) && (
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          SYS {getSecondaryOrderId(o)}
+                        </div>
+                      )}
                       <div className="text-[10px] text-slate-400 font-bold mt-0.5">
                         {new Date(o.createdAt).toLocaleDateString()}
                       </div>
@@ -662,7 +677,12 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
             >
               <h3 className="text-lg font-extrabold text-slate-900 mb-2">Update Ledger Entry</h3>
               <p className="text-xs text-slate-500 mb-6 font-mono">
-                Order #{editingOrder.id.slice(-6)}
+                Order {getPrimaryOrderId(editingOrder)}
+                {getSecondaryOrderId(editingOrder) && (
+                  <span className="text-[10px] text-slate-400 font-mono ml-2">
+                    SYS {getSecondaryOrderId(editingOrder)}
+                  </span>
+                )}
               </p>
 
               <div className="space-y-3 mb-6">
@@ -2384,10 +2404,15 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-center mb-1">
                             <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                              #{o.id.slice(-6)}
+                              {getPrimaryOrderId(o)}
                             </span>
                             {getStatusBadge(o)}
                           </div>
+                          {getSecondaryOrderId(o) && (
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              SYS {getSecondaryOrderId(o)}
+                            </div>
+                          )}
                           <h4 className="font-bold text-slate-900 text-sm truncate">
                             {o.items[0].title}
                           </h4>
@@ -2559,7 +2584,12 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               <h3 className="font-extrabold text-lg text-zinc-900 mb-1">Proof of Performance</h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 font-bold">
-                  Order #{proofOrder.id.slice(-6)}
+                  Order {getPrimaryOrderId(proofOrder)}
+                  {getSecondaryOrderId(proofOrder) && (
+                    <span className="text-[10px] text-slate-400 font-mono ml-2">
+                      SYS {getSecondaryOrderId(proofOrder)}
+                    </span>
+                  )}
                 </span>
                 <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                 <span

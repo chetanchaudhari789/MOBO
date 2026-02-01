@@ -48,6 +48,16 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
+const getPrimaryOrderId = (order: Order) =>
+  String(order.externalOrderId || order.id || '').trim();
+
+const getSecondaryOrderId = (order: Order) => {
+  const primary = getPrimaryOrderId(order);
+  const internal = String(order.id || '').trim();
+  if (!primary || primary === internal) return '';
+  return internal;
+};
+
 const urlToBase64 = async (url: string): Promise<string> => {
   try {
     const response = await fetch(url);
@@ -1107,8 +1117,13 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-mono text-zinc-400">
-                            #{o.id.slice(-6)}
+                            {getPrimaryOrderId(o)}
                           </span>
+                          {getSecondaryOrderId(o) && (
+                            <span className="text-[9px] font-mono text-zinc-400">
+                              SYS {getSecondaryOrderId(o)}
+                            </span>
+                          )}
                           <span className="text-[9px] font-bold uppercase bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded">
                             {o.items[0].dealType}
                           </span>
@@ -1604,7 +1619,10 @@ export const MediatorDashboard: React.FC = () => {
               <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-mono mt-0.5">
                 <span>{proofModal.buyerName}</span>
                 <span></span>
-                <span>{proofModal.id}</span>
+                <span>{getPrimaryOrderId(proofModal)}</span>
+                {getSecondaryOrderId(proofModal) && (
+                  <span>SYS {getSecondaryOrderId(proofModal)}</span>
+                )}
               </div>
             </div>
             <button
