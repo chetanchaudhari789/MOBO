@@ -513,6 +513,32 @@ export const opsAPI = {
     saveCampaigns(c);
     return n;
   },
+  updateCampaignStatus: async (campaignId: string, status: string) => {
+    const campaigns = getCampaigns();
+    const campaign = campaigns.find((c) => c.id === campaignId);
+    if (!campaign) throw new Error('Campaign not found');
+
+    const normalized = String(status || '').toLowerCase();
+    const uiStatus =
+      normalized === 'active'
+        ? 'Active'
+        : normalized === 'paused'
+          ? 'Paused'
+          : normalized === 'completed'
+            ? 'Completed'
+            : 'Draft';
+
+    campaign.status = uiStatus as any;
+    saveCampaigns(campaigns);
+
+    const products = getProducts();
+    products.forEach((p) => {
+      if (p.campaignId === campaignId) p.active = normalized === 'active';
+    });
+    saveProducts(products);
+
+    return campaign;
+  },
   // Fix: Updated assignSlots signature to accept price and payout configuration for more granular slot control
   assignSlots: async (
     id: string,
@@ -640,7 +666,11 @@ export const brandAPI = {
   resolveConnectionRequest: async (_brandId: string, _agencyId: string, _action: string) => {},
   removeAgency: async (_brandId: string, _agencyCode: string) => {},
   createCampaign: async (d: any) => opsAPI.createCampaign(d),
-  updateCampaign: async (_campaignId: string, _data: any) => {},
+  updateCampaign: async (campaignId: string, data: any) => {
+    if (typeof data?.status !== 'undefined') {
+      await opsAPI.updateCampaignStatus(campaignId, data.status);
+    }
+  },
   connectAgency: async (_brandId: string, _agencyCode: string) => {},
   getAnalytics: async (_brandId: string) => ({}),
   getAgencyFinancials: async (_brandId: string) => [],

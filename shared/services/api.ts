@@ -522,6 +522,13 @@ export const api = {
         body: JSON.stringify(data),
       });
     },
+    updateCampaignStatus: async (campaignId: string, status: string) => {
+      return fetchJson(`/ops/campaigns/${campaignId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ status }),
+      });
+    },
     assignSlots: async (
       id: string,
       assignments: any,

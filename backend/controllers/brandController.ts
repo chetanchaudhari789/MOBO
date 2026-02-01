@@ -4,6 +4,7 @@ import type { Role } from '../middleware/auth.js';
 import { UserModel } from '../models/User.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { OrderModel } from '../models/Order.js';
+import { DealModel } from '../models/Deal.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
@@ -605,8 +606,18 @@ export function makeBrandController() {
         if (typeof body.totalSlots !== 'undefined') update.totalSlots = Number(body.totalSlots);
         if (typeof body.allowedAgencies !== 'undefined') update.allowedAgencyCodes = body.allowedAgencies;
 
+        const statusRequested = typeof body.status !== 'undefined';
+
         const campaign = await CampaignModel.findByIdAndUpdate(id, update, { new: true });
         if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+
+        if (statusRequested) {
+          const isActive = String((campaign as any).status || '').toLowerCase() === 'active';
+          await DealModel.updateMany(
+            { campaignId: (campaign as any)._id, deletedAt: null },
+            { $set: { active: isActive } }
+          );
+        }
 
         const nextAllowed = Array.isArray((campaign as any).allowedAgencyCodes)
           ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)

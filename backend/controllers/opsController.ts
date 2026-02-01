@@ -18,6 +18,7 @@ import {
   rejectByIdSchema,
   settleOrderSchema,
   unsettleOrderSchema,
+  updateCampaignStatusSchema,
   verifyOrderRequirementSchema,
   verifyOrderSchema,
 } from '../validations/ops.js';
@@ -1331,6 +1332,81 @@ export function makeOpsController() {
           },
         });
         res.status(201).json(toUiCampaign((campaign as any).toObject ? (campaign as any).toObject() : (campaign as any)));
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    updateCampaignStatus: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const campaignId = String(req.params.campaignId || '').trim();
+        if (!campaignId) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
+
+        const body = updateCampaignStatusSchema.parse(req.body);
+        const nextStatus = String(body.status || '').toLowerCase();
+        if (!['active', 'paused', 'completed', 'draft'].includes(nextStatus)) {
+          throw new AppError(400, 'INVALID_STATUS', 'Invalid status');
+        }
+
+        const { roles, userId, user: requester } = getRequester(req);
+        const campaign = await CampaignModel.findById(campaignId);
+        if (!campaign || (campaign as any).deletedAt) {
+          throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        }
+
+        if (!isPrivileged(roles)) {
+          if (!roles.includes('agency')) {
+            throw new AppError(403, 'FORBIDDEN', 'Only agencies can update campaign status');
+          }
+          const requesterCode = String((requester as any)?.mediatorCode || '').trim();
+          const allowedCodes = Array.isArray((campaign as any).allowedAgencyCodes)
+            ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+            : [];
+          const isAllowedAgency = requesterCode && allowedCodes.includes(requesterCode);
+          const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
+          if (!isAllowedAgency && !isOwner) {
+            throw new AppError(403, 'FORBIDDEN', 'Cannot update campaigns outside your network');
+          }
+        }
+
+        const previousStatus = String((campaign as any).status || '').toLowerCase();
+        (campaign as any).status = nextStatus;
+        (campaign as any).updatedBy = req.auth?.userId as any;
+        await campaign.save();
+
+        if (previousStatus !== nextStatus) {
+          await DealModel.updateMany(
+            { campaignId: (campaign as any)._id, deletedAt: null },
+            { $set: { active: nextStatus === 'active' } }
+          );
+        }
+
+        const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
+          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+          : [];
+        const ts = new Date().toISOString();
+        publishRealtime({
+          type: 'deals.changed',
+          ts,
+          payload: { campaignId: String((campaign as any)._id), status: nextStatus },
+          audience: {
+            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            agencyCodes: allowed,
+            roles: ['admin', 'ops'],
+          },
+        });
+        publishRealtime({
+          type: 'notifications.changed',
+          ts,
+          payload: { source: 'campaign.status', campaignId: String((campaign as any)._id), status: nextStatus },
+          audience: {
+            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            agencyCodes: allowed,
+            roles: ['admin', 'ops'],
+          },
+        });
+
+        res.json(toUiCampaign((campaign as any).toObject ? (campaign as any).toObject() : (campaign as any)));
       } catch (err) {
         next(err);
       }

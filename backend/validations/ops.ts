@@ -61,6 +61,10 @@ export const assignSlotsSchema = z.object({
   commission: z.number().nonnegative().optional(),
 });
 
+export const updateCampaignStatusSchema = z.object({
+  status: z.enum(['active', 'paused', 'completed', 'draft']),
+});
+
 export const publishDealSchema = z.object({
   id: z.string().min(1), // campaign id
   // Commission is optional; empty/omitted commission means 0.

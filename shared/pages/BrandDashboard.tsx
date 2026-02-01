@@ -985,6 +985,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
   const [, setDetailView] = useState<Campaign | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
   // Create Form State
   const initialForm = {
@@ -1049,6 +1050,25 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
     setEditingId(campaign.id);
     setDetailView(null);
     setView('create');
+  };
+
+  const handleToggleStatus = async (campaign: Campaign) => {
+    const current = String(campaign.status || '').toLowerCase();
+    const next = current === 'active' ? 'paused' : 'active';
+    if (!['active', 'paused'].includes(next)) {
+      toast.error('Only active or paused campaigns can be updated');
+      return;
+    }
+    setStatusUpdatingId(campaign.id);
+    try {
+      await api.brand.updateCampaign(campaign.id, { status: next });
+      toast.success(next === 'paused' ? 'Campaign paused' : 'Campaign resumed');
+      onRefresh();
+    } catch {
+      toast.error('Failed to update campaign status');
+    } finally {
+      setStatusUpdatingId(null);
+    }
   };
 
   if (view === 'create')
@@ -1434,12 +1454,31 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleEdit(c)}
-                  className="w-full py-3 bg-zinc-50 text-zinc-600 rounded-xl font-bold text-xs hover:bg-zinc-900 hover:text-white transition-all flex items-center justify-center gap-2 border border-zinc-100 group-hover:border-zinc-900"
-                >
-                  Manage Campaign <ArrowUpRight size={14} />
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleEdit(c)}
+                    className="w-full py-3 bg-zinc-50 text-zinc-600 rounded-xl font-bold text-xs hover:bg-zinc-900 hover:text-white transition-all flex items-center justify-center gap-2 border border-zinc-100 group-hover:border-zinc-900"
+                  >
+                    Manage Campaign <ArrowUpRight size={14} />
+                  </button>
+                  {(c.status === 'Active' || c.status === 'Paused') && (
+                    <button
+                      onClick={() => handleToggleStatus(c)}
+                      disabled={statusUpdatingId === c.id}
+                      className={`w-full py-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 ${
+                        c.status === 'Active'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      } ${statusUpdatingId === c.id ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      {statusUpdatingId === c.id
+                        ? 'Updating...'
+                        : c.status === 'Active'
+                          ? 'Pause Campaign'
+                          : 'Resume Campaign'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}

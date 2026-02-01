@@ -389,7 +389,7 @@ const AgencyProfile = ({ user }: any) => {
   );
 };
 
-const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: any) => {
+const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, user }: any) => {
   const { toast } = useToast();
   // Flatten orders for detailed ledger view
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -432,21 +432,25 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
       'Order ID',
       'Date',
       'Time',
-      'Brand',
       'Product',
+      'Category',
       'Platform',
       'Deal Type',
-      'Quantity',
       'Unit Price',
-      'Total Amount',
-      'Commission',
-      'Status',
-      'Payment Status',
-      'Affiliate Status',
-      'Mediator Code',
+      'Quantity',
+      'Total Value',
+      'Agency Name',
+      'Partner ID',
       'Buyer Name',
       'Buyer Mobile',
+      'Status',
+      'Payment Status',
+      'Verification Status',
       'External Order ID',
+      'Proof: Order',
+      'Proof: Payment',
+      'Proof: Rating',
+      'Proof: Review Link',
     ];
 
     const csvRows = [headers.join(',')];
@@ -461,21 +465,25 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
         o.id,
         date,
         time,
-        `"${(o.brandName || item.brandName || '').replace(/"/g, '""')}"`,
         `"${(item.title || '').replace(/"/g, '""')}"`,
-        item.platform || '',
-        item.dealType || 'Discount',
-        item.quantity,
-        item.priceAtPurchase,
+        item?.category || 'General',
+        item?.platform || '',
+        item?.dealType || 'Discount',
+        item?.priceAtPurchase,
+        item?.quantity || 1,
         o.total,
-        item.commission,
-        o.status,
-        o.paymentStatus,
-        o.affiliateStatus,
+        `"${(o.agencyName || user?.name || 'Agency').replace(/"/g, '""')}"`,
         o.managerName,
         `"${(o.buyerName || '').replace(/"/g, '""')}"`,
         `"${(o.buyerMobile || '').replace(/"/g, '""')}"`,
+        o.status,
+        o.paymentStatus,
+        o.affiliateStatus,
         o.externalOrderId || 'N/A',
+        o.screenshots?.order ? 'Yes' : 'No',
+        o.screenshots?.payment ? 'Yes' : 'No',
+        o.screenshots?.rating ? 'Yes' : 'No',
+        o.reviewLink ? 'Yes' : 'No',
       ];
       csvRows.push(row.join(','));
     });
@@ -485,7 +493,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `financial_ledger_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `agency_orders_report_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -540,7 +548,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh }: a
             onClick={handleExport}
             className="text-xs font-bold text-purple-600 flex items-center gap-2 hover:bg-purple-50 px-4 py-3 rounded-xl transition-colors border border-transparent hover:border-purple-100"
           >
-            <Download size={16} /> Export CSV
+            <Download size={16} /> Export Report
           </button>
         </div>
 
@@ -1109,6 +1117,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [customPayout, setCustomPayout] = useState<string>('');
   const [commissionOnDeal, setCommissionOnDeal] = useState<string>('');
   const [commissionToMediator, setCommissionToMediator] = useState<string>('');
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
   // Get list of mediator codes for this agency to verify if campaign is active in network
   const myMediatorCodes = useMemo(
@@ -1284,6 +1293,26 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     setAssignModal(c);
   };
 
+  const handleToggleStatus = async (campaign: Campaign) => {
+    const current = String(campaign.status || '').toLowerCase();
+    const next = current === 'active' ? 'paused' : 'active';
+    if (!['active', 'paused'].includes(next)) {
+      toast.error('Only active or paused campaigns can be updated');
+      return;
+    }
+    setStatusUpdatingId(campaign.id);
+    try {
+      await api.ops.updateCampaignStatus(campaign.id, next);
+      toast.success(next === 'paused' ? 'Campaign paused' : 'Campaign resumed');
+      onRefresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update campaign status';
+      toast.error(msg);
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  };
+
   const activeMediatorsForAssign = useMemo(() => {
     const q = assignSearch.trim().toLowerCase();
     const all = (mediators as User[]).filter((m: User) => !!m.mediatorCode);
@@ -1421,19 +1450,38 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                         <span className="text-slate-300 mx-1">/</span> {c.totalSlots}
                       </td>
                       <td className="p-5 pr-8 text-center">
-                        <button
-                          onClick={() => {
-                            setAssignModal(c);
-                            setSelectedDealType(c.dealType || 'Discount');
-                            setCustomPrice(c.price.toString());
-                            setCustomPayout(c.payout.toString());
-                            setCommissionOnDeal('0');
-                            setCommissionToMediator(c.payout.toString());
-                          }}
-                          className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95"
-                        >
-                          <Users size={14} /> Manage Slots
-                        </button>
+                        <div className="flex flex-col items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setAssignModal(c);
+                              setSelectedDealType(c.dealType || 'Discount');
+                              setCustomPrice(c.price.toString());
+                              setCustomPayout(c.payout.toString());
+                              setCommissionOnDeal('0');
+                              setCommissionToMediator(c.payout.toString());
+                            }}
+                            className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95"
+                          >
+                            <Users size={14} /> Manage Slots
+                          </button>
+                          {(c.status === 'Active' || c.status === 'Paused') && (
+                            <button
+                              onClick={() => handleToggleStatus(c)}
+                              disabled={statusUpdatingId === c.id}
+                              className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95 ${
+                                c.status === 'Active'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              } ${statusUpdatingId === c.id ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            >
+                              {statusUpdatingId === c.id
+                                ? 'Updating...'
+                                : c.status === 'Active'
+                                  ? 'Pause Campaign'
+                                  : 'Resume Campaign'}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -2877,6 +2925,7 @@ export const AgencyDashboard: React.FC = () => {
           mediators={mediators}
           loading={isDataLoading}
           onRefresh={fetchData}
+          user={user}
         />
       )}
       {activeTab === 'payouts' && <PayoutsView payouts={payouts} loading={isDataLoading} />}
