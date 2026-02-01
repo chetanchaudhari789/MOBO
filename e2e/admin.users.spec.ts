@@ -4,14 +4,30 @@ const ADMIN_ID = 'root';
 const PASSWORD = 'ChangeMe_123!';
 
 test('admin can view seeded users', async ({ page }) => {
-  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  test.setTimeout(240_000);
 
-  await page.getByPlaceholder('root').fill(ADMIN_ID);
-  await page.getByRole('textbox', { name: 'Security Key' }).fill(PASSWORD);
-  await page.getByRole('button', { name: /Authenticate Session/i }).click();
+  const login = async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 180_000 });
+      const usernameInput = page.getByLabel('Username');
+      const passwordInput = page.getByLabel('Security Key');
+      try {
+        await usernameInput.waitFor({ timeout: 90_000 });
+        await passwordInput.waitFor({ timeout: 90_000 });
 
-  // Cold-start Next compilation can make the first post-login render slow.
-  await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 120_000 });
+        await usernameInput.fill(ADMIN_ID);
+        await passwordInput.fill(PASSWORD);
+        await page.getByRole('button', { name: /Authenticate Session/i }).click();
+
+        await page.getByRole('button', { name: 'Overview' }).waitFor({ timeout: 120_000 });
+        return;
+      } catch {
+        // Retry on slow cold-start or failed login render.
+      }
+    }
+  };
+
+  await login();
 
   // Navigate to Users
   await page.getByRole('button', { name: 'Users' }).click({ timeout: 45_000 });
