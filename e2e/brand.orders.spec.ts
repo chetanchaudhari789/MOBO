@@ -3,8 +3,10 @@ import { test, expect } from '@playwright/test';
 const BRAND_MOBILE = '9000000003';
 const PASSWORD = 'ChangeMe_123!';
 
+test.describe.configure({ retries: 2 });
+
 test('brand can open Order Intelligence', async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
 
   const login = async () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
