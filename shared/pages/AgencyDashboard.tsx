@@ -466,7 +466,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         date,
         time,
         `"${(item.title || '').replace(/"/g, '""')}"`,
-        item?.category || 'General',
+        item?.dealType || 'General',
         item?.platform || '',
         item?.dealType || 'Discount',
         item?.priceAtPurchase,
