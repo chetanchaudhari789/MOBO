@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E2F2FF" />
+      <stop offset="100%" stop-color="#F8FAFC" />
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)" />
+  <circle cx="160" cy="160" r="160" fill="#D6EAFE" />
+  <text x="80" y="140" font-size="48" font-family="Segoe UI, Arial, sans-serif" fill="#111827" font-weight="700">BUZZMA Mediator</text>
+  <text x="80" y="200" font-size="24" font-family="Segoe UI, Arial, sans-serif" fill="#4B5563">Oversee buyers, approvals, and order workflows.</text>
+  <rect x="80" y="260" width="1120" height="360" rx="28" fill="#FFFFFF" stroke="#E5E7EB" />
+  <rect x="120" y="300" width="360" height="240" rx="20" fill="#F3F4F6" />
+  <rect x="520" y="300" width="640" height="40" rx="20" fill="#E5E7EB" />
+  <rect x="520" y="360" width="520" height="32" rx="16" fill="#E5E7EB" />
+  <rect x="520" y="410" width="360" height="32" rx="16" fill="#E5E7EB" />
+  <rect x="520" y="470" width="240" height="44" rx="22" fill="#A3E635" />
+  <text x="560" y="500" font-size="18" font-family="Segoe UI, Arial, sans-serif" fill="#1F2937" font-weight="600">Open queue</text>
+</svg>
