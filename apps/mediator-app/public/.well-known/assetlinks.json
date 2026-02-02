@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "in.mediatorbuzzma.www.twa",
+      "sha256_cert_fingerprints": [
+        "4C:8D:20:FA:7D:4B:39:0E:CF:D8:DA:20:2F:E9:86:41:B3:F8:9A:96:CA:7E:18:13:15:DB:A6:38:E5:FB:E3:01"
+      ]
+    }
+  }
+]

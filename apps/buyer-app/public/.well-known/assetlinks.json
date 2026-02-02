@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "in.buzzma.www.twa",
+      "sha256_cert_fingerprints": [
+        "63:F7:4F:F5:BA:58:FB:BE:B9:45:24:3A:C0:6D:C2:EF:8C:76:9B:C6:AB:8C:B6:00:93:5C:39:3C:20:B7:84:A1"
+      ]
+    }
+  }
+]
