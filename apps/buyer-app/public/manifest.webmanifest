@@ -29,6 +29,48 @@
       "label": "Buyer dashboard"
     }
   ],
+  "launch_handler": {
+    "client_mode": ["focus-existing", "auto"]
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+buzzma",
+      "url": "/protocol?url=%s"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/share",
+      "accept": {
+        "image/*": [".png", ".jpg", ".jpeg", ".webp"],
+        "application/pdf": [".pdf"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": ["image/*", "application/pdf"]
+        }
+      ]
+    }
+  },
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://www.buzzma.in/manifest.webmanifest",
+      "id": "/?source=pwa"
+    }
+  ],
+  "iarc_rating_id": "000000",
   "shortcuts": [
     {
       "name": "Home",
