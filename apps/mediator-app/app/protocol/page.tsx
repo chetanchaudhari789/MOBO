@@ -1,11 +1,14 @@
 import Link from 'next/link';
 
-export default function ProtocolPage({
+export default async function ProtocolPage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?:
+    | Record<string, string | string[] | undefined>
+    | Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const url = typeof searchParams?.url === 'string' ? searchParams?.url : '';
+  const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
+  const url = typeof resolvedSearchParams.url === 'string' ? resolvedSearchParams.url : '';
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
