@@ -14,7 +14,7 @@ export function PwaRuntime({ app }: { app: 'buyer' | 'mediator' }) {
           .then((registration) => {
             registration.update?.();
 
-            registration.sync
+            (registration as any).sync
               ?.register('buzzma-background-sync')
               .catch(() => undefined);
 
