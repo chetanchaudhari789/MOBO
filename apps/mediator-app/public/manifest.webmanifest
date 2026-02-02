@@ -8,7 +8,12 @@
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "fullscreen"],
+  "display_override": [
+    "standalone",
+    "fullscreen",
+    "window-controls-overlay",
+    "tabbed"
+  ],
   "background_color": "#F8FAFC",
   "theme_color": "#A3E635",
   "orientation": "portrait",
@@ -40,7 +45,8 @@
   ],
   "file_handlers": [
     {
-      "action": "/share",
+      "action": "/share-target",
+      "launch_type": "single-client",
       "accept": {
         "image/*": [".png", ".jpg", ".jpeg", ".webp"],
         "application/pdf": [".pdf"]
@@ -48,7 +54,7 @@
     }
   ],
   "share_target": {
-    "action": "/share",
+    "action": "/share-target",
     "method": "POST",
     "enctype": "multipart/form-data",
     "params": {
@@ -63,6 +69,26 @@
       ]
     }
   },
+  "note_taking": {
+    "new_note_url": "/notes/new"
+  },
+  "edge_side_panel": {
+    "preferred_width": 360
+  },
+  "widgets": [
+    {
+      "name": "Quick actions",
+      "short_name": "Quick",
+      "description": "Shortcut actions for Mediator.",
+      "tag": "buzzma-mediator-quick-actions",
+      "icons": [
+        { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }
+      ],
+      "data": {
+        "url": "/widgets/quick-actions"
+      }
+    }
+  ],
   "related_applications": [
     {
       "platform": "webapp",

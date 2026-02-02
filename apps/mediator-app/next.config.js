@@ -30,6 +30,7 @@ const withPWA = withPWAInit({
   dest: 'public',
   register: true,
   skipWaiting: true,
+  importScripts: ['/sw-custom.js'],
   disable: process.env.NODE_ENV === 'development',
   fallbacks: {
     document: '/offline',

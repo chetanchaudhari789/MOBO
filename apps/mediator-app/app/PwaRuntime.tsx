@@ -11,6 +11,19 @@ export function PwaRuntime({ app }: { app: 'buyer' | 'mediator' }) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
           .register('/sw.js')
+          .then((registration) => {
+            registration.update?.();
+
+            registration.sync
+              ?.register('buzzma-background-sync')
+              .catch(() => undefined);
+
+            (registration as any).periodicSync
+              ?.register('buzzma-periodic-sync', {
+                minInterval: 24 * 60 * 60 * 1000,
+              })
+              .catch(() => undefined);
+          })
           .catch(() => {
             // Ignore registration failures (e.g., unsupported or blocked).
           });
