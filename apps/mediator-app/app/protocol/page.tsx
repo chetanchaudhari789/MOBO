@@ -3,11 +3,9 @@ import Link from 'next/link';
 export default async function ProtocolPage({
   searchParams,
 }: {
-  searchParams?:
-    | Record<string, string | string[] | undefined>
-    | Promise<Record<string, string | string[] | undefined>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const url = typeof resolvedSearchParams.url === 'string' ? resolvedSearchParams.url : '';
 
   return (
