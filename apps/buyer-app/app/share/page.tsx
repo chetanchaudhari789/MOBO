@@ -1,13 +1,15 @@
 import Link from 'next/link';
 
-export default function SharePage({
+export default async function SharePage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const title = typeof searchParams?.title === 'string' ? searchParams?.title : '';
-  const text = typeof searchParams?.text === 'string' ? searchParams?.text : '';
-  const url = typeof searchParams?.url === 'string' ? searchParams?.url : '';
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const title =
+    typeof resolvedSearchParams.title === 'string' ? resolvedSearchParams.title : '';
+  const text = typeof resolvedSearchParams.text === 'string' ? resolvedSearchParams.text : '';
+  const url = typeof resolvedSearchParams.url === 'string' ? resolvedSearchParams.url : '';
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
