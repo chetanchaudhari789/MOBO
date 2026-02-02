@@ -8,9 +8,9 @@ export function PwaRuntime({ app }: { app: 'buyer' | 'mediator' }) {
     (globalThis as any).__MOBO_PWA_APP__ = app;
 
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
+      const registerWorker = () => {
         navigator.serviceWorker
-          .register('/sw.js')
+          .register('/service-worker.js', { scope: '/' })
           .then((registration) => {
             registration.update?.();
 
@@ -27,7 +27,13 @@ export function PwaRuntime({ app }: { app: 'buyer' | 'mediator' }) {
           .catch(() => {
             // Ignore registration failures (e.g., unsupported or blocked).
           });
-      });
+      };
+
+      if (document.readyState === 'complete') {
+        registerWorker();
+      } else {
+        window.addEventListener('load', registerWorker, { once: true });
+      }
     }
   }, [app]);
 
