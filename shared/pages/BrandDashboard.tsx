@@ -661,12 +661,9 @@ const OrdersView = ({ user }: any) => {
       return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}?access_token=${encodeURIComponent(token)}`;
     };
 
-    const hyperlink = (url?: string, label = 'View') => {
-      if (!url) return '';
-      const safeUrl = String(url).replace(/"/g, '""');
-      const safeLabel = String(label).replace(/"/g, '""');
-      return `"=HYPERLINK(\"${safeUrl}\",\"${safeLabel}\")"`;
-    };
+    const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    const hyperlinkYes = (url?: string) =>
+      url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
     const headers = [
       'Order ID',
@@ -720,11 +717,11 @@ const OrdersView = ({ user }: any) => {
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
-        o.screenshots?.order ? hyperlink(buildProofUrl(o.id, 'order'), 'Open') || 'Yes' : 'No',
-        o.screenshots?.payment ? hyperlink(buildProofUrl(o.id, 'payment'), 'Open') || 'Yes' : 'No',
-        o.screenshots?.rating ? hyperlink(buildProofUrl(o.id, 'rating'), 'Open') || 'Yes' : 'No',
+        o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
+        o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
+        o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
         o.reviewLink || o.screenshots?.review
-          ? hyperlink(buildProofUrl(o.id, 'review'), 'Open') || 'Yes'
+          ? hyperlinkYes(buildProofUrl(o.id, 'review'))
           : 'No',
       ];
       csvRows.push(row.join(','));

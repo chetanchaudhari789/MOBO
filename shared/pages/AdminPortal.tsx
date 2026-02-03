@@ -404,6 +404,42 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       return;
     }
 
+    const readAccessToken = () => {
+      try {
+        const raw = window.localStorage.getItem('mobo_tokens_v1');
+        if (!raw) return '';
+        const parsed = JSON.parse(raw);
+        return String(parsed?.accessToken || '');
+      } catch {
+        return '';
+      }
+    };
+
+    const getApiBase = () => {
+      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
+      const fromNext =
+        typeof process !== 'undefined' &&
+        (process as any).env &&
+        (process as any).env.NEXT_PUBLIC_API_URL
+          ? String((process as any).env.NEXT_PUBLIC_API_URL)
+          : undefined;
+      let base = String(fromGlobal || fromNext || '/api').trim();
+      if (base.startsWith('/')) {
+        base = `${window.location.origin}${base}`;
+      }
+      return base.endsWith('/') ? base.slice(0, -1) : base;
+    };
+
+    const token = readAccessToken();
+    const apiBase = getApiBase();
+    const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review') => {
+      if (!token) return '';
+      return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}?access_token=${encodeURIComponent(token)}`;
+    };
+
+    const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
+
     const headers = [
       'Order ID',
       'Date',
@@ -456,10 +492,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.managerName || 'N/A',
         `"${(order.agencyName || 'Partner Agency').replace(/"/g, '""')}"`,
         order.id,
-        order.screenshots?.order ? 'Yes' : 'No',
-        order.screenshots?.payment ? 'Yes' : 'No',
-        order.screenshots?.rating ? 'Yes' : 'No',
-        order.reviewLink ? 'Yes' : 'No',
+        order.screenshots?.order ? hyperlinkYes(buildProofUrl(order.id, 'order')) : 'No',
+        order.screenshots?.payment ? hyperlinkYes(buildProofUrl(order.id, 'payment')) : 'No',
+        order.screenshots?.rating ? hyperlinkYes(buildProofUrl(order.id, 'rating')) : 'No',
+        order.reviewLink || order.screenshots?.review
+          ? hyperlinkYes(buildProofUrl(order.id, 'review'))
+          : 'No',
       ];
       csvRows.push(row.join(','));
     });
