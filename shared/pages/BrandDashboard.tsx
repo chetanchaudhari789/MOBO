@@ -628,6 +628,13 @@ const OrdersView = ({ user }: any) => {
   });
 
   const handleExport = () => {
+    const csvSafe = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    const hyperlink = (url?: string, label = 'View') => {
+      if (!url) return '';
+      const formula = `=HYPERLINK("${url}","${label}")`;
+      return csvSafe(formula);
+    };
+
     const headers = [
       'Order ID',
       'Date',
@@ -647,10 +654,10 @@ const OrdersView = ({ user }: any) => {
       'Payment Status',
       'Verification Status',
       'System Order ID',
-      'Proof: Order',
-      'Proof: Payment',
-      'Proof: Rating',
-      'Proof: Review Link',
+      'Proof: Order URL',
+      'Proof: Payment URL',
+      'Proof: Rating URL',
+      'Proof: Review URL',
     ];
 
     const csvRows = [headers.join(',')];
@@ -680,10 +687,10 @@ const OrdersView = ({ user }: any) => {
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
-        o.screenshots?.order ? 'Yes' : 'No',
-        o.screenshots?.payment ? 'Yes' : 'No',
-        o.screenshots?.rating ? 'Yes' : 'No',
-        o.reviewLink ? 'Yes' : 'No',
+        hyperlink(o.screenshots?.order, 'Order Proof'),
+        hyperlink(o.screenshots?.payment, 'Payment Proof'),
+        hyperlink(o.screenshots?.rating, 'Rating Proof'),
+        hyperlink(o.reviewLink, 'Review Link'),
       ];
       csvRows.push(row.join(','));
     });

@@ -438,6 +438,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   };
 
   const handleExport = () => {
+    const csvSafe = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    const hyperlink = (url?: string, label = 'View') => {
+      if (!url) return '';
+      const formula = `=HYPERLINK("${url}","${label}")`;
+      return csvSafe(formula);
+    };
+
     const headers = [
       'Order ID',
       'Date',
@@ -457,10 +464,10 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Payment Status',
       'Verification Status',
       'System Order ID',
-      'Proof: Order',
-      'Proof: Payment',
-      'Proof: Rating',
-      'Proof: Review Link',
+      'Proof: Order URL',
+      'Proof: Payment URL',
+      'Proof: Rating URL',
+      'Proof: Review URL',
     ];
 
     const csvRows = [headers.join(',')];
@@ -490,10 +497,10 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
-        o.screenshots?.order ? 'Yes' : 'No',
-        o.screenshots?.payment ? 'Yes' : 'No',
-        o.screenshots?.rating ? 'Yes' : 'No',
-        o.reviewLink ? 'Yes' : 'No',
+        hyperlink(o.screenshots?.order, 'Order Proof'),
+        hyperlink(o.screenshots?.payment, 'Payment Proof'),
+        hyperlink(o.screenshots?.rating, 'Rating Proof'),
+        hyperlink(o.reviewLink, 'Review Link'),
       ];
       csvRows.push(row.join(','));
     });
@@ -1139,6 +1146,12 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [commissionToMediator, setCommissionToMediator] = useState<string>('');
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!assignModal) return;
+    setAssignments(assignModal.assignments || {});
+    setAssignSearch('');
+  }, [assignModal]);
+
   // Get list of mediator codes for this agency to verify if campaign is active in network
   const myMediatorCodes = useMemo(
     () => mediators.map((m: any) => m.mediatorCode).filter(Boolean),
@@ -1183,6 +1196,10 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     );
     if (Object.keys(positiveAssignments).length === 0) {
       toast.error('Please allocate at least 1 unit to someone');
+      return;
+    }
+    if (assignedTotal > availableForAssign) {
+      toast.error('Total assigned exceeds available stock');
       return;
     }
 
@@ -1343,6 +1360,19 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         String(m.mediatorCode || '').toLowerCase().includes(q)
     );
   }, [mediators, assignSearch]);
+
+  const assignedTotal = useMemo(() => {
+    return Object.values(assignments || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+  }, [assignments]);
+
+  const availableForAssign = useMemo(() => {
+    if (!assignModal) return 0;
+    return Math.max(0, assignModal.totalSlots - assignModal.usedSlots);
+  }, [assignModal]);
+
+  const remainingForAssign = useMemo(() => {
+    return Math.max(0, availableForAssign - assignedTotal);
+  }, [availableForAssign, assignedTotal]);
 
   const isAgencyCampaign =
     !!assignModal && String(assignModal.brandId || '') === String(user?.id || '');
@@ -1737,16 +1767,16 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
           onClick={() => setAssignModal(null)}
         >
           <div
-            className="bg-white w-[98%] md:w-full max-w-7xl rounded-2xl p-4 sm:p-5 lg:p-6 2xl:p-8 shadow-2xl relative h-[95vh] flex flex-col min-h-0 animate-slide-up"
+            className="bg-white w-[98%] md:w-full max-w-7xl rounded-2xl p-4 sm:p-5 lg:p-6 2xl:p-7 shadow-2xl relative h-[95vh] flex flex-col min-h-0 animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex justify-between items-start gap-4 mb-4 shrink-0">
+            <div className="flex justify-between items-start gap-4 mb-2 shrink-0">
               <div>
-                <h3 className="text-2xl 2xl:text-3xl font-black text-slate-900 tracking-tight">
+                <h3 className="text-xl 2xl:text-2xl font-black text-slate-900 tracking-tight">
                   Distribute Inventory
                 </h3>
-                <p className="text-xs sm:text-sm text-slate-500 font-bold mt-1">
+                <p className="text-[11px] sm:text-xs text-slate-500 font-bold mt-0.5">
                   Allocate campaign slots to your team.
                 </p>
               </div>
@@ -1759,9 +1789,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             </div>
 
             {/* Campaign Summary & Global Config */}
-            <div className="bg-slate-50 p-4 2xl:p-6 rounded-2xl mb-4 border border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shrink-0">
-              <div className="flex gap-4 items-center min-w-0">
-                <div className="w-12 h-12 bg-white rounded-xl p-2 border border-slate-200 shadow-sm flex-shrink-0">
+            <div className="bg-slate-50 p-3 2xl:p-4 rounded-2xl mb-2 border border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
+              <div className="flex gap-3 items-center min-w-0">
+                <div className="w-10 h-10 bg-white rounded-lg p-1.5 border border-slate-200 shadow-sm flex-shrink-0">
                   <img
                     src={assignModal.image}
                     className="w-full h-full object-contain mix-blend-multiply"
@@ -1771,7 +1801,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   <p className="text-xs text-slate-400 font-extrabold mb-1 uppercase tracking-widest">
                     Selected Campaign
                   </p>
-                  <h4 className="text-base sm:text-lg font-black text-slate-900 mb-1 leading-tight line-clamp-1">
+                  <h4 className="text-sm sm:text-base font-black text-slate-900 mb-0.5 leading-tight line-clamp-1">
                     {assignModal.title}
                   </h4>
                   {isAgencyCampaign && (
@@ -1779,19 +1809,31 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       Agency Campaign
                     </span>
                   )}
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
                       Total Stock: {assignModal.totalSlots}
                     </span>
                     <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100 shadow-sm">
                       Available: {assignModal.totalSlots - assignModal.usedSlots}
                     </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-1 rounded-lg border shadow-sm ${
+                        assignedTotal > availableForAssign
+                          ? 'text-red-600 bg-red-50 border-red-100'
+                          : 'text-purple-600 bg-purple-50 border-purple-100'
+                      }`}
+                    >
+                      Assigned: {assignedTotal}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
+                      Remaining: {remainingForAssign}
+                    </span>
                   </div>
                 </div>
               </div>
 
               {/* CONFIG OPTIONS: Deal Type, Price, Payout */}
-              <div className="flex flex-wrap gap-x-4 gap-y-3 items-end">
+              <div className="flex flex-wrap gap-x-3 gap-y-2 items-end">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
                     Configure Deal Type
@@ -1810,7 +1852,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-end gap-3">
+                  <div className="flex items-end gap-2">
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
                         Deal Price (₹)
@@ -1850,7 +1892,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     )}
                   </div>
 
-                  <div className="flex items-end gap-3">
+                  <div className="flex items-end gap-2">
                     {!isAgencyCampaign && (
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
@@ -1904,7 +1946,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-4 mb-1 shrink-0">
+              <div className="flex items-center justify-between gap-4 mb-1 shrink-0">
               <div className="flex-1 max-w-md">
                 <div className="relative">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -2007,22 +2049,49 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       </div>
 
                       {/* Input */}
-                      <div className="col-span-3 flex justify-end pr-2">
+                      <div className="col-span-3 flex flex-col items-end pr-2">
                         <div className="relative group/input">
                           <input
                             type="number"
+                            min={0}
+                            max={availableForAssign}
+                            step={1}
                             className={`w-36 p-2 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none transition-all group-hover/input:shadow-md ${isActive ? 'focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100' : 'cursor-not-allowed'}`}
                             placeholder="0"
                             value={assignments[m.mediatorCode!] || ''}
                             disabled={!isActive}
                             onChange={(e) =>
-                              setAssignments({
-                                ...assignments,
-                                [m.mediatorCode!]: parseInt(e.target.value) || 0,
-                              })
+                              {
+                                const nextRaw = parseInt(e.target.value) || 0;
+                                const currentVal = Number(assignments[m.mediatorCode!] || 0);
+                                const remaining = Math.max(0, availableForAssign - (assignedTotal - currentVal));
+                                const nextVal = Math.max(0, Math.min(nextRaw, remaining));
+                                if (nextRaw > nextVal) {
+                                  toast.error('Allocation capped by available stock');
+                                }
+                                setAssignments({
+                                  ...assignments,
+                                  [m.mediatorCode!]: nextVal,
+                                });
+                              }
                             }
+                            onBlur={(e) => {
+                              const nextRaw = parseInt(e.target.value) || 0;
+                              const currentVal = Number(assignments[m.mediatorCode!] || 0);
+                              const remaining = Math.max(0, availableForAssign - (assignedTotal - currentVal));
+                              const nextVal = Math.max(0, Math.min(nextRaw, remaining));
+                              if (nextVal !== currentVal) {
+                                setAssignments({
+                                  ...assignments,
+                                  [m.mediatorCode!]: nextVal,
+                                });
+                              }
+                            }}
                           />
                         </div>
+                        <span className="text-[9px] text-slate-400 font-bold mt-1">
+                          Current: {assignModal?.assignments?.[m.mediatorCode!] || 0}
+                        </span>
                       </div>
                     </div>
                   );
@@ -2040,6 +2109,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               </button>
               <button
                 onClick={handleAssign}
+                disabled={assignedTotal <= 0 || assignedTotal > availableForAssign}
                 className="px-8 py-3 bg-purple-600 text-white font-bold rounded-2xl hover:bg-purple-700 transition-all shadow-xl hover:shadow-2xl hover:shadow-purple-200 active:scale-95 flex items-center gap-2"
               >
                 Confirm Distribution <CheckCircle size={18} />
