@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Env } from '../config/env.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAuthOrToken } from '../middleware/auth.js';
 import { makeOrdersController } from '../controllers/ordersController.js';
 
 export function ordersRoutes(env: Env): Router {
@@ -11,6 +11,7 @@ export function ordersRoutes(env: Env): Router {
   router.get('/orders/user/:userId', requireAuth(env), orders.getUserOrders);
   router.post('/orders', requireAuth(env), orders.createOrder);
   router.post('/orders/claim', requireAuth(env), orders.submitClaim);
+  router.get('/orders/:orderId/proof/:type', requireAuthOrToken(env), orders.getOrderProof);
 
   return router;
 }

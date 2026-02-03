@@ -438,10 +438,44 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   };
 
   const handleExport = () => {
-    const isHttpUrl = (url?: string) => typeof url === 'string' && /^https?:\/\//i.test(url);
-    const hyperlinkIfHttp = (url?: string, label = 'View') => {
-      if (!isHttpUrl(url)) return '';
-      return `"=HYPERLINK(\"${url}\",\"${label}\")"`;
+    const readAccessToken = () => {
+      try {
+        const raw = window.localStorage.getItem('mobo_tokens_v1');
+        if (!raw) return '';
+        const parsed = JSON.parse(raw);
+        return String(parsed?.accessToken || '');
+      } catch {
+        return '';
+      }
+    };
+
+    const getApiBase = () => {
+      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
+      const fromNext =
+        typeof process !== 'undefined' &&
+        (process as any).env &&
+        (process as any).env.NEXT_PUBLIC_API_URL
+          ? String((process as any).env.NEXT_PUBLIC_API_URL)
+          : undefined;
+      let base = String(fromGlobal || fromNext || '/api').trim();
+      if (base.startsWith('/')) {
+        base = `${window.location.origin}${base}`;
+      }
+      return base.endsWith('/') ? base.slice(0, -1) : base;
+    };
+
+    const token = readAccessToken();
+    const apiBase = getApiBase();
+    const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review') => {
+      if (!token) return '';
+      return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}?access_token=${encodeURIComponent(token)}`;
+    };
+
+    const hyperlink = (url?: string, label = 'View') => {
+      if (!url) return '';
+      const safeUrl = String(url).replace(/"/g, '""');
+      const safeLabel = String(label).replace(/"/g, '""');
+      return `"=HYPERLINK(\"${safeUrl}\",\"${safeLabel}\")"`;
     };
 
     const headers = [
@@ -496,10 +530,12 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
-        hyperlinkIfHttp(o.screenshots?.order, 'Order Proof') || (o.screenshots?.order ? 'Yes' : 'No'),
-        hyperlinkIfHttp(o.screenshots?.payment, 'Payment Proof') || (o.screenshots?.payment ? 'Yes' : 'No'),
-        hyperlinkIfHttp(o.screenshots?.rating, 'Rating Proof') || (o.screenshots?.rating ? 'Yes' : 'No'),
-        hyperlinkIfHttp(o.reviewLink, 'Review Link') || (o.reviewLink ? 'Yes' : 'No'),
+        o.screenshots?.order ? hyperlink(buildProofUrl(o.id, 'order'), 'Open') || 'Yes' : 'No',
+        o.screenshots?.payment ? hyperlink(buildProofUrl(o.id, 'payment'), 'Open') || 'Yes' : 'No',
+        o.screenshots?.rating ? hyperlink(buildProofUrl(o.id, 'rating'), 'Open') || 'Yes' : 'No',
+        o.reviewLink || o.screenshots?.review
+          ? hyperlink(buildProofUrl(o.id, 'review'), 'Open') || 'Yes'
+          : 'No',
       ];
       csvRows.push(row.join(','));
     });

@@ -13,9 +13,106 @@ import { pushOrderEvent, isTerminalAffiliateStatus } from '../services/orderEven
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
+import { getRequester, isPrivileged } from '../services/authz.js';
 
 export function makeOrdersController() {
   return {
+        getOrderProof: async (req: Request, res: Response, next: NextFunction) => {
+          try {
+            const orderId = String(req.params.orderId || '').trim();
+            const proofType = String(req.params.type || '').trim().toLowerCase();
+            if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
+
+            const allowedTypes = new Set(['order', 'payment', 'rating', 'review']);
+            if (!allowedTypes.has(proofType)) {
+              throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
+            }
+
+            const order = await OrderModel.findById(orderId).lean();
+            if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+
+            const { roles, user, userId } = getRequester(req);
+            if (!isPrivileged(roles)) {
+              let allowed = false;
+
+              if (roles.includes('brand')) {
+                const sameBrand = String(order.brandUserId || '') === String(user?._id || userId);
+                const sameBrandName = String(order.brandName || '').trim() && String(order.brandName || '').trim() === String(user?.name || '').trim();
+                allowed = sameBrand || sameBrandName;
+              }
+
+              if (!allowed && roles.includes('agency')) {
+                const agencyCode = String(user?.mediatorCode || '').trim();
+                const agencyName = String(user?.name || '').trim();
+                if (agencyName && String(order.agencyName || '').trim() === agencyName) {
+                  allowed = true;
+                } else if (agencyCode && String(order.managerName || '').trim()) {
+                  const mediator = await UserModel.findOne({
+                    roles: 'mediator',
+                    mediatorCode: String(order.managerName || '').trim(),
+                    parentCode: agencyCode,
+                    deletedAt: null,
+                  })
+                    .select({ _id: 1 })
+                    .lean();
+                  allowed = !!mediator;
+                }
+              }
+
+              if (!allowed && roles.includes('mediator')) {
+                const mediatorCode = String(user?.mediatorCode || '').trim();
+                allowed = mediatorCode && String(order.managerName || '').trim() === mediatorCode;
+              }
+
+              if (!allowed && roles.includes('shopper')) {
+                allowed = String(order.userId || '') === String(user?._id || userId);
+              }
+
+              if (!allowed) throw new AppError(403, 'FORBIDDEN', 'Not allowed to access proof');
+            }
+
+            const proofValue = (() => {
+              if (proofType === 'order') return order.screenshots?.order || '';
+              if (proofType === 'payment') return order.screenshots?.payment || '';
+              if (proofType === 'rating') return order.screenshots?.rating || '';
+              if (proofType === 'review') return order.reviewLink || order.screenshots?.review || '';
+              return '';
+            })();
+
+            if (!proofValue) throw new AppError(404, 'PROOF_NOT_FOUND', 'Proof not found');
+
+            const raw = String(proofValue || '').trim();
+            if (!raw) throw new AppError(404, 'PROOF_NOT_FOUND', 'Proof not found');
+
+            if (/^https?:\/\//i.test(raw)) {
+              res.redirect(raw);
+              return;
+            }
+
+            const dataMatch = raw.match(/^data:([^;]+);base64,(.+)$/i);
+            if (dataMatch) {
+              const mime = dataMatch[1] || 'image/jpeg';
+              const payload = dataMatch[2] || '';
+              const buffer = Buffer.from(payload, 'base64');
+              res.setHeader('Content-Type', mime);
+              res.setHeader('Content-Length', buffer.length.toString());
+              res.send(buffer);
+              return;
+            }
+
+            // Fallback: assume base64 image payload without data prefix.
+            try {
+              const buffer = Buffer.from(raw, 'base64');
+              res.setHeader('Content-Type', 'image/jpeg');
+              res.setHeader('Content-Length', buffer.length.toString());
+              res.send(buffer);
+            } catch {
+              throw new AppError(415, 'UNSUPPORTED_PROOF_FORMAT', 'Unsupported proof format');
+            }
+          } catch (err) {
+            next(err);
+          }
+        },
     getUserOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const userId = String(req.params.userId || '');
