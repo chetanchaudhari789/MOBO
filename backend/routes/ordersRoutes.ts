@@ -12,6 +12,7 @@ export function ordersRoutes(env: Env): Router {
   router.post('/orders', requireAuth(env), orders.createOrder);
   router.post('/orders/claim', requireAuth(env), orders.submitClaim);
   router.get('/orders/:orderId/proof/:type', requireAuthOrToken(env), orders.getOrderProof);
+  router.get('/public/orders/:orderId/proof/:type', orders.getOrderProofPublic);
 
   return router;
 }

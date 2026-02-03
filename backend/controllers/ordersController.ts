@@ -16,6 +16,44 @@ import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 
 export function makeOrdersController() {
+  const resolveProofValue = (order: any, proofType: string) => {
+    if (proofType === 'order') return order.screenshots?.order || '';
+    if (proofType === 'payment') return order.screenshots?.payment || '';
+    if (proofType === 'rating') return order.screenshots?.rating || '';
+    if (proofType === 'review') return order.reviewLink || order.screenshots?.review || '';
+    return '';
+  };
+
+  const sendProofResponse = (res: Response, rawValue: string) => {
+    const raw = String(rawValue || '').trim();
+    if (!raw) throw new AppError(404, 'PROOF_NOT_FOUND', 'Proof not found');
+
+    if (/^https?:\/\//i.test(raw)) {
+      res.redirect(raw);
+      return;
+    }
+
+    const dataMatch = raw.match(/^data:([^;]+);base64,(.+)$/i);
+    if (dataMatch) {
+      const mime = dataMatch[1] || 'image/jpeg';
+      const payload = dataMatch[2] || '';
+      const buffer = Buffer.from(payload, 'base64');
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Length', buffer.length.toString());
+      res.send(buffer);
+      return;
+    }
+
+    try {
+      const buffer = Buffer.from(raw, 'base64');
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Content-Length', buffer.length.toString());
+      res.send(buffer);
+    } catch {
+      throw new AppError(415, 'UNSUPPORTED_PROOF_FORMAT', 'Unsupported proof format');
+    }
+  };
+
   return {
         getOrderProof: async (req: Request, res: Response, next: NextFunction) => {
           try {
@@ -71,44 +109,29 @@ export function makeOrdersController() {
               if (!allowed) throw new AppError(403, 'FORBIDDEN', 'Not allowed to access proof');
             }
 
-            const proofValue = (() => {
-              if (proofType === 'order') return order.screenshots?.order || '';
-              if (proofType === 'payment') return order.screenshots?.payment || '';
-              if (proofType === 'rating') return order.screenshots?.rating || '';
-              if (proofType === 'review') return order.reviewLink || order.screenshots?.review || '';
-              return '';
-            })();
+            const proofValue = resolveProofValue(order, proofType);
+            sendProofResponse(res, proofValue);
+          } catch (err) {
+            next(err);
+          }
+        },
 
-            if (!proofValue) throw new AppError(404, 'PROOF_NOT_FOUND', 'Proof not found');
+        getOrderProofPublic: async (req: Request, res: Response, next: NextFunction) => {
+          try {
+            const orderId = String(req.params.orderId || '').trim();
+            const proofType = String(req.params.type || '').trim().toLowerCase();
+            if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
 
-            const raw = String(proofValue || '').trim();
-            if (!raw) throw new AppError(404, 'PROOF_NOT_FOUND', 'Proof not found');
-
-            if (/^https?:\/\//i.test(raw)) {
-              res.redirect(raw);
-              return;
+            const allowedTypes = new Set(['order', 'payment', 'rating', 'review']);
+            if (!allowedTypes.has(proofType)) {
+              throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
             }
 
-            const dataMatch = raw.match(/^data:([^;]+);base64,(.+)$/i);
-            if (dataMatch) {
-              const mime = dataMatch[1] || 'image/jpeg';
-              const payload = dataMatch[2] || '';
-              const buffer = Buffer.from(payload, 'base64');
-              res.setHeader('Content-Type', mime);
-              res.setHeader('Content-Length', buffer.length.toString());
-              res.send(buffer);
-              return;
-            }
+            const order = await OrderModel.findById(orderId).lean();
+            if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-            // Fallback: assume base64 image payload without data prefix.
-            try {
-              const buffer = Buffer.from(raw, 'base64');
-              res.setHeader('Content-Type', 'image/jpeg');
-              res.setHeader('Content-Length', buffer.length.toString());
-              res.send(buffer);
-            } catch {
-              throw new AppError(415, 'UNSUPPORTED_PROOF_FORMAT', 'Unsupported proof format');
-            }
+            const proofValue = resolveProofValue(order, proofType);
+            sendProofResponse(res, proofValue);
           } catch (err) {
             next(err);
           }

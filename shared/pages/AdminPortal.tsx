@@ -404,17 +404,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       return;
     }
 
-    const readAccessToken = () => {
-      try {
-        const raw = window.localStorage.getItem('mobo_tokens_v1');
-        if (!raw) return '';
-        const parsed = JSON.parse(raw);
-        return String(parsed?.accessToken || '');
-      } catch {
-        return '';
-      }
-    };
-
     const getApiBase = () => {
       const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
       const fromNext =
@@ -430,11 +419,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       return base.endsWith('/') ? base.slice(0, -1) : base;
     };
 
-    const token = readAccessToken();
     const apiBase = getApiBase();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review') => {
-      if (!token) return '';
-      return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}?access_token=${encodeURIComponent(token)}`;
+      return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
