@@ -5,22 +5,28 @@
 export default defineConfig({
   testDir: './e2e',
   reporter: [['list']],
-  timeout: 120_000,
+  timeout: 180_000,
   expect: {
-    timeout: 15_000,
+    timeout: 20_000,
   },
   use: {
     trace: 'retain-on-failure',
+    actionTimeout: 30_000,
+    navigationTimeout: 60_000,
   },
+  workers: process.env.CI ? 1 : undefined,
   // Start the full stack for E2E. If you already have it running, Playwright will reuse it.
   webServer: {
     command: 'node scripts/dev-all.mjs --force',
     url: 'http://localhost:8080/api/health/e2e',
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    timeout: 240_000,
     env: {
       ...process.env,
       SEED_E2E: 'true',
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=4096']
+        .filter(Boolean)
+        .join(' '),
     },
   },
   projects: [

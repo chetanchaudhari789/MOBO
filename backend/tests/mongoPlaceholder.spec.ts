@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, it } from 'vitest';
 import mongoose from 'mongoose';
 
 import { loadEnv } from '../config/env.js';

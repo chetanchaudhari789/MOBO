@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeAll } from 'vitest';
 import { generateChatUiResponse, verifyProofWithAi } from '../services/aiService.js';
 import type { Env } from '../config/env.js';
 

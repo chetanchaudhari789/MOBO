@@ -28,6 +28,26 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+type PushSubscriptionPayload = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
+};
+
+function normalizePushSubscription(subscription: PushSubscription): PushSubscriptionPayload | null {
+  const json = subscription.toJSON();
+  const endpoint = String(json.endpoint || '').trim();
+  const keys = (json.keys || {}) as { p256dh?: string; auth?: string };
+  const p256dh = String(keys.p256dh || '').trim();
+  const auth = String(keys.auth || '').trim();
+  if (!endpoint || !p256dh || !auth) return null;
+  return {
+    endpoint,
+    expirationTime: json.expirationTime ?? null,
+    keys: { p256dh, auth },
+  };
+}
+
 async function ensurePushSubscription(app: 'buyer' | 'mediator') {
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
   if (!hasAuthToken()) return;
@@ -52,9 +72,12 @@ async function ensurePushSubscription(app: 'buyer' | 'mediator') {
     });
   }
 
+  const payload = normalizePushSubscription(subscription);
+  if (!payload) return;
+
   await api.notifications.push.subscribe({
     app,
-    subscription: subscription.toJSON(),
+    subscription: payload,
     userAgent: navigator.userAgent,
   });
 }
