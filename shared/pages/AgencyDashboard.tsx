@@ -989,35 +989,56 @@ const PayoutsView = ({ payouts, loading }: any) => {
 };
 
 const DashboardView = ({ stats, allOrders }: any) => {
-  // Revenue trend: last 30 days based on actual orders.
+  const [range, setRange] = useState<'last30' | 'yesterday' | 'last7' | 'thisMonth'>('last30');
+
   const data = useMemo(() => {
     const now = new Date();
-    const start = new Date(now);
-    start.setDate(start.getDate() - 29);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+
+    let start = new Date(now);
+    if (range === 'last7') {
+      start.setDate(start.getDate() - 6);
+    } else if (range === 'yesterday') {
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setTime(start.getTime());
+      end.setHours(23, 59, 59, 999);
+    } else if (range === 'thisMonth') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+      start.setDate(start.getDate() - 29);
+    }
     start.setHours(0, 0, 0, 0);
 
+    const localKey = (d: Date) => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
     const buckets = new Map<string, number>();
-    for (let i = 0; i < 30; i += 1) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      const key = d.toISOString().slice(0, 10);
-      buckets.set(key, 0);
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      buckets.set(localKey(cursor), 0);
+      cursor.setDate(cursor.getDate() + 1);
     }
 
     (allOrders || []).forEach((o: any) => {
       const createdAt = new Date(o.createdAt);
       if (Number.isNaN(createdAt.getTime())) return;
-      if (createdAt.getTime() < start.getTime()) return;
-      const key = createdAt.toISOString().slice(0, 10);
+      if (createdAt < start || createdAt > end) return;
+      const key = localKey(createdAt);
       if (!buckets.has(key)) return;
       buckets.set(key, (buckets.get(key) || 0) + Number(o.total || 0));
     });
 
     return Array.from(buckets.entries()).map(([iso, total]) => ({
-      name: String(new Date(iso).getDate()),
+      name: new Date(iso).toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
       val: Math.round(total),
     }));
-  }, [allOrders]);
+  }, [allOrders, range]);
 
   // Calculate Brand Performance
   const brandData = useMemo(() => {
@@ -1063,13 +1084,25 @@ const DashboardView = ({ stats, allOrders }: any) => {
           <div className="flex justify-between items-center mb-6">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Revenue Trends</h3>
-              <p className="text-xs text-slate-400 font-medium">Performance over last 30 days</p>
+              <p className="text-xs text-slate-400 font-medium">
+                {range === 'yesterday'
+                  ? 'Performance for yesterday'
+                  : range === 'last7'
+                    ? 'Performance over last 7 days'
+                    : range === 'thisMonth'
+                      ? 'Performance over this month'
+                      : 'Performance over last 30 days'}
+              </p>
             </div>
-            <select className="bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 rounded-lg px-3 py-2 outline-none hover:bg-slate-100 transition-colors cursor-pointer">
-              <option>Last 30 Days</option>
-              <option>Yesterday</option>
-              <option>Last 7 Days</option>
-              <option>This Month</option>
+            <select
+              value={range}
+              onChange={(e) => setRange(e.target.value as any)}
+              className="bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 rounded-lg px-3 py-2 outline-none hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <option value="last30">Last 30 Days</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7">Last 7 Days</option>
+              <option value="thisMonth">This Month</option>
             </select>
           </div>
           <div className="flex-1 w-full min-h-0">

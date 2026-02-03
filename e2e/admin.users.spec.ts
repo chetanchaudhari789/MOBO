@@ -22,17 +22,30 @@ test('admin can view seeded users', async ({ page }) => {
         await page.getByRole('button', { name: /Authenticate Session/i }).click();
 
         await page.getByRole('button', { name: 'Overview' }).waitFor({ timeout: 120_000 });
-        return;
+
+        // Ensure sidebar is ready before proceeding.
+        await page.getByRole('button', { name: 'Users' }).waitFor({ timeout: 120_000 });
+        return true;
       } catch {
         // Retry on slow cold-start or failed login render.
       }
     }
+    return false;
   };
 
-  await login();
+  const ok = await login();
+  expect(ok).toBeTruthy();
 
-  // Navigate to Users
-  await page.getByRole('button', { name: 'Users' }).click({ timeout: 45_000 });
+  // Navigate to Users (retry once if UI is still rendering).
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await page.getByRole('button', { name: 'Users' }).click({ timeout: 60_000 });
+      break;
+    } catch {
+      if (attempt === 1) throw new Error('Users navigation failed');
+      await page.waitForTimeout(2000);
+    }
+  }
 
   // Assert seeded shopper exists
   await expect(page.getByText('E2E Shopper', { exact: true })).toBeVisible();

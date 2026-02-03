@@ -116,8 +116,23 @@ export function createApp(env: Env) {
       limit: env.NODE_ENV === 'production' ? 300 : 10_000,
       standardHeaders: true,
       legacyHeaders: false,
+      handler: (_req, res) => {
+        const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+        res.status(429).json({
+          error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+          requestId,
+        });
+      },
     })
   );
+
+  // Stricter limiter for authentication endpoints to reduce brute-force risk.
+  const authLimiter = rateLimit({
+    windowMs: 5 * 60_000,
+    limit: env.NODE_ENV === 'production' ? 50 : 1000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
   const corsOrigins = parseCorsOrigins(env.CORS_ORIGINS);
 
@@ -146,7 +161,7 @@ export function createApp(env: Env) {
   app.use(express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT }));
 
   app.use('/api', healthRoutes(env));
-  app.use('/api/auth', authRoutes(env));
+  app.use('/api/auth', authLimiter, authRoutes(env));
   app.use('/api/admin', adminRoutes(env));
   app.use('/api/ops', opsRoutes(env));
   app.use('/api/brand', brandRoutes(env));

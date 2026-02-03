@@ -16,6 +16,24 @@ export const verifyOrderRequirementSchema = z.object({
   orderId: z.string().min(1),
   type: z.enum(['review', 'rating']),
 });
+
+const normalizeQueryString = (value: unknown) => String(value || '').trim();
+
+export const opsOrdersQuerySchema = z.object({
+  mediatorCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
+  role: z.preprocess(
+    normalizeQueryString,
+    z.enum(['agency', 'mediator']).optional()
+  ),
+});
+
+export const opsMediatorQuerySchema = z.object({
+  agencyCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
+});
+
+export const opsCodeQuerySchema = z.object({
+  code: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
+});
 export const settleOrderSchema = z.object({
   orderId: z.string().min(1),
   settlementRef: z.string().trim().min(2).max(128).optional(),

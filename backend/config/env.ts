@@ -33,6 +33,11 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default(''),
 
   GEMINI_API_KEY: z.string().optional(),
+
+  // Web push (VAPID)
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
 });
 
 type EnvSchema = z.infer<typeof envSchema>;

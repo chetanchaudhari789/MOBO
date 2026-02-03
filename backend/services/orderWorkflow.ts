@@ -1,7 +1,9 @@
 import mongoose, { type ClientSession } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
+import type { Env } from '../config/env.js';
 import { OrderModel, type OrderWorkflowStatus } from '../models/Order.js';
 import { pushOrderEvent } from './orderEvents.js';
+import { notifyOrderWorkflowPush } from './pushNotifications.js';
 
 const TERMINAL: ReadonlySet<OrderWorkflowStatus> = new Set(['COMPLETED', 'FAILED']);
 
@@ -32,6 +34,7 @@ export async function transitionOrderWorkflow(params: {
   actorUserId?: string;
   metadata?: any;
   session?: ClientSession;
+  env?: Env;
 }) {
   assertTransition(params.from, params.to);
 
@@ -80,6 +83,15 @@ export async function transitionOrderWorkflow(params: {
       throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
     }
     throw new AppError(409, 'ORDER_STATE_MISMATCH', 'Order state mismatch');
+  }
+
+  if (params.env) {
+    notifyOrderWorkflowPush({
+      env: params.env,
+      order,
+      from: params.from,
+      to: params.to,
+    }).catch(() => undefined);
   }
 
   return order;

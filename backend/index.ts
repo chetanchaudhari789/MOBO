@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 
 let server: Server | null = null;
 let shuttingDown = false;
+const shutdownTimeoutMs = 30_000;
 
 async function shutdown(signal: string) {
   if (shuttingDown) return;
@@ -23,7 +24,7 @@ async function shutdown(signal: string) {
     // eslint-disable-next-line no-console
     console.error('Force shutdown after timeout');
     process.exit(1);
-  }, 30_000);
+  }, shutdownTimeoutMs);
   forceTimer.unref();
 
   try {
@@ -41,6 +42,8 @@ async function shutdown(signal: string) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('Error while disconnecting Mongo:', err);
+  } finally {
+    clearTimeout(forceTimer);
   }
 }
 
@@ -134,6 +137,18 @@ async function main() {
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('Unhandled promise rejection:', reason);
+  process.exitCode = 1;
+  void shutdown('unhandledRejection');
+});
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('Uncaught exception:', err);
+  process.exitCode = 1;
+  void shutdown('uncaughtException');
+});
 main().catch((err) => {
   // eslint-disable-next-line no-console
   console.error('Fatal startup error:', err);

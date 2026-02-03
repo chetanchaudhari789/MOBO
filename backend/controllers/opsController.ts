@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
 import { UserModel } from '../models/User.js';
@@ -21,6 +22,9 @@ import {
   updateCampaignStatusSchema,
   verifyOrderRequirementSchema,
   verifyOrderSchema,
+  opsOrdersQuerySchema,
+  opsMediatorQuerySchema,
+  opsCodeQuerySchema,
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiUser } from '../utils/uiMappers.js';
@@ -75,7 +79,7 @@ function isRequirementVerified(order: any, type: 'review' | 'rating'): boolean {
   return !!order.verification?.[type]?.verifiedAt;
 }
 
-async function finalizeApprovalIfReady(order: any, actorUserId: string) {
+async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env) {
   const wf = String(order.workflowStatus || 'CREATED');
   if (wf !== 'UNDER_REVIEW') return { approved: false, reason: 'NOT_UNDER_REVIEW' };
 
@@ -111,11 +115,12 @@ async function finalizeApprovalIfReady(order: any, actorUserId: string) {
     to: 'APPROVED',
     actorUserId: String(actorUserId || ''),
     metadata: { source: 'finalizeApprovalIfReady' },
+    env,
   });
 
   return { approved: true };
 }
-export function makeOpsController() {
+export function makeOpsController(env: Env) {
   return {
     requestBrandConnection: async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -187,7 +192,8 @@ export function makeOpsController() {
     getMediators: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
-        const requested = typeof req.query.agencyCode === 'string' ? req.query.agencyCode : '';
+        const queryParams = opsMediatorQuerySchema.parse(req.query);
+        const requested = queryParams.agencyCode || '';
 
         const agencyCode = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
         if (!agencyCode) throw new AppError(400, 'INVALID_AGENCY_CODE', 'agencyCode required');
@@ -309,12 +315,13 @@ export function makeOpsController() {
     getOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
-        const requestedCode = typeof req.query.mediatorCode === 'string' ? req.query.mediatorCode : '';
+        const queryParams = opsOrdersQuerySchema.parse(req.query);
+        const requestedCode = queryParams.mediatorCode || '';
 
         let managerCodes: string[] = [];
         if (isPrivileged(roles)) {
           if (!requestedCode) throw new AppError(400, 'INVALID_CODE', 'mediatorCode required');
-          const requestedRole = typeof req.query.role === 'string' ? req.query.role : '';
+          const requestedRole = queryParams.role || '';
           if (requestedRole === 'agency') {
             managerCodes = await listMediatorCodesForAgency(requestedCode);
           } else {
@@ -351,7 +358,8 @@ export function makeOpsController() {
     getPendingUsers: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
-        const requested = typeof req.query.code === 'string' ? req.query.code : '';
+        const queryParams = opsCodeQuerySchema.parse(req.query);
+        const requested = queryParams.code || '';
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
         if (!code) throw new AppError(400, 'INVALID_CODE', 'code required');
 
@@ -374,7 +382,8 @@ export function makeOpsController() {
     getVerifiedUsers: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
-        const requested = typeof req.query.code === 'string' ? req.query.code : '';
+        const queryParams = opsCodeQuerySchema.parse(req.query);
+        const requested = queryParams.code || '';
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
         if (!code) throw new AppError(400, 'INVALID_CODE', 'code required');
 
@@ -714,7 +723,7 @@ export function makeOpsController() {
         await order.save();
 
         // Only finalize approval when *all* required steps are present and verified.
-        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''));
+        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''), env);
 
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
 
@@ -795,7 +804,7 @@ export function makeOpsController() {
         }) as any;
         await order.save();
 
-        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''));
+        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
 
         const audience = buildOrderAudience(order, agencyCode);
@@ -1007,6 +1016,7 @@ export function makeOpsController() {
           to: 'REWARD_PENDING',
           actorUserId: String(req.auth?.userId || ''),
           metadata: { source: 'settleOrderPayment' },
+          env,
         });
 
         await transitionOrderWorkflow({
@@ -1015,6 +1025,7 @@ export function makeOpsController() {
           to: isOverLimit ? 'FAILED' : 'COMPLETED',
           actorUserId: String(req.auth?.userId || ''),
           metadata: { affiliateStatus: order.affiliateStatus },
+          env,
         });
 
         await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: String(order._id), metadata: { affiliateStatus: order.affiliateStatus } });

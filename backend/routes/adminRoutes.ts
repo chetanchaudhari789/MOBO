@@ -18,7 +18,13 @@ export function adminRoutes(env: Env): Router {
     limit: env.NODE_ENV === 'production' ? 900 : 10_000,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'rate_limited' },
+    handler: (_req, res) => {
+      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+        requestId,
+      });
+    },
   });
   router.use(adminLimiter);
 

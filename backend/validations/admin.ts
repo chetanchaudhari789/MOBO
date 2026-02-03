@@ -10,3 +10,12 @@ export const reactivateOrderSchema = z.object({
   orderId: z.string().min(1),
   reason: z.string().min(1).max(500).optional(),
 });
+
+const normalizeRole = (value: unknown) => String(value || '').trim().toLowerCase();
+
+export const adminUsersQuerySchema = z.object({
+  role: z.preprocess(
+    normalizeRole,
+    z.enum(['all', 'user', 'mediator', 'agency', 'brand', 'admin']).default('all')
+  ),
+});

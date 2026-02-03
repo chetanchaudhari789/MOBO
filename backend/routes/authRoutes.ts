@@ -19,7 +19,21 @@ export function authRoutes(env: Env): Router {
     limit: env.NODE_ENV === 'production' ? 60 : 10_000,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'rate_limited' },
+    keyGenerator: (req) => {
+      const body = (req as any).body || {};
+      const identifierRaw =
+        body.mobile || body.username || body.brandCode || body.code || body.mediatorCode || body.email;
+      const identifier = String(identifierRaw || 'anon').toLowerCase().trim();
+      const ip = String(req.ip || 'unknown');
+      return `${ip}:${identifier}`;
+    },
+    handler: (req, res) => {
+      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+        requestId,
+      });
+    },
   });
 
   router.post('/register', authLimiter, controller.register);

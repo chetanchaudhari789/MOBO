@@ -1,0 +1,80 @@
+import type { NextFunction, Request, Response } from 'express';
+import { z } from 'zod';
+import type { Env } from '../config/env.js';
+import { AppError } from '../middleware/errors.js';
+import { getRequester } from '../services/authz.js';
+import { PushSubscriptionModel } from '../models/PushSubscription.js';
+import { getVapidPublicKey } from '../services/pushNotifications.js';
+
+const subscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1),
+  }),
+});
+
+const subscribeSchema = z.object({
+  app: z.enum(['buyer', 'mediator']),
+  subscription: subscriptionSchema,
+  userAgent: z.string().optional(),
+});
+
+const unsubscribeSchema = z.object({
+  endpoint: z.string().url(),
+});
+
+export function makePushNotificationsController(env: Env) {
+  return {
+    publicKey: async (_req: Request, res: Response) => {
+      const publicKey = getVapidPublicKey(env);
+      res.json({ publicKey });
+    },
+
+    subscribe: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { userId } = getRequester(req);
+        if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
+
+        const body = subscribeSchema.parse(req.body);
+
+        await PushSubscriptionModel.findOneAndUpdate(
+          { endpoint: body.subscription.endpoint },
+          {
+            $set: {
+              userId,
+              app: body.app,
+              endpoint: body.subscription.endpoint,
+              expirationTime: body.subscription.expirationTime ?? undefined,
+              keys: {
+                p256dh: body.subscription.keys.p256dh,
+                auth: body.subscription.keys.auth,
+              },
+              userAgent: body.userAgent,
+            },
+          },
+          { upsert: true, new: true }
+        );
+
+        res.status(204).send();
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    unsubscribe: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { userId } = getRequester(req);
+        if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
+
+        const body = unsubscribeSchema.parse(req.body || {});
+
+        await PushSubscriptionModel.deleteOne({ endpoint: body.endpoint, userId });
+        res.status(204).send();
+      } catch (err) {
+        next(err);
+      }
+    },
+  };
+}

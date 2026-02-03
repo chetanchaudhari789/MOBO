@@ -52,6 +52,13 @@ export function aiRoutes(env: Env): Router {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
+    handler: (_req, res) => {
+      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+        requestId,
+      });
+    },
   });
 
   const limiterVerifyProof = rateLimit({
@@ -63,6 +70,13 @@ export function aiRoutes(env: Env): Router {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
+    handler: (_req, res) => {
+      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+        requestId,
+      });
+    },
   });
 
   const limiterExtractOrder = rateLimit({
@@ -74,12 +88,25 @@ export function aiRoutes(env: Env): Router {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
+    handler: (_req, res) => {
+      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+        requestId,
+      });
+    },
   });
+
+  const getRequestId = (res: any) =>
+    String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
   const sendKnownError = (err: unknown, res: any): boolean => {
     if (err instanceof z.ZodError) {
       res
         .status(400)
-        .json({ error: { code: 'BAD_REQUEST', message: 'Invalid request', details: err.issues } });
+        .json({
+          error: { code: 'BAD_REQUEST', message: 'Invalid request', details: err.issues },
+          requestId: getRequestId(res),
+        });
       return true;
     }
     const anyErr = err as any;
@@ -91,6 +118,7 @@ export function aiRoutes(env: Env): Router {
             code: 'AI_NOT_CONFIGURED',
             message: String(anyErr.message || 'AI not configured'),
           },
+          requestId: getRequestId(res),
         });
       return true;
     }

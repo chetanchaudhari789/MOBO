@@ -223,6 +223,11 @@ export function makeAuthController(env: Env) {
           ? await UserModel.findOne({ mobile, deletedAt: null })
           : await UserModel.findOne({ username, role: { $in: ['admin', 'ops'] }, deletedAt: null });
         if (!user) {
+          await writeAuditLog({
+            req,
+            action: 'AUTH_LOGIN_FAILED',
+            metadata: { reason: 'user_not_found', mobile: mobile || undefined, username: username || undefined },
+          });
           throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
         }
 
@@ -232,15 +237,33 @@ export function makeAuthController(env: Env) {
           const roles = Array.isArray((user as any).roles) ? (user as any).roles.map((r: any) => String(r).toLowerCase()) : [];
           const isAdminOrOps = primaryRole === 'admin' || primaryRole === 'ops' || roles.includes('admin') || roles.includes('ops');
           if (isAdminOrOps) {
+            await writeAuditLog({
+              req,
+              action: 'AUTH_LOGIN_FAILED',
+              actorUserId: String(user._id),
+              metadata: { reason: 'username_required' },
+            });
             throw new AppError(400, 'USERNAME_REQUIRED', 'Admin login requires username and password');
           }
         }
         if (user.status !== 'active') {
+          await writeAuditLog({
+            req,
+            action: 'AUTH_LOGIN_FAILED',
+            actorUserId: String(user._id),
+            metadata: { reason: 'user_not_active', status: user.status },
+          });
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
         }
 
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
+          await writeAuditLog({
+            req,
+            action: 'AUTH_LOGIN_FAILED',
+            actorUserId: String(user._id),
+            metadata: { reason: 'invalid_password' },
+          });
           throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
         }
 
@@ -248,6 +271,14 @@ export function makeAuthController(env: Env) {
         const refreshToken = signRefreshToken(env, String(user._id), user.roles as any);
 
         const wallet = await ensureWallet(String(user._id));
+
+        await writeAuditLog({
+          req,
+          action: 'AUTH_LOGIN_SUCCESS',
+          actorUserId: String(user._id),
+          actorRoles: user.roles as any,
+          metadata: { role: user.role },
+        });
 
         res.json({
           user: toUiUser(user, wallet),

@@ -199,6 +199,15 @@ Start here:
 - CORS: ensure `CORS_ORIGINS` includes your portal origins.
 - Wrong backend URL: set `NEXT_PUBLIC_API_PROXY_TARGET`.
 
+## Health & diagnostics
+
+Backend endpoints:
+
+- `GET /api/health` returns API + database readiness.
+- `GET /api/health/e2e` is stricter and used by Playwright to confirm the stack is fully ready.
+
+Every response includes an `x-request-id` header. Include that value when reporting issues to correlate logs.
+
 ## Repo hygiene
 
 See `PUSH_CHECKLIST.md` for a pre-push checklist.

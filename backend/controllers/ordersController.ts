@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import type { Env } from '../config/env.js';
 import mongoose from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
@@ -15,7 +16,7 @@ import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 
-export function makeOrdersController() {
+export function makeOrdersController(env: Env) {
   const findOrderForProof = async (orderId: string) => {
     const byId = await OrderModel.findById(orderId).lean();
     if (byId && !byId.deletedAt) return byId;
@@ -371,6 +372,7 @@ export function makeOrdersController() {
               actorUserId: String(user._id),
               metadata: { source: 'createOrder(preOrderId)' },
               session,
+              env,
             });
             return updated;
           }
@@ -450,6 +452,7 @@ export function makeOrdersController() {
             to: 'PROOF_SUBMITTED',
             actorUserId: String(requesterId || ''),
             metadata: { proofType: initialProofTypes[0], source: 'createOrder' },
+            env,
           });
 
           finalOrder = await transitionOrderWorkflow({
@@ -458,6 +461,7 @@ export function makeOrdersController() {
             to: 'UNDER_REVIEW',
             actorUserId: undefined,
             metadata: { system: true, source: 'createOrder' },
+            env,
           });
         }
 
@@ -544,6 +548,7 @@ export function makeOrdersController() {
           to: 'PROOF_SUBMITTED',
           actorUserId: String(requesterId || ''),
           metadata: { proofType: body.type },
+          env,
         });
 
         const afterReview = await transitionOrderWorkflow({
@@ -552,6 +557,7 @@ export function makeOrdersController() {
           to: 'UNDER_REVIEW',
           actorUserId: undefined,
           metadata: { system: true },
+          env,
         });
 
         res.json(toUiOrder(afterReview.toObject()));

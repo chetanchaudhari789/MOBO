@@ -30,6 +30,8 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       error: {
@@ -37,6 +39,7 @@ export function errorHandler(
         message: err.message,
         details: err.details,
       },
+      requestId,
     });
     return;
   }
@@ -49,6 +52,7 @@ export function errorHandler(
         message: 'Invalid request',
         details: err.issues,
       },
+      requestId,
     });
     return;
   }
@@ -62,6 +66,7 @@ export function errorHandler(
         message: 'Invalid identifier',
         details: { path: anyErr.path, value: anyErr.value },
       },
+      requestId,
     });
     return;
   }
@@ -78,11 +83,10 @@ export function errorHandler(
         code: 'BAD_JSON',
         message: 'Malformed JSON body',
       },
+      requestId,
     });
     return;
   }
-
-  const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
   const isProd = process.env.NODE_ENV === 'production';
 
   // eslint-disable-next-line no-console

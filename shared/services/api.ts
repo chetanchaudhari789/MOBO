@@ -61,11 +61,33 @@ const API_URL = getApiBaseUrl();
 
 const TOKEN_STORAGE_KEY = 'mobo_tokens_v1';
 
+function makeRequestId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
+      return (crypto as any).randomUUID() as string;
+    }
+  } catch {
+    // ignore
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function withRequestId(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers || {});
+  if (!headers.has('x-request-id')) headers.set('x-request-id', makeRequestId());
+  return { ...init, headers };
+}
+
 type TokenPair = { accessToken: string; refreshToken?: string };
 
 let refreshPromise: Promise<TokenPair | null> | null = null;
 
 const canUseStorage = () => typeof window !== 'undefined' && !!window.localStorage;
+
+function notifyAuthChange() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event('mobo-auth-changed'));
+}
 
 function readTokens(): TokenPair | null {
   if (!canUseStorage()) return null;
@@ -84,6 +106,7 @@ function writeTokens(tokens: TokenPair) {
   if (!canUseStorage()) return;
   try {
     window.localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+    notifyAuthChange();
   } catch {
     // ignore storage failures
   }
@@ -93,6 +116,7 @@ function clearTokens() {
   if (!canUseStorage()) return;
   try {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    notifyAuthChange();
   } catch {
     // ignore
   }
@@ -125,11 +149,14 @@ async function refreshTokens(): Promise<TokenPair | null> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
-        const res = await fetch(`${API_URL}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        });
+        const res = await fetch(
+          `${API_URL}/auth/refresh`,
+          withRequestId({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken }),
+          })
+        );
         const payload = await readPayloadSafe(res);
         if (!res.ok) throw toErrorFromPayload(payload, `Refresh failed: ${res.status}`);
 
@@ -162,6 +189,8 @@ function toErrorFromPayload(payload: any, fallback: string): Error {
   const err = new Error(maybeFixMojibake(String(message)));
   const code = payload?.error?.code || payload?.code;
   if (code) (err as any).code = code;
+  const requestId = payload?.requestId || payload?.error?.requestId;
+  if (requestId) (err as any).requestId = String(requestId);
   return err;
 }
 
@@ -182,7 +211,7 @@ function assertOnlineForWrite(init?: RequestInit) {
 
 async function fetchJson(path: string, init?: RequestInit): Promise<any> {
   assertOnlineForWrite(init);
-  const res = await fetch(`${API_URL}${path}`, init);
+  const res = await fetch(`${API_URL}${path}`, withRequestId(init));
   const payload = await readPayloadSafe(res);
 
   if (!res.ok && isAuthError(res, payload)) {
@@ -192,7 +221,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
         ...init,
         headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
       };
-      const retryRes = await fetch(`${API_URL}${path}`, retryInit);
+      const retryRes = await fetch(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
       return fixMojibakeDeep(retryPayload);
@@ -205,7 +234,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
 
 async function fetchOk(path: string, init?: RequestInit): Promise<void> {
   assertOnlineForWrite(init);
-  const res = await fetch(`${API_URL}${path}`, init);
+  const res = await fetch(`${API_URL}${path}`, withRequestId(init));
   const payload = await readPayloadSafe(res);
 
   if (!res.ok && isAuthError(res, payload)) {
@@ -215,7 +244,7 @@ async function fetchOk(path: string, init?: RequestInit): Promise<void> {
         ...init,
         headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
       };
-      const retryRes = await fetch(`${API_URL}${path}`, retryInit);
+      const retryRes = await fetch(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
       return;
@@ -775,6 +804,36 @@ export const api = {
         method: 'GET',
         headers: { ...authHeaders() },
       });
+    },
+    push: {
+      publicKey: async () => {
+        return fetchJson('/notifications/push/public-key', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+      subscribe: async (payload: {
+        app: 'buyer' | 'mediator';
+        subscription: {
+          endpoint: string;
+          expirationTime?: number | null;
+          keys: { p256dh: string; auth: string };
+        };
+        userAgent?: string;
+      }) => {
+        await fetchOk('/notifications/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify(payload),
+        });
+      },
+      unsubscribe: async (endpoint: string) => {
+        await fetchOk('/notifications/push/subscribe', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ endpoint }),
+        });
+      },
     },
   },
 };

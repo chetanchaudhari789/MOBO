@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { Users, ArrowRight, Lock, User, Phone, CheckCircle, ChevronLeft, Clock } from 'lucide-react';
 import { Button, Input, Spinner } from '../components/ui';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
+import { formatErrorMessage } from '../utils/errors';
 
 interface MediatorAuthProps {
   onBack?: () => void;
@@ -44,7 +45,7 @@ export const MediatorAuthScreen: React.FC<MediatorAuthProps> = ({ onBack }) => {
         setIsLoading(false);
         return;
       }
-      setError(err.message || 'Login failed');
+      setError(formatErrorMessage(err, 'Login failed'));
       setIsLoading(false);
     }
   };
@@ -75,7 +76,7 @@ export const MediatorAuthScreen: React.FC<MediatorAuthProps> = ({ onBack }) => {
       
       // Otherwise, registration succeeded and user is auto-logged in (handled by registerOps)
     } catch (err: any) {
-      setError(err.message || 'Registration Failed');
+      setError(formatErrorMessage(err, 'Registration failed'));
       setIsLoading(false);
     }
   };

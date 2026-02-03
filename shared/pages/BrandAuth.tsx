@@ -14,6 +14,7 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
+import { formatErrorMessage } from '../utils/errors';
 
 interface BrandAuthProps {
   onBack?: () => void;
@@ -45,7 +46,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
         return;
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(formatErrorMessage(err, 'Login failed'));
       setIsLoading(false);
     }
   };
@@ -61,7 +62,7 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
     try {
       await registerBrand(name, mobile, password, brandCode);
     } catch (err: any) {
-      setError(err.message || 'Registration failed');
+      setError(formatErrorMessage(err, 'Registration failed'));
       setIsLoading(false);
     }
   };

@@ -24,6 +24,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const emitAuthChange = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new Event('mobo-auth-changed'));
+  } catch {
+    // ignore
+  }
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,6 +53,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const me = await api.auth.me();
           setUser(me);
           localStorage.setItem('mobo_session', JSON.stringify(me));
+          emitAuthChange();
         } catch {
           // If token became invalid, restoreSession() will handle on next load.
         } finally {
@@ -83,11 +93,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const me = await api.auth.me();
         setUser(me);
         localStorage.setItem('mobo_session', JSON.stringify(me));
+        emitAuthChange();
       } catch {
         // Any failure => clear local auth state and show splash.
         localStorage.removeItem('mobo_session');
         localStorage.removeItem('mobo_tokens_v1');
         setUser(null);
+        emitAuthChange();
       }
     };
 
@@ -100,6 +112,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const loggedInUser = (await api.auth.login(cleanMobile, cleanPass)) as User;
     setUser(loggedInUser);
     localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
+    emitAuthChange();
     return loggedInUser;
   };
 
@@ -109,6 +122,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const loggedInUser = (await api.auth.loginAdmin(cleanUsername, cleanPass)) as User;
     setUser(loggedInUser);
     localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
+    emitAuthChange();
     return loggedInUser;
   };
 
@@ -116,6 +130,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const newUser = await api.auth.register(name, mobile, pass, mediatorCode);
     setUser(newUser);
     localStorage.setItem('mobo_session', JSON.stringify(newUser));
+    emitAuthChange();
   };
 
   const registerOps = async (
@@ -135,12 +150,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const newUser = result as User;
     setUser(newUser);
     localStorage.setItem('mobo_session', JSON.stringify(newUser));
+    emitAuthChange();
   };
 
   const registerBrand = async (name: string, mobile: string, pass: string, brandCode: string) => {
     const newUser = await api.auth.registerBrand(name, mobile, pass, brandCode);
     setUser(newUser);
     localStorage.setItem('mobo_session', JSON.stringify(newUser));
+    emitAuthChange();
   };
 
   const updateUser = async (updates: Partial<User>) => {
@@ -149,6 +166,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const updatedUser = await api.auth.updateProfile(user.id, updates);
       setUser(updatedUser);
       localStorage.setItem('mobo_session', JSON.stringify(updatedUser));
+      emitAuthChange();
     } catch (e) {
       throw e;
     }
@@ -159,6 +177,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.removeItem('mobo_session');
     localStorage.removeItem('mobo_tokens_v1');
     stopRealtime();
+    emitAuthChange();
   };
 
   return (

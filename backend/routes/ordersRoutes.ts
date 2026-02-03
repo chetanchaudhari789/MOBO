@@ -5,7 +5,7 @@ import { makeOrdersController } from '../controllers/ordersController.js';
 
 export function ordersRoutes(env: Env): Router {
   const router = Router();
-  const orders = makeOrdersController();
+  const orders = makeOrdersController(env);
 
   // UI expects these endpoints to exist.
   router.get('/orders/user/:userId', requireAuth(env), orders.getUserOrders);

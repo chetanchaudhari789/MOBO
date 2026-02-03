@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
 import { OrderModel } from '../models/Order.js';
-import { reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
+import { adminUsersQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { writeAuditLog } from '../services/audit.js';
 import { SuspensionModel } from '../models/Suspension.js';
@@ -59,8 +59,11 @@ export function makeAdminController() {
     },
     getUsers: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const role = typeof req.query.role === 'string' ? req.query.role : 'all';
-        const dbRole = roleToDb(role);
+        const queryParams = adminUsersQuerySchema.parse(req.query);
+        const dbRole = roleToDb(queryParams.role);
+        if (dbRole === null && queryParams.role !== 'all') {
+          throw new AppError(400, 'INVALID_ROLE', 'Invalid role filter');
+        }
 
         const query: any = { deletedAt: null };
         if (dbRole) query.role = dbRole;

@@ -8,7 +8,7 @@ import { makeOpsController } from '../controllers/opsController.js';
 export function opsRoutes(env: Env): Router {
   const router = Router();
   const invites = makeInviteController();
-  const ops = makeOpsController();
+  const ops = makeOpsController(env);
 
   router.use(requireAuth(env));
   router.use(requireRoles('agency', 'mediator', 'ops', 'admin'));
@@ -18,7 +18,13 @@ export function opsRoutes(env: Env): Router {
     limit: env.NODE_ENV === 'production' ? 1200 : 10_000,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'rate_limited' },
+    handler: (_req, res) => {
+      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+        requestId,
+      });
+    },
   });
   router.use(opsLimiter);
 

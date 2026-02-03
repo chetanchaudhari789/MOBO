@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { Bot, ArrowRight, Lock, User, Phone, Hash, ChevronLeft } from 'lucide-react';
 import { Button, Input, Spinner } from '../components/ui';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
+import { formatErrorMessage } from '../utils/errors';
 
 interface AuthScreenProps {
   onBack?: () => void;
@@ -58,7 +59,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
         await register(name, mobile, password, mediatorCode);
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(formatErrorMessage(err, 'Authentication failed'));
       setIsLoading(false);
     }
   };

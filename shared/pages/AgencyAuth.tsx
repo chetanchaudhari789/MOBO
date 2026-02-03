@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { Button, Input, Spinner } from '../components/ui';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
+import { formatErrorMessage } from '../utils/errors';
 import {
   Building2,
   ArrowRight,
@@ -45,7 +46,7 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
         return;
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(formatErrorMessage(err, 'Login failed'));
       setIsLoading(false);
     }
   };
@@ -61,7 +62,7 @@ export const AgencyAuthScreen: React.FC<AgencyAuthProps> = ({ onBack }) => {
     try {
       await registerOps(name, mobile, password, 'agency', adminCode.toUpperCase());
     } catch (err: any) {
-      setError(err.message || 'Registration Failed');
+      setError(formatErrorMessage(err, 'Registration failed'));
       setIsLoading(false);
     }
   };
