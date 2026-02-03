@@ -438,11 +438,10 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   };
 
   const handleExport = () => {
-    const csvSafe = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    const hyperlink = (url?: string, label = 'View') => {
-      if (!url) return '';
-      const formula = `=HYPERLINK("${url}","${label}")`;
-      return csvSafe(formula);
+    const isHttpUrl = (url?: string) => typeof url === 'string' && /^https?:\/\//i.test(url);
+    const hyperlinkIfHttp = (url?: string, label = 'View') => {
+      if (!isHttpUrl(url)) return '';
+      return `"=HYPERLINK(\"${url}\",\"${label}\")"`;
     };
 
     const headers = [
@@ -464,10 +463,10 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Payment Status',
       'Verification Status',
       'System Order ID',
-      'Proof: Order URL',
-      'Proof: Payment URL',
-      'Proof: Rating URL',
-      'Proof: Review URL',
+      'Proof: Order',
+      'Proof: Payment',
+      'Proof: Rating',
+      'Proof: Review Link',
     ];
 
     const csvRows = [headers.join(',')];
@@ -497,10 +496,10 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
-        hyperlink(o.screenshots?.order, 'Order Proof'),
-        hyperlink(o.screenshots?.payment, 'Payment Proof'),
-        hyperlink(o.screenshots?.rating, 'Rating Proof'),
-        hyperlink(o.reviewLink, 'Review Link'),
+        hyperlinkIfHttp(o.screenshots?.order, 'Order Proof') || (o.screenshots?.order ? 'Yes' : 'No'),
+        hyperlinkIfHttp(o.screenshots?.payment, 'Payment Proof') || (o.screenshots?.payment ? 'Yes' : 'No'),
+        hyperlinkIfHttp(o.screenshots?.rating, 'Rating Proof') || (o.screenshots?.rating ? 'Yes' : 'No'),
+        hyperlinkIfHttp(o.reviewLink, 'Review Link') || (o.reviewLink ? 'Yes' : 'No'),
       ];
       csvRows.push(row.join(','));
     });
