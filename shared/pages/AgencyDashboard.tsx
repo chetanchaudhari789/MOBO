@@ -173,15 +173,16 @@ const AgencyProfile = ({ user }: any) => {
         name: form.name,
         mobile: form.mobile,
         upiId: form.upiId,
-        avatar,
         bankDetails: {
           bankName: form.bankName,
           accountNumber: form.accountNumber,
           ifsc: form.ifsc,
           holderName: form.holderName,
         },
+        avatar,
       });
       setIsEditing(false);
+      toast.success('Profile updated');
     } catch {
       toast.error('Failed to update profile.');
     } finally {
@@ -190,14 +191,14 @@ const AgencyProfile = ({ user }: any) => {
   };
 
   const handleFile = (e: any) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
+      if (!isEditing) setIsEditing(true);
       const reader = new FileReader();
       reader.onload = () => setAvatar(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
-
   return (
     <div className="max-w-5xl mx-auto animate-enter pb-12">
       {/* Header */}

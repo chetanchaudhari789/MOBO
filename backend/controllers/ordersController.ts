@@ -75,7 +75,8 @@ export function makeOrdersController() {
 
               if (roles.includes('brand')) {
                 const sameBrand = String(order.brandUserId || '') === String(user?._id || userId);
-                const sameBrandName = String(order.brandName || '').trim() && String(order.brandName || '').trim() === String(user?.name || '').trim();
+                const brandName = String(order.brandName || '').trim();
+                const sameBrandName = !!brandName && brandName === String(user?.name || '').trim();
                 allowed = sameBrand || sameBrandName;
               }
 
@@ -99,7 +100,7 @@ export function makeOrdersController() {
 
               if (!allowed && roles.includes('mediator')) {
                 const mediatorCode = String(user?.mediatorCode || '').trim();
-                allowed = mediatorCode && String(order.managerName || '').trim() === mediatorCode;
+                allowed = !!mediatorCode && String(order.managerName || '').trim() === mediatorCode;
               }
 
               if (!allowed && roles.includes('shopper')) {

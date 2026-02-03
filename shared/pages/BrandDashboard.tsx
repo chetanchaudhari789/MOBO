@@ -181,10 +181,12 @@ const BrandProfileView = () => {
     try {
       await updateUser({
         name: form.name,
+        mobile: form.mobile,
         email: form.email,
         avatar,
       });
       setIsEditing(false);
+      toast.success('Profile updated');
     } catch (e) {
       toast.error(String((e as any)?.message || 'Failed to update profile.'));
     } finally {
@@ -202,13 +204,9 @@ const BrandProfileView = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto animate-enter pb-12">
-      {/* Header with Cover */}
+    <div className="animate-enter">
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-zinc-100 overflow-hidden relative mb-8">
-        <div className="h-40 bg-zinc-900 relative">
-          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
-          <div className="absolute inset-0 bg-gradient-to-r from-zinc-800 to-black opacity-80"></div>
-        </div>
+        <div className="h-40 bg-zinc-900 relative"></div>
         <div className="px-8 pb-8 flex flex-col md:flex-row items-end -mt-16 gap-8">
           <div
             className="relative group cursor-pointer"
