@@ -16,6 +16,13 @@ import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 
 export function makeOrdersController() {
+  const findOrderForProof = async (orderId: string) => {
+    const byId = await OrderModel.findById(orderId).lean();
+    if (byId && !byId.deletedAt) return byId;
+    const byExternal = await OrderModel.findOne({ externalOrderId: orderId, deletedAt: null }).lean();
+    if (byExternal) return byExternal;
+    return null;
+  };
   const resolveProofValue = (order: any, proofType: string) => {
     if (proofType === 'order') return order.screenshots?.order || '';
     if (proofType === 'payment') return order.screenshots?.payment || '';
@@ -66,8 +73,8 @@ export function makeOrdersController() {
               throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
             }
 
-            const order = await OrderModel.findById(orderId).lean();
-            if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+            const order = await findOrderForProof(orderId);
+            if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
             const { roles, user, userId } = getRequester(req);
             if (!isPrivileged(roles)) {
@@ -128,8 +135,8 @@ export function makeOrdersController() {
               throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
             }
 
-            const order = await OrderModel.findById(orderId).lean();
-            if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+            const order = await findOrderForProof(orderId);
+            if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
             const proofValue = resolveProofValue(order, proofType);
             sendProofResponse(res, proofValue);
