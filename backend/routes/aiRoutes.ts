@@ -204,6 +204,9 @@ export function aiRoutes(env: Env): Router {
   router.post('/chat', limiterChat, async (req, res, next) => {
     try {
       if (!ensureAiEnabled(res)) return;
+      if (!enforceDailyLimit(req, res)) return;
+      if (!enforceMinInterval(req, res)) return;
+      const payload = chatSchema.parse(req.body);
       if (!isGeminiConfigured(env)) {
         res.status(503).json({
           error: { code: 'AI_NOT_CONFIGURED', message: 'Gemini is not configured.' },
@@ -211,9 +214,6 @@ export function aiRoutes(env: Env): Router {
         });
         return;
       }
-      if (!enforceDailyLimit(req, res)) return;
-      if (!enforceMinInterval(req, res)) return;
-      const payload = chatSchema.parse(req.body);
 
       // Zero-trust identity: never trust userId/userName from the client if auth is present.
       const authUser = req.auth?.user;
