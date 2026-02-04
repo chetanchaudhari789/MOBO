@@ -19,7 +19,7 @@ export function aiRoutes(env: Env): Router {
   const router = Router();
 
   const chatSchema = z.object({
-    message: z.string().max(env.AI_MAX_INPUT_CHARS).default(''),
+    message: z.string().max(env.AI_MAX_INPUT_CHARS * 3).default(''),
     // Legacy UI fields (ignored server-side unless no auth is present)
     userId: z.string().optional(),
     userName: z.string().max(120).default('Guest'),
@@ -30,7 +30,7 @@ export function aiRoutes(env: Env): Router {
       .array(
         z.object({
           role: z.enum(['user', 'assistant', 'system']),
-          content: z.string().max(env.AI_MAX_INPUT_CHARS),
+          content: z.string().max(env.AI_MAX_INPUT_CHARS * 2),
         })
       )
       .max(20)

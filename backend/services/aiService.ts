@@ -102,14 +102,14 @@ function estimateTokensFromImage(base64: string): number {
 function sanitizeUserMessage(env: Env, message: string): string {
   if (!message) return '';
   if (message.length > env.AI_MAX_INPUT_CHARS) {
-    throw createInputError('Message too large');
+    message = message.slice(0, env.AI_MAX_INPUT_CHARS);
   }
 
   const cleaned = stripUnsafeContent(message);
   if (!cleaned) return '';
 
   if (cleaned.length > env.AI_MAX_INPUT_CHARS) {
-    throw createInputError('Message too large after sanitization');
+    return cleaned.slice(0, env.AI_MAX_INPUT_CHARS);
   }
 
   return cleaned;
