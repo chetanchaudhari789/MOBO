@@ -609,11 +609,8 @@ export function makeOrdersController(env: Env) {
           }
         }
 
-        if (order.affiliateStatus === 'Rejected') {
-          order.affiliateStatus = 'Unchecked';
-        }
-
-        if (order.affiliateStatus === 'Rejected' || order.affiliateStatus === 'Fraud_Alert') {
+        const affiliateStatus = String(order.affiliateStatus || '');
+        if (affiliateStatus === 'Rejected' || affiliateStatus === 'Fraud_Alert') {
           order.affiliateStatus = 'Unchecked';
         }
 
