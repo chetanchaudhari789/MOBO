@@ -17,43 +17,8 @@ export const Explore: React.FC = () => {
   const silentSyncRef = useRef(false);
 
   const categories = useMemo(() => {
-    const set = new Set<string>();
-    const add = (value: unknown) => {
-      const v = String(value || '').trim();
-      if (v) set.add(v);
-    };
-
-    for (const p of products) {
-      add((p as any)?.category);
-      add((p as any)?.dealType);
-      add((p as any)?.platform);
-      add((p as any)?.brandName);
-    }
-
-    const presets = [
-      'All',
-      'General',
-      'Electronics',
-      'Mobiles',
-      'Fashion',
-      'Footwear',
-      'Beauty',
-      'Grooming',
-      'Home',
-      'Kitchen',
-      'Fitness',
-      'Audio',
-      'Watches',
-      'Travel',
-    ];
-
-    const dynamic = Array.from(set).sort((a, b) => a.localeCompare(b));
-    const merged = [...presets, ...dynamic]
-      .map((c) => String(c).trim())
-      .filter(Boolean);
-    const unique = Array.from(new Set(merged));
-    return unique;
-  }, [products]);
+    return ['All', 'Electronics', 'Fashion', 'Beauty', 'Home'];
+  }, []);
 
   const fetchDeals = async (silent = false) => {
     if (silent) {
@@ -107,14 +72,17 @@ export const Explore: React.FC = () => {
         const category = String(p.category || '').toLowerCase();
         const dealType = String(p.dealType || '').toLowerCase();
         const platform = String(p.platform || '').toLowerCase();
-        const brand = String(p.brandName || '').toLowerCase();
 
-        if (
-          category === selectedLower ||
-          dealType === selectedLower ||
-          platform === selectedLower ||
-          brand === selectedLower
-        ) {
+        if (category === selectedLower || dealType === selectedLower || platform === selectedLower) {
+          return true;
+        }
+        if (selectedLower === 'fashion' && (title.includes('shirt') || title.includes('pant') || title.includes('shoe') || title.includes('sneaker'))) {
+          return true;
+        }
+        if (selectedLower === 'beauty' && (title.includes('perfume') || title.includes('serum') || title.includes('cream'))) {
+          return true;
+        }
+        if (selectedLower === 'home' && (title.includes('kitchen') || title.includes('home') || title.includes('decor'))) {
           return true;
         }
 

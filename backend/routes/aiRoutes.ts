@@ -296,6 +296,10 @@ export function aiRoutes(env: Env): Router {
         const wantsAll = normalizedMessage.includes('all deals') || normalizedMessage.includes('all available deals');
         const wantsLoot = normalizedMessage.includes('loot deals') || normalizedMessage.includes('deals');
         const wantsLowest = normalizedMessage.includes('lowest') || normalizedMessage.includes('cheapest');
+        const wantsSpecific =
+          normalizedMessage.includes('show') ||
+          normalizedMessage.includes('find') ||
+          normalizedMessage.includes('show me');
 
         if (wantsAll) {
           res.json({
@@ -305,6 +309,39 @@ export function aiRoutes(env: Env): Router {
             data: effectiveProducts.slice(0, 50),
           });
           return;
+        }
+
+        if (wantsSpecific && rawMessage.length > 6) {
+          const tokens = normalizedMessage
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((t) => t.length > 3);
+
+          let best: any = null;
+          let bestScore = 0;
+          for (const product of effectiveProducts) {
+            const title = String(product?.title || '').toLowerCase();
+            if (!title) continue;
+            let score = 0;
+            for (const t of tokens) {
+              if (title.includes(t)) score += 1;
+            }
+            if (tokens.length && title.includes(tokens.join(' '))) score += 3;
+            if (score > bestScore) {
+              bestScore = score;
+              best = product;
+            }
+          }
+
+          if (best && bestScore >= 2) {
+            res.json({
+              text: 'Here is the deal you asked for.',
+              intent: 'search_deals',
+              uiType: 'product_card',
+              data: [best],
+            });
+            return;
+          }
         }
 
         if (wantsLowest) {
@@ -358,7 +395,7 @@ export function aiRoutes(env: Env): Router {
 
       if (normalizedMessage.includes('order') || normalizedMessage.includes('cashback')) {
         if (hasOrders) {
-          const latest = payload.orders[0] as any;
+          const latest = (payload.orders ?? [])[0] as any;
           const status = normalizeStatus(latest?.status) || 'Pending';
           const payment = normalizeStatus(latest?.paymentStatus) || 'Pending';
           const affiliate = normalizeStatus(latest?.affiliateStatus) || 'Unchecked';
@@ -377,7 +414,7 @@ export function aiRoutes(env: Env): Router {
 
       if (normalizedMessage.includes('ticket') || normalizedMessage.includes('support')) {
         if (hasTickets) {
-          const latest = payload.tickets[0] as any;
+          const latest = (payload.tickets ?? [])[0] as any;
           const status = normalizeStatus(latest?.status) || 'Open';
           const issue = normalizeStatus(latest?.issueType) || 'Support';
           res.json({

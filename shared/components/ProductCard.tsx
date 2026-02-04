@@ -11,6 +11,20 @@ type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
 export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) => {
   const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
+  const getApiBase = () => {
+    const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
+    const fromNext =
+      typeof process !== 'undefined' &&
+      (process as any).env &&
+      (process as any).env.NEXT_PUBLIC_API_URL
+        ? String((process as any).env.NEXT_PUBLIC_API_URL)
+        : undefined;
+    let base = String(fromGlobal || fromNext || '/api').trim();
+    if (base.startsWith('/')) {
+      base = `${window.location.origin}${base}`;
+    }
+    return base.replace(/\/$/, '');
+  };
   const placeholderImage =
     'data:image/svg+xml;utf8,' +
     encodeURIComponent(
@@ -20,7 +34,12 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
         '<rect x="32" y="104" width="96" height="16" rx="8" fill="#E5E7EB"/>' +
       '</svg>'
     );
-  const imageSrc = sanitizeLabel(product.image) || placeholderImage;
+  const rawImage = sanitizeLabel(product.image);
+  const proxiedImage =
+    rawImage && /^https?:\/\//i.test(rawImage)
+      ? `${getApiBase()}/media/image?url=${encodeURIComponent(rawImage)}`
+      : rawImage;
+  const imageSrc = proxiedImage || placeholderImage;
   const platformLabel = sanitizeLabel(product.platform) || 'DEAL';
   const brandLabel = sanitizeLabel(product.brandName) || 'PARTNER';
   const mediatorLabel = sanitizeLabel(product.mediatorCode) || 'PARTNER';

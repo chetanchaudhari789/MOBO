@@ -18,6 +18,7 @@ import { brandRoutes } from './routes/brandRoutes.js';
 import { notificationsRoutes } from './routes/notificationsRoutes.js';
 import { realtimeRoutes } from './routes/realtimeRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
+import { mediaRoutes } from './routes/mediaRoutes.js';
 
 function isOriginAllowed(origin: string, allowed: string[]): boolean {
   if (!origin) return true;
@@ -168,6 +169,7 @@ export function createApp(env: Env) {
   app.use('/api', ticketsRoutes(env));
   app.use('/api/notifications', notificationsRoutes(env));
   app.use('/api/realtime', realtimeRoutes(env));
+  app.use('/api', mediaRoutes(env));
   app.use('/api/ai', aiRoutes(env));
 
   app.use(notFoundHandler);
