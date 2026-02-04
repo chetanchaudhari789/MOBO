@@ -34,6 +34,26 @@ const envSchema = z.object({
 
   GEMINI_API_KEY: z.string().optional(),
 
+  // AI safety + cost controls
+  AI_ENABLED: z.coerce.boolean().default(true),
+  AI_CHAT_RPM_AUTH: z.coerce.number().int().positive().default(30),
+  AI_CHAT_RPM_ANON: z.coerce.number().int().positive().default(6),
+  AI_PROOF_RPM_AUTH: z.coerce.number().int().positive().default(10),
+  AI_PROOF_RPM_ANON: z.coerce.number().int().positive().default(2),
+  AI_EXTRACT_RPM_AUTH: z.coerce.number().int().positive().default(10),
+  AI_EXTRACT_RPM_ANON: z.coerce.number().int().positive().default(2),
+  AI_DAILY_LIMIT_AUTH: z.coerce.number().int().positive().default(200),
+  AI_DAILY_LIMIT_ANON: z.coerce.number().int().positive().default(40),
+  AI_MAX_OUTPUT_TOKENS_CHAT: z.coerce.number().int().positive().default(512),
+  AI_MAX_OUTPUT_TOKENS_PROOF: z.coerce.number().int().positive().default(256),
+  AI_MAX_OUTPUT_TOKENS_EXTRACT: z.coerce.number().int().positive().default(256),
+  AI_MAX_INPUT_CHARS: z.coerce.number().int().positive().default(2000),
+  AI_MAX_IMAGE_CHARS: z.coerce.number().int().positive().default(2_000_000),
+  AI_MAX_ESTIMATED_TOKENS: z.coerce.number().int().positive().default(700),
+  AI_MAX_HISTORY_MESSAGES: z.coerce.number().int().positive().default(6),
+  AI_HISTORY_SUMMARY_CHARS: z.coerce.number().int().positive().default(400),
+  AI_MIN_SECONDS_BETWEEN_CALLS: z.coerce.number().int().nonnegative().default(3),
+
   // Web push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),

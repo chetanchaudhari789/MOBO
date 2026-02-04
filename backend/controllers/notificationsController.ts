@@ -46,6 +46,7 @@ export function makeNotificationsController() {
               screenshots: 1,
               reviewLink: 1,
               verification: 1,
+              rejection: 1,
               createdAt: 1,
               updatedAt: 1,
             })
@@ -71,6 +72,7 @@ export function makeNotificationsController() {
             const orderVerifiedAt = (o as any)?.verification?.order?.verifiedAt
               ? new Date((o as any).verification.order.verifiedAt)
               : null;
+            const rejection = (o as any)?.rejection;
             const missingSteps: string[] = [];
             if (requiresReview && !hasReviewProof) missingSteps.push('review');
             if (requiresRating && !hasRatingProof) missingSteps.push('rating');
@@ -82,6 +84,18 @@ export function makeNotificationsController() {
                 title: 'Upload purchase proof',
                 message: `Upload your purchase screenshot for order #${shortId} to start verification.`,
                 createdAt: ts,
+              });
+              continue;
+            }
+
+            if (rejection?.reason) {
+              notifications.push({
+                id: `order:${String(o._id)}:rejected:${ts}`,
+                type: 'alert',
+                title: 'Proof rejected',
+                message: rejection.reason || `Your proof for order #${shortId} was rejected.`,
+                createdAt: ts,
+                action: { label: 'Fix now', href: '/orders' },
               });
               continue;
             }

@@ -17,6 +17,7 @@ import {
   payoutMediatorSchema,
   publishDealSchema,
   rejectByIdSchema,
+  rejectOrderProofSchema,
   settleOrderSchema,
   unsettleOrderSchema,
   updateCampaignStatusSchema,
@@ -36,6 +37,7 @@ import { writeAuditLog } from '../services/audit.js';
 import { requestBrandConnectionSchema } from '../validations/connections.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import { publishRealtime } from '../services/realtimeHub.js';
+import { sendPushToUser } from '../services/pushNotifications.js';
 
 function buildOrderAudience(order: any, agencyCode?: string) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -811,6 +813,130 @@ export function makeOpsController(env: Env) {
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true, approved: (finalize as any).approved, ...(finalize as any) });
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    rejectOrderProof: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const body = rejectOrderProofSchema.parse(req.body);
+        const { roles, user: requester } = getRequester(req);
+
+        const order = await OrderModel.findById(body.orderId);
+        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+
+        if ((order as any).frozen) {
+          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
+        }
+
+        if (!isPrivileged(roles)) {
+          if (roles.includes('mediator')) {
+            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
+              throw new AppError(403, 'FORBIDDEN', 'Cannot reject orders outside your network');
+            }
+          } else if (roles.includes('agency')) {
+            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
+            if (!allowed.includes(String(order.managerName))) {
+              throw new AppError(403, 'FORBIDDEN', 'Cannot reject orders outside your network');
+            }
+          } else {
+            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
+          }
+        }
+
+        const managerCode = String(order.managerName || '');
+        if (!(await isMediatorActive(managerCode))) {
+          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
+        }
+        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
+        if (agencyCode && !(await isAgencyActive(agencyCode))) {
+          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
+        }
+
+        const wf = String((order as any).workflowStatus || 'CREATED');
+        if (wf !== 'UNDER_REVIEW') {
+          throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot reject in state ${wf}`);
+        }
+
+        if (body.type === 'order') {
+          if (!order.screenshots?.order) {
+            throw new AppError(409, 'MISSING_PROOF', 'Missing order proof');
+          }
+          if ((order as any).verification?.order?.verifiedAt) {
+            throw new AppError(409, 'ALREADY_VERIFIED', 'Order proof already verified');
+          }
+          (order as any).screenshots = { ...(order as any).screenshots, order: undefined } as any;
+          if ((order as any).verification?.order) {
+            (order as any).verification.order = undefined;
+          }
+        } else {
+          if (!(order as any).verification?.order?.verifiedAt) {
+            throw new AppError(409, 'PURCHASE_NOT_VERIFIED', 'Purchase proof must be verified first');
+          }
+          const required = getRequiredStepsForOrder(order);
+          if (!required.includes(body.type)) {
+            throw new AppError(409, 'NOT_REQUIRED', `This order does not require ${body.type} verification`);
+          }
+          if (!hasProofForRequirement(order, body.type)) {
+            throw new AppError(409, 'MISSING_PROOF', `Missing ${body.type} proof`);
+          }
+          if (body.type === 'review') {
+            (order as any).reviewLink = undefined;
+            if ((order as any).screenshots?.review) {
+              (order as any).screenshots.review = undefined;
+            }
+            if ((order as any).verification?.review) {
+              (order as any).verification.review = undefined;
+            }
+          }
+          if (body.type === 'rating') {
+            if ((order as any).screenshots?.rating) {
+              (order as any).screenshots.rating = undefined;
+            }
+            if ((order as any).verification?.rating) {
+              (order as any).verification.rating = undefined;
+            }
+          }
+        }
+
+        (order as any).rejection = {
+          type: body.type,
+          reason: body.reason,
+          rejectedAt: new Date(),
+          rejectedBy: req.auth?.userId,
+        };
+        (order as any).affiliateStatus = 'Rejected';
+
+        order.events = pushOrderEvent(order.events as any, {
+          type: 'REJECTED',
+          at: new Date(),
+          actorUserId: req.auth?.userId,
+          metadata: { step: body.type, reason: body.reason },
+        }) as any;
+
+        await order.save();
+        await writeAuditLog({ req, action: 'ORDER_REJECTED', entityType: 'Order', entityId: String(order._id) });
+
+        const audience = buildOrderAudience(order, agencyCode);
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        const buyerId = String((order as any).userId || '').trim();
+        if (buyerId) {
+          await sendPushToUser({
+            env,
+            userId: buyerId,
+            app: 'buyer',
+            payload: {
+              title: 'Proof rejected',
+              body: body.reason || 'Please re-upload the required proof.',
+              url: '/orders',
+            },
+          });
+        }
+
+        res.json({ ok: true });
       } catch (err) {
         next(err);
       }

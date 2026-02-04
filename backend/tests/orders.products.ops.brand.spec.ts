@@ -24,6 +24,8 @@ async function loginAdmin(app: any, username: string, password: string) {
     userId: res.body.user.id as string,
   };
 }
+
+const LARGE_DATA_URL = `data:image/png;base64,${'A'.repeat(14000)}`;
 describe('core flows: products -> redirect -> order -> claim -> ops verify/settle -> brand payout/connect', () => {
   afterEach(async () => {
     await disconnectMongo();
@@ -32,6 +34,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
   it('supports end-to-end API flow (minimal assertions, contract-focused)', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
+      SEED_E2E: 'true',
       MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
@@ -99,7 +102,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
           },
         ],
         externalOrderId: `EXT_${Date.now()}`,
-        screenshots: { order: 'data:image/png;base64,AAA' },
+        screenshots: { order: LARGE_DATA_URL },
       });
 
     expect(createOrderRes.status).toBe(201);
@@ -111,7 +114,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     const claimRes = await request(app)
       .post('/api/orders/claim')
       .set('Authorization', `Bearer ${shopper.token}`)
-      .send({ orderId, type: 'order', data: 'data:image/png;base64,BBB' });
+      .send({ orderId, type: 'order', data: LARGE_DATA_URL });
 
     expect(claimRes.status).toBe(200);
     expect(claimRes.body).toHaveProperty('id', orderId);

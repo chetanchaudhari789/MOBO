@@ -108,7 +108,7 @@ export const Explore: React.FC = () => {
   }, [categories, selectedCategory]);
 
   return (
-    <div className="flex flex-col h-full bg-[#F4F4F5]">
+    <div className="flex flex-col h-full min-h-0 bg-[#F4F4F5]">
       {/* Header */}
       <div className="px-6 pt-16 pb-4 bg-white shadow-sm z-10 border-b border-gray-100 sticky top-0">
         <div className="flex justify-between items-center mb-4">

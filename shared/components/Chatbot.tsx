@@ -25,22 +25,25 @@ interface ChatbotProps {
 const MoboAvatar: React.FC<{ size?: 'sm' | 'md' }> = ({ size = 'md' }) => {
   const isSmall = size === 'sm';
   const sizeClasses = isSmall ? 'w-8 h-8' : 'w-11 h-11';
-  const eyeSize = isSmall ? 'w-[3px] h-[4px]' : 'w-[4px] h-[6px]';
-  const smileSize = isSmall ? 'w-2.5 h-1' : 'w-3.5 h-1.5';
+  const ringSize = isSmall ? 'w-10 h-10' : 'w-14 h-14';
 
   return (
-    <div
-      className={`${sizeClasses} bg-gradient-to-b from-amber-300 to-yellow-500 rounded-full shadow-[inset_-2px_-2px_6px_rgba(0,0,0,0.1),0_4px_10px_rgba(245,158,11,0.3)] flex items-center justify-center relative overflow-hidden ${!isSmall ? 'animate-[bounce_3s_infinite] motion-reduce:animate-none' : ''}`}
-    >
-      <div className="absolute top-1 left-2 w-1/3 h-1/4 bg-white/40 blur-[1px] rounded-full -rotate-12"></div>
+    <div className={`relative ${sizeClasses} flex items-center justify-center`}>
       <div
-        className={`relative z-10 flex flex-col items-center ${isSmall ? 'top-[1px]' : 'top-[2px]'}`}
+        className={`absolute ${ringSize} rounded-full bg-lime-200/40 blur-md ${
+          !isSmall ? 'animate-[mobo-pulse_3s_ease-in-out_infinite]' : ''
+        } motion-reduce:animate-none`}
+      ></div>
+      <div
+        className={`${sizeClasses} rounded-full bg-gradient-to-br from-lime-300 via-emerald-300 to-cyan-300 shadow-[0_8px_20px_rgba(34,197,94,0.35)] relative overflow-hidden ${
+          !isSmall ? 'animate-[mobo-float_4s_ease-in-out_infinite]' : ''
+        } motion-reduce:animate-none`}
       >
-        <div className="flex gap-[5px] mb-[1px]">
-          <div className={`${eyeSize} bg-zinc-900 rounded-full`}></div>
-          <div className={`${eyeSize} bg-zinc-900 rounded-full`}></div>
+        <div className="absolute -top-2 -left-2 h-6 w-6 rounded-full bg-white/50 blur-sm"></div>
+        <div className="absolute bottom-2 right-2 h-2 w-2 rounded-full bg-white/70"></div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="h-3.5 w-3.5 rounded-full bg-white/80" />
         </div>
-        <div className={`${smileSize} border-b-[1.5px] border-zinc-900 rounded-full`}></div>
       </div>
     </div>
   );
@@ -571,12 +574,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       </div>
 
       <div className="shrink-0 w-full px-4 pb-28 safe-bottom">
-        <div className="flex gap-2.5 overflow-x-auto pb-4 scrollbar-hide justify-center">
+        <div className="flex flex-wrap gap-2 justify-center pb-3">
           {quickActions.map((action, i) => (
             <button
               key={i}
               onClick={() => handleSendMessage(undefined, action.command)}
-              className="flex-shrink-0 px-4 py-2.5 bg-white shadow-sm border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 active:scale-95 flex items-center gap-2 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F4F4F5]"
+              className="px-3.5 py-2 bg-white shadow-sm border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 active:scale-95 flex items-center gap-2 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F4F4F5]"
             >
               <span className="text-base">{action.emoji}</span> {action.text}
             </button>

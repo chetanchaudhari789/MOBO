@@ -1671,11 +1671,11 @@ export const BrandDashboard: React.FC = () => {
     <DesktopShell
       isSidebarOpen={isSidebarOpen}
       onSidebarOpenChange={setIsSidebarOpen}
-      containerClassName="flex h-screen bg-[#F4F4F5] font-sans text-zinc-900 overflow-hidden relative"
+      containerClassName="flex h-[100dvh] min-h-0 bg-[#F4F4F5] font-sans text-zinc-900 overflow-hidden relative"
       overlayClassName="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
       sidebarWidthClassName="w-80"
       asideClassName="bg-white flex flex-col border-r border-zinc-100 shadow-[4px_0_24px_rgba(0,0,0,0.02)]"
-      mainClassName="flex-1 min-w-0 overflow-y-auto bg-[#FAFAFA] relative scrollbar-hide p-4 md:p-8"
+      mainClassName="flex-1 min-w-0 min-h-0 overflow-y-auto bg-[#FAFAFA] relative scrollbar-hide p-4 md:p-8"
       mobileHeader={
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-black text-lime-400 rounded-lg flex items-center justify-center">

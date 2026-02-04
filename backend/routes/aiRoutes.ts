@@ -12,29 +12,39 @@ import {
 } from '../services/aiService.js';
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 
-const chatSchema = z.object({
-  message: z.string().max(4000).default(''),
-  // Legacy UI fields (ignored server-side unless no auth is present)
-  userId: z.string().optional(),
-  userName: z.string().max(120).default('Guest'),
-  products: z.array(z.any()).max(200).optional(),
-  orders: z.array(z.any()).max(200).optional(),
-  tickets: z.array(z.any()).max(200).optional(),
-  // data URL / base64; overall request size is also capped by express.json({limit:'10mb'})
-  image: z.string().max(8_000_000).optional(),
-});
-
-const proofSchema = z.object({
-  imageBase64: z.string().min(1).max(8_000_000),
-  expectedOrderId: z.string().min(1),
-  expectedAmount: z.number().finite(),
-});
-
-const extractOrderSchema = z.object({
-  imageBase64: z.string().min(1).max(8_000_000),
-});
 export function aiRoutes(env: Env): Router {
   const router = Router();
+
+  const chatSchema = z.object({
+    message: z.string().max(env.AI_MAX_INPUT_CHARS).default(''),
+    // Legacy UI fields (ignored server-side unless no auth is present)
+    userId: z.string().optional(),
+    userName: z.string().max(120).default('Guest'),
+    products: z.array(z.any()).max(200).optional(),
+    orders: z.array(z.any()).max(200).optional(),
+    tickets: z.array(z.any()).max(200).optional(),
+    history: z
+      .array(
+        z.object({
+          role: z.enum(['user', 'assistant', 'system']),
+          content: z.string().max(env.AI_MAX_INPUT_CHARS),
+        })
+      )
+      .max(20)
+      .optional(),
+    // data URL / base64; overall request size is also capped by express.json({limit:'10mb'})
+    image: z.string().max(env.AI_MAX_IMAGE_CHARS).optional(),
+  });
+
+  const proofSchema = z.object({
+    imageBase64: z.string().min(1).max(env.AI_MAX_IMAGE_CHARS),
+    expectedOrderId: z.string().min(1),
+    expectedAmount: z.number().finite(),
+  });
+
+  const extractOrderSchema = z.object({
+    imageBase64: z.string().min(1).max(env.AI_MAX_IMAGE_CHARS),
+  });
 
   // Optional auth so the UI can call AI routes without sending a token,
   // but if a token is provided we can trust user identity from DB.
@@ -46,8 +56,7 @@ export function aiRoutes(env: Env): Router {
   const limiterChat = rateLimit({
     windowMs: 60_000,
     limit: (req) => {
-      if (env.NODE_ENV !== 'production') return 10_000;
-      return req.auth?.userId ? 120 : 20;
+      return req.auth?.userId ? env.AI_CHAT_RPM_AUTH : env.AI_CHAT_RPM_ANON;
     },
     standardHeaders: true,
     legacyHeaders: false,
@@ -64,8 +73,7 @@ export function aiRoutes(env: Env): Router {
   const limiterVerifyProof = rateLimit({
     windowMs: 60_000,
     limit: (req) => {
-      if (env.NODE_ENV !== 'production') return 10_000;
-      return req.auth?.userId ? 60 : 10;
+      return req.auth?.userId ? env.AI_PROOF_RPM_AUTH : env.AI_PROOF_RPM_ANON;
     },
     standardHeaders: true,
     legacyHeaders: false,
@@ -82,8 +90,7 @@ export function aiRoutes(env: Env): Router {
   const limiterExtractOrder = rateLimit({
     windowMs: 60_000,
     limit: (req) => {
-      if (env.NODE_ENV !== 'production') return 10_000;
-      return req.auth?.userId ? 60 : 10;
+      return req.auth?.userId ? env.AI_EXTRACT_RPM_AUTH : env.AI_EXTRACT_RPM_ANON;
     },
     standardHeaders: true,
     legacyHeaders: false,
@@ -99,6 +106,65 @@ export function aiRoutes(env: Env): Router {
 
   const getRequestId = (res: any) =>
     String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+  const dailyUsage = new Map<string, { day: string; count: number }>();
+  const lastCallAt = new Map<string, number>();
+
+  const ensureAiEnabled = (res: any): boolean => {
+    if (env.AI_ENABLED) return true;
+    res.status(503).json({
+      error: { code: 'AI_DISABLED', message: 'AI is disabled' },
+      requestId: getRequestId(res),
+    });
+    return false;
+  };
+
+  const enforceDailyLimit = (req: any, res: any): boolean => {
+    const day = new Date().toISOString().slice(0, 10);
+    const subject = String(req.auth?.userId || req.ip || 'unknown');
+    const key = `${day}:${subject}`;
+    const limit = req.auth?.userId ? env.AI_DAILY_LIMIT_AUTH : env.AI_DAILY_LIMIT_ANON;
+
+    if (!Number.isFinite(limit) || limit <= 0) {
+      res.status(429).json({
+        error: { code: 'DAILY_LIMIT_REACHED', message: 'Daily AI quota exceeded' },
+        requestId: getRequestId(res),
+      });
+      return false;
+    }
+
+    const existing = dailyUsage.get(key);
+    if (!existing || existing.day !== day) {
+      dailyUsage.set(key, { day, count: 1 });
+      return true;
+    }
+
+    if (existing.count >= limit) {
+      res.status(429).json({
+        error: { code: 'DAILY_LIMIT_REACHED', message: 'Daily AI quota exceeded' },
+        requestId: getRequestId(res),
+      });
+      return false;
+    }
+
+    existing.count += 1;
+    return true;
+  };
+
+  const enforceMinInterval = (req: any, res: any): boolean => {
+    if (!env.AI_MIN_SECONDS_BETWEEN_CALLS) return true;
+    const subject = String(req.auth?.userId || req.ip || 'unknown');
+    const now = Date.now();
+    const last = lastCallAt.get(subject) || 0;
+    if (now - last < env.AI_MIN_SECONDS_BETWEEN_CALLS * 1000) {
+      res.status(429).json({
+        error: { code: 'TOO_FREQUENT', message: 'Please wait before retrying' },
+        requestId: getRequestId(res),
+      });
+      return false;
+    }
+    lastCallAt.set(subject, now);
+    return true;
+  };
   const sendKnownError = (err: unknown, res: any): boolean => {
     if (err instanceof z.ZodError) {
       res
@@ -111,12 +177,20 @@ export function aiRoutes(env: Env): Router {
     }
     const anyErr = err as any;
     if (anyErr && typeof anyErr.statusCode === 'number') {
+      const statusCode = anyErr.statusCode;
+      const message = String(anyErr.message || 'AI error');
+      const code =
+        statusCode === 400
+          ? 'BAD_REQUEST'
+          : message.toLowerCase().includes('disabled')
+            ? 'AI_DISABLED'
+            : 'AI_NOT_CONFIGURED';
       res
-        .status(anyErr.statusCode)
+        .status(statusCode)
         .json({
           error: {
-            code: 'AI_NOT_CONFIGURED',
-            message: String(anyErr.message || 'AI not configured'),
+            code,
+            message,
           },
           requestId: getRequestId(res),
         });
@@ -127,6 +201,9 @@ export function aiRoutes(env: Env): Router {
 
   router.post('/chat', limiterChat, async (req, res, next) => {
     try {
+      if (!ensureAiEnabled(res)) return;
+      if (!enforceDailyLimit(req, res)) return;
+      if (!enforceMinInterval(req, res)) return;
       const payload = chatSchema.parse(req.body);
 
       // Zero-trust identity: never trust userId/userName from the client if auth is present.
@@ -140,6 +217,7 @@ export function aiRoutes(env: Env): Router {
         orders: payload.orders,
         tickets: payload.tickets,
         image: payload.image,
+        history: payload.history,
       });
       res.json(result);
     } catch (err) {
@@ -156,6 +234,7 @@ export function aiRoutes(env: Env): Router {
   // Protected to avoid turning this into a free public proxy.
   router.post('/check-key', requireAuth(env), requireRoles('admin', 'ops'), async (_req, res, next) => {
     try {
+      if (!ensureAiEnabled(res)) return;
       const result = await checkGeminiApiKey(env);
       res.status(result.ok ? 200 : 503).json(result);
     } catch (err) {
@@ -165,6 +244,9 @@ export function aiRoutes(env: Env): Router {
 
   router.post('/verify-proof', limiterVerifyProof, async (req, res, next) => {
     try {
+      if (!ensureAiEnabled(res)) return;
+      if (!enforceDailyLimit(req, res)) return;
+      if (!enforceMinInterval(req, res)) return;
       const payload = proofSchema.parse(req.body);
 
       // E2E runs should be deterministic and must not depend on external AI quotas.
@@ -189,6 +271,9 @@ export function aiRoutes(env: Env): Router {
 
   router.post('/extract-order', limiterExtractOrder, async (req, res, next) => {
     try {
+      if (!ensureAiEnabled(res)) return;
+      if (!enforceDailyLimit(req, res)) return;
+      if (!enforceMinInterval(req, res)) return;
       const payload = extractOrderSchema.parse(req.body);
 
       // E2E runs should be deterministic and must not depend on external AI quotas.

@@ -92,6 +92,16 @@ const orderSchema = new Schema(
     },
     reviewLink: { type: String, trim: true },
 
+    rejection: {
+      type: {
+        type: String,
+        enum: ['order', 'review', 'rating'],
+      },
+      reason: { type: String, trim: true },
+      rejectedAt: { type: Date },
+      rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    },
+
     // Step-level verification (purchase vs review/rating requirements)
     verification: {
       order: {

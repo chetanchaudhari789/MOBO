@@ -142,7 +142,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
 
       <form onSubmit={handleSubmit} className="space-y-4 fade-in" noValidate>
         {error && (
-          <div className="p-4 bg-red-50 text-red-600 text-sm rounded-2xl text-center font-bold border border-red-100">
+          <div className="p-3 bg-red-50 text-red-600 text-xs rounded-2xl text-center font-bold border border-red-100 break-words whitespace-pre-line leading-relaxed">
             {error}
           </div>
         )}

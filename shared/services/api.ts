@@ -544,6 +544,13 @@ export const api = {
         body: JSON.stringify({ orderId, type }),
       });
     },
+    rejectOrderProof: async (orderId: string, type: 'order' | 'review' | 'rating', reason: string) => {
+      return fetchJson('/ops/orders/reject-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ orderId, type, reason }),
+      });
+    },
     createCampaign: async (data: any) => {
       return fetchJson('/ops/campaigns', {
         method: 'POST',

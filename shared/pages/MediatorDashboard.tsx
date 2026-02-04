@@ -1261,6 +1261,9 @@ export const MediatorDashboard: React.FC = () => {
 
   // Modals
   const [proofModal, setProofModal] = useState<Order | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectType, setRejectType] = useState<'order' | 'review' | 'rating'>('order');
   const [dealBuilder, setDealBuilder] = useState<Campaign | null>(null);
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
@@ -1821,6 +1824,24 @@ export const MediatorDashboard: React.FC = () => {
             >
               Later
             </button>
+            <button
+              onClick={() => {
+                if (!proofModal) return;
+                const nextType: 'order' | 'review' | 'rating' = !proofModal.verification?.orderVerified
+                  ? 'order'
+                  : proofModal.requirements?.required?.includes('review')
+                      ? 'review'
+                      : proofModal.requirements?.required?.includes('rating')
+                        ? 'rating'
+                        : 'order';
+                setRejectType(nextType);
+                setRejectReason('');
+                setRejectModalOpen(true);
+              }}
+              className="flex-1 py-4 bg-red-500/20 text-red-200 font-bold text-sm rounded-[1.2rem] hover:bg-red-500/30 transition-colors"
+            >
+              Reject
+            </button>
             {!proofModal?.verification?.orderVerified ? (
               <button
                 onClick={async () => {
@@ -1952,6 +1973,81 @@ export const MediatorDashboard: React.FC = () => {
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {rejectModalOpen && proofModal && (
+        <div
+          className="absolute inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setRejectModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-[#18181B] border border-white/10 p-5 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-base">Reject Proof</h4>
+              <button
+                onClick={() => setRejectModalOpen(false)}
+                className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-400 mb-4">
+              Provide a clear reason so the buyer can re-upload correctly.
+            </p>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase">Proof Type</label>
+            <select
+              value={rejectType}
+              onChange={(e) => setRejectType(e.target.value as 'order' | 'review' | 'rating')}
+              className="mt-2 w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm font-bold"
+            >
+              <option value="order">Order Proof</option>
+              <option value="review">Review Proof</option>
+              <option value="rating">Rating Proof</option>
+            </select>
+
+            <label className="text-[10px] font-bold text-zinc-400 uppercase mt-4 block">
+              Rejection Reason
+            </label>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="mt-2 w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm font-bold text-white h-24 resize-none"
+              placeholder="Example: Order ID is not visible"
+            />
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setRejectModalOpen(false)}
+                className="flex-1 py-3 rounded-xl bg-white/10 text-white font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    if (!rejectReason.trim() || rejectReason.trim().length < 5) {
+                      toast.error('Rejection reason must be at least 5 characters.');
+                      return;
+                    }
+                    await api.ops.rejectOrderProof(proofModal.id, rejectType, rejectReason.trim());
+                    toast.success('Proof rejected and buyer notified.');
+                    setRejectModalOpen(false);
+                    setProofModal(null);
+                    await loadData();
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'Failed to reject proof';
+                    toast.error(msg);
+                  }
+                }}
+                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold"
+              >
+                Reject Now
+              </button>
+            </div>
           </div>
         </div>
       )}

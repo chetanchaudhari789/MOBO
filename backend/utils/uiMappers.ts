@@ -189,6 +189,16 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     settlementRef: (o as any).settlementRef,
     screenshots: o.screenshots ?? {},
     reviewLink: o.reviewLink,
+    rejection: o.rejection
+      ? {
+          type: o.rejection.type,
+          reason: o.rejection.reason,
+          rejectedAt: o.rejection.rejectedAt
+            ? new Date(o.rejection.rejectedAt).toISOString()
+            : undefined,
+          rejectedBy: o.rejection.rejectedBy ? String(o.rejection.rejectedBy) : undefined,
+        }
+      : undefined,
     verification: {
       orderVerified: !!orderVerifiedAt,
       orderVerifiedAt: orderVerifiedAt ? orderVerifiedAt.toISOString() : undefined,

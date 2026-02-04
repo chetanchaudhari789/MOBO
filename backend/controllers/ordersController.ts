@@ -15,8 +15,28 @@ import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
+import { isGeminiConfigured, verifyProofWithAi } from '../services/aiService.js';
 
 export function makeOrdersController(env: Env) {
+  const MAX_PROOF_BYTES = 5 * 1024 * 1024;
+  const MIN_PROOF_BYTES = 10 * 1024;
+
+  const getDataUrlByteSize = (raw: string) => {
+    const match = String(raw || '').match(/^data:[^;]+;base64,(.+)$/i);
+    if (!match) return 0;
+    const base64 = match[1] || '';
+    return Math.floor((base64.length * 3) / 4);
+  };
+
+  const assertProofImageSize = (raw: string, label: string) => {
+    const size = getDataUrlByteSize(raw);
+    if (!size || size < MIN_PROOF_BYTES) {
+      throw new AppError(400, 'INVALID_PROOF_IMAGE', `${label} is too small or invalid.`);
+    }
+    if (size > MAX_PROOF_BYTES) {
+      throw new AppError(400, 'PROOF_TOO_LARGE', `${label} exceeds 5MB.`);
+    }
+  };
   const findOrderForProof = async (orderId: string) => {
     const byId = await OrderModel.findById(orderId).lean();
     if (byId && !byId.deletedAt) return byId;
@@ -241,6 +261,38 @@ export function makeOrdersController(env: Env) {
         }
 
         const item = body.items[0];
+        if (!body.screenshots?.order) {
+          throw new AppError(400, 'ORDER_PROOF_REQUIRED', 'Order proof image is required.');
+        }
+        assertProofImageSize(body.screenshots.order, 'Order proof');
+
+        if (body.screenshots?.rating) {
+          assertProofImageSize(body.screenshots.rating, 'Rating proof');
+        }
+
+        if (!body.externalOrderId) {
+          throw new AppError(400, 'ORDER_ID_REQUIRED', 'Order ID is required to validate proof.');
+        }
+
+        if (env.SEED_E2E) {
+          // E2E runs should not rely on external AI services.
+        } else if (isGeminiConfigured(env)) {
+          const verification = await verifyProofWithAi(env, {
+            imageBase64: body.screenshots.order,
+            expectedOrderId: body.externalOrderId,
+            expectedAmount: Number(item.priceAtPurchase) || 0,
+          });
+
+          if (!verification?.orderIdMatch || !verification?.amountMatch || verification?.confidenceScore < 60) {
+            throw new AppError(
+              422,
+              'INVALID_ORDER_PROOF',
+              'Order proof did not match the order ID and amount. Please upload a valid proof.'
+            );
+          }
+        } else {
+          throw new AppError(503, 'AI_NOT_CONFIGURED', 'Proof validation is not configured.');
+        }
         const campaign = await CampaignModel.findOne({
           _id: item.campaignId,
           deletedAt: null,
@@ -515,10 +567,50 @@ export function makeOrdersController(env: Env) {
 
         if (body.type === 'review') {
           order.reviewLink = body.data;
+          if ((order as any).rejection?.type === 'review') {
+            (order as any).rejection = undefined;
+          }
         } else if (body.type === 'rating') {
+          assertProofImageSize(body.data, 'Rating proof');
           order.screenshots = { ...(order.screenshots ?? {}), rating: body.data } as any;
+          if ((order as any).rejection?.type === 'rating') {
+            (order as any).rejection = undefined;
+          }
         } else if (body.type === 'order') {
+          assertProofImageSize(body.data, 'Order proof');
+          const expectedOrderId = String(order.externalOrderId || '').trim();
+          if (!expectedOrderId) {
+            throw new AppError(400, 'ORDER_ID_REQUIRED', 'Order ID is required to validate proof.');
+          }
+          if (env.SEED_E2E) {
+            // E2E runs should not rely on external AI services.
+          } else if (isGeminiConfigured(env)) {
+            const expectedAmount = Number((order as any).items?.[0]?.priceAtPurchasePaise || 0) / 100;
+            const verification = await verifyProofWithAi(env, {
+              imageBase64: body.data,
+              expectedOrderId,
+              expectedAmount,
+            });
+
+            if (!verification?.orderIdMatch || !verification?.amountMatch || verification?.confidenceScore < 60) {
+              throw new AppError(
+                422,
+                'INVALID_ORDER_PROOF',
+                'Order proof did not match the order ID and amount. Please upload a valid proof.'
+              );
+            }
+          } else {
+            throw new AppError(503, 'AI_NOT_CONFIGURED', 'Proof validation is not configured.');
+          }
+
           order.screenshots = { ...(order.screenshots ?? {}), order: body.data } as any;
+          if ((order as any).rejection?.type === 'order') {
+            (order as any).rejection = undefined;
+          }
+        }
+
+        if (order.affiliateStatus === 'Rejected') {
+          order.affiliateStatus = 'Unchecked';
         }
 
         if (order.affiliateStatus === 'Rejected' || order.affiliateStatus === 'Fraud_Alert') {

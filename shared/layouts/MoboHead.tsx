@@ -53,6 +53,16 @@ export function MoboHead() {
         to { transform: translateY(0); }
       }
 
+      @keyframes mobo-float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+      }
+
+      @keyframes mobo-pulse {
+        0%, 100% { transform: scale(0.95); opacity: 0.4; }
+        50% { transform: scale(1.05); opacity: 0.7; }
+      }
+
       /* GLASS & BLUR UTILS */
       .glass {
         background: rgba(255, 255, 255, 0.85);

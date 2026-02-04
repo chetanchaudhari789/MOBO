@@ -13,7 +13,23 @@ export const orderItemSchema = z.object({
   brandName: z.string().optional(),
 });
 
-export const createOrderSchema = z.object({
+const isImageDataUrl = (value?: string) => {
+  if (!value) return false;
+  return /^data:image\/(png|jpe?g|webp);base64,/i.test(value);
+};
+
+const isHttpsUrl = (value?: string) => {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+export const createOrderSchema = z
+  .object({
   userId: z.string().min(1),
   preOrderId: z.string().min(1).optional(),
   items: z.array(orderItemSchema).min(1),
@@ -27,10 +43,57 @@ export const createOrderSchema = z.object({
     .optional(),
   externalOrderId: z.string().min(1).max(128).optional(),
   reviewLink: z.string().min(1).max(2000).optional(),
-});
+})
+  .superRefine((value, ctx) => {
+    if (value.reviewLink && !isHttpsUrl(value.reviewLink)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewLink'],
+        message: 'Review link must be a valid https URL',
+      });
+    }
+    if (value.screenshots?.order && !isImageDataUrl(value.screenshots.order)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['screenshots', 'order'],
+        message: 'Order proof must be a valid image data URL',
+      });
+    }
+    if (value.screenshots?.rating && !isImageDataUrl(value.screenshots.rating)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['screenshots', 'rating'],
+        message: 'Rating proof must be a valid image data URL',
+      });
+    }
+    if (value.screenshots?.review && !isImageDataUrl(value.screenshots.review)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['screenshots', 'review'],
+        message: 'Review proof must be a valid image data URL',
+      });
+    }
+  });
 
-export const submitClaimSchema = z.object({
-  orderId: z.string().min(1),
-  type: z.enum(['review', 'rating', 'order']),
-  data: z.string().min(1),
-});
+export const submitClaimSchema = z
+  .object({
+    orderId: z.string().min(1),
+    type: z.enum(['review', 'rating', 'order']),
+    data: z.string().min(1),
+  })
+  .superRefine((value, ctx) => {
+    if (value.type === 'review' && !isHttpsUrl(value.data)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['data'],
+        message: 'Review link must be a valid https URL',
+      });
+    }
+    if (value.type !== 'review' && !isImageDataUrl(value.data)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['data'],
+        message: 'Proof must be a valid image data URL',
+      });
+    }
+  });

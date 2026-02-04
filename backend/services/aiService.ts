@@ -14,6 +14,7 @@ type ChatPayload = {
   orders?: unknown[];
   tickets?: unknown[];
   image?: string;
+  history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
 };
 
 type ChatModelResponse = {
@@ -51,6 +52,11 @@ export function isGeminiConfigured(env: Env): boolean {
 }
 
 function requireGeminiKey(env: Env): string {
+  if (!env.AI_ENABLED) {
+    throw Object.assign(new Error('AI is disabled. Set AI_ENABLED=true to enable Gemini calls.'), {
+      statusCode: 503,
+    });
+  }
   if (!env.GEMINI_API_KEY) {
     throw Object.assign(new Error('Gemini is not configured. Set GEMINI_API_KEY on the backend.'), {
       statusCode: 503,
@@ -66,6 +72,65 @@ function sanitizeAiError(err: unknown): string {
     return String(err.message || 'AI request failed').slice(0, 300);
   }
   return String(err).slice(0, 300);
+}
+
+function createInputError(message: string, statusCode = 400) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+function stripUnsafeContent(raw: string): string {
+  return raw
+    .replace(/<[^>]*>/g, ' ') // HTML
+    .replace(/```[\s\S]*?```/g, ' ') // code blocks
+    .replace(/\{[\s\S]*\}/g, ' ') // JSON blobs
+    .replace(/(stack trace:|traceback:)[\s\S]*/gi, ' ') // stack traces
+    .replace(/[\r\n]+/g, ' ') // logs/newlines
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function estimateTokensFromText(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function estimateTokensFromImage(base64: string): number {
+  if (!base64) return 0;
+  return Math.ceil(base64.length / 4);
+}
+
+function sanitizeUserMessage(env: Env, message: string): string {
+  if (!message) return '';
+  if (message.length > env.AI_MAX_INPUT_CHARS) {
+    throw createInputError('Message too large');
+  }
+
+  const cleaned = stripUnsafeContent(message);
+  if (!cleaned) return '';
+
+  if (cleaned.length > env.AI_MAX_INPUT_CHARS) {
+    throw createInputError('Message too large after sanitization');
+  }
+
+  return cleaned;
+}
+
+function sanitizeHistory(env: Env, history: ChatPayload['history']) {
+  const items = Array.isArray(history) ? history : [];
+  const trimmed = items.slice(-env.AI_MAX_HISTORY_MESSAGES).map((item) => ({
+    role: item.role,
+    content: sanitizeUserMessage(env, item.content),
+  }));
+
+  const older = items.slice(0, Math.max(0, items.length - trimmed.length));
+  const summary = older.length
+    ? older
+        .map((m) => stripUnsafeContent(m.content))
+        .join(' | ')
+        .slice(0, env.AI_HISTORY_SUMMARY_CHARS)
+    : '';
+
+  return { trimmed, summary };
 }
 
 export async function checkGeminiApiKey(env: Env): Promise<{ ok: boolean; model: string; error?: string }> {
@@ -108,6 +173,13 @@ export async function generateChatUiResponse(
   const apiKey = requireGeminiKey(env);
   const ai = new GoogleGenAI({ apiKey });
 
+  if (payload.image && payload.image.length > env.AI_MAX_IMAGE_CHARS) {
+    throw createInputError('Image payload too large');
+  }
+
+  const sanitizedMessage = sanitizeUserMessage(env, payload.message || '');
+  const { trimmed: historyMessages, summary: historySummary } = sanitizeHistory(env, payload.history);
+
   const products = Array.isArray(payload.products) ? payload.products : [];
   const dealContext = products
     .slice(0, 15)
@@ -121,13 +193,17 @@ export async function generateChatUiResponse(
     })
     .join('\n');
 
+  const ordersSnippet = JSON.stringify((payload.orders || []).slice(0, 3)).slice(0, env.AI_MAX_INPUT_CHARS);
+  const ticketsSnippet = JSON.stringify((payload.tickets || []).slice(0, 2)).slice(0, env.AI_MAX_INPUT_CHARS);
+
   const systemPrompt = `
 You are 'BUZZMA', a world-class AI shopping strategist for ${payload.userName || 'Guest'}.
 
 CONTEXT:
 - DEALS: ${dealContext}
-- RECENT ORDERS: ${JSON.stringify((payload.orders || []).slice(0, 3))}
-- TICKETS: ${JSON.stringify((payload.tickets || []).slice(0, 2))}
+- RECENT ORDERS: ${ordersSnippet}
+- TICKETS: ${ticketsSnippet}
+${historySummary ? `- SUMMARY: ${historySummary}` : ''}
 
 BEHAVIOR:
 1. Be concise and friendly.
@@ -138,6 +214,19 @@ BEHAVIOR:
 6. Always respond in JSON format with responseText, intent, and optional fields.
 `;
 
+  const historyText = historyMessages.map((m) => `[${m.role}] ${m.content}`).join('\n');
+  const safeMessage = sanitizedMessage || 'Hello';
+
+  const estimatedTokens =
+    estimateTokensFromText(systemPrompt) +
+    estimateTokensFromText(safeMessage) +
+    estimateTokensFromText(historyText) +
+    estimateTokensFromImage(payload.image || '');
+
+  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
+    throw createInputError('Payload too large');
+  }
+
   const contents = payload.image
     ? [
         {
@@ -146,9 +235,14 @@ BEHAVIOR:
             data: payload.image.split(',')[1] ?? payload.image,
           },
         },
-        { text: payload.message || 'Analyze this image.' },
+        { text: safeMessage || 'Analyze this image.' },
       ]
-    : payload.message;
+    : [
+        ...(historyMessages.length
+          ? historyMessages.map((m) => ({ text: `[${m.role}] ${m.content}` }))
+          : []),
+        { text: safeMessage },
+      ];
 
   try {
     let lastError: unknown = null;
@@ -161,6 +255,7 @@ BEHAVIOR:
           contents,
           config: {
             systemInstruction: systemPrompt,
+            maxOutputTokens: env.AI_MAX_OUTPUT_TOKENS_CHAT,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
@@ -196,6 +291,11 @@ BEHAVIOR:
         const recommendedProducts = recommendedIds.length
           ? products.filter((p) => p.id && recommendedIds.includes(String(p.id)))
           : [];
+
+        console.info('Gemini chat usage estimate', {
+          model,
+          estimatedTokens,
+        });
 
         return {
           text: parsed.responseText,
@@ -235,6 +335,19 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
   const apiKey = requireGeminiKey(env);
   const ai = new GoogleGenAI({ apiKey });
 
+  if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
+    throw createInputError('Image payload too large');
+  }
+
+  const estimatedTokens =
+    estimateTokensFromImage(payload.imageBase64) +
+    estimateTokensFromText(payload.expectedOrderId) +
+    estimateTokensFromText(String(payload.expectedAmount));
+
+  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
+    throw createInputError('Payload too large');
+  }
+
   try {
     let lastError: unknown = null;
 
@@ -255,6 +368,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
             },
           ],
           config: {
+            maxOutputTokens: env.AI_MAX_OUTPUT_TOKENS_PROOF,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
@@ -275,6 +389,8 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
         if (!parsed) {
           throw new Error('Failed to parse AI verification response');
         }
+
+        console.info('Gemini proof usage estimate', { model, estimatedTokens });
 
         return parsed;
       } catch (innerError) {
@@ -304,6 +420,15 @@ export async function extractOrderDetailsWithAi(
   const apiKey = requireGeminiKey(env);
   const ai = new GoogleGenAI({ apiKey });
 
+  if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
+    throw createInputError('Image payload too large');
+  }
+
+  const estimatedTokens = estimateTokensFromImage(payload.imageBase64);
+  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
+    throw createInputError('Payload too large');
+  }
+
   try {
     let lastError: unknown = null;
 
@@ -328,6 +453,7 @@ export async function extractOrderDetailsWithAi(
             },
           ],
           config: {
+            maxOutputTokens: env.AI_MAX_OUTPUT_TOKENS_EXTRACT,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
@@ -351,6 +477,8 @@ export async function extractOrderDetailsWithAi(
           typeof parsed.confidenceScore === 'number' && Number.isFinite(parsed.confidenceScore)
             ? Math.max(0, Math.min(100, Math.round(parsed.confidenceScore)))
             : 0;
+
+        console.info('Gemini extract usage estimate', { model, estimatedTokens });
 
         return {
           orderId,

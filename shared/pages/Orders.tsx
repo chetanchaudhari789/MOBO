@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Package,
   Zap,
+  Star,
 } from 'lucide-react';
 
 const getPrimaryOrderId = (order: Order) =>
@@ -32,6 +33,25 @@ const getSecondaryOrderId = (order: Order) => {
   return internal;
 };
 
+const MAX_PROOF_SIZE_BYTES = 5 * 1024 * 1024;
+
+const isValidImageFile = (file: File) => {
+  if (!file.type.startsWith('image/')) return false;
+  if (file.size > MAX_PROOF_SIZE_BYTES) return false;
+  return true;
+};
+
+const isValidReviewLink = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 export const Orders: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -40,7 +60,7 @@ export const Orders: React.FC = () => {
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [uploadType, setUploadType] = useState<'order' | 'payment' | 'rating' | 'review'>('order');
-  const [proofToView, setProofToView] = useState<string | null>(null);
+  const [proofToView, setProofToView] = useState<Order | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [inputValue, setInputValue] = useState('');
 
@@ -136,6 +156,9 @@ export const Orders: React.FC = () => {
     setIsUploading(true);
     try {
       const file = e.target.files[0];
+      if (!isValidImageFile(file)) {
+        throw new Error('Please upload a valid image (PNG/JPG, max 5MB).');
+      }
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
@@ -161,6 +184,9 @@ export const Orders: React.FC = () => {
     if (!inputValue || !selectedOrder) return;
     setIsUploading(true);
     try {
+      if (!isValidReviewLink(inputValue)) {
+        throw new Error('Please enter a valid https review link.');
+      }
       await api.orders.submitClaim(selectedOrder.id, { type: 'review', data: inputValue });
       toast.success('Link submitted!');
       setSelectedOrder(null);
@@ -176,6 +202,10 @@ export const Orders: React.FC = () => {
   const handleNewOrderScreenshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!isValidImageFile(file)) {
+      toast.error('Please upload a valid order image (PNG/JPG, max 5MB).');
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => setFormScreenshot(reader.result as string);
@@ -208,8 +238,37 @@ export const Orders: React.FC = () => {
     }
   };
 
+  const handleNewRatingScreenshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!isValidImageFile(file)) {
+      toast.error('Please upload a valid rating image (PNG/JPG, max 5MB).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setRatingScreenshot(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
   const submitNewOrder = async () => {
     if (!selectedProduct || !user) return;
+    if (!formScreenshot) {
+      toast.error('Please upload a valid order image before submitting.');
+      return;
+    }
+    if (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch') {
+      toast.error('Order proof does not look valid. Please upload a clearer proof.');
+      return;
+    }
+    if (selectedProduct.dealType === 'Rating' && !ratingScreenshot) {
+      toast.error('Please upload a valid rating image to continue.');
+      return;
+    }
+    if (selectedProduct.dealType === 'Review' && !isValidReviewLink(reviewLinkInput)) {
+      toast.error('Please add a valid https review link to continue.');
+      return;
+    }
     setIsUploading(true);
     try {
       const screenshots: any = { order: formScreenshot };
@@ -278,7 +337,7 @@ export const Orders: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#f8f9fa]">
+    <div className="flex flex-col h-full min-h-0 bg-[#f8f9fa]">
       <div className="p-6 pb-4 bg-white shadow-sm z-10 sticky top-0 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">My Orders</h1>
@@ -319,6 +378,8 @@ export const Orders: React.FC = () => {
             const isDiscount = dealType === 'Discount';
             const isReview = dealType === 'Review';
             const isRating = dealType === 'Rating';
+            const rejectionType = order.rejection?.type;
+            const rejectionReason = order.rejection?.reason;
 
             const purchaseVerified = !!order.verification?.orderVerified;
             const missingProofs = order.requirements?.missingProofs ?? [];
@@ -331,6 +392,9 @@ export const Orders: React.FC = () => {
               statusClass = 'bg-green-100 text-green-700 border-green-200';
             } else if (order.affiliateStatus === 'Frozen_Disputed') {
               displayStatus = 'FROZEN';
+              statusClass = 'bg-red-50 text-red-700 border-red-200';
+            } else if (rejectionReason) {
+              displayStatus = 'ACTION REQUIRED';
               statusClass = 'bg-red-50 text-red-700 border-red-200';
             } else if (String((order as any).workflowStatus || '') === 'UNDER_REVIEW' && !purchaseVerified) {
               displayStatus = 'UNDER REVIEW';
@@ -383,9 +447,9 @@ export const Orders: React.FC = () => {
                       {new Date(order.createdAt).toLocaleDateString()}
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
+                  <div className="flex flex-col items-end gap-1 max-w-[40%]">
                     <span
-                      className={`px-3 py-1 text-[10px] font-bold rounded-full border shadow-sm ${statusClass}`}
+                      className={`px-3 py-1 text-[10px] font-bold rounded-full border shadow-sm truncate max-w-full ${statusClass}`}
                     >
                       {displayStatus}
                     </span>
@@ -439,6 +503,12 @@ export const Orders: React.FC = () => {
                     </div>
                   )}
 
+                {rejectionReason && (
+                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-700">
+                    {rejectionReason}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-50">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full flex items-center justify-center bg-green-100 text-green-600">
@@ -446,16 +516,27 @@ export const Orders: React.FC = () => {
                     </div>
                     <button
                       onClick={() => {
-                        if (order.screenshots?.order) setProofToView(order.screenshots.order);
+                        setProofToView(order);
                       }}
                       className="text-[10px] font-bold uppercase hover:underline text-slate-500"
                     >
-                      VIEW PROOF
+                      VIEW PROOFS
                     </button>
                   </div>
 
                   <div className="flex items-center justify-end gap-2">
-                    {isReview && !order.reviewLink && (
+                    {(rejectionType === 'order' || !order.screenshots?.order) && (
+                      <button
+                        onClick={() => {
+                          setSelectedOrder(order);
+                          setUploadType('order');
+                        }}
+                        className="text-[10px] font-bold uppercase text-blue-600"
+                      >
+                        Upload Order Proof
+                      </button>
+                    )}
+                    {isReview && (!order.reviewLink || rejectionType === 'review') && (
                       <button
                         onClick={() => {
                           setSelectedOrder(order);
@@ -463,10 +544,10 @@ export const Orders: React.FC = () => {
                         }}
                         className="text-[10px] font-bold uppercase text-blue-600"
                       >
-                        Add Review
+                        {rejectionType === 'review' ? 'Reupload Review' : 'Add Review'}
                       </button>
                     )}
-                    {isRating && !order.screenshots?.rating && (
+                    {isRating && (!order.screenshots?.rating || rejectionType === 'rating') && (
                       <button
                         onClick={() => {
                           setSelectedOrder(order);
@@ -474,7 +555,7 @@ export const Orders: React.FC = () => {
                         }}
                         className="text-[10px] font-bold uppercase text-blue-600"
                       >
-                        Add Rating
+                        {rejectionType === 'rating' ? 'Reupload Rating' : 'Add Rating'}
                       </button>
                     )}
                     <button
@@ -595,7 +676,7 @@ export const Orders: React.FC = () => {
 
                   <div>
                     <label
-                      className={`block w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${formScreenshot ? 'border-lime-200' : 'border-gray-200'}`}
+                      className={`w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${formScreenshot ? 'border-lime-200' : 'border-gray-200'}`}
                     >
                       {formScreenshot ? (
                         <img
@@ -698,6 +779,59 @@ export const Orders: React.FC = () => {
                       )}
                     </div>
                   )}
+
+                  {selectedProduct?.dealType === 'Rating' && (
+                    <div className="space-y-2 animate-enter">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Rating Screenshot
+                      </label>
+                      <label
+                        className={`w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${ratingScreenshot ? 'border-orange-200' : 'border-gray-200'}`}
+                      >
+                        {ratingScreenshot ? (
+                          <img
+                            src={ratingScreenshot}
+                            className="w-full h-full object-cover opacity-80"
+                            alt="rating preview"
+                          />
+                        ) : (
+                          <>
+                            <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                              <Star size={20} className="text-orange-400" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-400">
+                              Upload Rating Screenshot
+                            </span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={handleNewRatingScreenshot}
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  {selectedProduct?.dealType === 'Review' && (
+                    <div className="space-y-2 animate-enter">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Review Link
+                      </label>
+                      <input
+                        value={reviewLinkInput}
+                        onChange={(e) => setReviewLinkInput(e.target.value)}
+                        placeholder="https://..."
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+                      {reviewLinkInput && !isValidReviewLink(reviewLinkInput) && (
+                        <p className="text-[10px] font-bold text-red-500">
+                          Enter a valid https link.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -705,7 +839,13 @@ export const Orders: React.FC = () => {
             <div className="mt-6 pt-4 border-t border-gray-100">
               <button
                 onClick={submitNewOrder}
-                disabled={!selectedProduct || !formScreenshot || isUploading}
+                disabled={
+                  !selectedProduct ||
+                  !formScreenshot ||
+                  isUploading ||
+                  (selectedProduct?.dealType === 'Rating' && !ratingScreenshot) ||
+                  (selectedProduct?.dealType === 'Review' && !isValidReviewLink(reviewLinkInput))
+                }
                 className="w-full py-4 bg-black text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400 hover:text-black transition-all disabled:opacity-50 active:scale-95 shadow-lg"
               >
                 {isUploading ? (
@@ -798,7 +938,7 @@ export const Orders: React.FC = () => {
           onClick={() => setProofToView(null)}
         >
           <div
-            className="max-w-lg w-full bg-white p-2 rounded-2xl relative shadow-2xl"
+            className="max-w-lg w-full bg-white p-4 rounded-2xl relative shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -808,11 +948,65 @@ export const Orders: React.FC = () => {
             >
               <X size={20} />
             </button>
-            <img
-              src={proofToView}
-              className="w-full h-auto rounded-xl max-h-[80vh] object-contain"
-              alt="Proof"
-            />
+            <div className="mb-3">
+              <h3 className="text-lg font-extrabold text-slate-900">Proofs</h3>
+              <p className="text-xs text-slate-500 font-bold uppercase">
+                Order {getPrimaryOrderId(proofToView)}
+              </p>
+            </div>
+            <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+              <div className="space-y-2">
+                <div className="text-[10px] font-bold uppercase text-slate-400">Order Proof</div>
+                {proofToView.screenshots?.order ? (
+                  <img
+                    src={proofToView.screenshots.order}
+                    className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
+                    alt="Order proof"
+                  />
+                ) : (
+                  <div className="p-4 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 font-bold">
+                    Order proof not submitted.
+                  </div>
+                )}
+              </div>
+
+              {proofToView.items?.[0]?.dealType === 'Rating' && (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Rating Proof</div>
+                  {proofToView.screenshots?.rating ? (
+                    <img
+                      src={proofToView.screenshots.rating}
+                      className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
+                      alt="Rating proof"
+                    />
+                  ) : (
+                    <div className="p-4 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 font-bold">
+                      Rating proof not submitted.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {proofToView.items?.[0]?.dealType === 'Review' && (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Review Link</div>
+                  {proofToView.reviewLink ? (
+                    <a
+                      href={proofToView.reviewLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block p-3 rounded-xl border border-slate-200 text-xs font-bold text-blue-600 bg-blue-50 break-all"
+                    >
+                      {proofToView.reviewLink}
+                    </a>
+                  ) : (
+                    <div className="p-4 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 font-bold">
+                      Review link not submitted.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

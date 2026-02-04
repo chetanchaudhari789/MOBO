@@ -508,7 +508,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   // --- AUTH GUARD ---
   if (!user || user.role !== 'admin') {
     return (
-      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-6 font-sans relative overflow-hidden">
+      <div className="min-h-[100dvh] bg-[#0F172A] flex items-center justify-center p-6 font-sans relative overflow-hidden">
         {/* Background Grid */}
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20"></div>
 
@@ -579,10 +579,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       isSidebarOpen={isSidebarOpen}
       onSidebarOpenChange={setIsSidebarOpen}
       showMobileHeader={false}
-      containerClassName="flex h-screen bg-[#F8F9FA] font-sans overflow-hidden relative"
+      containerClassName="flex h-[100dvh] min-h-0 bg-[#F8F9FA] font-sans overflow-hidden relative"
       sidebarWidthClassName="w-72"
       asideClassName="bg-[#0F172A] flex flex-col border-r border-slate-800"
-      mainClassName="flex-1 min-w-0 overflow-hidden relative flex flex-col"
+      mainClassName="flex-1 min-w-0 min-h-0 overflow-hidden relative flex flex-col"
       sidebar={
         <>
           <div className="p-6 pb-2">
@@ -981,7 +981,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
             {/* USERS VIEW */}
             {view === 'users' && (
-              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full animate-enter">
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-0 animate-enter">
                 <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                   <div className="flex gap-2">
                     {['All', 'Brand', 'Agency', 'Mediator', 'User'].map((role) => (

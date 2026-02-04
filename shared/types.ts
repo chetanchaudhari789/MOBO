@@ -139,6 +139,12 @@ export interface Order {
     missingProofs?: Array<'review' | 'rating'>;
     missingVerifications?: Array<'review' | 'rating'>;
   };
+  rejection?: {
+    type?: 'order' | 'review' | 'rating';
+    reason?: string;
+    rejectedAt?: string;
+    rejectedBy?: string;
+  };
 }
 
 export interface Campaign {

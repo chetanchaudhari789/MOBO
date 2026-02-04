@@ -17,6 +17,12 @@ export const verifyOrderRequirementSchema = z.object({
   type: z.enum(['review', 'rating']),
 });
 
+export const rejectOrderProofSchema = z.object({
+  orderId: z.string().min(1),
+  type: z.enum(['order', 'review', 'rating']),
+  reason: z.string().min(5).max(500),
+});
+
 const normalizeQueryString = (value: unknown) => String(value || '').trim();
 
 export const opsOrdersQuerySchema = z.object({

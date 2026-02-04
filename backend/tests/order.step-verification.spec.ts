@@ -24,6 +24,8 @@ async function loginAdmin(app: any, username: string, password: string) {
   };
 }
 
+const LARGE_DATA_URL = `data:image/png;base64,${'A'.repeat(14000)}`;
+
 describe('order step verification (purchase vs review/rating)', () => {
   afterEach(async () => {
     await disconnectMongo();
@@ -32,6 +34,7 @@ describe('order step verification (purchase vs review/rating)', () => {
   it('keeps order UNDER_REVIEW when purchase verified but review proof missing, then approves after review verified', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
+      SEED_E2E: 'true',
       MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
@@ -72,7 +75,7 @@ describe('order step verification (purchase vs review/rating)', () => {
           },
         ],
         externalOrderId: `EXT_REVIEW_${Date.now()}`,
-        screenshots: { order: 'data:image/png;base64,AAA' },
+        screenshots: { order: LARGE_DATA_URL },
       });
 
     expect(createOrderRes.status).toBe(201);
@@ -121,6 +124,7 @@ describe('order step verification (purchase vs review/rating)', () => {
   it('keeps order UNDER_REVIEW when purchase verified but rating proof missing, then approves after rating verified', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
+      SEED_E2E: 'true',
       MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
@@ -161,7 +165,7 @@ describe('order step verification (purchase vs review/rating)', () => {
           },
         ],
         externalOrderId: `EXT_RATING_${Date.now()}`,
-        screenshots: { order: 'data:image/png;base64,AAA' },
+        screenshots: { order: LARGE_DATA_URL },
       });
 
     expect(createOrderRes.status).toBe(201);
@@ -182,7 +186,7 @@ describe('order step verification (purchase vs review/rating)', () => {
     const submitRatingRes = await request(app)
       .post('/api/orders/claim')
       .set('Authorization', `Bearer ${shopper.token}`)
-      .send({ orderId, type: 'rating', data: 'data:image/png;base64,BBB' });
+      .send({ orderId, type: 'rating', data: LARGE_DATA_URL });
 
     expect(submitRatingRes.status).toBe(200);
 
