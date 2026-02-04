@@ -74,6 +74,11 @@ export function realtimeRoutes(env: Env) {
     const parentCode = String((req.auth?.user as any)?.parentCode || '').trim();
     const brandCode = String((req.auth?.user as any)?.brandCode || '').trim();
 
+    const normalizeCode = (value: string) => value.trim().toLowerCase();
+    const mediatorCodeNorm = normalizeCode(mediatorCode);
+    const parentCodeNorm = normalizeCode(parentCode);
+    const brandCodeNorm = normalizeCode(brandCode);
+
     let cleaned = false;
     let ping: ReturnType<typeof setInterval> | null = null;
     let unsubscribe: (() => void) | null = null;
@@ -119,12 +124,20 @@ export function realtimeRoutes(env: Env) {
         // Additional scoping for multi-tenant data. These are evaluated in addition
         // to userIds/roles so we can target events to the *specific* agency/mediator/brand.
         const allowByAgency =
-          roles.includes('agency') && Array.isArray(aud.agencyCodes) && aud.agencyCodes.includes(mediatorCode);
+          roles.includes('agency') &&
+          Array.isArray(aud.agencyCodes) &&
+          aud.agencyCodes.map((c) => String(c || '').trim().toLowerCase()).includes(mediatorCodeNorm);
         const allowByMediator =
-          roles.includes('mediator') && Array.isArray(aud.mediatorCodes) && aud.mediatorCodes.includes(mediatorCode);
+          roles.includes('mediator') &&
+          Array.isArray(aud.mediatorCodes) &&
+          aud.mediatorCodes.map((c) => String(c || '').trim().toLowerCase()).includes(mediatorCodeNorm);
         const allowByBrand =
-          roles.includes('brand') && Array.isArray(aud.brandCodes) && aud.brandCodes.includes(brandCode);
-        const allowByParent = Array.isArray(aud.parentCodes) && aud.parentCodes.includes(parentCode);
+          roles.includes('brand') &&
+          Array.isArray(aud.brandCodes) &&
+          aud.brandCodes.map((c) => String(c || '').trim().toLowerCase()).includes(brandCodeNorm);
+        const allowByParent =
+          Array.isArray(aud.parentCodes) &&
+          aud.parentCodes.map((c) => String(c || '').trim().toLowerCase()).includes(parentCodeNorm);
 
         if (!(allowByAgency || allowByMediator || allowByBrand || allowByParent)) return;
       } else if (!baseAllowed) {

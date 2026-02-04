@@ -18,8 +18,11 @@ import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 export function aiRoutes(env: Env): Router {
   const router = Router();
 
+  const maxMessageChars = Math.round(env.AI_MAX_INPUT_CHARS * 1.2);
+  const maxHistoryChars = Math.round(env.AI_MAX_INPUT_CHARS * 1.5);
+
   const chatSchema = z.object({
-    message: z.string().max(env.AI_MAX_INPUT_CHARS * 3).default(''),
+    message: z.string().max(maxMessageChars).default(''),
     // Legacy UI fields (ignored server-side unless no auth is present)
     userId: z.string().optional(),
     userName: z.string().max(120).default('Guest'),
@@ -30,7 +33,7 @@ export function aiRoutes(env: Env): Router {
       .array(
         z.object({
           role: z.enum(['user', 'assistant', 'system']),
-          content: z.string().max(env.AI_MAX_INPUT_CHARS * 2),
+          content: z.string().max(maxHistoryChars),
         })
       )
       .max(20)
@@ -270,6 +273,61 @@ export function aiRoutes(env: Env): Router {
             issueType: t?.issueType,
           }))
         : [];
+
+      const rawMessage = String(payload.message || '').trim();
+      const normalizedMessage = rawMessage.toLowerCase();
+      const hasProducts = Array.isArray(effectiveProducts) && effectiveProducts.length > 0;
+      const extractCount = () => {
+        const topMatch = normalizedMessage.match(/top\s+(\d{1,2})/i);
+        if (topMatch?.[1]) return Math.max(1, Math.min(50, Number(topMatch[1])));
+        const countMatch = normalizedMessage.match(/(\d{1,2})\s+(?:deals|loot)/i);
+        if (countMatch?.[1]) return Math.max(1, Math.min(50, Number(countMatch[1])));
+        return null;
+      };
+
+      if (hasProducts) {
+        const count = extractCount();
+        const wantsAll = normalizedMessage.includes('all deals') || normalizedMessage.includes('all available deals');
+        const wantsLoot = normalizedMessage.includes('loot deals') || normalizedMessage.includes('deals');
+        const wantsLowest = normalizedMessage.includes('lowest') || normalizedMessage.includes('cheapest');
+
+        if (wantsAll) {
+          res.json({
+            text: 'Here are all available deals right now.',
+            intent: 'search_deals',
+            uiType: 'product_card',
+            data: effectiveProducts.slice(0, 50),
+          });
+          return;
+        }
+
+        if (wantsLowest) {
+          const sorted = [...effectiveProducts].sort((a: any, b: any) => {
+            const aPrice = Number(a?.price ?? a?.originalPrice ?? 0);
+            const bPrice = Number(b?.price ?? b?.originalPrice ?? 0);
+            return aPrice - bPrice;
+          });
+          const take = count ?? 1;
+          res.json({
+            text: take === 1 ? 'Here is the lowest priced deal.' : `Here are the lowest ${take} deals.`,
+            intent: 'search_deals',
+            uiType: 'product_card',
+            data: sorted.slice(0, take),
+          });
+          return;
+        }
+
+        if (wantsLoot) {
+          const take = count ?? 5;
+          res.json({
+            text: `Here are the top ${take} loot deals for you.`,
+            intent: 'search_deals',
+            uiType: 'product_card',
+            data: effectiveProducts.slice(0, take),
+          });
+          return;
+        }
+      }
 
       const result = await generateChatUiResponse(env, {
         message: payload.message,
