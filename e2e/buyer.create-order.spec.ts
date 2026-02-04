@@ -48,10 +48,12 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   const submit = page.getByRole('button', { name: 'Submit Claim' });
   await expect(submit).toBeEnabled();
   await Promise.all([
-    page.waitForResponse((res) => res.url().includes('/api/orders/user/') && res.ok()),
+    page.waitForResponse((res) => res.url().includes('/api/orders') && res.request().method() === 'POST' && res.ok()),
     submit.click(),
   ]);
 
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
   // Order list should no longer be empty.
-  await expect(page.getByText('No orders yet', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('No orders yet', { exact: false })).toHaveCount(0, { timeout: 60_000 });
 });

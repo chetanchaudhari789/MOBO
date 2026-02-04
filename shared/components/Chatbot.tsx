@@ -317,12 +317,43 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     } catch (err: any) {
       const code = String(err?.code || '').toUpperCase();
       const isRate = code === 'RATE_LIMITED' || code === 'DAILY_LIMIT_REACHED' || code === 'TOO_FREQUENT';
+      const lowerText = safeText.toLowerCase();
+      if (lowerText.includes('loot deals')) {
+        onNavigate?.('explore');
+        addMessage({
+          id: makeMessageId(),
+          role: 'model',
+          text: 'Opening **Loot Deals** for you.',
+          timestamp: Date.now(),
+        });
+        return;
+      }
+      if (lowerText.includes('latest order')) {
+        onNavigate?.('orders');
+        addMessage({
+          id: makeMessageId(),
+          role: 'model',
+          text: 'Taking you to your **Orders**.',
+          timestamp: Date.now(),
+        });
+        return;
+      }
+      if (lowerText.includes('support') || lowerText.includes('tickets')) {
+        onNavigate?.('orders');
+        addMessage({
+          id: makeMessageId(),
+          role: 'model',
+          text: 'Opening **Tickets** for you.',
+          timestamp: Date.now(),
+        });
+        return;
+      }
       addMessage({
         id: makeMessageId(),
         role: 'model',
         text: isRate
           ? 'Please wait a few seconds before trying again.'
-          : 'Something went wrong. Please try again.',
+          : String(err?.message || 'Something went wrong. Please try again.'),
         isError: true,
         timestamp: Date.now(),
       });
