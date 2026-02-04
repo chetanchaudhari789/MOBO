@@ -227,6 +227,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     if (isTyping) return;
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachment) return;
+    const safeText = textToSend.trim().slice(0, 400);
 
     let base64Image: string | undefined = undefined;
     if (attachment) {
@@ -242,7 +243,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     addMessage({
       id: makeMessageId(),
       role: 'user',
-      text: textToSend,
+      text: safeText,
       image: base64Image,
       timestamp: Date.now(),
     });
@@ -258,12 +259,34 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         api.tickets.getAll(),
       ]);
       const userTickets = allTickets.filter((t: Ticket) => t.userId === user?.id);
-      const productsForAi = Array.isArray(allProducts) ? allProducts.slice(0, 50) : [];
-      const ordersForAi = Array.isArray(userOrders) ? userOrders.slice(0, 10) : [];
-      const ticketsForAi = Array.isArray(userTickets) ? userTickets.slice(0, 10) : [];
+      const productsForAi = Array.isArray(allProducts)
+        ? allProducts.slice(0, 10).map((p) => ({
+            id: p.id,
+            title: String(p.title || '').slice(0, 80),
+            price: p.price,
+            originalPrice: p.originalPrice,
+            platform: p.platform,
+          }))
+        : [];
+      const ordersForAi = Array.isArray(userOrders)
+        ? userOrders.slice(0, 5).map((o) => ({
+            id: o.id,
+            externalOrderId: o.externalOrderId,
+            status: o.status,
+            paymentStatus: o.paymentStatus,
+            affiliateStatus: o.affiliateStatus,
+          }))
+        : [];
+      const ticketsForAi = Array.isArray(userTickets)
+        ? userTickets.slice(0, 5).map((t) => ({
+            id: t.id,
+            status: t.status,
+            issueType: t.issueType,
+          }))
+        : [];
 
       const response = await api.chat.sendMessage(
-        textToSend,
+        safeText,
         user?.id || 'guest',
         user?.name || 'Guest',
         productsForAi,
@@ -287,11 +310,15 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         relatedProducts: response.uiType === 'product_card' ? response.data : undefined,
         relatedOrders: response.uiType === 'order_card' ? response.data : undefined,
       });
-    } catch {
+    } catch (err: any) {
+      const code = String(err?.code || '').toUpperCase();
+      const isRate = code === 'RATE_LIMITED' || code === 'DAILY_LIMIT_REACHED' || code === 'TOO_FREQUENT';
       addMessage({
         id: makeMessageId(),
         role: 'model',
-        text: 'Something went wrong. Please try again.',
+        text: isRate
+          ? 'Please wait a few seconds before trying again.'
+          : 'Something went wrong. Please try again.',
         isError: true,
         timestamp: Date.now(),
       });
