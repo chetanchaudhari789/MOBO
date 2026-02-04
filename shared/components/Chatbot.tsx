@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useNotification } from '../context/NotificationContext';
 import { api, compressImage } from '../services/api';
-import { Ticket, Order } from '../types';
+import { Ticket, Order, Product } from '../types';
 import { ProductCard } from './ProductCard';
 
 interface ChatbotProps {
@@ -252,6 +252,10 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     clearAttachment();
     setIsTyping(true);
 
+    let productsForAi: Product[] = [];
+    let ordersForAi: Order[] = [];
+    let ticketsForAi: Ticket[] = [];
+
     try {
       const [allProducts, userOrders, allTickets] = await Promise.all([
         api.products.getAll(user?.mediatorCode),
@@ -259,7 +263,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         api.tickets.getAll(),
       ]);
       const userTickets = allTickets.filter((t: Ticket) => t.userId === user?.id);
-      const productsForAi = Array.isArray(allProducts)
+      productsForAi = Array.isArray(allProducts)
         ? allProducts.slice(0, 10).map((p) => ({
             ...p,
             title: String(p.title || '').slice(0, 80),
@@ -268,7 +272,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
             platform: String(p.platform || '').slice(0, 30),
           }))
         : [];
-      const ordersForAi = Array.isArray(userOrders)
+      ordersForAi = Array.isArray(userOrders)
         ? userOrders.slice(0, 5).map((o) => ({
             ...o,
             items: Array.isArray(o.items)
@@ -282,7 +286,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
             reviewLink: undefined,
           }))
         : [];
-      const ticketsForAi = Array.isArray(userTickets)
+      ticketsForAi = Array.isArray(userTickets)
         ? userTickets.slice(0, 5).map((t) => ({
             ...t,
             description: String(t.description || '').slice(0, 120),
@@ -300,7 +304,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       );
 
       // Recommendation 1: Dynamic Navigation Handling
-      if (response.navigateTo) {
+      if (response.navigateTo && response.intent === 'navigation') {
         setTimeout(() => {
           onNavigate?.(response.navigateTo as any);
         }, 1500);
@@ -319,12 +323,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       const isRate = code === 'RATE_LIMITED' || code === 'DAILY_LIMIT_REACHED' || code === 'TOO_FREQUENT';
       const lowerText = safeText.toLowerCase();
       if (lowerText.includes('loot deals')) {
-        onNavigate?.('explore');
         addMessage({
           id: makeMessageId(),
           role: 'model',
-          text: 'Opening **Loot Deals** for you.',
+          text: productsForAi.length
+            ? 'Here are some **Loot Deals** you might like.'
+            : 'Opening **Loot Deals** for you.',
           timestamp: Date.now(),
+          relatedProducts: productsForAi.length ? productsForAi.slice(0, 5) : undefined,
         });
         return;
       }

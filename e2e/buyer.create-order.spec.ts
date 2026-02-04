@@ -47,10 +47,11 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   // Submit claim
   const submit = page.getByRole('button', { name: 'Submit Claim' });
   await expect(submit).toBeEnabled();
-  await Promise.all([
-    page.waitForResponse((res) => res.url().includes('/api/orders') && res.request().method() === 'POST' && res.ok()),
-    submit.click(),
-  ]);
+  await submit.click();
+
+  await expect(page.getByText('Order submitted successfully!', { exact: false })).toBeVisible({
+    timeout: 30_000,
+  });
 
   await page.reload({ waitUntil: 'domcontentloaded' });
 
