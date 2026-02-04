@@ -241,12 +241,40 @@ export function aiRoutes(env: Env): Router {
       const authUser = req.auth?.user;
       const effectiveUserName = authUser ? String((authUser as any)?.name || 'User') : payload.userName;
 
+      const slimProducts = Array.isArray(effectiveProducts)
+        ? effectiveProducts.slice(0, 25).map((p: any) => ({
+            id: p?.id,
+            title: String(p?.title || '').slice(0, 120),
+            price: Number(p?.price ?? 0),
+            originalPrice: Number(p?.originalPrice ?? p?.price ?? 0),
+            platform: String(p?.platform || '').slice(0, 40),
+          }))
+        : [];
+
+      const slimOrders = Array.isArray(payload.orders)
+        ? payload.orders.slice(0, 10).map((o: any) => ({
+            id: o?.id,
+            externalOrderId: o?.externalOrderId,
+            status: o?.status,
+            paymentStatus: o?.paymentStatus,
+            affiliateStatus: o?.affiliateStatus,
+          }))
+        : [];
+
+      const slimTickets = Array.isArray(payload.tickets)
+        ? payload.tickets.slice(0, 10).map((t: any) => ({
+            id: t?.id,
+            status: t?.status,
+            issueType: t?.issueType,
+          }))
+        : [];
+
       const result = await generateChatUiResponse(env, {
         message: payload.message,
         userName: effectiveUserName,
-        products: effectiveProducts,
-        orders: payload.orders,
-        tickets: payload.tickets,
+        products: slimProducts,
+        orders: slimOrders,
+        tickets: slimTickets,
         image: payload.image,
         history: payload.history,
       });
