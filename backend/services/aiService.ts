@@ -288,9 +288,13 @@ BEHAVIOR:
         const recommendedIds = Array.isArray(parsed.recommendedProductIds)
           ? parsed.recommendedProductIds
           : [];
-        const recommendedProducts = recommendedIds.length
+        let recommendedProducts = recommendedIds.length
           ? products.filter((p) => p.id && recommendedIds.includes(String(p.id)))
           : [];
+
+        if (parsed.intent === 'search_deals' && recommendedProducts.length === 0 && products.length) {
+          recommendedProducts = products.slice(0, 5);
+        }
 
         console.info('Gemini chat usage estimate', {
           model,

@@ -10,6 +10,8 @@ import {
   isGeminiConfigured,
   verifyProofWithAi,
 } from '../services/aiService.js';
+import { DealModel } from '../models/Deal.js';
+import { toUiDeal } from '../utils/uiMappers.js';
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 
 export function aiRoutes(env: Env): Router {
@@ -215,6 +217,26 @@ export function aiRoutes(env: Env): Router {
         return;
       }
 
+      let effectiveProducts = payload.products;
+      if (!Array.isArray(effectiveProducts) || effectiveProducts.length === 0) {
+        const requester = req.auth?.user;
+        const roles = req.auth?.roles ?? [];
+        if (requester && roles.includes('shopper')) {
+          const mediatorCode = String((requester as any).parentCode || '').trim();
+          if (mediatorCode) {
+            const deals = await DealModel.find({
+              mediatorCode,
+              active: true,
+              deletedAt: null,
+            })
+              .sort({ createdAt: -1 })
+              .limit(50)
+              .lean();
+            effectiveProducts = deals.map(toUiDeal);
+          }
+        }
+      }
+
       // Zero-trust identity: never trust userId/userName from the client if auth is present.
       const authUser = req.auth?.user;
       const effectiveUserName = authUser ? String((authUser as any)?.name || 'User') : payload.userName;
@@ -222,7 +244,7 @@ export function aiRoutes(env: Env): Router {
       const result = await generateChatUiResponse(env, {
         message: payload.message,
         userName: effectiveUserName,
-        products: payload.products,
+        products: effectiveProducts,
         orders: payload.orders,
         tickets: payload.tickets,
         image: payload.image,
