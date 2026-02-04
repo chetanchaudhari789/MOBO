@@ -221,7 +221,7 @@ export function aiRoutes(env: Env): Router {
         return;
       }
 
-      let effectiveProducts = payload.products;
+      let effectiveProducts: any[] = Array.isArray(payload.products) ? payload.products : [];
       if (!Array.isArray(effectiveProducts) || effectiveProducts.length === 0) {
         const requester = req.auth?.user;
         const roles = req.auth?.roles ?? [];
@@ -240,6 +240,9 @@ export function aiRoutes(env: Env): Router {
             effectiveProducts = deals.map(toUiDeal);
           }
         }
+      }
+      if (!Array.isArray(effectiveProducts)) {
+        effectiveProducts = [];
       }
 
       // Zero-trust identity: never trust userId/userName from the client if auth is present.
