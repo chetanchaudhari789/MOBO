@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useNotification } from '../context/NotificationContext';
 import { api, compressImage } from '../services/api';
-import { Ticket } from '../types';
+import { Ticket, Order } from '../types';
 import { ProductCard } from './ProductCard';
 
 interface ChatbotProps {
@@ -272,7 +272,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         ? userOrders.slice(0, 5).map((o) => ({
             ...o,
             items: Array.isArray(o.items)
-              ? o.items.slice(0, 1).map((it) => ({
+              ? o.items.slice(0, 1).map((it: Order['items'][number]) => ({
                   ...it,
                   title: String(it.title || '').slice(0, 80),
                   brandName: it.brandName ? String(it.brandName).slice(0, 60) : it.brandName,
@@ -609,12 +609,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       </div>
 
       <div className="shrink-0 w-full px-4 pb-28 safe-bottom">
-        <div className="flex flex-wrap gap-2 justify-center pb-3">
+        <div className="flex flex-nowrap gap-2 justify-center pb-3 overflow-x-auto scrollbar-hide">
           {quickActions.map((action, i) => (
             <button
               key={i}
               onClick={() => handleSendMessage(undefined, action.command)}
-              className="px-3.5 py-2 bg-white shadow-sm border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 active:scale-95 flex items-center gap-2 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F4F4F5]"
+              className="px-3.5 py-2 bg-white shadow-sm border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 active:scale-95 flex items-center gap-2 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F4F4F5] whitespace-nowrap"
             >
               <span className="text-base">{action.emoji}</span> {action.text}
             </button>
