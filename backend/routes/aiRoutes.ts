@@ -280,6 +280,9 @@ export function aiRoutes(env: Env): Router {
       const rawMessage = String(payload.message || '').trim();
       const normalizedMessage = rawMessage.toLowerCase();
       const hasProducts = Array.isArray(effectiveProducts) && effectiveProducts.length > 0;
+      const hasOrders = Array.isArray(payload.orders) && payload.orders.length > 0;
+      const hasTickets = Array.isArray(payload.tickets) && payload.tickets.length > 0;
+      const normalizeStatus = (value: unknown) => String(value || '').trim();
       const extractCount = () => {
         const topMatch = normalizedMessage.match(/top\s+(\d{1,2})/i);
         if (topMatch?.[1]) return Math.max(1, Math.min(50, Number(topMatch[1])));
@@ -330,6 +333,82 @@ export function aiRoutes(env: Env): Router {
           });
           return;
         }
+      } else if (normalizedMessage.includes('deal') || normalizedMessage.includes('loot')) {
+        res.json({
+          text: 'I could not find any active deals for your mediator right now.',
+          intent: 'search_deals',
+        });
+        return;
+      }
+
+      const wantsSystem =
+        normalizedMessage.includes('what is') ||
+        normalizedMessage.includes('explain') ||
+        normalizedMessage.includes('how it works') ||
+        normalizedMessage.includes('system');
+
+      if (wantsSystem) {
+        res.json({
+          text:
+            'BUZZMA connects buyers to mediator‑published deals. You can explore deals, place orders, submit proofs, and track cashback. Ask me about **deals**, **orders**, or **tickets** anytime.',
+          intent: 'unknown',
+        });
+        return;
+      }
+
+      if (normalizedMessage.includes('order') || normalizedMessage.includes('cashback')) {
+        if (hasOrders) {
+          const latest = payload.orders[0] as any;
+          const status = normalizeStatus(latest?.status) || 'Pending';
+          const payment = normalizeStatus(latest?.paymentStatus) || 'Pending';
+          const affiliate = normalizeStatus(latest?.affiliateStatus) || 'Unchecked';
+          res.json({
+            text: `Your latest order is **${status}**. Payment: **${payment}**, Affiliate: **${affiliate}**.`,
+            intent: 'check_order_status',
+          });
+          return;
+        }
+        res.json({
+          text: 'I could not find any orders yet. Want to explore deals?',
+          intent: 'check_order_status',
+        });
+        return;
+      }
+
+      if (normalizedMessage.includes('ticket') || normalizedMessage.includes('support')) {
+        if (hasTickets) {
+          const latest = payload.tickets[0] as any;
+          const status = normalizeStatus(latest?.status) || 'Open';
+          const issue = normalizeStatus(latest?.issueType) || 'Support';
+          res.json({
+            text: `Your latest ticket (**${issue}**) is **${status}**.`,
+            intent: 'check_ticket_status',
+          });
+          return;
+        }
+        res.json({
+          text: 'No tickets found. You can create one from the Tickets tab.',
+          intent: 'check_ticket_status',
+        });
+        return;
+      }
+
+      if (normalizedMessage.includes('profile') || normalizedMessage.includes('wallet')) {
+        res.json({
+          text: 'Opening your **Profile & Wallet**.',
+          intent: 'navigation',
+          navigateTo: 'profile',
+        });
+        return;
+      }
+
+      if (normalizedMessage.includes('explore') || normalizedMessage.includes('home')) {
+        res.json({
+          text: 'Taking you to **Explore Deals**.',
+          intent: 'navigation',
+          navigateTo: normalizedMessage.includes('home') ? 'home' : 'explore',
+        });
+        return;
       }
 
       const result = await generateChatUiResponse(env, {

@@ -18,12 +18,41 @@ export const Explore: React.FC = () => {
 
   const categories = useMemo(() => {
     const set = new Set<string>();
+    const add = (value: unknown) => {
+      const v = String(value || '').trim();
+      if (v) set.add(v);
+    };
+
     for (const p of products) {
-      const c = String((p as any)?.category || '').trim();
-      if (c) set.add(c);
+      add((p as any)?.category);
+      add((p as any)?.dealType);
+      add((p as any)?.platform);
+      add((p as any)?.brandName);
     }
+
+    const presets = [
+      'All',
+      'General',
+      'Electronics',
+      'Mobiles',
+      'Fashion',
+      'Footwear',
+      'Beauty',
+      'Grooming',
+      'Home',
+      'Kitchen',
+      'Fitness',
+      'Audio',
+      'Watches',
+      'Travel',
+    ];
+
     const dynamic = Array.from(set).sort((a, b) => a.localeCompare(b));
-    return ['All', ...dynamic];
+    const merged = [...presets, ...dynamic]
+      .map((c) => String(c).trim())
+      .filter(Boolean);
+    const unique = Array.from(new Set(merged));
+    return unique;
   }, [products]);
 
   const fetchDeals = async (silent = false) => {
@@ -72,19 +101,42 @@ export const Explore: React.FC = () => {
     let result = products;
 
     if (selectedCategory !== 'All') {
-      result = result.filter(
-        (p) =>
-          p.category === selectedCategory ||
-          p.title.includes(selectedCategory) ||
-          p.dealType.includes(selectedCategory) ||
-          (selectedCategory === 'Audio' &&
-            (p.title.includes('Buds') ||
-              p.title.includes('Speaker') ||
-              p.title.includes('Headphone'))) ||
-          (selectedCategory === 'Footwear' &&
-            (p.title.includes('Shoe') || p.title.includes('Sneaker'))) ||
-          (selectedCategory === 'Watches' && p.title.includes('Watch'))
-      );
+      const selectedLower = selectedCategory.toLowerCase();
+      result = result.filter((p) => {
+        const title = String(p.title || '').toLowerCase();
+        const category = String(p.category || '').toLowerCase();
+        const dealType = String(p.dealType || '').toLowerCase();
+        const platform = String(p.platform || '').toLowerCase();
+        const brand = String(p.brandName || '').toLowerCase();
+
+        if (
+          category === selectedLower ||
+          dealType === selectedLower ||
+          platform === selectedLower ||
+          brand === selectedLower
+        ) {
+          return true;
+        }
+
+        if (title.includes(selectedLower)) return true;
+
+        if (selectedLower === 'audio') {
+          return title.includes('buds') || title.includes('speaker') || title.includes('headphone');
+        }
+        if (selectedLower === 'footwear') {
+          return title.includes('shoe') || title.includes('sneaker');
+        }
+        if (selectedLower === 'watches') {
+          return title.includes('watch');
+        }
+        if (selectedLower === 'beauty' || selectedLower === 'grooming') {
+          return title.includes('perfume') || title.includes('serum') || title.includes('cream');
+        }
+        if (selectedLower === 'home' || selectedLower === 'kitchen') {
+          return title.includes('kitchen') || title.includes('home');
+        }
+        return false;
+      });
     }
 
     if (searchTerm) {
