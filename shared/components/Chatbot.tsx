@@ -261,27 +261,31 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       const userTickets = allTickets.filter((t: Ticket) => t.userId === user?.id);
       const productsForAi = Array.isArray(allProducts)
         ? allProducts.slice(0, 10).map((p) => ({
-            id: p.id,
+            ...p,
             title: String(p.title || '').slice(0, 80),
-            price: p.price,
-            originalPrice: p.originalPrice,
-            platform: p.platform,
+            description: String(p.description || '').slice(0, 120),
+            brandName: String(p.brandName || '').slice(0, 60),
+            platform: String(p.platform || '').slice(0, 30),
           }))
         : [];
       const ordersForAi = Array.isArray(userOrders)
         ? userOrders.slice(0, 5).map((o) => ({
-            id: o.id,
-            externalOrderId: o.externalOrderId,
-            status: o.status,
-            paymentStatus: o.paymentStatus,
-            affiliateStatus: o.affiliateStatus,
+            ...o,
+            items: Array.isArray(o.items)
+              ? o.items.slice(0, 1).map((it) => ({
+                  ...it,
+                  title: String(it.title || '').slice(0, 80),
+                  brandName: it.brandName ? String(it.brandName).slice(0, 60) : it.brandName,
+                }))
+              : [],
+            screenshots: {},
+            reviewLink: undefined,
           }))
         : [];
       const ticketsForAi = Array.isArray(userTickets)
         ? userTickets.slice(0, 5).map((t) => ({
-            id: t.id,
-            status: t.status,
-            issueType: t.issueType,
+            ...t,
+            description: String(t.description || '').slice(0, 120),
           }))
         : [];
 
