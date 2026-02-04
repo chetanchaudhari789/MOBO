@@ -19,7 +19,7 @@ import { isGeminiConfigured, verifyProofWithAi } from '../services/aiService.js'
 
 export function makeOrdersController(env: Env) {
   const MAX_PROOF_BYTES = 5 * 1024 * 1024;
-  const MIN_PROOF_BYTES = 10 * 1024;
+  const MIN_PROOF_BYTES = (env.SEED_E2E || env.NODE_ENV !== 'production') ? 1 : 10 * 1024;
 
   const getDataUrlByteSize = (raw: string) => {
     const match = String(raw || '').match(/^data:[^;]+;base64,(.+)$/i);

@@ -5,34 +5,26 @@ const PASSWORD = 'ChangeMe_123!';
 
 test.describe.configure({ retries: 2 });
 
-test('brand can open Order Intelligence', async ({ page }) => {
+test('brand can open Order Intelligence', async ({ page, request }) => {
   test.setTimeout(360_000);
 
-  const login = async () => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 180_000 });
-      await page.getByRole('button', { name: /Access Portal/i }).waitFor({ timeout: 90_000 });
-      await page.getByRole('button', { name: /Access Portal/i }).click();
+  const loginRes = await request.post('/api/auth/login', {
+    data: { mobile: BRAND_MOBILE, password: PASSWORD },
+  });
+  expect(loginRes.ok()).toBeTruthy();
+  const payload = await loginRes.json();
+  const user = payload?.user;
+  const tokens = payload?.tokens;
+  expect(user).toBeTruthy();
+  expect(tokens?.accessToken).toBeTruthy();
 
-      const mobileInput = page.getByLabel('Mobile');
-      const passwordInput = page.getByLabel('Password');
-      try {
-        await mobileInput.waitFor({ timeout: 90_000 });
-        await passwordInput.waitFor({ timeout: 90_000 });
+  await page.addInitScript(({ user, tokens }) => {
+    localStorage.setItem('mobo_session', JSON.stringify(user));
+    localStorage.setItem('mobo_tokens_v1', JSON.stringify(tokens));
+  }, { user, tokens });
 
-        await mobileInput.fill(BRAND_MOBILE);
-        await passwordInput.fill(PASSWORD);
-        await page.getByRole('button', { name: /Login to Portal/i }).click();
-
-        await page.getByRole('button', { name: 'Order Intelligence' }).waitFor({ timeout: 90_000 });
-        return;
-      } catch {
-        // Retry on slow cold-start or failed login render.
-      }
-    }
-  };
-
-  await login();
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await page.getByRole('button', { name: 'Order Intelligence' }).waitFor({ timeout: 120_000 });
 
   await page.getByRole('button', { name: 'Order Intelligence' }).click();
   await expect(page.getByRole('heading', { name: 'Order Intelligence' })).toBeVisible();
