@@ -119,6 +119,7 @@ export function aiRoutes(env: Env): Router {
   };
 
   const enforceDailyLimit = (req: any, res: any): boolean => {
+    if (env.NODE_ENV !== 'production') return true;
     const day = new Date().toISOString().slice(0, 10);
     const subject = String(req.auth?.userId || req.ip || 'unknown');
     const key = `${day}:${subject}`;
@@ -151,6 +152,7 @@ export function aiRoutes(env: Env): Router {
   };
 
   const enforceMinInterval = (req: any, res: any): boolean => {
+    if (env.NODE_ENV !== 'production') return true;
     if (!env.AI_MIN_SECONDS_BETWEEN_CALLS) return true;
     const subject = String(req.auth?.userId || req.ip || 'unknown');
     const now = Date.now();
@@ -202,6 +204,13 @@ export function aiRoutes(env: Env): Router {
   router.post('/chat', limiterChat, async (req, res, next) => {
     try {
       if (!ensureAiEnabled(res)) return;
+      if (!isGeminiConfigured(env)) {
+        res.status(503).json({
+          error: { code: 'AI_NOT_CONFIGURED', message: 'Gemini is not configured.' },
+          requestId: getRequestId(res),
+        });
+        return;
+      }
       if (!enforceDailyLimit(req, res)) return;
       if (!enforceMinInterval(req, res)) return;
       const payload = chatSchema.parse(req.body);
@@ -245,8 +254,6 @@ export function aiRoutes(env: Env): Router {
   router.post('/verify-proof', limiterVerifyProof, async (req, res, next) => {
     try {
       if (!ensureAiEnabled(res)) return;
-      if (!enforceDailyLimit(req, res)) return;
-      if (!enforceMinInterval(req, res)) return;
       const payload = proofSchema.parse(req.body);
 
       // E2E runs should be deterministic and must not depend on external AI quotas.
@@ -262,6 +269,17 @@ export function aiRoutes(env: Env): Router {
         return;
       }
 
+      if (!isGeminiConfigured(env)) {
+        res.status(503).json({
+          error: { code: 'AI_NOT_CONFIGURED', message: 'Gemini is not configured.' },
+          requestId: getRequestId(res),
+        });
+        return;
+      }
+
+      if (!enforceDailyLimit(req, res)) return;
+      if (!enforceMinInterval(req, res)) return;
+
       const result = await verifyProofWithAi(env, payload);
       res.json(result);
     } catch (err) {
@@ -272,8 +290,6 @@ export function aiRoutes(env: Env): Router {
   router.post('/extract-order', limiterExtractOrder, async (req, res, next) => {
     try {
       if (!ensureAiEnabled(res)) return;
-      if (!enforceDailyLimit(req, res)) return;
-      if (!enforceMinInterval(req, res)) return;
       const payload = extractOrderSchema.parse(req.body);
 
       // E2E runs should be deterministic and must not depend on external AI quotas.
@@ -286,6 +302,17 @@ export function aiRoutes(env: Env): Router {
         });
         return;
       }
+
+      if (!isGeminiConfigured(env)) {
+        res.status(503).json({
+          error: { code: 'AI_NOT_CONFIGURED', message: 'Gemini is not configured.' },
+          requestId: getRequestId(res),
+        });
+        return;
+      }
+
+      if (!enforceDailyLimit(req, res)) return;
+      if (!enforceMinInterval(req, res)) return;
 
       const result = await extractOrderDetailsWithAi(env, { imageBase64: payload.imageBase64 });
       res.json(result);

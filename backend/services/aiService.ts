@@ -52,7 +52,7 @@ export function isGeminiConfigured(env: Env): boolean {
 }
 
 function requireGeminiKey(env: Env): string {
-  if (!env.AI_ENABLED) {
+  if (env.AI_ENABLED === false) {
     throw Object.assign(new Error('AI is disabled. Set AI_ENABLED=true to enable Gemini calls.'), {
       statusCode: 503,
     });
