@@ -82,9 +82,7 @@ export function createApp(env: Env) {
 
   // Most deployments (Render/Vercel/NGINX) run behind a reverse proxy.
   // This ensures `req.ip` and rate-limits behave correctly.
-  if (env.NODE_ENV === 'production') {
-    app.set('trust proxy', 1);
-  }
+  app.set('trust proxy', 1);
 
   // Lightweight request logging (kept dependency-free).
   // Disabled in tests to avoid noisy output.

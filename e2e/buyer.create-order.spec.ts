@@ -47,7 +47,10 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   // Submit claim
   const submit = page.getByRole('button', { name: 'Submit Claim' });
   await expect(submit).toBeEnabled();
-  await submit.click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes('/api/orders/user/') && res.ok()),
+    submit.click(),
+  ]);
 
   // Order list should no longer be empty.
   await expect(page.getByText('No orders yet', { exact: false })).toHaveCount(0);

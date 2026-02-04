@@ -224,6 +224,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
   const handleSendMessage = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
+    if (isTyping) return;
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachment) return;
 
@@ -257,14 +258,17 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         api.tickets.getAll(),
       ]);
       const userTickets = allTickets.filter((t: Ticket) => t.userId === user?.id);
+      const productsForAi = Array.isArray(allProducts) ? allProducts.slice(0, 50) : [];
+      const ordersForAi = Array.isArray(userOrders) ? userOrders.slice(0, 10) : [];
+      const ticketsForAi = Array.isArray(userTickets) ? userTickets.slice(0, 10) : [];
 
       const response = await api.chat.sendMessage(
         textToSend,
         user?.id || 'guest',
         user?.name || 'Guest',
-        allProducts,
-        userOrders,
-        userTickets,
+        productsForAi,
+        ordersForAi,
+        ticketsForAi,
         base64Image
       );
 
