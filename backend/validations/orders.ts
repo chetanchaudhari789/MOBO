@@ -15,7 +15,7 @@ export const orderItemSchema = z.object({
 
 const isImageDataUrl = (value?: string) => {
   if (!value) return false;
-  return /^data:image\/(png|jpe?g|webp);base64,/i.test(value);
+  return /^data:image\/(png|jpe?g|webp|svg\+xml);base64,/i.test(value);
 };
 
 const isHttpsUrl = (value?: string) => {
