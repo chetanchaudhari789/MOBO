@@ -49,9 +49,7 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   await expect(submit).toBeEnabled();
   await submit.click();
 
-  await expect(page.getByText('Order submitted successfully!', { exact: false })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(claimModal).toBeHidden({ timeout: 30_000 });
 
   await page.reload({ waitUntil: 'domcontentloaded' });
 

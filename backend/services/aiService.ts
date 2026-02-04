@@ -196,25 +196,32 @@ export async function generateChatUiResponse(
     })
     .join('\n');
 
-  const dealContext = clampText(dealContextRaw, 800);
+  let dealContext = clampText(dealContextRaw, 800);
 
-  const ordersSnippet = clampText(
+  let ordersSnippet = clampText(
     JSON.stringify((payload.orders || []).slice(0, 3)),
     Math.min(env.AI_MAX_INPUT_CHARS, 600)
   );
-  const ticketsSnippet = clampText(
+  let ticketsSnippet = clampText(
     JSON.stringify((payload.tickets || []).slice(0, 2)),
     Math.min(env.AI_MAX_INPUT_CHARS, 600)
   );
 
-  const systemPrompt = `
+  let historyMessagesForPrompt = historyMessages;
+
+  const buildSystemPrompt = (
+    deals: string,
+    orders: string,
+    tickets: string,
+    summary: string
+  ) => `
 You are 'BUZZMA', a world-class AI shopping strategist for ${payload.userName || 'Guest'}.
 
 CONTEXT:
-- DEALS: ${dealContext}
-- RECENT ORDERS: ${ordersSnippet}
-- TICKETS: ${ticketsSnippet}
-${historySummary ? `- SUMMARY: ${historySummary}` : ''}
+- DEALS: ${deals}
+- RECENT ORDERS: ${orders}
+- TICKETS: ${tickets}
+${summary ? `- SUMMARY: ${summary}` : ''}
 
 BEHAVIOR:
 1. Be concise and friendly.
@@ -225,17 +232,51 @@ BEHAVIOR:
 6. Always respond in JSON format with responseText, intent, and optional fields.
 `;
 
-  const historyText = clampText(
-    historyMessages.map((m) => `[${m.role}] ${m.content}`).join('\n'),
+  let systemPrompt = buildSystemPrompt(dealContext, ordersSnippet, ticketsSnippet, historySummary);
+
+  let historyText = clampText(
+    historyMessagesForPrompt.map((m) => `[${m.role}] ${m.content}`).join('\n'),
     Math.min(env.AI_MAX_INPUT_CHARS, 1200)
   );
   const safeMessage = sanitizedMessage || 'Hello';
 
-  const estimatedTokens =
+  let estimatedTokens =
     estimateTokensFromText(systemPrompt) +
     estimateTokensFromText(safeMessage) +
     estimateTokensFromText(historyText) +
     estimateTokensFromImage(payload.image || '');
+
+  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
+    historyMessagesForPrompt = historyMessages.slice(-2);
+    historyText = clampText(
+      historyMessagesForPrompt.map((m) => `[${m.role}] ${m.content}`).join('\n'),
+      Math.min(env.AI_MAX_INPUT_CHARS, 600)
+    );
+    dealContext = clampText(dealContextRaw, 300);
+    ordersSnippet = '';
+    ticketsSnippet = '';
+    const reducedSummary = historySummary ? clampText(historySummary, 120) : '';
+    systemPrompt = buildSystemPrompt(dealContext, ordersSnippet, ticketsSnippet, reducedSummary);
+    estimatedTokens =
+      estimateTokensFromText(systemPrompt) +
+      estimateTokensFromText(safeMessage) +
+      estimateTokensFromText(historyText) +
+      estimateTokensFromImage(payload.image || '');
+  }
+
+  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
+    historyMessagesForPrompt = [];
+    historyText = '';
+    dealContext = '';
+    ordersSnippet = '';
+    ticketsSnippet = '';
+    systemPrompt = buildSystemPrompt('', '', '', '');
+    estimatedTokens =
+      estimateTokensFromText(systemPrompt) +
+      estimateTokensFromText(safeMessage) +
+      estimateTokensFromText(historyText) +
+      estimateTokensFromImage(payload.image || '');
+  }
 
   if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
     throw createInputError('Payload too large');
@@ -252,8 +293,8 @@ BEHAVIOR:
         { text: safeMessage || 'Analyze this image.' },
       ]
     : [
-        ...(historyMessages.length
-          ? historyMessages.map((m) => ({ text: `[${m.role}] ${m.content}` }))
+        ...(historyMessagesForPrompt.length
+          ? historyMessagesForPrompt.map((m) => ({ text: `[${m.role}] ${m.content}` }))
           : []),
         { text: safeMessage },
       ];

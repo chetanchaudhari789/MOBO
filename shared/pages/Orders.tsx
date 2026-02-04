@@ -257,7 +257,8 @@ export const Orders: React.FC = () => {
       toast.error('Please upload a valid order image before submitting.');
       return;
     }
-    if (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch') {
+    const hasExtraction = Boolean(extractedDetails.orderId || extractedDetails.amount);
+    if (hasExtraction && (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch')) {
       toast.error('Order proof does not look valid. Please upload a clearer proof.');
       return;
     }
