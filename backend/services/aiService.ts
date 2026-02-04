@@ -193,6 +193,16 @@ function parseModelResponse(raw: string | undefined | null): ChatModelResponse |
   return safeJsonParse<ChatModelResponse>(extracted);
 }
 
+function sanitizeModelText(raw: string | undefined | null): string {
+  if (!raw) return '';
+  let cleaned = String(raw);
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, ' ');
+  cleaned = cleaned.replace(/here is the json requested:?/gi, ' ');
+  cleaned = cleaned.replace(/\bjson\b/gi, ' ');
+  cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+  return cleaned;
+}
+
 export async function generateChatUiResponse(
   env: Env,
   payload: ChatPayload
@@ -362,7 +372,9 @@ BEHAVIOR:
         });
 
         const parsed = parseModelResponse(response.text) ?? {
-          responseText: response.text || "I'm having trouble responding right now.",
+          responseText:
+            sanitizeModelText(response.text) ||
+            "I'm here to help with deals, orders, or tickets. What would you like?",
           intent: 'unknown',
         };
 

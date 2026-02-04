@@ -10,6 +10,20 @@ interface ProductCardProps {
 type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
 export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) => {
+  const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
+  const placeholderImage =
+    'data:image/svg+xml;utf8,' +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">' +
+        '<rect width="160" height="160" rx="24" fill="#F3F4F6"/>' +
+        '<circle cx="80" cy="64" r="24" fill="#E5E7EB"/>' +
+        '<rect x="32" y="104" width="96" height="16" rx="8" fill="#E5E7EB"/>' +
+      '</svg>'
+    );
+  const imageSrc = sanitizeLabel(product.image) || placeholderImage;
+  const platformLabel = sanitizeLabel(product.platform) || 'DEAL';
+  const brandLabel = sanitizeLabel(product.brandName) || 'PARTNER';
+  const mediatorLabel = sanitizeLabel(product.mediatorCode) || 'PARTNER';
   const effectiveOriginal =
     product.originalPrice > product.price ? product.originalPrice : product.price * 1.4;
 
@@ -25,17 +39,21 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
     <div className="flex-shrink-0 w-[300px] bg-white rounded-[1.5rem] p-4 shadow-sm border border-gray-100 snap-center flex flex-col relative overflow-hidden group transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
       {/* Platform Tag (Top Right) */}
       <div className="absolute top-4 right-4 bg-zinc-800 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm uppercase tracking-wider z-10">
-        {product.platform}
+        {platformLabel}
       </div>
 
       {/* Top Section: Image & Key Info */}
       <div className="flex gap-4 mb-4">
         <div className="w-24 h-24 rounded-2xl bg-gray-50 border border-gray-100 p-2 flex-shrink-0 flex items-center justify-center relative">
-          <img
-            src={product.image}
-            alt={product.title}
-            className="w-full h-full object-contain mix-blend-multiply"
-          />
+            <img
+              src={imageSrc}
+              alt={product.title}
+              className="w-full h-full object-contain mix-blend-multiply"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src !== placeholderImage) target.src = placeholderImage;
+              }}
+            />
         </div>
         <div className="flex-1 min-w-0 flex flex-col justify-center py-1">
           <h3
@@ -70,13 +88,12 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
       {/* Description Box (Technical / Monospace Style) */}
       <div className="bg-slate-50 rounded-xl p-3 mb-3 border border-slate-100 relative font-mono text-[10px] text-slate-500 leading-relaxed break-words">
         <div className="mb-1">
-          <span className="text-indigo-600 font-bold">\"{product.brandName}\"</span> -{' '}
-          {product.platform} Deal.
+          <span className="text-indigo-600 font-bold">"{brandLabel}"</span> - {platformLabel} Deal.
         </div>
         <div className="mb-2">
           Exclusive Offer via{' '}
           <span className="text-slate-900 font-bold uppercase">
-            {product.mediatorCode || 'PARTNER'}
+            {mediatorLabel}
           </span>
           .
         </div>
