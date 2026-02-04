@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { DealModel } from '../models/Deal.js';
 import { AppError } from '../middleware/errors.js';
 import { toUiDeal } from '../utils/uiMappers.js';
+import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
 import { OrderModel } from '../models/Order.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { pushOrderEvent } from '../services/orderEvents.js';
@@ -17,14 +18,20 @@ export function makeProductsController() {
         }
 
         // Buyers can ONLY see deals assigned to their mediator.
-        const mediatorCode = String((requester as any).parentCode || '').trim();
+        const mediatorCode = normalizeMediatorCode((requester as any).parentCode);
         if (!mediatorCode) {
           res.json([]);
           return;
         }
 
+        const mediatorRegex = buildMediatorCodeRegex(mediatorCode);
+        if (!mediatorRegex) {
+          res.json([]);
+          return;
+        }
+
         const deals = await DealModel.find({
-          mediatorCode,
+          mediatorCode: mediatorRegex,
           active: true,
           deletedAt: null,
         })
@@ -50,10 +57,18 @@ export function makeProductsController() {
         const dealId = String(req.params.dealId || '').trim();
         if (!dealId) throw new AppError(400, 'INVALID_DEAL_ID', 'dealId required');
 
-        const mediatorCode = String((requester as any).parentCode || '').trim();
+        const mediatorCode = normalizeMediatorCode((requester as any).parentCode);
         if (!mediatorCode) throw new AppError(409, 'MISSING_MEDIATOR_LINK', 'Your account is not linked to a mediator');
 
-        const deal = await DealModel.findOne({ _id: dealId, mediatorCode, active: true, deletedAt: null }).lean();
+        const mediatorRegex = buildMediatorCodeRegex(mediatorCode);
+        if (!mediatorRegex) throw new AppError(409, 'MISSING_MEDIATOR_LINK', 'Your account is not linked to a mediator');
+
+        const deal = await DealModel.findOne({
+          _id: dealId,
+          mediatorCode: mediatorRegex,
+          active: true,
+          deletedAt: null,
+        }).lean();
         if (!deal) throw new AppError(404, 'DEAL_NOT_FOUND', 'Deal not found');
 
         const campaign = await CampaignModel.findById((deal as any).campaignId).select({ brandUserId: 1, brandName: 1, deletedAt: 1 }).lean();

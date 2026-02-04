@@ -12,6 +12,7 @@ import {
 } from '../services/aiService.js';
 import { DealModel } from '../models/Deal.js';
 import { toUiDeal } from '../utils/uiMappers.js';
+import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 
 export function aiRoutes(env: Env): Router {
@@ -222,10 +223,11 @@ export function aiRoutes(env: Env): Router {
         const requester = req.auth?.user;
         const roles = req.auth?.roles ?? [];
         if (requester && roles.includes('shopper')) {
-          const mediatorCode = String((requester as any).parentCode || '').trim();
-          if (mediatorCode) {
+          const mediatorCode = normalizeMediatorCode((requester as any).parentCode);
+          const mediatorRegex = buildMediatorCodeRegex(mediatorCode);
+          if (mediatorRegex) {
             const deals = await DealModel.find({
-              mediatorCode,
+              mediatorCode: mediatorRegex,
               active: true,
               deletedAt: null,
             })

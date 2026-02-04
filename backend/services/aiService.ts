@@ -117,9 +117,10 @@ function sanitizeUserMessage(env: Env, message: string): string {
 
 function sanitizeHistory(env: Env, history: ChatPayload['history']) {
   const items = Array.isArray(history) ? history : [];
+  const maxHistoryChars = Math.min(env.AI_MAX_INPUT_CHARS, 600);
   const trimmed = items.slice(-env.AI_MAX_HISTORY_MESSAGES).map((item) => ({
     role: item.role,
-    content: sanitizeUserMessage(env, item.content),
+    content: sanitizeUserMessage(env, item.content).slice(0, maxHistoryChars),
   }));
 
   const older = items.slice(0, Math.max(0, items.length - trimmed.length));
@@ -173,6 +174,8 @@ export async function generateChatUiResponse(
   const apiKey = requireGeminiKey(env);
   const ai = new GoogleGenAI({ apiKey });
 
+  const clampText = (value: string, max: number) => (value.length > max ? value.slice(0, max) : value);
+
   if (payload.image && payload.image.length > env.AI_MAX_IMAGE_CHARS) {
     throw createInputError('Image payload too large');
   }
@@ -181,8 +184,8 @@ export async function generateChatUiResponse(
   const { trimmed: historyMessages, summary: historySummary } = sanitizeHistory(env, payload.history);
 
   const products = Array.isArray(payload.products) ? payload.products : [];
-  const dealContext = products
-    .slice(0, 15)
+  const dealContextRaw = products
+    .slice(0, 10)
     .map((p) => {
       const id = p.id ?? 'unknown';
       const title = p.title ?? 'Untitled';
@@ -193,8 +196,16 @@ export async function generateChatUiResponse(
     })
     .join('\n');
 
-  const ordersSnippet = JSON.stringify((payload.orders || []).slice(0, 3)).slice(0, env.AI_MAX_INPUT_CHARS);
-  const ticketsSnippet = JSON.stringify((payload.tickets || []).slice(0, 2)).slice(0, env.AI_MAX_INPUT_CHARS);
+  const dealContext = clampText(dealContextRaw, 800);
+
+  const ordersSnippet = clampText(
+    JSON.stringify((payload.orders || []).slice(0, 3)),
+    Math.min(env.AI_MAX_INPUT_CHARS, 600)
+  );
+  const ticketsSnippet = clampText(
+    JSON.stringify((payload.tickets || []).slice(0, 2)),
+    Math.min(env.AI_MAX_INPUT_CHARS, 600)
+  );
 
   const systemPrompt = `
 You are 'BUZZMA', a world-class AI shopping strategist for ${payload.userName || 'Guest'}.
@@ -214,7 +225,10 @@ BEHAVIOR:
 6. Always respond in JSON format with responseText, intent, and optional fields.
 `;
 
-  const historyText = historyMessages.map((m) => `[${m.role}] ${m.content}`).join('\n');
+  const historyText = clampText(
+    historyMessages.map((m) => `[${m.role}] ${m.content}`).join('\n'),
+    Math.min(env.AI_MAX_INPUT_CHARS, 1200)
+  );
   const safeMessage = sanitizedMessage || 'Hello';
 
   const estimatedTokens =

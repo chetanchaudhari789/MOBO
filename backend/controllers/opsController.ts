@@ -38,6 +38,7 @@ import { requestBrandConnectionSchema } from '../validations/connections.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { sendPushToUser } from '../services/pushNotifications.js';
+import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
 
 function buildOrderAudience(order: any, agencyCode?: string) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -295,14 +296,22 @@ export function makeOpsController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
         }
 
-        mediatorCodes = mediatorCodes.filter(Boolean);
+        mediatorCodes = mediatorCodes.map((code) => normalizeMediatorCode(code)).filter(Boolean);
         if (!mediatorCodes.length) {
           res.json([]);
           return;
         }
 
+        const mediatorRegexes = mediatorCodes
+          .map((code) => buildMediatorCodeRegex(code))
+          .filter((rx): rx is RegExp => Boolean(rx));
+        if (!mediatorRegexes.length) {
+          res.json([]);
+          return;
+        }
+
         const deals = await DealModel.find({
-          mediatorCode: { $in: mediatorCodes },
+          mediatorCode: { $in: mediatorRegexes },
           deletedAt: null,
         })
           .sort({ createdAt: -1 })
@@ -1690,7 +1699,8 @@ export function makeOpsController(env: Env) {
         const campaign = await CampaignModel.findById(body.id).lean();
         if (!campaign || campaign.deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
-        const normalizeCode = (v: unknown) => String(v || '').trim();
+        const normalizeCode = (v: unknown) => normalizeMediatorCode(v);
+        const requestedCode = normalizeCode(body.mediatorCode);
 
         const findAssignmentForMediator = (assignments: any, mediatorCode: string) => {
           const target = normalizeCode(mediatorCode);
@@ -1710,7 +1720,6 @@ export function makeOpsController(env: Env) {
         if (!isPrivileged(roles)) {
           if (!roles.includes('mediator')) throw new AppError(403, 'FORBIDDEN', 'Only mediators can publish deals');
           const selfCode = normalizeCode((requester as any)?.mediatorCode);
-          const requestedCode = normalizeCode(body.mediatorCode);
           if (!selfCode || selfCode.toLowerCase() !== requestedCode.toLowerCase()) {
             throw new AppError(403, 'FORBIDDEN', 'Cannot publish deals for other mediators');
           }
@@ -1738,7 +1747,7 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const slotAssignment = findAssignmentForMediator((campaign as any).assignments, body.mediatorCode);
+        const slotAssignment = findAssignmentForMediator((campaign as any).assignments, requestedCode);
         const assignmentCommissionPaise = Number((slotAssignment as any)?.commissionPaise ?? -1);
         const commissionPaise = assignmentCommissionPaise >= 0 ? assignmentCommissionPaise : rupeesToPaise(body.commission);
         const pricePaise = Number(campaign.pricePaise ?? 0) + commissionPaise;
@@ -1747,10 +1756,10 @@ export function makeOpsController(env: Env) {
         const payoutPaise = Number((slotAssignment as any)?.payout ?? campaign.payoutPaise ?? 0);
 
         // CRITICAL: Check if deal already published to prevent re-publishing with different terms
-        const existingDeal = await DealModel.findOne({ 
-          campaignId: campaign._id, 
-          mediatorCode: body.mediatorCode, 
-          deletedAt: null 
+        const existingDeal = await DealModel.findOne({
+          campaignId: campaign._id,
+          mediatorCode: buildMediatorCodeRegex(requestedCode) ?? requestedCode,
+          deletedAt: null,
         }).lean();
 
         if (existingDeal) {
@@ -1770,7 +1779,7 @@ export function makeOpsController(env: Env) {
           // First-time deal creation
           await DealModel.create({
             campaignId: campaign._id,
-            mediatorCode: body.mediatorCode,
+            mediatorCode: requestedCode,
             title: campaign.title,
             image: campaign.image,
             productUrl: campaign.productUrl,
@@ -1786,17 +1795,23 @@ export function makeOpsController(env: Env) {
           });
         }
 
-        await writeAuditLog({ req, action: 'DEAL_PUBLISHED', entityType: 'Deal', entityId: `${String(campaign._id)}:${body.mediatorCode}`, metadata: { campaignId: String(campaign._id), mediatorCode: body.mediatorCode } });
+        await writeAuditLog({
+          req,
+          action: 'DEAL_PUBLISHED',
+          entityType: 'Deal',
+          entityId: `${String(campaign._id)}:${requestedCode}`,
+          metadata: { campaignId: String(campaign._id), mediatorCode: requestedCode },
+        });
 
-        const agencyCode = (await getAgencyCodeForMediatorCode(body.mediatorCode)) || '';
+        const agencyCode = (await getAgencyCodeForMediatorCode(requestedCode)) || '';
         publishRealtime({
           type: 'deals.changed',
           ts: new Date().toISOString(),
-          payload: { campaignId: String(campaign._id), mediatorCode: body.mediatorCode },
+          payload: { campaignId: String(campaign._id), mediatorCode: requestedCode },
           audience: {
             roles: ['admin', 'ops'],
-            mediatorCodes: [body.mediatorCode],
-            parentCodes: [body.mediatorCode],
+            mediatorCodes: [requestedCode],
+            parentCodes: [requestedCode],
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
           },
         });
