@@ -164,13 +164,15 @@ export const Orders: React.FC = () => {
       if (!isValidImageFile(file)) {
         throw new Error('Please upload a valid image (PNG/JPG, max 50MB).');
       }
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsDataURL(file);
+      await api.orders.submitClaim(selectedOrder.id, {
+        type: uploadType,
+        data: await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(file);
+        }),
       });
-      await api.orders.submitClaim(selectedOrder.id, { type: uploadType, data: base64 });
       toast.success('Proof uploaded!');
       setSelectedOrder(null);
       loadOrders();
