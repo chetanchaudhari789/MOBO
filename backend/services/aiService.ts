@@ -703,6 +703,21 @@ export async function extractOrderDetailsWithAi(
       return normalizeText(response.text || '');
     };
 
+    const orderIdFromLabeledLine = (text: string) => {
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (!lineHasOrderKeyword(line)) continue;
+        if (lineHasExcludedKeyword(line)) continue;
+        const match = line.match(/order\s*(?:id|no\.?|number|#)\s*[:\-#]?\s*([A-Z0-9\-_/]{6,40})/i);
+        if (match?.[1]) {
+          const cleaned = normalizeCandidate(match[1]);
+          const sanitized = sanitizeOrderId(cleaned);
+          if (sanitized) return sanitized;
+        }
+      }
+      return null;
+    };
+
     for (const model of GEMINI_MODEL_FALLBACKS) {
       try {
         let ocrText = '';
@@ -716,6 +731,7 @@ export async function extractOrderDetailsWithAi(
         const ocrAmount = ocrText
           ? amountFromText(ocrText) ?? amountFromTextFallback(ocrText)
           : null;
+        const ocrLabeledId = ocrText ? orderIdFromLabeledLine(ocrText) : null;
 
         // eslint-disable-next-line no-await-in-loop
         const response = await ai.models.generateContent({
@@ -782,6 +798,9 @@ export async function extractOrderDetailsWithAi(
           const candidates = candidateOrderIdsFromText(rawText).concat(candidateIds);
           orderId = pickBestOrderId(candidates, rawText);
         }
+        if (!orderId && ocrLabeledId) {
+          orderId = ocrLabeledId;
+        }
         if (!orderId && ocrOrderId) {
           orderId = ocrOrderId;
         }
@@ -798,22 +817,8 @@ export async function extractOrderDetailsWithAi(
           amount = ocrAmount;
         }
 
-        if ((!orderId || !amount) && !rawText) {
-          try {
-            rawText = await extractTextOnly(model);
-            if (!orderId && rawText) {
-              const candidates = candidateOrderIdsFromText(rawText);
-              orderId = pickBestOrderId(candidates, rawText);
-            }
-            if (!amount && rawText) {
-              amount = amountFromText(rawText);
-            }
-            if (!amount && rawText) {
-              amount = amountFromTextFallback(rawText);
-            }
-          } catch {
-            // ignore OCR fallback errors
-          }
+        if ((!orderId || !amount) && !rawText && ocrText) {
+          rawText = ocrText;
         }
         const confidenceScore =
           typeof parsed.confidenceScore === 'number' && Number.isFinite(parsed.confidenceScore)
