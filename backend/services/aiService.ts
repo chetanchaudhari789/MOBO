@@ -583,9 +583,13 @@ export async function extractOrderDetailsWithAi(
     const EXCLUDED_LINE_RE = /tracking|shipment|awb|invoice|transaction|utr|payment|upi|ref(erence)?|ship/i;
     const ORDER_LABEL_PATTERN = 'order\\s*(?:id|no\\.?|number|#)\\s*[:\\-#]?\\s*([A-Z0-9\\-_/]{6,40})';
     const AMAZON_ORDER_PATTERN = '\\b\\d{3}-\\d{7}-\\d{7}\\b';
-    const FLIPKART_ORDER_PATTERN = '\\bOD\\d{6,}\\b';
-    const MYNTRA_ORDER_PATTERN = '\\b(?:MYN|MNT|ORD)\\d{6,}\\b';
+    const FLIPKART_ORDER_PATTERN = '\\bOD\\d{10,}\\b';
+    const MYNTRA_ORDER_PATTERN = '\\b(?:MYN|MNT|ORD|PP)\\d{6,}\\b';
     const MEESHO_ORDER_PATTERN = '\\b(?:MSH|MEESHO)\\d{6,}\\b';
+    const AJIO_ORDER_PATTERN = '\\bFN\\d{6,}\\b';
+    const JIO_ORDER_PATTERN = '\\b(?:JIO|OM)\\d{8,}\\b';
+    const NYKAA_ORDER_PATTERN = '\\bNYK\\d{6,}\\b';
+    const TATA_ORDER_PATTERN = '\\b(?:TCL|TATA)\\d{6,}\\b';
     const AMAZON_SPACED_PATTERN = '(?:\\d[\\s\\-]?){17}';
     const GENERIC_ID_PATTERN = '\\b[A-Z0-9]{8,}\\b';
     const AMOUNT_LABEL_RE = /(grand total|amount paid|paid amount|you paid|order total|final total|total|net amount|payable)/i;
@@ -602,6 +606,10 @@ export async function extractOrderDetailsWithAi(
     const MYNTRA_ORDER_GLOBAL_RE = new RegExp(MYNTRA_ORDER_PATTERN, 'gi');
     const MEESHO_ORDER_RE = new RegExp(MEESHO_ORDER_PATTERN, 'i');
     const MEESHO_ORDER_GLOBAL_RE = new RegExp(MEESHO_ORDER_PATTERN, 'gi');
+    const AJIO_ORDER_RE = new RegExp(AJIO_ORDER_PATTERN, 'i');
+    const JIO_ORDER_RE = new RegExp(JIO_ORDER_PATTERN, 'i');
+    const NYKAA_ORDER_RE = new RegExp(NYKAA_ORDER_PATTERN, 'i');
+    const TATA_ORDER_RE = new RegExp(TATA_ORDER_PATTERN, 'i');
     const AMAZON_SPACED_GLOBAL_RE = new RegExp(AMAZON_SPACED_PATTERN, 'g');
     const GENERIC_ID_RE = new RegExp(GENERIC_ID_PATTERN, 'i');
     const AMOUNT_VALUE_GLOBAL_RE = new RegExp(AMOUNT_VALUE_PATTERN, 'g');
@@ -638,10 +646,12 @@ export async function extractOrderDetailsWithAi(
       if (upper.includes('-')) score += 2;
       if (/\d/.test(upper) && /[A-Z]/.test(upper)) score += 2;
       if (/^\d{10,20}$/.test(upper)) score += 1;
-      if (new RegExp(`^${AMAZON_ORDER_PATTERN}$`).test(upper)) score += 5;
-      if (new RegExp(`^${FLIPKART_ORDER_PATTERN}$`).test(upper)) score += 4;
-      if (new RegExp(`^${MYNTRA_ORDER_PATTERN}$`).test(upper)) score += 4;
-      if (new RegExp(`^${MEESHO_ORDER_PATTERN}$`).test(upper)) score += 4;
+      if (new RegExp(`^${AMAZON_ORDER_PATTERN}$`).test(upper)) score += 10;
+      if (new RegExp(`^${FLIPKART_ORDER_PATTERN}$`).test(upper)) score += 8;
+      if (new RegExp(`^${MYNTRA_ORDER_PATTERN}$`).test(upper)) score += 8;
+      if (new RegExp(`^${MEESHO_ORDER_PATTERN}$`).test(upper)) score += 8;
+      if (new RegExp(`^${AJIO_ORDER_PATTERN}$`).test(upper)) score += 8;
+      if (new RegExp(`^${JIO_ORDER_PATTERN}$`).test(upper)) score += 8;
       if (context.occursInText) score += 1;
       return score;
     };
@@ -777,6 +787,18 @@ export async function extractOrderDetailsWithAi(
         const meesho = line.match(MEESHO_ORDER_RE);
         if (meesho?.[0]) pushCandidate(meesho[0], hasKeyword);
 
+        const ajio = line.match(AJIO_ORDER_RE);
+        if (ajio?.[0]) pushCandidate(ajio[0], hasKeyword);
+
+        const jio = line.match(JIO_ORDER_RE);
+        if (jio?.[0]) pushCandidate(jio[0], hasKeyword);
+
+        const nykaa = line.match(NYKAA_ORDER_RE);
+        if (nykaa?.[0]) pushCandidate(nykaa[0], hasKeyword);
+
+        const tata = line.match(TATA_ORDER_RE);
+        if (tata?.[0]) pushCandidate(tata[0], hasKeyword);
+
         if (hasKeyword) {
           const generic = line.match(GENERIC_ID_RE);
           if (generic?.[0]) pushCandidate(generic[0], true);
@@ -904,15 +926,18 @@ export async function extractOrderDetailsWithAi(
         contents: [
           {
             text: [
-              'You are verifying OCR text for an e-commerce order.',
-              'Only respond with values that are explicitly visible in the OCR text provided.',
-              'Do NOT guess or invent values.',
-              `OCR_TEXT:\n${ocrText}`,
+              'TASK: EXTRACT E-COMMERCE ORDER DETAILS FROM OCR TEXT.',
+              'PRIORITY: GOD-LEVEL ACCURACY REQUIRED.',
+              '1. EXTRACT the Order ID exactly as it appears (Amazon 404-..., Flipkart OD..., Myntra, Jio, etc.).',
+              '2. EXTRACT the Final Order Amount.',
+              '3. IGNORE ambiguous single/double digit numbers.',
+              '4. IGNORE system UUIDs or IDs that look like "SYS-..." or internal codes.',
+              '5. If a DETERMINISTIC_ORDER_ID is provided and looks correct, confirmation it.',
+              '6. If OCR text is messy but contains a likely Order ID, EXTRACT IT. Do not return null if a partial match exists.',
+              `OCR_TEXT (Start):\n${ocrText}\n(End OCR_TEXT)`,
               `DETERMINISTIC_ORDER_ID: ${deterministic.orderId ?? 'null'}`,
               `DETERMINISTIC_AMOUNT: ${deterministic.amount ?? 'null'}`,
-              'If the OCR text contains a different Order ID or Amount, suggest the exact value.',
-              'If OCR text does not clearly show a value, omit it.',
-              'Return JSON only.',
+              'Return JSON with suggestedOrderId, suggestedAmount, confidenceScore (0-100), and notes.',
             ].join('\n'),
           },
         ],
