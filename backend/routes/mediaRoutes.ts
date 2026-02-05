@@ -1,13 +1,31 @@
 import { Router } from 'express';
 import type { Env } from '../config/env.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4MB
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
-export function mediaRoutes(_env: Env): Router {
+/** Block requests to private / link-local / loopback addresses (SSRF protection). */
+function isPrivateHost(hostname: string): boolean {
+  // Loopback
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return true;
+  // RFC-1918 / link-local / metadata
+  const parts = hostname.split('.').map(Number);
+  if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
+    if (parts[0] === 10) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    if (parts[0] === 169 && parts[1] === 254) return true; // AWS metadata etc.
+    if (parts[0] === 0) return true;
+  }
+  return false;
+}
+
+export function mediaRoutes(env: Env): Router {
   const router = Router();
 
-  router.get('/media/image', async (req, res) => {
+  // Auth required: prevents unauthenticated SSRF scanning.
+  router.get('/media/image', requireAuth(env), async (req, res) => {
     const rawUrl = String(req.query.url || '').trim();
     if (!rawUrl) {
       res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'url required' } });
@@ -24,6 +42,11 @@ export function mediaRoutes(_env: Env): Router {
 
     if (!ALLOWED_PROTOCOLS.has(target.protocol)) {
       res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'invalid protocol' } });
+      return;
+    }
+
+    if (isPrivateHost(target.hostname)) {
+      res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'private addresses not allowed' } });
       return;
     }
 

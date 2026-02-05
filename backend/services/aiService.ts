@@ -75,7 +75,7 @@ function sanitizeAiError(err: unknown): string {
   return String(err).slice(0, 300);
 }
 
-function createInputError(message: string, statusCode = 400) {
+function _createInputError(message: string, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
 }
 
@@ -577,7 +577,7 @@ export async function extractOrderDetailsWithAi(
   }
 
   try {
-    let lastError: unknown = null;
+    let _lastError: unknown = null;
 
     const ORDER_KEYWORD_RE = /order\s*(id|no\.?|number|#)/i;
     const EXCLUDED_LINE_RE = /tracking|shipment|awb|invoice|transaction|utr|payment|upi|ref(erence)?|ship/i;
@@ -972,7 +972,7 @@ export async function extractOrderDetailsWithAi(
             return text;
           }
         } catch (innerError) {
-          lastError = innerError;
+          _lastError = innerError;
           continue;
         }
       }
@@ -1053,7 +1053,7 @@ export async function extractOrderDetailsWithAi(
 
     let aiUsed = false;
     if (!(finalOrderId && finalAmount)) {
-      for (const model of GEMINI_MODEL_FALLBACKS.slice(0, 1)) {
+      for (const model of GEMINI_MODEL_FALLBACKS.slice(0, 3)) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const aiResult = await refineWithAi(model, ocrText, deterministic);
@@ -1101,7 +1101,7 @@ export async function extractOrderDetailsWithAi(
           });
           break;
         } catch (innerError) {
-          lastError = innerError;
+          _lastError = innerError;
           continue;
         }
       }

@@ -7,7 +7,8 @@ const envSchema = z.object({
 
   // Express body parser limits.
   // Use values supported by the `bytes` package syntax (e.g. '1mb', '500kb').
-  REQUEST_BODY_LIMIT: z.string().trim().min(1).default('120mb'),
+  // 20mb accommodates base64-encoded proof images (~15MB raw) with headroom.
+  REQUEST_BODY_LIMIT: z.string().trim().min(1).default('20mb'),
 
   // When true, seed + E2E flows may bypass external integrations.
   SEED_E2E: z.coerce.boolean().default(false),

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, Menu } from 'lucide-react';
+import { Package } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   return (
@@ -12,14 +12,6 @@ export const Navbar: React.FC = () => {
           </div>
           <span className="font-extrabold text-xl tracking-tight text-slate-900">BUZZMA</span>
         </div>
-
-        {/* Optional Menu Icon for future expansion */}
-        <button
-          aria-label="Open menu"
-          className="p-2 text-slate-400 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white rounded"
-        >
-          <Menu size={20} />
-        </button>
       </div>
     </nav>
   );

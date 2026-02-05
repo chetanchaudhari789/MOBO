@@ -67,13 +67,6 @@ type Tab = 'dashboard' | 'agencies' | 'campaigns' | 'requests' | 'orders' | 'pro
 const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || order.id || '').trim();
 
-const getSecondaryOrderId = (order: Order) => {
-  const primary = getPrimaryOrderId(order);
-  const internal = String(order.id || '').trim();
-  if (!primary || primary === internal) return '';
-  return internal;
-};
-
 // --- COMPONENTS ---
 
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
@@ -194,8 +187,8 @@ const BrandProfileView = () => {
     }
   };
 
-  const handleFile = (e: any) => {
-    const file = e.target.files[0];
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = () => setAvatar(reader.result as string);
@@ -668,7 +661,7 @@ const OrdersView = ({ user }: any) => {
       'Status',
       'Payment Status',
       'Verification Status',
-      'System Order ID',
+      'Internal Ref',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -705,7 +698,7 @@ const OrdersView = ({ user }: any) => {
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
-        o.reviewLink || o.screenshots?.review
+        (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
           : 'No',
       ];
@@ -721,6 +714,7 @@ const OrdersView = ({ user }: any) => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -805,11 +799,6 @@ const OrdersView = ({ user }: any) => {
                         <div className="font-mono text-xs font-bold text-zinc-500">
                           {getPrimaryOrderId(o)}
                         </div>
-                        {getSecondaryOrderId(o) && (
-                          <div className="text-[10px] text-zinc-400 font-mono">
-                            SYS {getSecondaryOrderId(o)}
-                          </div>
-                        )}
                       </td>
                       <td className="p-6">
                         <div className="flex items-center gap-3">
@@ -879,11 +868,6 @@ const OrdersView = ({ user }: any) => {
                 <span className="text-xs text-zinc-500 font-bold">
                   Order {getPrimaryOrderId(viewProofOrder)}
                 </span>
-                {getSecondaryOrderId(viewProofOrder) && (
-                  <span className="text-[10px] text-zinc-400 font-mono">
-                    SYS {getSecondaryOrderId(viewProofOrder)}
-                  </span>
-                )}
                 <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
                 <span
                   className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
@@ -1688,6 +1672,7 @@ export const BrandDashboard: React.FC = () => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   const pendingRequests = user?.pendingConnections?.length || 0;

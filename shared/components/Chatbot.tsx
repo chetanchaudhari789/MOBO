@@ -105,6 +105,19 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   };
 
+  const previewUrlRef = useRef<string | null>(null);
+
+  // Revoke the preview blob URL when the component unmounts to avoid leaks.
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    previewUrlRef.current = previewUrl;
+  }, [previewUrl]);
+
   useEffect(() => {
     // Keep placeholder suggestions helpful, but avoid distraction while typing/focused.
     if (isInputFocused || inputText.trim().length > 0) return;
@@ -143,7 +156,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       recognition.lang = 'en-US';
 
       recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript.toLowerCase();
+        const rawTranscript = event.results?.[0]?.[0]?.transcript;
+        if (!rawTranscript) { setIsListening(false); return; }
+        const transcript = rawTranscript.toLowerCase();
 
         // [AI] Voice Command Expansion (Legacy Fallback)
         if (
@@ -208,15 +223,31 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     }
   };
 
+  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        addMessage({
+          id: makeMessageId(),
+          role: 'model',
+          text: 'That image is too large (max 10 MB). Please upload a smaller screenshot.',
+          isError: true,
+          timestamp: Date.now(),
+        });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      // Revoke previous object URL to prevent memory leaks.
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setAttachment(file);
       setPreviewUrl(URL.createObjectURL(file));
     }
   };
 
   const clearAttachment = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setAttachment(null);
     setPreviewUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -231,12 +262,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
     let base64Image: string | undefined = undefined;
     if (attachment) {
-      const rawBase64 = await new Promise<string>((resolve) => {
+      const rawBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.onabort = () => reject(new Error('File read aborted'));
         reader.readAsDataURL(attachment);
-      });
-      base64Image = rawBase64;
+      }).catch(() => '');
+      if (rawBase64) base64Image = rawBase64;
     }
 
     addMessage({
@@ -258,10 +291,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     try {
       const [allProducts, userOrders, allTickets] = await Promise.all([
         api.products.getAll(user?.mediatorCode),
-        api.orders.getUserOrders(user?.id || ''),
+        user?.id ? api.orders.getUserOrders(user.id) : Promise.resolve([]),
         api.tickets.getAll(),
       ]);
-      const userTickets = allTickets.filter((t: Ticket) => t.userId === user?.id);
+      const userTickets = user?.id
+        ? allTickets.filter((t: Ticket) => t.userId === user.id)
+        : [];
       productsForAi = Array.isArray(allProducts)
         ? allProducts.slice(0, 10).map((p) => ({
             ...p,

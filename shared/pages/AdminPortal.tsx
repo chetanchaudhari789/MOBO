@@ -503,7 +503,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       'Verification Status',
       'Mediator Code',
       'Agency Name',
-      'System Order ID',
+      'Internal Ref',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -540,7 +540,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.screenshots?.order ? hyperlinkYes(buildProofUrl(order.id, 'order')) : 'No',
         order.screenshots?.payment ? hyperlinkYes(buildProofUrl(order.id, 'payment')) : 'No',
         order.screenshots?.rating ? hyperlinkYes(buildProofUrl(order.id, 'rating')) : 'No',
-        order.reviewLink || order.screenshots?.review
+        (order.reviewLink || order.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(order.id, 'review'))
           : 'No',
       ];
@@ -556,6 +556,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   const filteredUsers = useMemo(() => {
@@ -1297,9 +1298,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             <div className="font-mono text-slate-500">
                               {o.externalOrderId || o.id}
                             </div>
-                            {o.externalOrderId && (
-                              <div className="text-[10px] text-slate-400 font-mono">SYS {o.id}</div>
-                            )}
                           </td>
                           <td className="p-5 text-slate-600">
                             {new Date(o.createdAt).toLocaleDateString()}

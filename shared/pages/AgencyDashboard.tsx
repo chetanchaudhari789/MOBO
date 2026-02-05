@@ -73,13 +73,6 @@ const formatCurrency = (val: number) =>
 const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || order.id || '').trim();
 
-const getSecondaryOrderId = (order: Order) => {
-  const primary = getPrimaryOrderId(order);
-  const internal = String(order.id || '').trim();
-  if (!primary || primary === internal) return '';
-  return internal;
-};
-
 // --- COMPONENTS ---
 
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
@@ -481,7 +474,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Status',
       'Payment Status',
       'Verification Status',
-      'System Order ID',
+      'Internal Ref',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -518,7 +511,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
-        o.reviewLink || o.screenshots?.review
+        (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
           : 'No',
       ];
@@ -534,6 +527,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -626,11 +620,6 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                       <div className="font-mono text-xs font-bold text-slate-900 group-hover:text-purple-600 transition-colors">
                         {getPrimaryOrderId(o)}
                       </div>
-                      {getSecondaryOrderId(o) && (
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          SYS {getSecondaryOrderId(o)}
-                        </div>
-                      )}
                       <div className="text-[10px] text-slate-400 font-bold mt-0.5">
                         {new Date(o.createdAt).toLocaleDateString()}
                       </div>
@@ -705,11 +694,6 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
               <h3 className="text-lg font-extrabold text-slate-900 mb-2">Update Ledger Entry</h3>
               <p className="text-xs text-slate-500 mb-6 font-mono">
                 Order {getPrimaryOrderId(editingOrder)}
-                {getSecondaryOrderId(editingOrder) && (
-                  <span className="text-[10px] text-slate-400 font-mono ml-2">
-                    SYS {getSecondaryOrderId(editingOrder)}
-                  </span>
-                )}
               </p>
 
               <div className="space-y-3 mb-6">
@@ -884,6 +868,7 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -2595,11 +2580,6 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                             </span>
                             {getStatusBadge(o)}
                           </div>
-                          {getSecondaryOrderId(o) && (
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              SYS {getSecondaryOrderId(o)}
-                            </div>
-                          )}
                           <h4 className="font-bold text-slate-900 text-sm truncate">
                             {o.items[0].title}
                           </h4>
@@ -2772,11 +2752,6 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 font-bold">
                   Order {getPrimaryOrderId(proofOrder)}
-                  {getSecondaryOrderId(proofOrder) && (
-                    <span className="text-[10px] text-slate-400 font-mono ml-2">
-                      SYS {getSecondaryOrderId(proofOrder)}
-                    </span>
-                  )}
                 </span>
                 <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                 <span

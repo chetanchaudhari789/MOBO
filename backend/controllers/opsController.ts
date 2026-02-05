@@ -1835,7 +1835,21 @@ export function makeOpsController(env: Env) {
           (campaign as any).lockedReason = 'SLOT_ASSIGNMENT';
         }
 
-        await campaign.save();
+        // Optimistic concurrency: use the __v (version key) to detect
+        // conflicting concurrent writes. Mongoose auto-increments __v on save,
+        // but only if we explicitly include it in the update conditions.
+        try {
+          // increment() tells Mongoose to add {$inc: {__v: 1}} to the update
+          // and use the current __v in the query filter.
+          campaign.increment();
+          await campaign.save();
+        } catch (saveErr: any) {
+          // VersionError (Mongoose) means a concurrent save changed the doc.
+          if (saveErr?.name === 'VersionError' || saveErr?.message?.includes('No matching document')) {
+            throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Campaign was modified concurrently, please retry');
+          }
+          throw saveErr;
+        }
         await writeAuditLog({ req, action: 'CAMPAIGN_SLOTS_ASSIGNED', entityType: 'Campaign', entityId: String(campaign._id) });
 
         const assignmentCodes = positiveEntries.map(([c]) => String(c).trim()).filter(Boolean);

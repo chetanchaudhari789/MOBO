@@ -115,6 +115,20 @@ export function aiRoutes(env: Env): Router {
   const dailyUsage = new Map<string, { day: string; count: number }>();
   const lastCallAt = new Map<string, number>();
 
+  // Periodically purge stale entries so the Maps don't grow without bound.
+  const PURGE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+  const purgeStaleEntries = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const [key, value] of dailyUsage) {
+      if (value.day !== today) dailyUsage.delete(key);
+    }
+    for (const [key, ts] of lastCallAt) {
+      if (ts < cutoff) lastCallAt.delete(key);
+    }
+  };
+  setInterval(purgeStaleEntries, PURGE_INTERVAL_MS).unref();
+
   const ensureAiEnabled = (res: any): boolean => {
     if (env.AI_ENABLED) return true;
     res.status(503).json({

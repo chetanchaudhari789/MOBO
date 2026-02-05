@@ -30,6 +30,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
       return;
     }
 
+    if (!password || password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
     if (view === 'register') {
       if (!name.trim()) {
         setError('Please enter your full name.');

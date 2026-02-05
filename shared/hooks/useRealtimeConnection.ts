@@ -46,9 +46,11 @@ export function useRealtimeConnection(): RealtimeConnectionStatus {
 
   useEffect(() => {
     const t = setInterval(() => {
-      // Force periodic re-render so `connected` updates.
+      // Periodic re-render so `connected` updates when stream goes stale.
+      // 10s is sufficient given the 45s stale threshold; avoids ~10× fewer
+      // re-renders compared to the previous 1s cadence.
       setTick((x) => (x + 1) % 1_000_000);
-    }, 1000);
+    }, 10_000);
     return () => clearInterval(t);
   }, []);
 

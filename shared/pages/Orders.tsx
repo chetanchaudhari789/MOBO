@@ -106,8 +106,9 @@ export const Orders: React.FC = () => {
     }
   }, [user]);
   const loadOrders = async () => {
+    if (!user?.id) return;
     try {
-      const data = await api.orders.getUserOrders(user!.id);
+      const data = await api.orders.getUserOrders(user.id);
       setOrders(data);
     } catch (e) {
       console.error(e);
@@ -229,16 +230,14 @@ export const Orders: React.FC = () => {
               .replace(/[^A-Z0-9\-_/]/gi, '')
           : '';
       const hasDigit = /\d/.test(normalizedOrderId);
-      const looksLikeMarketplaceId =
-        /\b\d{3}-\d{7}-\d{7}\b/.test(normalizedOrderId) ||
-        /\bOD\d{6,}\b/i.test(normalizedOrderId) ||
-        /\b(?:MYN|MNT|ORD)\d{6,}\b/i.test(normalizedOrderId) ||
-        /\b(?:MSH|MEESHO)\d{6,}\b/i.test(normalizedOrderId) ||
-        /^\d{10,20}$/.test(normalizedOrderId) ||
-        (hasDigit && normalizedOrderId.length >= 6 && normalizedOrderId.length <= 64);
+      // Accept any order ID that has at least one digit and is 4+ chars.
+      // This covers Amazon, Flipkart, Myntra, Meesho, Ajio, Nykaa, Tata,
+      // JioMart, and any future marketplace format.
+      const looksLikeValidId =
+        hasDigit && normalizedOrderId.length >= 4 && normalizedOrderId.length <= 64;
       const safeOrderId = /^(null|undefined|n\/a|na)$/i.test(normalizedOrderId)
         ? ''
-        : looksLikeMarketplaceId
+        : looksLikeValidId
           ? normalizedOrderId
           : '';
       const safeAmount =
@@ -262,8 +261,14 @@ export const Orders: React.FC = () => {
           amount: !hasAmount ? 'none' : amountMatch ? 'match' : 'mismatch',
         });
 
-        if (!hasId && !hasAmount) {
-          toast.info('Auto-detection is unclear. Please enter Order ID and Amount manually.');
+        if (hasId && hasAmount) {
+          toast.success('Order ID and Amount extracted successfully!');
+        } else if (hasId) {
+          toast.info('Order ID extracted. Please enter the paid amount manually.');
+        } else if (hasAmount) {
+          toast.info('Amount extracted. Please enter Order ID manually.');
+        } else {
+          toast.info('Could not auto-detect details. Please enter Order ID and Amount manually.');
         }
       }
     } catch (e) {
