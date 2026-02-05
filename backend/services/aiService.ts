@@ -251,7 +251,8 @@ export async function generateChatUiResponse(
     deals: string,
     orders: string,
     tickets: string,
-    summary: string
+    summary: string,
+    hasImage: boolean
   ) => `
 You are 'BUZZMA', a world-class AI shopping strategist for ${payload.userName || 'Guest'}.
 
@@ -268,9 +269,26 @@ BEHAVIOR:
 4. For navigation, use: 'home', 'explore', 'orders', 'profile'.
 5. Use **bold** for key info like **₹599** or **Delivered**.
 6. Always respond in JSON format with responseText, intent, and optional fields.
+${
+  hasImage
+    ? `7. IMAGE ANALYSIS (HIGHEST PRIORITY):
+   - The user has uploaded an image. IGNORE the 'RECENT ORDERS' list for identification purposes.
+   - EXTRACT the Order ID exactly as appearing in the image (e.g., Amazon '404-1234567...', Flipkart 'OD123...', Myntra, etc.).
+   - EXTRACT the Final Order Amount/Total.
+   - STRICTLY IGNORE any "system" IDs (e.g., random UUIDs, IDs starting with SYS/MOBO, or single/double digit numbers).
+   - If you see an Order ID in the image, your response text MUST begin with: "Found Order ID: <ID>".
+   - If you cannot clearly read an Order ID, say "Could not read Order ID from image".`
+    : ''
+}
 `;
 
-  let systemPrompt = buildSystemPrompt(dealContext, ordersSnippet, ticketsSnippet, historySummary);
+  let systemPrompt = buildSystemPrompt(
+    dealContext,
+    ordersSnippet,
+    ticketsSnippet,
+    historySummary,
+    !!imageForPrompt
+  );
 
   let historyText = clampText(
     historyMessagesForPrompt.map((m) => `[${m.role}] ${m.content}`).join('\n'),
@@ -294,7 +312,13 @@ BEHAVIOR:
     ordersSnippet = '';
     ticketsSnippet = '';
     const reducedSummary = historySummary ? clampText(historySummary, 120) : '';
-    systemPrompt = buildSystemPrompt(dealContext, ordersSnippet, ticketsSnippet, reducedSummary);
+    systemPrompt = buildSystemPrompt(
+      dealContext,
+      ordersSnippet,
+      ticketsSnippet,
+      reducedSummary,
+      !!imageForPrompt
+    );
     estimatedTokens =
       estimateTokensFromText(systemPrompt) +
       estimateTokensFromText(safeMessage) +
@@ -308,7 +332,7 @@ BEHAVIOR:
     dealContext = '';
     ordersSnippet = '';
     ticketsSnippet = '';
-    systemPrompt = buildSystemPrompt('', '', '', '');
+    systemPrompt = buildSystemPrompt('', '', '', '', !!imageForPrompt);
     estimatedTokens =
       estimateTokensFromText(systemPrompt) +
       estimateTokensFromText(safeMessage) +
