@@ -594,11 +594,27 @@ export async function extractOrderDetailsWithAi(
         const explicit = line.match(/order\s*(?:id|no\.?|number|#)\s*[:\-#]?\s*([A-Z0-9\-_/]{6,40})/i);
         if (explicit?.[1]) candidates.push(explicit[1]);
 
+        const spaced = line.match(/order\s*(?:id|no\.?|number|#)\s*[:\-#]?\s*((?:\d[\s\-]?){12,30})/i);
+        if (spaced?.[1]) {
+          const digitsOnly = spaced[1].replace(/[^0-9]/g, '');
+          if (digitsOnly.length === 17) {
+            candidates.push(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`);
+          } else {
+            candidates.push(digitsOnly);
+          }
+        }
+
         const amazon = line.match(/\b\d{3}-\d{7}-\d{7}\b/);
         if (amazon?.[0]) candidates.push(amazon[0]);
 
         const flipkart = line.match(/\bOD\d{6,}\b/i);
         if (flipkart?.[0]) candidates.push(flipkart[0]);
+
+        const myntra = line.match(/\b(?:MYN|MNT|ORD)\d{6,}\b/i);
+        if (myntra?.[0]) candidates.push(myntra[0]);
+
+        const meesho = line.match(/\b(?:MSH|MEESHO)\d{6,}\b/i);
+        if (meesho?.[0]) candidates.push(meesho[0]);
 
         const generic = line.match(/\b[A-Z0-9]{8,}\b/i);
         if (generic?.[0]) candidates.push(generic[0]);
@@ -607,7 +623,10 @@ export async function extractOrderDetailsWithAi(
       // Fallback scan for known patterns anywhere in text.
       const amazonAll = text.match(/\b\d{3}-\d{7}-\d{7}\b/g) || [];
       const flipkartAll = text.match(/\bOD\d{6,}\b/gi) || [];
+      const myntraAll = text.match(/\b(?:MYN|MNT|ORD)\d{6,}\b/gi) || [];
+      const meeshoAll = text.match(/\b(?:MSH|MEESHO)\d{6,}\b/gi) || [];
       candidates.push(...amazonAll, ...flipkartAll);
+      candidates.push(...myntraAll, ...meeshoAll);
 
       return candidates
         .map((c) => sanitizeOrderId(c))
@@ -663,6 +682,8 @@ export async function extractOrderDetailsWithAi(
       if (/^\d{10,20}$/.test(upper)) score += 1; // common numeric order ids
       if (/^\d{3}-\d{7}-\d{7}$/.test(upper)) score += 4; // Amazon
       if (/^OD\d{6,}$/.test(upper)) score += 3; // Flipkart
+      if (/^(MYN|MNT|ORD)\d{6,}$/.test(upper)) score += 3; // Myntra
+      if (/^(MSH|MEESHO)\d{6,}$/.test(upper)) score += 3; // Meesho
       if (rawText && rawText.toLowerCase().includes(value.toLowerCase())) score += 1;
       return score;
     };
@@ -731,6 +752,15 @@ export async function extractOrderDetailsWithAi(
         const ocrAmount = ocrText
           ? amountFromText(ocrText) ?? amountFromTextFallback(ocrText)
           : null;
+
+        if (ocrOrderId && ocrAmount) {
+          return {
+            orderId: ocrOrderId,
+            amount: ocrAmount,
+            confidenceScore: 75,
+            notes: 'Extracted via OCR parsing.',
+          };
+        }
         const ocrLabeledId = ocrText ? orderIdFromLabeledLine(ocrText) : null;
 
         // eslint-disable-next-line no-await-in-loop
@@ -751,6 +781,7 @@ export async function extractOrderDetailsWithAi(
                 'Do NOT return internal/system IDs (e.g., app IDs, DB IDs, SYS, E2E, or BUZZMA/MOBO).',
                 'Ignore shipment IDs, tracking IDs, invoice numbers, transaction IDs, and AWB numbers.',
                 'If multiple order IDs appear, return the one labeled Order ID / Order No / Order Number.',
+                'Amazon order number format example: 408-9652341-7203568.',
                 'Also include rawText: the exact text you can read from the screenshot (no guesses).',
                 'Also include orderIdCandidates and amountCandidates arrays if possible.',
                 'Return JSON only. If a value is not clearly visible, omit the field.',
