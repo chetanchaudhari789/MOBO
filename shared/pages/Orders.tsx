@@ -230,12 +230,18 @@ export const Orders: React.FC = () => {
 
       // [AI] Smart Extraction Verification Logic
       if (selectedProduct) {
-        const amountMatch = details.amount && Math.abs(details.amount - selectedProduct.price) < 10;
-        const idValid = details.orderId && details.orderId.length > 5;
+        const hasId = Boolean(details.orderId);
+        const hasAmount = typeof details.amount === 'number' && Number.isFinite(details.amount);
+        const amountMatch = hasAmount && Math.abs(details.amount - selectedProduct.price) < 10;
+        const idValid = hasId && details.orderId.length > 5;
         setMatchStatus({
-          id: idValid ? 'match' : 'mismatch',
-          amount: amountMatch ? 'match' : 'mismatch',
+          id: !hasId ? 'none' : idValid ? 'match' : 'mismatch',
+          amount: !hasAmount ? 'none' : amountMatch ? 'match' : 'mismatch',
         });
+
+        if (!hasId || !hasAmount) {
+          toast.info('Auto-detection is unclear. Please enter Order ID and Amount manually.');
+        }
       }
     } catch (e) {
       console.error(e);
