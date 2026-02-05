@@ -33,7 +33,7 @@ const getSecondaryOrderId = (order: Order) => {
   return internal;
 };
 
-const MAX_PROOF_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_PROOF_SIZE_BYTES = 12 * 1024 * 1024;
 
 const isValidImageFile = (file: File) => {
   if (!file.type.startsWith('image/')) return false;
@@ -157,7 +157,7 @@ export const Orders: React.FC = () => {
     try {
       const file = e.target.files[0];
       if (!isValidImageFile(file)) {
-        throw new Error('Please upload a valid image (PNG/JPG, max 5MB).');
+        throw new Error('Please upload a valid image (PNG/JPG, max 12MB).');
       }
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -204,7 +204,7 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid order image (PNG/JPG, max 5MB).');
+      toast.error('Please upload a valid order image (PNG/JPG, max 12MB).');
       return;
     }
 
@@ -255,7 +255,7 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid rating image (PNG/JPG, max 5MB).');
+      toast.error('Please upload a valid rating image (PNG/JPG, max 12MB).');
       return;
     }
 

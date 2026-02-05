@@ -18,7 +18,7 @@ import { getRequester, isPrivileged } from '../services/authz.js';
 import { isGeminiConfigured, verifyProofWithAi } from '../services/aiService.js';
 
 export function makeOrdersController(env: Env) {
-  const MAX_PROOF_BYTES = 5 * 1024 * 1024;
+  const MAX_PROOF_BYTES = 12 * 1024 * 1024;
   const MIN_PROOF_BYTES = (env.SEED_E2E || env.NODE_ENV !== 'production') ? 1 : 10 * 1024;
 
   const getDataUrlByteSize = (raw: string) => {

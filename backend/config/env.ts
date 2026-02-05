@@ -7,7 +7,7 @@ const envSchema = z.object({
 
   // Express body parser limits.
   // Use values supported by the `bytes` package syntax (e.g. '1mb', '500kb').
-  REQUEST_BODY_LIMIT: z.string().trim().min(1).default('10mb'),
+  REQUEST_BODY_LIMIT: z.string().trim().min(1).default('25mb'),
 
   // When true, seed + E2E flows may bypass external integrations.
   SEED_E2E: z.coerce.boolean().default(false),
@@ -48,8 +48,8 @@ const envSchema = z.object({
   AI_MAX_OUTPUT_TOKENS_PROOF: z.coerce.number().int().positive().default(256),
   AI_MAX_OUTPUT_TOKENS_EXTRACT: z.coerce.number().int().positive().default(256),
   AI_MAX_INPUT_CHARS: z.coerce.number().int().positive().default(4000),
-  AI_MAX_IMAGE_CHARS: z.coerce.number().int().positive().default(2_000_000),
-  AI_MAX_ESTIMATED_TOKENS: z.coerce.number().int().positive().default(1200),
+  AI_MAX_IMAGE_CHARS: z.coerce.number().int().positive().default(16_000_000),
+  AI_MAX_ESTIMATED_TOKENS: z.coerce.number().int().positive().default(3000),
   AI_MAX_HISTORY_MESSAGES: z.coerce.number().int().positive().default(6),
   AI_HISTORY_SUMMARY_CHARS: z.coerce.number().int().positive().default(400),
   AI_MIN_SECONDS_BETWEEN_CALLS: z.coerce.number().int().nonnegative().default(3),
