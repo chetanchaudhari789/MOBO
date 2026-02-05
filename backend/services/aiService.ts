@@ -628,6 +628,15 @@ export async function extractOrderDetailsWithAi(
       candidates.push(...amazonAll, ...flipkartAll);
       candidates.push(...myntraAll, ...meeshoAll);
 
+      // Amazon order numbers often appear with spaces/hyphens: 408 9652341 7203568
+      const spacedAmazon = text.match(/(?:\d[\s\-]?){17}/g) || [];
+      for (const chunk of spacedAmazon) {
+        const digitsOnly = chunk.replace(/[^0-9]/g, '');
+        if (digitsOnly.length === 17) {
+          candidates.push(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`);
+        }
+      }
+
       return candidates
         .map((c) => sanitizeOrderId(c))
         .filter((c): c is string => Boolean(c));
@@ -739,6 +748,9 @@ export async function extractOrderDetailsWithAi(
       return null;
     };
 
+    let bestOcrOrderId: string | null = null;
+    let bestOcrAmount: number | null = null;
+
     for (const model of GEMINI_MODEL_FALLBACKS) {
       try {
         let ocrText = '';
@@ -752,6 +764,9 @@ export async function extractOrderDetailsWithAi(
         const ocrAmount = ocrText
           ? amountFromText(ocrText) ?? amountFromTextFallback(ocrText)
           : null;
+
+        if (ocrOrderId && !bestOcrOrderId) bestOcrOrderId = ocrOrderId;
+        if (ocrAmount && !bestOcrAmount) bestOcrAmount = ocrAmount;
 
         if (ocrOrderId && ocrAmount) {
           return {
@@ -875,6 +890,15 @@ export async function extractOrderDetailsWithAi(
         lastError = innerError;
         continue;
       }
+    }
+
+    if (bestOcrOrderId || bestOcrAmount) {
+      return {
+        orderId: bestOcrOrderId,
+        amount: bestOcrAmount,
+        confidenceScore: 55,
+        notes: 'Extracted via OCR parsing (fallback).',
+      };
     }
 
     throw lastError ?? new Error('Gemini extraction failed');
