@@ -24,7 +24,7 @@ export default defineConfig({
     env: {
       ...process.env,
       SEED_E2E: 'true',
-      NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=4096']
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=4096', '--no-deprecation']
         .filter(Boolean)
         .join(' '),
     },
