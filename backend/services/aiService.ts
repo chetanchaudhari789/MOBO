@@ -639,6 +639,16 @@ export async function extractOrderDetailsWithAi(
       return null;
     };
 
+    const amountFromTextFallback = (text: string) => {
+      const matches = text.match(/(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi) || [];
+      const values = matches
+        .map((m) => m.replace(/[^0-9.,]/g, ''))
+        .map((m) => Number(m.replace(/,/g, '')))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      if (!values.length) return null;
+      return Math.max(...values);
+    };
+
     const normalizeCandidate = (value: string) =>
       value
         .replace(/[\s:]/g, '')
@@ -695,6 +705,18 @@ export async function extractOrderDetailsWithAi(
 
     for (const model of GEMINI_MODEL_FALLBACKS) {
       try {
+        let ocrText = '';
+        try {
+          ocrText = await extractTextOnly(model);
+        } catch {
+          ocrText = '';
+        }
+        const ocrCandidates = ocrText ? candidateOrderIdsFromText(ocrText) : [];
+        const ocrOrderId = ocrText ? pickBestOrderId(ocrCandidates, ocrText) : null;
+        const ocrAmount = ocrText
+          ? amountFromText(ocrText) ?? amountFromTextFallback(ocrText)
+          : null;
+
         // eslint-disable-next-line no-await-in-loop
         const response = await ai.models.generateContent({
           model,
@@ -760,11 +782,20 @@ export async function extractOrderDetailsWithAi(
           const candidates = candidateOrderIdsFromText(rawText).concat(candidateIds);
           orderId = pickBestOrderId(candidates, rawText);
         }
+        if (!orderId && ocrOrderId) {
+          orderId = ocrOrderId;
+        }
         if (!amount && rawText) {
           amount = amountFromText(rawText);
         }
+        if (!amount && rawText) {
+          amount = amountFromTextFallback(rawText);
+        }
         if (!amount && candidateAmounts.length) {
           amount = candidateAmounts[0];
+        }
+        if (!amount && ocrAmount) {
+          amount = ocrAmount;
         }
 
         if ((!orderId || !amount) && !rawText) {
@@ -777,6 +808,9 @@ export async function extractOrderDetailsWithAi(
             if (!amount && rawText) {
               amount = amountFromText(rawText);
             }
+            if (!amount && rawText) {
+              amount = amountFromTextFallback(rawText);
+            }
           } catch {
             // ignore OCR fallback errors
           }
@@ -786,12 +820,19 @@ export async function extractOrderDetailsWithAi(
             ? Math.max(0, Math.min(100, Math.round(parsed.confidenceScore)))
             : 0;
 
+        const finalConfidence =
+          confidenceScore > 0
+            ? confidenceScore
+            : orderId || amount
+              ? 60
+              : 0;
+
         console.info('Gemini extract usage estimate', { model, estimatedTokens });
 
         return {
           orderId,
           amount,
-          confidenceScore,
+          confidenceScore: finalConfidence,
           notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
         };
       } catch (innerError) {
