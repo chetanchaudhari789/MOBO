@@ -563,9 +563,10 @@ export async function extractOrderDetailsWithAi(
     const MEESHO_ORDER_PATTERN = '\\b(?:MSH|MEESHO)\\d{6,}\\b';
     const AMAZON_SPACED_PATTERN = '(?:\\d[\\s\\-]?){17}';
     const GENERIC_ID_PATTERN = '\\b[A-Z0-9]{8,}\\b';
-    const AMOUNT_LABEL_RE = /(grand total|amount paid|you paid|order total|final total|total|net amount|payable)/i;
+    const AMOUNT_LABEL_RE = /(grand total|amount paid|paid amount|you paid|order total|final total|total|net amount|payable)/i;
     const AMOUNT_VALUE_PATTERN = '₹?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
     const INR_VALUE_PATTERN = '(?:₹|rs\\.?|inr)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
+    const BARE_AMOUNT_PATTERN = '\\b([0-9]{2,7}(?:\\.[0-9]{1,2})?)\\b';
 
     const ORDER_LABEL_RE = new RegExp(ORDER_LABEL_PATTERN, 'i');
     const AMAZON_ORDER_RE = new RegExp(AMAZON_ORDER_PATTERN, 'i');
@@ -580,6 +581,7 @@ export async function extractOrderDetailsWithAi(
     const GENERIC_ID_RE = new RegExp(GENERIC_ID_PATTERN, 'i');
     const AMOUNT_VALUE_GLOBAL_RE = new RegExp(AMOUNT_VALUE_PATTERN, 'g');
     const INR_VALUE_GLOBAL_RE = new RegExp(INR_VALUE_PATTERN, 'gi');
+    const BARE_AMOUNT_GLOBAL_RE = new RegExp(BARE_AMOUNT_PATTERN, 'g');
 
     const sanitizeOrderId = (value: unknown) => {
       if (typeof value !== 'string') return null;
@@ -630,12 +632,21 @@ export async function extractOrderDetailsWithAi(
       const lines = text.split('\n').map(normalizeLine).filter(Boolean);
       const labeledAmounts: number[] = [];
 
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
         if (!AMOUNT_LABEL_RE.test(line)) continue;
         const matches = line.matchAll(AMOUNT_VALUE_GLOBAL_RE);
         for (const match of matches) {
           const value = parseAmountString(match[1]);
           if (value) labeledAmounts.push(value);
+        }
+
+        if (!labeledAmounts.length && lines[i + 1]) {
+          const nextLineMatches = lines[i + 1].matchAll(AMOUNT_VALUE_GLOBAL_RE);
+          for (const match of nextLineMatches) {
+            const value = parseAmountString(match[1]);
+            if (value) labeledAmounts.push(value);
+          }
         }
       }
 
@@ -648,6 +659,16 @@ export async function extractOrderDetailsWithAi(
         if (value) inrValues.push(value);
       }
       if (inrValues.length) return Math.max(...inrValues);
+
+      const bareMatches = text.matchAll(BARE_AMOUNT_GLOBAL_RE);
+      const bareValues: number[] = [];
+      for (const match of bareMatches) {
+        const value = parseAmountString(match[1]);
+        if (!value) continue;
+        if (value < 1 || value > 500000) continue;
+        bareValues.push(value);
+      }
+      if (bareValues.length) return Math.max(...bareValues);
 
       return null;
     };
@@ -664,7 +685,8 @@ export async function extractOrderDetailsWithAi(
         candidates.push({ value: sanitized, score });
       };
 
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
         if (hasExcludedKeyword(line)) continue;
         const hasKeyword = hasOrderKeyword(line);
 
@@ -678,6 +700,21 @@ export async function extractOrderDetailsWithAi(
             if (digitsOnly.length === 17) {
               pushCandidate(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`, true);
             }
+          }
+
+          const nextLine = lines[i + 1];
+          if (nextLine) {
+            const amazonNext = nextLine.match(AMAZON_ORDER_RE);
+            if (amazonNext?.[0]) pushCandidate(amazonNext[0], true);
+            const spacedNext = nextLine.match(new RegExp(AMAZON_SPACED_PATTERN));
+            if (spacedNext?.[0]) {
+              const digitsOnly = spacedNext[0].replace(/[^0-9]/g, '');
+              if (digitsOnly.length === 17) {
+                pushCandidate(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`, true);
+              }
+            }
+            const genericNext = nextLine.match(GENERIC_ID_RE);
+            if (genericNext?.[0]) pushCandidate(genericNext[0], true);
           }
         }
 
