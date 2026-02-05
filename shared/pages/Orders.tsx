@@ -225,12 +225,14 @@ export const Orders: React.FC = () => {
         typeof details.orderId === 'string'
           ? details.orderId.trim().replace(/\s+/g, '')
           : '';
+      const hasDigit = /\d/.test(normalizedOrderId);
       const looksLikeMarketplaceId =
         /\b\d{3}-\d{7}-\d{7}\b/.test(normalizedOrderId) ||
         /\bOD\d{6,}\b/i.test(normalizedOrderId) ||
         /\b(?:MYN|MNT|ORD)\d{6,}\b/i.test(normalizedOrderId) ||
         /\b(?:MSH|MEESHO)\d{6,}\b/i.test(normalizedOrderId) ||
-        /^\d{10,20}$/.test(normalizedOrderId);
+        /^\d{10,20}$/.test(normalizedOrderId) ||
+        (hasDigit && /^[A-Z0-9][A-Z0-9\-_/]{5,63}$/i.test(normalizedOrderId));
       const safeOrderId = /^(null|undefined|n\/a|na)$/i.test(normalizedOrderId)
         ? ''
         : looksLikeMarketplaceId
@@ -257,7 +259,7 @@ export const Orders: React.FC = () => {
           amount: !hasAmount ? 'none' : amountMatch ? 'match' : 'mismatch',
         });
 
-        if (!hasId || !hasAmount) {
+        if (!hasId && !hasAmount) {
           toast.info('Auto-detection is unclear. Please enter Order ID and Amount manually.');
         }
       }
