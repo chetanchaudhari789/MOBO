@@ -3,7 +3,6 @@ import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
 import { OrderModel } from '../models/Order.js';
-import { PayoutModel } from '../models/Payout.js';
 import { adminUsersQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { writeAuditLog } from '../services/audit.js';
