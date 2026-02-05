@@ -639,6 +639,60 @@ export async function extractOrderDetailsWithAi(
       return null;
     };
 
+    const normalizeCandidate = (value: string) =>
+      value
+        .replace(/[\s:]/g, '')
+        .replace(/[\.,]$/, '')
+        .trim();
+
+    const scoreOrderId = (value: string, rawText: string) => {
+      const upper = value.toUpperCase();
+      let score = 0;
+      if (upper.includes('-')) score += 2;
+      if (/\d/.test(upper) && /[A-Z]/.test(upper)) score += 2;
+      if (/^\d{10,20}$/.test(upper)) score += 1; // common numeric order ids
+      if (/^\d{3}-\d{7}-\d{7}$/.test(upper)) score += 4; // Amazon
+      if (/^OD\d{6,}$/.test(upper)) score += 3; // Flipkart
+      if (rawText && rawText.toLowerCase().includes(value.toLowerCase())) score += 1;
+      return score;
+    };
+
+    const pickBestOrderId = (candidates: string[], rawText: string) => {
+      const unique = Array.from(new Set(candidates.map(normalizeCandidate)))
+        .map((c) => sanitizeOrderId(c))
+        .filter((c): c is string => Boolean(c));
+      if (!unique.length) return null;
+      const scored = unique
+        .map((c) => ({ value: c, score: scoreOrderId(c, rawText) }))
+        .sort((a, b) => b.score - a.score);
+      return scored[0]?.value || null;
+    };
+
+    const extractTextOnly = async (model: string) => {
+      const response = await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: payload.imageBase64.split(',')[1] ?? payload.imageBase64,
+            },
+          },
+          {
+            text: [
+              'You are an OCR system. Return ONLY the exact visible text from the screenshot.',
+              'Preserve line breaks. Do not summarize or add commentary.',
+            ].join('\n'),
+          },
+        ],
+        config: {
+          maxOutputTokens: Math.min(env.AI_MAX_OUTPUT_TOKENS_EXTRACT, 512),
+          responseMimeType: 'text/plain',
+        },
+      });
+      return normalizeText(response.text || '');
+    };
+
     for (const model of GEMINI_MODEL_FALLBACKS) {
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -654,10 +708,13 @@ export async function extractOrderDetailsWithAi(
             {
               text: [
                 'Extract the external marketplace Order ID and the final paid amount from this receipt/screenshot.',
+                'Works for Amazon, Flipkart, Myntra, Meesho, and other platforms.',
                 'The Order ID must be the marketplace order identifier shown in the screenshot.',
                 'Do NOT return internal/system IDs (e.g., app IDs, DB IDs, SYS, E2E, or BUZZMA/MOBO).',
-                'Ignore shipment IDs, tracking IDs, invoice numbers, and transaction IDs.',
+                'Ignore shipment IDs, tracking IDs, invoice numbers, transaction IDs, and AWB numbers.',
+                'If multiple order IDs appear, return the one labeled Order ID / Order No / Order Number.',
                 'Also include rawText: the exact text you can read from the screenshot (no guesses).',
+                'Also include orderIdCandidates and amountCandidates arrays if possible.',
                 'Return JSON only. If a value is not clearly visible, omit the field.',
                 'Amount must be a number in INR without currency symbols (e.g., 1499).',
               ].join('\n'),
@@ -674,6 +731,8 @@ export async function extractOrderDetailsWithAi(
                 confidenceScore: { type: Type.INTEGER },
                 notes: { type: Type.STRING },
                 rawText: { type: Type.STRING },
+                orderIdCandidates: { type: Type.ARRAY, items: { type: Type.STRING } },
+                amountCandidates: { type: Type.ARRAY, items: { type: Type.NUMBER } },
               },
               required: ['confidenceScore'],
             },
@@ -683,17 +742,44 @@ export async function extractOrderDetailsWithAi(
         const parsed = safeJsonParse<any>(response.text);
         if (!parsed) throw new Error('Failed to parse AI extraction response');
 
-        const rawText = normalizeText(parsed.rawText);
+        let rawText = normalizeText(parsed.rawText);
         let orderId = sanitizeOrderId(parsed.orderId);
         let amount =
           typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) ? parsed.amount : null;
 
-        if (!orderId && rawText) {
-          const candidates = candidateOrderIdsFromText(rawText);
-          orderId = candidates[0] || null;
+        const candidateIds = Array.isArray(parsed.orderIdCandidates)
+          ? parsed.orderIdCandidates.map((c: any) => String(c || '').trim()).filter(Boolean)
+          : [];
+        const candidateAmounts = Array.isArray(parsed.amountCandidates)
+          ? parsed.amountCandidates
+              .map((n: any) => (typeof n === 'number' && Number.isFinite(n) ? n : null))
+              .filter((n: number | null): n is number => n !== null)
+          : [];
+
+        if (!orderId) {
+          const candidates = candidateOrderIdsFromText(rawText).concat(candidateIds);
+          orderId = pickBestOrderId(candidates, rawText);
         }
         if (!amount && rawText) {
           amount = amountFromText(rawText);
+        }
+        if (!amount && candidateAmounts.length) {
+          amount = candidateAmounts[0];
+        }
+
+        if ((!orderId || !amount) && !rawText) {
+          try {
+            rawText = await extractTextOnly(model);
+            if (!orderId && rawText) {
+              const candidates = candidateOrderIdsFromText(rawText);
+              orderId = pickBestOrderId(candidates, rawText);
+            }
+            if (!amount && rawText) {
+              amount = amountFromText(rawText);
+            }
+          } catch {
+            // ignore OCR fallback errors
+          }
         }
         const confidenceScore =
           typeof parsed.confidenceScore === 'number' && Number.isFinite(parsed.confidenceScore)
