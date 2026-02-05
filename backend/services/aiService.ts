@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import sharp from 'sharp';
 import type { Env } from '../config/env.js';
 
 type ChatPayload = {
@@ -767,14 +768,37 @@ export async function extractOrderDetailsWithAi(
       'Preserve line breaks and spacing.',
     ].join('\n');
 
-    const extractTextOnly = async (model: string) => {
+    const getImageBuffer = (base64: string) => {
+      const raw = base64.includes(',') ? base64.split(',')[1] ?? base64 : base64;
+      return Buffer.from(raw, 'base64');
+    };
+
+    const preprocessForOcr = async (base64: string) => {
+      try {
+        const input = getImageBuffer(base64);
+        const processed = await sharp(input)
+          // Upscale to help OCR with small fonts; avoid stripping info by keeping aspect ratio.
+          .resize({ width: 1600, withoutEnlargement: false })
+          .grayscale()
+          .normalize()
+          .sharpen()
+          .jpeg({ quality: 90 })
+          .toBuffer();
+        return `data:image/jpeg;base64,${processed.toString('base64')}`;
+      } catch (err) {
+        console.warn('OCR preprocessing failed, using original image.', err);
+        return base64;
+      }
+    };
+
+    const extractTextOnly = async (model: string, imageBase64: string) => {
       const response = await ai.models.generateContent({
         model,
         contents: [
           {
             inlineData: {
               mimeType: 'image/jpeg',
-              data: payload.imageBase64.split(',')[1] ?? payload.imageBase64,
+              data: imageBase64.split(',')[1] ?? imageBase64,
             },
           },
           { text: strictOcrPrompt },
@@ -839,15 +863,40 @@ export async function extractOrderDetailsWithAi(
       return safeJsonParse<any>(response.text) ?? null;
     };
 
-    let ocrText = '';
-    for (const model of GEMINI_MODEL_FALLBACKS) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        ocrText = await extractTextOnly(model);
-        if (ocrText) break;
-      } catch (innerError) {
-        lastError = innerError;
-        continue;
+    const runOcrPass = async (imageBase64: string, label: string) => {
+      let text = '';
+      for (const model of GEMINI_MODEL_FALLBACKS) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          text = await extractTextOnly(model, imageBase64);
+          if (text) {
+            console.info('Order extract OCR pass', { label, model, length: text.length });
+            return text;
+          }
+        } catch (innerError) {
+          lastError = innerError;
+          continue;
+        }
+      }
+      return '';
+    };
+
+    const originalOcrText = await runOcrPass(payload.imageBase64, 'original');
+    const enhancedImage = await preprocessForOcr(payload.imageBase64);
+
+    let ocrText = originalOcrText;
+    let deterministic = ocrText ? runDeterministicExtraction(ocrText) : { orderId: null, amount: null, notes: [] };
+
+    if (!deterministic.orderId || !deterministic.amount) {
+      const enhancedOcrText = await runOcrPass(enhancedImage, 'enhanced');
+      if (enhancedOcrText) {
+        const enhancedDeterministic = runDeterministicExtraction(enhancedOcrText);
+        const enhancedScore = (enhancedDeterministic.orderId ? 1 : 0) + (enhancedDeterministic.amount ? 1 : 0);
+        const originalScore = (deterministic.orderId ? 1 : 0) + (deterministic.amount ? 1 : 0);
+        if (enhancedScore > originalScore) {
+          ocrText = enhancedOcrText;
+          deterministic = enhancedDeterministic;
+        }
       }
     }
 
@@ -863,7 +912,7 @@ export async function extractOrderDetailsWithAi(
 
     console.info('Order extract OCR', { length: ocrText.length, preview: ocrText.slice(0, 400) });
 
-    const deterministic = runDeterministicExtraction(ocrText);
+    // deterministic already computed from the best OCR pass above
     const deterministicConfidence = deterministic.orderId && deterministic.amount ? 78 :
       deterministic.orderId || deterministic.amount ? 72 : 0;
 

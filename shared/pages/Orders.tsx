@@ -225,9 +225,17 @@ export const Orders: React.FC = () => {
         typeof details.orderId === 'string'
           ? details.orderId.trim().replace(/\s+/g, '')
           : '';
+      const looksLikeMarketplaceId =
+        /\b\d{3}-\d{7}-\d{7}\b/.test(normalizedOrderId) ||
+        /\bOD\d{6,}\b/i.test(normalizedOrderId) ||
+        /\b(?:MYN|MNT|ORD)\d{6,}\b/i.test(normalizedOrderId) ||
+        /\b(?:MSH|MEESHO)\d{6,}\b/i.test(normalizedOrderId) ||
+        /^\d{10,20}$/.test(normalizedOrderId);
       const safeOrderId = /^(null|undefined|n\/a|na)$/i.test(normalizedOrderId)
         ? ''
-        : normalizedOrderId;
+        : looksLikeMarketplaceId
+          ? normalizedOrderId
+          : '';
       const safeAmount =
         typeof details.amount === 'number' && Number.isFinite(details.amount) && details.amount > 0
           ? details.amount
