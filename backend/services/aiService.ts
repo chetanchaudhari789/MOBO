@@ -518,12 +518,22 @@ export async function extractOrderDetailsWithAi(
   const ai = new GoogleGenAI({ apiKey });
 
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
-    throw createInputError('Image payload too large');
+    return {
+      orderId: null,
+      amount: null,
+      confidenceScore: 0,
+      notes: 'Image payload too large for extraction. Please upload a smaller screenshot.',
+    };
   }
 
   const estimatedTokens = estimateTokensFromImage(payload.imageBase64);
   if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
-    throw createInputError('Payload too large');
+    return {
+      orderId: null,
+      amount: null,
+      confidenceScore: 0,
+      notes: 'Payload too large for extraction. Please crop and upload a smaller screenshot.',
+    };
   }
 
   try {

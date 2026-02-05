@@ -297,10 +297,13 @@ function readFileAsDataUrl(file: File): Promise<string> {
  * [FIX] Exported compressImage as it was missing and causing import errors in Chatbot.tsx.
  * Provides a simple placeholder for image compression logic.
  */
-export const compressImage = async (base64: string): Promise<string> => {
+export const compressImage = async (
+  base64: string,
+  options: { maxChars?: number } = {}
+): Promise<string> => {
   if (!base64 || !base64.startsWith('data:image')) return base64;
 
-  const MAX_CHARS = 1_200_000;
+  const MAX_CHARS = options.maxChars ?? 1_200_000;
   if (base64.length <= MAX_CHARS) return base64;
 
   const img = new Image();
@@ -456,7 +459,7 @@ export const api = {
     /** [FIX] Added missing extractDetails for Orders.tsx */
     extractDetails: async (file: File) => {
       const rawBase64 = await readFileAsDataUrl(file);
-      const imageBase64 = await compressImage(rawBase64);
+      const imageBase64 = await compressImage(rawBase64, { maxChars: 700_000 });
       return fetchJson('/ai/extract-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },

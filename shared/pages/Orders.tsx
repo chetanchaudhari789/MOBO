@@ -220,6 +220,14 @@ export const Orders: React.FC = () => {
     setMatchStatus({ id: 'none', amount: 'none' });
     try {
       const details = await api.orders.extractDetails(file);
+      if (!details.orderId && !details.amount && details.notes) {
+        const note = String(details.notes || '').toLowerCase();
+        if (note.includes('large') || note.includes('payload')) {
+          toast.error('Image is too large. Please crop and upload a smaller screenshot.', {
+            title: 'Extraction',
+          });
+        }
+      }
       setExtractedDetails({
         orderId: details.orderId || '',
         amount: details.amount?.toString() || '',
