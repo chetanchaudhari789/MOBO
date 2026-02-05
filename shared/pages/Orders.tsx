@@ -24,14 +24,7 @@ import {
 } from 'lucide-react';
 
 const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || order.id || '').trim();
-
-const getSecondaryOrderId = (order: Order) => {
-  const primary = getPrimaryOrderId(order);
-  const internal = String(order.id || '').trim();
-  if (!primary || primary === internal) return '';
-  return internal;
-};
+  String(order.externalOrderId || '').trim() || 'Pending';
 
 const MAX_PROOF_SIZE_BYTES = 50 * 1024 * 1024;
 
@@ -455,11 +448,6 @@ export const Orders: React.FC = () => {
                       <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
                         {getPrimaryOrderId(order)}
                       </span>
-                      {getSecondaryOrderId(order) && (
-                        <span className="text-[9px] text-slate-400 font-mono">
-                          SYS {getSecondaryOrderId(order)}
-                        </span>
-                      )}
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${isReview ? 'bg-purple-50 text-purple-600' : isRating ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}
                       >
@@ -906,11 +894,6 @@ export const Orders: React.FC = () => {
             </h3>
             <p className="text-xs text-slate-500 font-bold uppercase mb-6">
               Order {getPrimaryOrderId(ticketModal)}
-              {getSecondaryOrderId(ticketModal) && (
-                <span className="text-[10px] text-slate-400 font-mono ml-2">
-                  SYS {getSecondaryOrderId(ticketModal)}
-                </span>
-              )}
             </p>
             <div className="space-y-4">
               {tickets.filter((t) => String(t.orderId || '') === String(ticketModal.id)).length > 0 && (
@@ -1107,11 +1090,6 @@ export const Orders: React.FC = () => {
             </h3>
             <p className="text-xs text-slate-500 font-bold uppercase mb-5">
               Order {getPrimaryOrderId(selectedOrder)}
-              {getSecondaryOrderId(selectedOrder) && (
-                <span className="text-[10px] text-slate-400 font-mono ml-2">
-                  SYS {getSecondaryOrderId(selectedOrder)}
-                </span>
-              )}
             </p>
 
             {uploadType === 'review' ? (

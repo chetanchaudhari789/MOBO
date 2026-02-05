@@ -554,6 +554,19 @@ export async function extractOrderDetailsWithAi(
   try {
     let lastError: unknown = null;
 
+    const sanitizeOrderId = (value: unknown) => {
+      if (typeof value !== 'string') return null;
+      const raw = value.trim();
+      if (!raw) return null;
+      const upper = raw.toUpperCase();
+      if (upper.startsWith('E2E-') || upper.startsWith('SYS') || upper.includes('MOBO') || upper.includes('BUZZMA')) {
+        return null;
+      }
+      if (/^[a-f0-9]{24}$/i.test(raw)) return null; // Mongo ObjectId
+      if (raw.length < 4 || raw.length > 64) return null;
+      return raw;
+    };
+
     for (const model of GEMINI_MODEL_FALLBACKS) {
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -569,6 +582,9 @@ export async function extractOrderDetailsWithAi(
             {
               text: [
                 'Extract the external marketplace Order ID and the final paid amount from this receipt/screenshot.',
+                'The Order ID must be the marketplace order identifier shown in the screenshot.',
+                'Do NOT return internal/system IDs (e.g., app IDs, DB IDs, SYS, E2E, or BUZZMA/MOBO).',
+                'Ignore shipment IDs, tracking IDs, invoice numbers, and transaction IDs.',
                 'Return JSON only. If a value is not clearly visible, omit the field.',
                 'Amount must be a number in INR without currency symbols (e.g., 1499).',
               ].join('\n'),
@@ -593,7 +609,7 @@ export async function extractOrderDetailsWithAi(
         const parsed = safeJsonParse<any>(response.text);
         if (!parsed) throw new Error('Failed to parse AI extraction response');
 
-        const orderId = typeof parsed.orderId === 'string' ? parsed.orderId : null;
+        const orderId = sanitizeOrderId(parsed.orderId);
         const amount = typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) ? parsed.amount : null;
         const confidenceScore =
           typeof parsed.confidenceScore === 'number' && Number.isFinite(parsed.confidenceScore)
