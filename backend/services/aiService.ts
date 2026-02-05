@@ -567,6 +567,78 @@ export async function extractOrderDetailsWithAi(
       return raw;
     };
 
+    const normalizeText = (value: unknown) =>
+      typeof value === 'string'
+        ? value
+            .replace(/\r/g, '\n')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .join('\n')
+        : '';
+
+    const lineHasOrderKeyword = (line: string) =>
+      /order\s*(id|no\.?|number|#)/i.test(line);
+
+    const lineHasExcludedKeyword = (line: string) =>
+      /tracking|shipment|awb|invoice|transaction|utr|payment|upi|ref(erence)?|ship/i.test(line);
+
+    const candidateOrderIdsFromText = (text: string) => {
+      const candidates: string[] = [];
+      const lines = text.split('\n');
+
+      for (const line of lines) {
+        if (!lineHasOrderKeyword(line)) continue;
+        if (lineHasExcludedKeyword(line)) continue;
+
+        const explicit = line.match(/order\s*(?:id|no\.?|number|#)\s*[:\-#]?\s*([A-Z0-9\-_/]{6,40})/i);
+        if (explicit?.[1]) candidates.push(explicit[1]);
+
+        const amazon = line.match(/\b\d{3}-\d{7}-\d{7}\b/);
+        if (amazon?.[0]) candidates.push(amazon[0]);
+
+        const flipkart = line.match(/\bOD\d{6,}\b/i);
+        if (flipkart?.[0]) candidates.push(flipkart[0]);
+
+        const generic = line.match(/\b[A-Z0-9]{8,}\b/i);
+        if (generic?.[0]) candidates.push(generic[0]);
+      }
+
+      // Fallback scan for known patterns anywhere in text.
+      const amazonAll = text.match(/\b\d{3}-\d{7}-\d{7}\b/g) || [];
+      const flipkartAll = text.match(/\bOD\d{6,}\b/gi) || [];
+      candidates.push(...amazonAll, ...flipkartAll);
+
+      return candidates
+        .map((c) => sanitizeOrderId(c))
+        .filter((c): c is string => Boolean(c));
+    };
+
+    const amountFromText = (text: string) => {
+      const lines = text.split('\n');
+      const labelRegex = /(total|grand total|amount paid|paid|order total|final total|you paid|net amount|payable)/i;
+      const amountRegex = /₹?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/;
+
+      for (const line of lines) {
+        if (!labelRegex.test(line)) continue;
+        const match = line.match(amountRegex);
+        if (match?.[1]) {
+          const cleaned = match[1].replace(/,/g, '');
+          const value = Number(cleaned);
+          if (Number.isFinite(value)) return value;
+        }
+      }
+
+      const fallbackMatch = text.match(/₹\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/);
+      if (fallbackMatch?.[1]) {
+        const cleaned = fallbackMatch[1].replace(/,/g, '');
+        const value = Number(cleaned);
+        if (Number.isFinite(value)) return value;
+      }
+
+      return null;
+    };
+
     for (const model of GEMINI_MODEL_FALLBACKS) {
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -585,6 +657,7 @@ export async function extractOrderDetailsWithAi(
                 'The Order ID must be the marketplace order identifier shown in the screenshot.',
                 'Do NOT return internal/system IDs (e.g., app IDs, DB IDs, SYS, E2E, or BUZZMA/MOBO).',
                 'Ignore shipment IDs, tracking IDs, invoice numbers, and transaction IDs.',
+                'Also include rawText: the exact text you can read from the screenshot (no guesses).',
                 'Return JSON only. If a value is not clearly visible, omit the field.',
                 'Amount must be a number in INR without currency symbols (e.g., 1499).',
               ].join('\n'),
@@ -600,6 +673,7 @@ export async function extractOrderDetailsWithAi(
                 amount: { type: Type.NUMBER },
                 confidenceScore: { type: Type.INTEGER },
                 notes: { type: Type.STRING },
+                rawText: { type: Type.STRING },
               },
               required: ['confidenceScore'],
             },
@@ -609,8 +683,18 @@ export async function extractOrderDetailsWithAi(
         const parsed = safeJsonParse<any>(response.text);
         if (!parsed) throw new Error('Failed to parse AI extraction response');
 
-        const orderId = sanitizeOrderId(parsed.orderId);
-        const amount = typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) ? parsed.amount : null;
+        const rawText = normalizeText(parsed.rawText);
+        let orderId = sanitizeOrderId(parsed.orderId);
+        let amount =
+          typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) ? parsed.amount : null;
+
+        if (!orderId && rawText) {
+          const candidates = candidateOrderIdsFromText(rawText);
+          orderId = candidates[0] || null;
+        }
+        if (!amount && rawText) {
+          amount = amountFromText(rawText);
+        }
         const confidenceScore =
           typeof parsed.confidenceScore === 'number' && Number.isFinite(parsed.confidenceScore)
             ? Math.max(0, Math.min(100, Math.round(parsed.confidenceScore)))

@@ -15,9 +15,11 @@ type UiNotification = {
   action?: { label: string; href?: string };
 };
 
-function safeOrderShortId(orderId: any): string {
-  const s = String(orderId || '');
-  return s.length > 6 ? s.slice(-6) : s;
+function safeOrderShortId(order: any): string {
+  const external = String(order?.externalOrderId || '').trim();
+  if (external) return external.length > 20 ? external.slice(-20) : external;
+  const s = String(order?._id || order || '').trim();
+  return s.length > 6 ? s.slice(-6) : s || 'Pending';
 }
 
 function nowIso() {
@@ -56,7 +58,7 @@ export function makeNotificationsController() {
             .lean();
 
           for (const o of orders) {
-            const shortId = safeOrderShortId(o._id);
+            const shortId = safeOrderShortId(o);
             const wf = String((o as any).workflowStatus || '').trim();
             const pay = String((o as any).paymentStatus || '').trim();
             const aff = String((o as any).affiliateStatus || '').trim();
