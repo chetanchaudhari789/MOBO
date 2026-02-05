@@ -47,6 +47,7 @@ export function makeNotificationsController() {
               reviewLink: 1,
               verification: 1,
               rejection: 1,
+              missingProofRequests: 1,
               createdAt: 1,
               updatedAt: 1,
             })
@@ -77,6 +78,12 @@ export function makeNotificationsController() {
             if (requiresReview && !hasReviewProof) missingSteps.push('review');
             if (requiresRating && !hasRatingProof) missingSteps.push('rating');
 
+            const requestedMissing = Array.isArray((o as any).missingProofRequests)
+              ? (o as any).missingProofRequests
+                  .map((r: any) => String(r?.type || '').trim())
+                  .filter((t: string) => (t === 'review' || t === 'rating') && missingSteps.includes(t))
+              : [];
+
             if (!hasPurchaseProof && (wf === 'ORDERED' || wf === 'REDIRECTED' || wf === 'CREATED')) {
               notifications.push({
                 id: `order:${String(o._id)}:need-proof`,
@@ -96,6 +103,19 @@ export function makeNotificationsController() {
                 message: rejection.reason || `Your proof for order #${shortId} was rejected.`,
                 createdAt: ts,
                 action: { label: 'Fix now', href: '/orders' },
+              });
+              continue;
+            }
+
+            if (requestedMissing.length > 0) {
+              const label = requestedMissing.length === 2 ? 'review & rating' : requestedMissing[0];
+              notifications.push({
+                id: `order:${String(o._id)}:requested:${requestedMissing.slice().sort().join(',')}:${ts}`,
+                type: 'alert',
+                title: 'Action requested by mediator',
+                message: `Please submit your ${label} proof for order #${shortId}.`,
+                createdAt: ts,
+                action: { label: 'Upload now', href: '/orders' },
               });
               continue;
             }

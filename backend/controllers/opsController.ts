@@ -18,6 +18,7 @@ import {
   publishDealSchema,
   rejectByIdSchema,
   rejectOrderProofSchema,
+  requestMissingProofSchema,
   settleOrderSchema,
   unsettleOrderSchema,
   updateCampaignStatusSchema,
@@ -945,6 +946,97 @@ export function makeOpsController(env: Env) {
           });
         }
 
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    requestMissingProof: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const body = requestMissingProofSchema.parse(req.body);
+        const { roles, user: requester } = getRequester(req);
+
+        const order = await OrderModel.findById(body.orderId);
+        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+
+        if ((order as any).frozen) {
+          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
+        }
+
+        if (!isPrivileged(roles)) {
+          if (roles.includes('mediator')) {
+            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
+              throw new AppError(403, 'FORBIDDEN', 'Cannot request proofs outside your network');
+            }
+          } else if (roles.includes('agency')) {
+            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
+            if (!allowed.includes(String(order.managerName))) {
+              throw new AppError(403, 'FORBIDDEN', 'Cannot request proofs outside your network');
+            }
+          } else {
+            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
+          }
+        }
+
+        const managerCode = String(order.managerName || '');
+        if (!(await isMediatorActive(managerCode))) {
+          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
+        }
+        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
+        if (agencyCode && !(await isAgencyActive(agencyCode))) {
+          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
+        }
+
+        const required = getRequiredStepsForOrder(order);
+        if (!required.includes(body.type)) {
+          throw new AppError(409, 'NOT_REQUIRED', `This order does not require ${body.type} proof`);
+        }
+        if (hasProofForRequirement(order, body.type)) {
+          res.json({ ok: true, alreadySatisfied: true });
+          return;
+        }
+
+        (order as any).missingProofRequests = Array.isArray((order as any).missingProofRequests)
+          ? (order as any).missingProofRequests
+          : [];
+
+        const alreadyRequested = (order as any).missingProofRequests.some(
+          (r: any) => String(r?.type) === body.type
+        );
+        if (!alreadyRequested) {
+          (order as any).missingProofRequests.push({
+            type: body.type,
+            note: body.note,
+            requestedAt: new Date(),
+            requestedBy: req.auth?.userId,
+          });
+          order.events = pushOrderEvent(order.events as any, {
+            type: 'STATUS_CHANGED',
+            at: new Date(),
+            actorUserId: req.auth?.userId,
+            metadata: { requestMissing: body.type, note: body.note },
+          }) as any;
+          await order.save();
+        }
+
+        const audience = buildOrderAudience(order, agencyCode);
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        const buyerId = String((order as any).userId || '').trim();
+        if (buyerId) {
+          await sendPushToUser({
+            env,
+            userId: buyerId,
+            app: 'buyer',
+            payload: {
+              title: 'Action required',
+              body: `Please upload your ${body.type} proof for order #${String(order._id).slice(-6)}.`,
+              url: '/orders',
+            },
+          });
+        }
         res.json({ ok: true });
       } catch (err) {
         next(err);

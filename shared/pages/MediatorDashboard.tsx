@@ -32,6 +32,7 @@ import {
   Save,
   Camera,
   CalendarClock,
+  HelpCircle,
   AlertTriangle,
   Sparkles,
   Loader2,
@@ -367,11 +368,66 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
           </div>
         )}
       </section>
+
+      {/* Tickets */}
+      <section>
+        <div className="flex items-center justify-between mb-3 px-1">
+          <h3 className="font-bold text-base text-zinc-900 tracking-tight">Tickets</h3>
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+            {Array.isArray(tickets) ? tickets.length : 0}
+          </span>
+        </div>
+        {(!tickets || tickets.length === 0) ? (
+          <EmptyState
+            title="No tickets"
+            description="Support tickets will appear here."
+            icon={<HelpCircle size={22} className="text-zinc-400" />}
+          />
+        ) : (
+          <div className="space-y-2">
+            {tickets.slice(0, 10).map((t: Ticket) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-zinc-100 bg-white px-3 py-2 shadow-sm"
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-zinc-900 truncate">
+                    {String(t.issueType || 'Ticket')}
+                  </div>
+                  <div className="text-[10px] text-zinc-500 truncate">
+                    Status: {String(t.status || '')}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      if (String(t.status || '').toLowerCase() === 'open') {
+                        toast.error('Ticket must be resolved or rejected before deletion.');
+                        return;
+                      }
+                      await api.tickets.delete(t.id);
+                      toast.success('Ticket deleted.');
+                      onRefresh();
+                    } catch (err: any) {
+                      toast.error(String(err?.message || 'Failed to delete ticket.'));
+                    }
+                  }}
+                  className="px-3 py-1 rounded-lg text-[10px] font-bold bg-zinc-50 border border-zinc-200 text-zinc-600 hover:text-red-600 hover:border-red-200"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 };
 
-const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, onPublish }: any) => {
+const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: any) => {
+  const { toast } = useToast();
   const dealByCampaignId = useMemo(() => {
     const m = new Map<string, Product>();
     (deals || []).forEach((d: Product) => {
@@ -578,13 +634,32 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh: _onRefresh, on
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onPublish(c)}
-                    className="w-full py-3 bg-[#18181B] text-white rounded-[1rem] font-bold text-xs hover:bg-[#CCF381] hover:text-black transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
-                  >
-                    <ArrowUpRight size={14} strokeWidth={2.5} /> Configure & Publish
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onPublish(c)}
+                      className="w-full py-3 bg-[#18181B] text-white rounded-[1rem] font-bold text-xs hover:bg-[#CCF381] hover:text-black transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowUpRight size={14} strokeWidth={2.5} /> Configure & Publish
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if (!confirm('Delete this unpublished campaign?')) return;
+                          await api.ops.deleteCampaign(String(c.id));
+                          toast.success('Campaign deleted.');
+                          onRefresh?.();
+                        } catch (err) {
+                          const msg = err instanceof Error ? err.message : 'Failed to delete campaign';
+                          toast.error(msg);
+                        }
+                      }}
+                      className="w-full py-3 bg-red-50 text-red-600 rounded-[1rem] font-bold text-xs border border-red-200 hover:bg-red-100 transition-all shadow-sm active:scale-95"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -1824,6 +1899,33 @@ export const MediatorDashboard: React.FC = () => {
             >
               Later
             </button>
+            {proofModal?.requirements?.missingProofs?.length ? (
+              <button
+                onClick={async () => {
+                  try {
+                    const missing = proofModal?.requirements?.missingProofs ?? [];
+                    if (!missing.length) return;
+                    await Promise.all(
+                      missing.map((type) =>
+                        api.ops.requestMissingProof(
+                          proofModal.id,
+                          type,
+                          `Please upload your ${type} proof to complete cashback.`
+                        )
+                      )
+                    );
+                    toast.success('Buyer notified to upload missing proof.');
+                    await loadData();
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'Failed to request missing proof';
+                    toast.error(msg);
+                  }
+                }}
+                className="flex-1 py-4 bg-amber-500/20 text-amber-200 font-bold text-sm rounded-[1.2rem] hover:bg-amber-500/30 transition-colors"
+              >
+                Request Proof
+              </button>
+            ) : null}
             <button
               onClick={() => {
                 if (!proofModal) return;

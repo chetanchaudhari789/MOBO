@@ -583,34 +583,31 @@ export function makeOrdersController(env: Env) {
         } else if (body.type === 'order') {
           assertProofImageSize(body.data, 'Order proof');
           const expectedOrderId = String(order.externalOrderId || '').trim();
-          if (!expectedOrderId) {
-            throw new AppError(400, 'ORDER_ID_REQUIRED', 'Order ID is required to validate proof.');
-          }
+          let aiVerification: any = null;
+
           if (env.SEED_E2E) {
             // E2E runs should not rely on external AI services.
-          } else if (isGeminiConfigured(env)) {
+          } else if (isGeminiConfigured(env) && expectedOrderId) {
             const expectedAmount = Number((order as any).items?.[0]?.priceAtPurchasePaise || 0) / 100;
-            const verification = await verifyProofWithAi(env, {
+            aiVerification = await verifyProofWithAi(env, {
               imageBase64: body.data,
               expectedOrderId,
               expectedAmount,
             });
-
-            if (!verification?.orderIdMatch || !verification?.amountMatch || verification?.confidenceScore < 60) {
-              throw new AppError(
-                422,
-                'INVALID_ORDER_PROOF',
-                'Order proof did not match the order ID and amount. Please upload a valid proof.'
-              );
-            }
-          } else {
-            throw new AppError(503, 'AI_NOT_CONFIGURED', 'Proof validation is not configured.');
           }
 
           order.screenshots = { ...(order.screenshots ?? {}), order: body.data } as any;
           if ((order as any).rejection?.type === 'order') {
             (order as any).rejection = undefined;
           }
+
+          (order as any).__aiOrderVerification = aiVerification || undefined;
+        }
+
+        if (Array.isArray((order as any).missingProofRequests)) {
+          (order as any).missingProofRequests = (order as any).missingProofRequests.filter(
+            (r: any) => String(r?.type) !== String(body.type)
+          );
         }
 
         const affiliateStatus = String(order.affiliateStatus || '');
@@ -618,11 +615,17 @@ export function makeOrdersController(env: Env) {
           order.affiliateStatus = 'Unchecked';
         }
 
+        const aiOrderVerification = (order as any).__aiOrderVerification;
+        if ((order as any).__aiOrderVerification) delete (order as any).__aiOrderVerification;
+
         order.events = pushOrderEvent(order.events as any, {
           type: 'PROOF_SUBMITTED',
           at: new Date(),
           actorUserId: requesterId,
-          metadata: { type: body.type },
+          metadata: {
+            type: body.type,
+            ...(body.type === 'order' && aiOrderVerification ? { aiVerification: aiOrderVerification } : {}),
+          },
         }) as any;
 
         await order.save();

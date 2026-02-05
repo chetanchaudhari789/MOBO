@@ -224,6 +224,14 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
       missingProofs,
       missingVerifications,
     },
+    missingProofRequests: Array.isArray(o.missingProofRequests)
+      ? o.missingProofRequests.map((r: any) => ({
+          type: r?.type,
+          note: r?.note,
+          requestedAt: r?.requestedAt ? new Date(r.requestedAt).toISOString() : undefined,
+          requestedBy: r?.requestedBy ? String(r.requestedBy) : undefined,
+        }))
+      : [],
     managerName: o.managerName,
     agencyName: o.agencyName,
     buyerName: o.buyerName,

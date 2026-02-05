@@ -23,6 +23,12 @@ export const rejectOrderProofSchema = z.object({
   reason: z.string().min(5).max(500),
 });
 
+export const requestMissingProofSchema = z.object({
+  orderId: z.string().min(1),
+  type: z.enum(['review', 'rating']),
+  note: z.string().max(300).optional(),
+});
+
 const normalizeQueryString = (value: unknown) => String(value || '').trim();
 
 export const opsOrdersQuerySchema = z.object({

@@ -56,6 +56,7 @@ export const Orders: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -108,6 +109,7 @@ export const Orders: React.FC = () => {
         console.error('Failed to load products:', err);
         setAvailableProducts([]);
       });
+      loadTickets();
     }
   }, [user]);
   const loadOrders = async () => {
@@ -118,6 +120,16 @@ export const Orders: React.FC = () => {
       console.error(e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadTickets = async () => {
+    try {
+      const data = await api.tickets.getAll();
+      setTickets(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('Failed to load tickets:', e);
+      setTickets([]);
     }
   };
 
@@ -268,14 +280,9 @@ export const Orders: React.FC = () => {
       toast.error('Order proof does not look valid. Please upload a clearer proof.');
       return;
     }
-    if (selectedProduct.dealType === 'Rating' && !ratingScreenshot) {
-      toast.error('Please upload a valid rating image to continue.');
-      return;
-    }
-    if (selectedProduct.dealType === 'Review' && !isValidReviewLink(reviewLinkInput)) {
-      toast.error('Please add a valid https review link to continue.');
-      return;
-    }
+    const missingExtras: string[] = [];
+    if (selectedProduct.dealType === 'Rating' && !ratingScreenshot) missingExtras.push('rating');
+    if (selectedProduct.dealType === 'Review' && !isValidReviewLink(reviewLinkInput)) missingExtras.push('review');
     setIsUploading(true);
     try {
       const screenshots: any = { order: formScreenshot };
@@ -301,9 +308,18 @@ export const Orders: React.FC = () => {
         {
           screenshots: screenshots,
           externalOrderId: extractedDetails.orderId ? extractedDetails.orderId : undefined,
-          reviewLink: selectedProduct.dealType === 'Review' ? reviewLinkInput : undefined,
+          reviewLink:
+            selectedProduct.dealType === 'Review' && isValidReviewLink(reviewLinkInput)
+              ? reviewLinkInput
+              : undefined,
         }
       );
+
+      if (missingExtras.length) {
+        toast.info(
+          `Order submitted. Please upload your ${missingExtras.join(' + ')} proof to complete cashback.`
+        );
+      }
 
       setIsNewOrderModalOpen(false);
       setSelectedProduct(null);
@@ -336,6 +352,7 @@ export const Orders: React.FC = () => {
       toast.success('Ticket raised! Support will contact you shortly.');
       setTicketModal(null);
       setTicketDesc('');
+      await loadTickets();
     } catch {
       toast.error('Failed to raise ticket.');
     } finally {
@@ -896,6 +913,49 @@ export const Orders: React.FC = () => {
               )}
             </p>
             <div className="space-y-4">
+              {tickets.filter((t) => String(t.orderId || '') === String(ticketModal.id)).length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block">
+                    Existing tickets
+                  </label>
+                  {tickets
+                    .filter((t) => String(t.orderId || '') === String(ticketModal.id))
+                    .map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-bold text-slate-700 truncate">
+                            {String(t.issueType || 'Ticket')}
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            Status: {String(t.status || '')}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              if (String(t.status || '').toLowerCase() === 'open') {
+                                toast.error('Ticket must be resolved or rejected before deletion.');
+                                return;
+                              }
+                              await api.tickets.delete(t.id);
+                              toast.success('Ticket deleted.');
+                              await loadTickets();
+                            } catch (err: any) {
+                              toast.error(String(err?.message || 'Failed to delete ticket.'));
+                            }
+                          }}
+                          className="px-3 py-1 rounded-lg text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-2">
                   Issue Type

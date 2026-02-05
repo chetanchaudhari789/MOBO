@@ -554,6 +554,13 @@ export const api = {
         body: JSON.stringify({ orderId, type, reason }),
       });
     },
+    requestMissingProof: async (orderId: string, type: 'review' | 'rating', note?: string) => {
+      return fetchJson('/ops/orders/request-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ orderId, type, note }),
+      });
+    },
     createCampaign: async (data: any) => {
       return fetchJson('/ops/campaigns', {
         method: 'POST',

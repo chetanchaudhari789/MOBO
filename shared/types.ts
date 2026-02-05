@@ -145,6 +145,12 @@ export interface Order {
     rejectedAt?: string;
     rejectedBy?: string;
   };
+  missingProofRequests?: Array<{
+    type?: 'review' | 'rating';
+    note?: string;
+    requestedAt?: string;
+    requestedBy?: string;
+  }>;
 }
 
 export interface Campaign {

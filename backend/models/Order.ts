@@ -102,6 +102,19 @@ const orderSchema = new Schema(
       rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
 
+    missingProofRequests: [
+      {
+        type: {
+          type: String,
+          enum: ['review', 'rating'],
+          required: true,
+        },
+        note: { type: String, trim: true },
+        requestedAt: { type: Date, required: true },
+        requestedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      },
+    ],
+
     // Step-level verification (purchase vs review/rating requirements)
     verification: {
       order: {
