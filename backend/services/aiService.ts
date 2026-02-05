@@ -795,9 +795,18 @@ export async function extractOrderDetailsWithAi(
       'Preserve line breaks and spacing.',
     ].join('\n');
 
+    const parseDataUrl = (dataUrl: string) => {
+      if (!dataUrl.includes(',')) {
+        return { mimeType: 'image/jpeg', data: dataUrl };
+      }
+      const [meta, data] = dataUrl.split(',', 2);
+      const match = meta.match(/data:([^;]+);base64/i);
+      return { mimeType: match?.[1] || 'image/jpeg', data: data || dataUrl };
+    };
+
     const getImageBuffer = (base64: string) => {
-      const raw = base64.includes(',') ? base64.split(',')[1] ?? base64 : base64;
-      return Buffer.from(raw, 'base64');
+      const parsed = parseDataUrl(base64);
+      return Buffer.from(parsed.data, 'base64');
     };
 
     const preprocessForOcr = async (base64: string, crop?: { top: number; height: number }) => {
@@ -831,13 +840,14 @@ export async function extractOrderDetailsWithAi(
     };
 
     const extractTextOnly = async (model: string, imageBase64: string) => {
+      const parsed = parseDataUrl(imageBase64);
       const response = await ai.models.generateContent({
         model,
         contents: [
           {
             inlineData: {
-              mimeType: 'image/jpeg',
-              data: imageBase64.split(',')[1] ?? imageBase64,
+              mimeType: parsed.mimeType,
+              data: parsed.data,
             },
           },
           { text: strictOcrPrompt },
