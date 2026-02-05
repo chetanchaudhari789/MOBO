@@ -653,5 +653,87 @@ export function makeBrandController() {
         next(err);
       }
     },
+
+    deleteCampaign: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const id = String(req.params.campaignId || '').trim();
+        if (!id) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
+
+        const { roles, userId } = getRequester(req);
+        const campaign = await CampaignModel.findById(id)
+          .select({ brandUserId: 1, allowedAgencyCodes: 1, assignments: 1, deletedAt: 1 })
+          .lean();
+
+        if (!campaign || (campaign as any).deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+
+        const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
+        if (!isPrivileged(roles) && !isOwner) {
+          throw new AppError(403, 'FORBIDDEN', 'Cannot delete campaigns outside your ownership');
+        }
+
+        const hasOrders = await OrderModel.exists({ deletedAt: null, 'items.campaignId': (campaign as any)._id });
+        if (hasOrders) throw new AppError(409, 'CAMPAIGN_HAS_ORDERS', 'Cannot delete a campaign with orders');
+
+        const now = new Date();
+        const deletedBy = req.auth?.userId as any;
+        const updated = await CampaignModel.updateOne(
+          { _id: (campaign as any)._id, deletedAt: null },
+          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } }
+        );
+        if (!updated.modifiedCount) {
+          throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
+        }
+
+        await DealModel.updateMany(
+          { campaignId: (campaign as any)._id, deletedAt: null },
+          { $set: { deletedAt: now, deletedBy, active: false } }
+        );
+
+        await writeAuditLog({
+          req,
+          action: 'CAMPAIGN_DELETED',
+          entityType: 'Campaign',
+          entityId: String((campaign as any)._id),
+        });
+
+        const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
+          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+          : [];
+        const assignments = (campaign as any).assignments;
+        const assignmentCodes = assignments instanceof Map
+          ? Array.from(assignments.keys())
+          : assignments && typeof assignments === 'object'
+            ? Object.keys(assignments)
+            : [];
+
+        const ts = new Date().toISOString();
+        publishRealtime({
+          type: 'deals.changed',
+          ts,
+          payload: { campaignId: String((campaign as any)._id) },
+          audience: {
+            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            agencyCodes: allowed,
+            mediatorCodes: assignmentCodes,
+            roles: ['admin', 'ops'],
+          },
+        });
+        publishRealtime({
+          type: 'notifications.changed',
+          ts,
+          payload: { source: 'campaign.deleted', campaignId: String((campaign as any)._id) },
+          audience: {
+            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            agencyCodes: allowed,
+            mediatorCodes: assignmentCodes,
+            roles: ['admin', 'ops'],
+          },
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
   };
 }

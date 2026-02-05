@@ -157,6 +157,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [view, setView] = useState<ViewMode>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [deletingWalletId, setDeletingWalletId] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
 
   const switchView = (next: ViewMode) => {
     setView(next);
@@ -340,6 +343,61 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     const newStatus = target.status === 'active' ? 'suspended' : 'active';
     await api.admin.updateUserStatus(target.id, newStatus);
     setUsers(users.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u)));
+  };
+
+  const deleteWallet = async (target: User) => {
+    if (target.role === 'admin') return;
+    const hasBalance = Number(target.walletBalance || 0) > 0 || Number(target.walletPending || 0) > 0;
+    if (hasBalance) {
+      toast.error('Wallet has funds; cannot delete');
+      return;
+    }
+    const ok = window.confirm('Delete this wallet? This cannot be undone.');
+    if (!ok) return;
+    setDeletingWalletId(target.id);
+    try {
+      await api.admin.deleteWallet(target.id);
+      toast.success('Wallet deleted');
+      const updated = await api.admin.getUsers('all');
+      setUsers(updated);
+    } catch (e: any) {
+      toast.error(String(e?.message || 'Failed to delete wallet'));
+    } finally {
+      setDeletingWalletId(null);
+    }
+  };
+
+  const deleteUser = async (target: User) => {
+    if (target.role === 'admin') return;
+    const ok = window.confirm('Delete this user? This cannot be undone.');
+    if (!ok) return;
+    setDeletingUserId(target.id);
+    try {
+      await api.admin.deleteUser(target.id);
+      toast.success('User deleted');
+      const updated = await api.admin.getUsers('all');
+      setUsers(updated);
+    } catch (e: any) {
+      toast.error(String(e?.message || 'Failed to delete user'));
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
+  const deleteProduct = async (productId: string) => {
+    const ok = window.confirm('Delete this product/deal? This cannot be undone.');
+    if (!ok) return;
+    setDeletingProductId(productId);
+    try {
+      await api.admin.deleteProduct(productId);
+      toast.success('Product deleted');
+      const updated = await api.admin.getProducts();
+      setProducts(updated);
+    } catch (e: any) {
+      toast.error(String(e?.message || 'Failed to delete product'));
+    } finally {
+      setDeletingProductId(null);
+    }
   };
 
   const resolveTicket = async (id: string, status: 'Resolved' | 'Rejected') => {
@@ -1051,21 +1109,56 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           </td>
                           <td className="p-5 text-right">
                             {u.role !== 'admin' && (
-                              <button
-                                type="button"
-                                onClick={() => toggleUserStatus(u)}
-                                className={`p-2 rounded-lg transition-colors border ${
-                                  u.status === 'active'
-                                    ? 'border-rose-100 text-rose-500 hover:bg-rose-50'
-                                    : 'border-emerald-100 text-emerald-500 hover:bg-emerald-50'
-                                }`}
-                              >
-                                {u.status === 'active' ? (
-                                  <Ban size={16} />
-                                ) : (
-                                  <CheckCircle2 size={16} />
-                                )}
-                              </button>
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleUserStatus(u)}
+                                  className={`p-2 rounded-lg transition-colors border ${
+                                    u.status === 'active'
+                                      ? 'border-rose-100 text-rose-500 hover:bg-rose-50'
+                                      : 'border-emerald-100 text-emerald-500 hover:bg-emerald-50'
+                                  }`}
+                                  title={u.status === 'active' ? 'Suspend user' : 'Activate user'}
+                                >
+                                  {u.status === 'active' ? (
+                                    <Ban size={16} />
+                                  ) : (
+                                    <CheckCircle2 size={16} />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteWallet(u)}
+                                  disabled={
+                                    deletingWalletId === u.id ||
+                                    Number(u.walletBalance || 0) > 0 ||
+                                    Number(u.walletPending || 0) > 0
+                                  }
+                                  className={`p-2 rounded-lg transition-colors border ${
+                                    deletingWalletId === u.id
+                                      ? 'border-slate-200 text-slate-400 bg-slate-100 cursor-not-allowed'
+                                      : Number(u.walletBalance || 0) > 0 || Number(u.walletPending || 0) > 0
+                                        ? 'border-slate-200 text-slate-300 bg-slate-50 cursor-not-allowed'
+                                        : 'border-rose-100 text-rose-500 hover:bg-rose-50'
+                                  }`}
+                                  title="Delete wallet"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteUser(u)}
+                                  disabled={deletingUserId === u.id}
+                                  className={`p-2 rounded-lg transition-colors border ${
+                                    deletingUserId === u.id
+                                      ? 'border-slate-200 text-slate-400 bg-slate-100 cursor-not-allowed'
+                                      : 'border-rose-100 text-rose-500 hover:bg-rose-50'
+                                  }`}
+                                  title="Delete user"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1244,6 +1337,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       <th className="p-5 text-right">Price</th>
                       <th className="p-5 text-right">Commission</th>
                       <th className="p-5 text-right">Status</th>
+                      <th className="p-5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-sm font-medium">
@@ -1270,6 +1364,21 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           >
                             {p.active ? 'ACTIVE' : 'INACTIVE'}
                           </span>
+                        </td>
+                        <td className="p-5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => deleteProduct(p.id)}
+                            disabled={deletingProductId === p.id}
+                            className={`p-2 rounded-lg transition-colors border ${
+                              deletingProductId === p.id
+                                ? 'border-slate-200 text-slate-400 bg-slate-100 cursor-not-allowed'
+                                : 'border-rose-100 text-rose-500 hover:bg-rose-50'
+                            }`}
+                            title="Delete product"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </td>
                       </tr>
                     ))}

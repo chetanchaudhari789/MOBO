@@ -1034,6 +1034,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Create Form State
   const initialForm = {
@@ -1116,6 +1117,21 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       toast.error('Failed to update campaign status');
     } finally {
       setStatusUpdatingId(null);
+    }
+  };
+
+  const handleDelete = async (campaign: Campaign) => {
+    const confirmed = confirm('Delete this campaign? This cannot be undone.');
+    if (!confirmed) return;
+    setDeletingId(campaign.id);
+    try {
+      await api.brand.deleteCampaign(campaign.id);
+      toast.success('Campaign deleted');
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete campaign');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -1526,6 +1542,15 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                           : 'Resume Campaign'}
                     </button>
                   )}
+                  <button
+                    onClick={() => handleDelete(c)}
+                    disabled={deletingId === c.id}
+                    className={`w-full py-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 bg-red-50 text-red-600 border-red-200 hover:bg-red-100 ${
+                      deletingId === c.id ? 'opacity-60 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {deletingId === c.id ? 'Deleting...' : 'Delete Campaign'}
+                  </button>
                 </div>
               </div>
             </div>

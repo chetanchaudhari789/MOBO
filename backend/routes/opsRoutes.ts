@@ -52,9 +52,11 @@ export function opsRoutes(env: Env): Router {
   router.post('/orders/reject-proof', ops.rejectOrderProof);
   router.post('/campaigns', ops.createCampaign);
   router.patch('/campaigns/:campaignId/status', ops.updateCampaignStatus);
+  router.delete('/campaigns/:campaignId', ops.deleteCampaign);
   router.post('/campaigns/assign', ops.assignSlots);
   router.post('/deals/publish', ops.publishDeal);
   router.post('/payouts', ops.payoutMediator);
+  router.delete('/payouts/:payoutId', ops.deletePayout);
 
   return router;
 }

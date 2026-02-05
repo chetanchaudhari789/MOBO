@@ -3,12 +3,14 @@ import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
 import { OrderModel } from '../models/Order.js';
+import { PayoutModel } from '../models/Payout.js';
 import { adminUsersQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { writeAuditLog } from '../services/audit.js';
 import { SuspensionModel } from '../models/Suspension.js';
 import { DealModel } from '../models/Deal.js';
 import { CampaignModel } from '../models/Campaign.js';
+import { PayoutModel } from '../models/Payout.js';
 import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../services/orderWorkflow.js';
 import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
 import { SystemConfigModel } from '../models/SystemConfig.js';
@@ -160,6 +162,194 @@ export function makeAdminController() {
           .lean();
         
         res.json(deals.map(toUiDeal));
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    deleteDeal: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const dealId = String(req.params.dealId || '').trim();
+        if (!dealId) throw new AppError(400, 'INVALID_DEAL_ID', 'dealId required');
+
+        const deal = await DealModel.findById(dealId).lean();
+        if (!deal || (deal as any).deletedAt) throw new AppError(404, 'DEAL_NOT_FOUND', 'Deal not found');
+
+        const hasOrders = await OrderModel.exists({ deletedAt: null, 'items.productId': dealId });
+        if (hasOrders) throw new AppError(409, 'DEAL_HAS_ORDERS', 'Cannot delete a deal with orders');
+
+        const deletedBy = req.auth?.userId as any;
+        const updated = await DealModel.updateOne(
+          { _id: (deal as any)._id, deletedAt: null },
+          { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy, active: false } }
+        );
+        if (!updated.modifiedCount) throw new AppError(409, 'DEAL_ALREADY_DELETED', 'Deal already deleted');
+
+        await writeAuditLog({
+          req,
+          action: 'DEAL_DELETED',
+          entityType: 'Deal',
+          entityId: String((deal as any)._id),
+          metadata: { mediatorCode: (deal as any).mediatorCode },
+        });
+
+        const mediatorCode = String((deal as any).mediatorCode || '').trim();
+        publishRealtime({
+          type: 'deals.changed',
+          ts: new Date().toISOString(),
+          payload: { dealId: String((deal as any)._id) },
+          audience: {
+            roles: ['admin', 'ops'],
+            ...(mediatorCode ? { mediatorCodes: [mediatorCode] } : {}),
+          },
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    deleteUser: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const userId = String(req.params.userId || '').trim();
+        if (!userId) throw new AppError(400, 'INVALID_USER_ID', 'userId required');
+
+        const user = await UserModel.findById(userId).lean();
+        if (!user || (user as any).deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+
+        const roles = Array.isArray((user as any).roles)
+          ? (user as any).roles.map(String)
+          : [String((user as any).role || '')].filter(Boolean);
+        if (roles.includes('admin') || roles.includes('ops')) {
+          throw new AppError(403, 'FORBIDDEN', 'Cannot delete privileged users');
+        }
+
+        const mediatorCode = String((user as any).mediatorCode || '').trim();
+
+        const hasCampaigns = await CampaignModel.exists({ brandUserId: userId as any, deletedAt: null });
+        if (hasCampaigns) throw new AppError(409, 'USER_HAS_CAMPAIGNS', 'User has campaigns');
+
+        if (mediatorCode) {
+          const hasDeals = await DealModel.exists({ mediatorCode, deletedAt: null });
+          if (hasDeals) throw new AppError(409, 'USER_HAS_DEALS', 'User has deals');
+        }
+
+        const orderOr: any[] = [{ userId: userId as any }, { brandUserId: userId as any }, { createdBy: userId as any }];
+        if (mediatorCode && roles.includes('mediator')) {
+          orderOr.push({ managerName: mediatorCode });
+        }
+        if (mediatorCode && roles.includes('agency')) {
+          const mediatorCodes = await listMediatorCodesForAgency(mediatorCode);
+          if (mediatorCodes.length) orderOr.push({ managerName: { $in: mediatorCodes } });
+        }
+
+        const hasOrders = await OrderModel.exists({ deletedAt: null, $or: orderOr });
+        if (hasOrders) throw new AppError(409, 'USER_HAS_ORDERS', 'User has orders');
+
+        const hasPendingPayout = await PayoutModel.exists({
+          beneficiaryUserId: userId as any,
+          status: { $in: ['requested', 'processing'] },
+          deletedAt: null,
+        });
+        if (hasPendingPayout) throw new AppError(409, 'USER_HAS_PAYOUTS', 'User has pending payouts');
+
+        const wallet = await WalletModel.findOne({ ownerUserId: userId as any, deletedAt: null }).lean();
+        const available = Number((wallet as any)?.availablePaise ?? 0);
+        const pending = Number((wallet as any)?.pendingPaise ?? 0);
+        const locked = Number((wallet as any)?.lockedPaise ?? 0);
+        if (available > 0 || pending > 0 || locked > 0) {
+          throw new AppError(409, 'WALLET_NOT_EMPTY', 'Wallet has funds; cannot delete user');
+        }
+
+        const deletedBy = req.auth?.userId as any;
+        if (wallet) {
+          await WalletModel.updateOne(
+            { _id: (wallet as any)._id, deletedAt: null },
+            { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } }
+          );
+        }
+
+        const updated = await UserModel.updateOne(
+          { _id: (user as any)._id, deletedAt: null },
+          { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } }
+        );
+        if (!updated.modifiedCount) throw new AppError(409, 'USER_ALREADY_DELETED', 'User already deleted');
+
+        await writeAuditLog({
+          req,
+          action: 'USER_DELETED',
+          entityType: 'User',
+          entityId: String((user as any)._id),
+          metadata: { role: String((user as any).role || ''), mediatorCode },
+        });
+
+        publishRealtime({
+          type: 'users.changed',
+          ts: new Date().toISOString(),
+          payload: { userId: String((user as any)._id) },
+          audience: { roles: ['admin'] },
+        });
+        publishRealtime({
+          type: 'wallets.changed',
+          ts: new Date().toISOString(),
+          audience: { roles: ['admin'], userIds: [String((user as any)._id)] },
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    deleteWallet: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const userId = String(req.params.userId || '').trim();
+        if (!userId) throw new AppError(400, 'INVALID_USER_ID', 'userId required');
+
+        const wallet = await WalletModel.findOne({ ownerUserId: userId, deletedAt: null }).lean();
+        if (!wallet) throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+
+        const available = Number((wallet as any).availablePaise ?? 0);
+        const pending = Number((wallet as any).pendingPaise ?? 0);
+        const locked = Number((wallet as any).lockedPaise ?? 0);
+        if (available > 0 || pending > 0 || locked > 0) {
+          throw new AppError(409, 'WALLET_NOT_EMPTY', 'Wallet has funds; cannot delete');
+        }
+
+        const hasPendingPayout = await PayoutModel.exists({
+          beneficiaryUserId: userId as any,
+          status: { $in: ['requested', 'processing'] },
+          deletedAt: null,
+        });
+        if (hasPendingPayout) {
+          throw new AppError(409, 'PAYOUT_PENDING', 'User has pending payouts; cannot delete wallet');
+        }
+
+        const deletedBy = req.auth?.userId as any;
+        const updated = await WalletModel.updateOne(
+          { ownerUserId: userId, deletedAt: null },
+          { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } }
+        );
+        if (!updated.modifiedCount) {
+          throw new AppError(409, 'WALLET_ALREADY_DELETED', 'Wallet already deleted');
+        }
+
+        await writeAuditLog({
+          req,
+          action: 'WALLET_DELETED',
+          entityType: 'Wallet',
+          entityId: String((wallet as any)._id),
+          metadata: { ownerUserId: userId },
+        });
+
+        publishRealtime({
+          type: 'wallets.changed',
+          ts: new Date().toISOString(),
+          audience: { roles: ['admin'], userIds: [userId] },
+        });
+
+        res.json({ ok: true });
       } catch (err) {
         next(err);
       }

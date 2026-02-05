@@ -824,7 +824,25 @@ const BrandsView = () => {
   );
 };
 
-const PayoutsView = ({ payouts, loading }: any) => {
+const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
+  const { toast } = useToast();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (payoutId: string) => {
+    const ok = window.confirm('Delete this payout record? This cannot be undone.');
+    if (!ok) return;
+    setDeletingId(payoutId);
+    try {
+      await api.ops.deletePayout(payoutId);
+      toast.success('Payout deleted');
+      onRefresh?.();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete payout';
+      toast.error(msg);
+    } finally {
+      setDeletingId(null);
+    }
+  };
   const totalPayouts = payouts.reduce((sum: number, p: any) => sum + p.amount, 0);
 
   const handleExport = () => {
@@ -929,7 +947,8 @@ const PayoutsView = ({ payouts, loading }: any) => {
                   <th className="p-5 pl-8">Transaction ID / Date</th>
                   <th className="p-5">Beneficiary (Mediator)</th>
                   <th className="p-5 text-right">Amount</th>
-                  <th className="p-5 pr-8 text-right">Status</th>
+                  <th className="p-5 text-right">Status</th>
+                  <th className="p-5 pr-8 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 text-sm">
@@ -976,6 +995,21 @@ const PayoutsView = ({ payouts, loading }: any) => {
                         )}
                         {p.status}
                       </span>
+                    </td>
+                    <td className="p-5 pr-8 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(p.id)}
+                        disabled={deletingId === p.id}
+                        className={`inline-flex items-center justify-center p-2 rounded-lg border transition-colors ${
+                          deletingId === p.id
+                            ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-rose-500 border-rose-100 hover:bg-rose-50'
+                        }`}
+                        title="Delete payout"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1198,6 +1232,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [commissionOnDeal, setCommissionOnDeal] = useState<string>('');
   const [commissionToMediator, setCommissionToMediator] = useState<string>('');
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!assignModal) return;
@@ -1403,6 +1438,24 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     }
   };
 
+  const handleDelete = async (campaign: Campaign) => {
+    const isOwner = String(campaign.brandId || '') === String(user?.id || '');
+    if (!isOwner) return;
+    const confirmed = confirm('Delete this campaign? This cannot be undone.');
+    if (!confirmed) return;
+    setDeletingId(campaign.id);
+    try {
+      await api.ops.deleteCampaign(campaign.id);
+      toast.success('Campaign deleted');
+      onRefresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete campaign';
+      toast.error(msg);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const activeMediatorsForAssign = useMemo(() => {
     const q = assignSearch.trim().toLowerCase();
     const all = (mediators as User[]).filter((m: User) => !!m.mediatorCode);
@@ -1582,6 +1635,17 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                                 : c.status === 'Active'
                                   ? 'Pause Campaign'
                                   : 'Resume Campaign'}
+                            </button>
+                          )}
+                          {String(c.brandId || '') === String(user.id || '') && (
+                            <button
+                              onClick={() => handleDelete(c)}
+                              disabled={deletingId === c.id}
+                              className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95 bg-red-50 text-red-600 border-red-200 hover:bg-red-100 ${
+                                deletingId === c.id ? 'opacity-60 cursor-not-allowed' : ''
+                              }`}
+                            >
+                              {deletingId === c.id ? 'Deleting...' : 'Delete Campaign'}
                             </button>
                           )}
                         </div>
@@ -2896,6 +2960,7 @@ export const AgencyDashboard: React.FC = () => {
     }
   };
 
+
   useEffect(() => {
     fetchData();
   }, [user]);
@@ -3081,7 +3146,13 @@ export const AgencyDashboard: React.FC = () => {
           user={user}
         />
       )}
-      {activeTab === 'payouts' && <PayoutsView payouts={payouts} loading={isDataLoading} />}
+      {activeTab === 'payouts' && (
+        <PayoutsView
+          payouts={payouts}
+          loading={isDataLoading}
+          onRefresh={fetchData}
+        />
+      )}
       {activeTab === 'brands' && <BrandsView />}
       {activeTab === 'profile' && <AgencyProfile user={user} />}
     </DesktopShell>

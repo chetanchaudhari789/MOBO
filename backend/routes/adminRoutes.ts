@@ -42,6 +42,9 @@ export function adminRoutes(env: Env): Router {
   router.get('/growth', admin.getGrowth);
   router.get('/products', admin.getProducts);
   router.patch('/users/status', admin.updateUserStatus);
+  router.delete('/products/:dealId', admin.deleteDeal);
+  router.delete('/users/:userId', admin.deleteUser);
+  router.delete('/wallets/:userId', admin.deleteWallet);
 
   router.post('/orders/reactivate', admin.reactivateOrder);
 

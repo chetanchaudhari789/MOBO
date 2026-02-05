@@ -1558,6 +1558,91 @@ export function makeOpsController(env: Env) {
       }
     },
 
+    deleteCampaign: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const campaignId = String(req.params.campaignId || '').trim();
+        if (!campaignId) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
+
+        const { roles, userId } = getRequester(req);
+
+        const campaign = await CampaignModel.findById(campaignId)
+          .select({ brandUserId: 1, allowedAgencyCodes: 1, assignments: 1, deletedAt: 1 })
+          .lean();
+        if (!campaign || (campaign as any).deletedAt) {
+          throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        }
+
+        const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
+        const canDelete = isPrivileged(roles) || (isOwner && (roles.includes('agency') || roles.includes('mediator')));
+        if (!canDelete) {
+          throw new AppError(403, 'FORBIDDEN', 'Not allowed to delete this campaign');
+        }
+
+        const hasOrders = await OrderModel.exists({ deletedAt: null, 'items.campaignId': (campaign as any)._id });
+        if (hasOrders) throw new AppError(409, 'CAMPAIGN_HAS_ORDERS', 'Cannot delete a campaign with orders');
+
+        const now = new Date();
+        const deletedBy = req.auth?.userId as any;
+        const updated = await CampaignModel.updateOne(
+          { _id: (campaign as any)._id, deletedAt: null },
+          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } }
+        );
+        if (!updated.modifiedCount) {
+          throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
+        }
+
+        await DealModel.updateMany(
+          { campaignId: (campaign as any)._id, deletedAt: null },
+          { $set: { deletedAt: now, deletedBy, active: false } }
+        );
+
+        await writeAuditLog({
+          req,
+          action: 'CAMPAIGN_DELETED',
+          entityType: 'Campaign',
+          entityId: String((campaign as any)._id),
+        });
+
+        const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
+          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+          : [];
+        const assignments = (campaign as any).assignments;
+        const assignmentCodes = assignments instanceof Map
+          ? Array.from(assignments.keys())
+          : assignments && typeof assignments === 'object'
+            ? Object.keys(assignments)
+            : [];
+
+        const ts = new Date().toISOString();
+        publishRealtime({
+          type: 'deals.changed',
+          ts,
+          payload: { campaignId: String((campaign as any)._id) },
+          audience: {
+            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            agencyCodes: allowed,
+            mediatorCodes: assignmentCodes,
+            roles: ['admin', 'ops'],
+          },
+        });
+        publishRealtime({
+          type: 'notifications.changed',
+          ts,
+          payload: { source: 'campaign.deleted', campaignId: String((campaign as any)._id) },
+          audience: {
+            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            agencyCodes: allowed,
+            mediatorCodes: assignmentCodes,
+            roles: ['admin', 'ops'],
+          },
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
     assignSlots: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = assignSlotsSchema.parse(req.body);
@@ -1890,6 +1975,74 @@ export function makeOpsController(env: Env) {
         }
 
         await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payout._id), metadata: { beneficiaryUserId: String(user._id), amountPaise, recordOnly: canAgency } });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    deletePayout: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const payoutId = String(req.params.payoutId || '').trim();
+        if (!payoutId) throw new AppError(400, 'INVALID_PAYOUT_ID', 'payoutId required');
+
+        const { roles, user } = getRequester(req);
+        const isPriv = isPrivileged(roles);
+        if (!isPriv && !roles.includes('agency')) {
+          throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
+        }
+
+        const payout = await PayoutModel.findById(payoutId).lean();
+        if (!payout || (payout as any).deletedAt) throw new AppError(404, 'PAYOUT_NOT_FOUND', 'Payout not found');
+
+        const beneficiary = await UserModel.findById((payout as any).beneficiaryUserId).lean();
+        if (!beneficiary || (beneficiary as any).deletedAt) throw new AppError(404, 'BENEFICIARY_NOT_FOUND', 'Beneficiary not found');
+
+        if (!isPriv) {
+          const agencyCode = String((user as any)?.mediatorCode || '').trim();
+          if (!agencyCode) throw new AppError(409, 'MISSING_CODE', 'Agency is missing code');
+          const beneficiaryAgency = String((beneficiary as any)?.parentCode || '').trim();
+          if (!beneficiaryAgency || beneficiaryAgency !== agencyCode) {
+            throw new AppError(403, 'FORBIDDEN', 'You can only delete payouts within your agency');
+          }
+        }
+
+        const hasWalletTx = await TransactionModel.exists({ payoutId: (payout as any)._id, deletedAt: null });
+        if (hasWalletTx) {
+          throw new AppError(409, 'PAYOUT_HAS_LEDGER', 'Cannot delete a payout with wallet ledger entries');
+        }
+
+        const now = new Date();
+        const deletedBy = req.auth?.userId as any;
+        const updated = await PayoutModel.updateOne(
+          { _id: (payout as any)._id, deletedAt: null },
+          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } }
+        );
+        if (!updated.modifiedCount) {
+          throw new AppError(409, 'PAYOUT_ALREADY_DELETED', 'Payout already deleted');
+        }
+
+        await writeAuditLog({
+          req,
+          action: 'PAYOUT_DELETED',
+          entityType: 'Payout',
+          entityId: String((payout as any)._id),
+          metadata: { beneficiaryUserId: String((payout as any).beneficiaryUserId) },
+        });
+
+        const agencyCode = String((beneficiary as any)?.parentCode || '').trim();
+        const ts = new Date().toISOString();
+        publishRealtime({
+          type: 'notifications.changed',
+          ts,
+          payload: { source: 'payout.deleted', payoutId: String((payout as any)._id) },
+          audience: {
+            userIds: [String((payout as any).beneficiaryUserId || '')].filter(Boolean),
+            ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
+            roles: ['admin', 'ops'],
+          },
+        });
 
         res.json({ ok: true });
       } catch (err) {

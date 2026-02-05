@@ -565,6 +565,12 @@ export const api = {
         body: JSON.stringify({ status }),
       });
     },
+    deleteCampaign: async (campaignId: string) => {
+      await fetchOk(`/ops/campaigns/${encodeURIComponent(campaignId)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      });
+    },
     assignSlots: async (
       id: string,
       assignments: any,
@@ -591,6 +597,12 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ mediatorId, amount }),
+      });
+    },
+    deletePayout: async (payoutId: string) => {
+      await fetchOk(`/ops/payouts/${encodeURIComponent(payoutId)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
       });
     },
     generateMediatorInvite: async (agencyId: string) => {
@@ -690,6 +702,12 @@ export const api = {
         body: JSON.stringify(data),
       });
     },
+    deleteCampaign: async (campaignId: string) => {
+      await fetchOk(`/brand/campaigns/${encodeURIComponent(campaignId)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      });
+    },
   },
   admin: {
     getStats: async () =>
@@ -710,6 +728,12 @@ export const api = {
       fetchJson('/admin/products', {
         headers: { ...authHeaders() },
       }),
+    deleteProduct: async (dealId: string) => {
+      await fetchOk(`/admin/products/${encodeURIComponent(dealId)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      });
+    },
     getGrowthAnalytics: async () =>
       fetchJson('/admin/growth', {
         headers: { ...authHeaders() },
@@ -746,6 +770,18 @@ export const api = {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ userId, status }),
+      });
+    },
+    deleteUser: async (userId: string) => {
+      await fetchOk(`/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
+      });
+    },
+    deleteWallet: async (userId: string) => {
+      await fetchOk(`/admin/wallets/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders() },
       });
     },
   },
