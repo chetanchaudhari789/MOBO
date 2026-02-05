@@ -622,6 +622,23 @@ export async function extractOrderDetailsWithAi(
       return score;
     };
 
+    const normalizeDigits = (value: string) =>
+      value
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il]/g, '1')
+        .replace(/S/g, '5')
+        .replace(/B/g, '8')
+        .replace(/Z/g, '2');
+
+    const coerceAmazonOrderId = (value: string) => {
+      const normalized = normalizeDigits(value);
+      const digitsOnly = normalized.replace(/[^0-9]/g, '');
+      if (digitsOnly.length === 17) {
+        return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`;
+      }
+      return null;
+    };
+
     const parseAmountString = (raw: string | undefined | null) => {
       if (!raw) return null;
       const cleaned = raw.replace(/,/g, '');
@@ -693,26 +710,28 @@ export async function extractOrderDetailsWithAi(
 
         if (hasKeyword) {
           const labeled = line.match(ORDER_LABEL_RE);
-          if (labeled?.[1]) pushCandidate(labeled[1], true);
+          if (labeled?.[1]) {
+            const coerced = coerceAmazonOrderId(labeled[1]);
+            pushCandidate(coerced ?? labeled[1], true);
+          }
 
           const spaced = line.match(new RegExp(AMAZON_SPACED_PATTERN));
           if (spaced?.[0]) {
-            const digitsOnly = spaced[0].replace(/[^0-9]/g, '');
-            if (digitsOnly.length === 17) {
-              pushCandidate(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`, true);
-            }
+            const coerced = coerceAmazonOrderId(spaced[0]);
+            if (coerced) pushCandidate(coerced, true);
           }
 
           const nextLine = lines[i + 1];
           if (nextLine) {
             const amazonNext = nextLine.match(AMAZON_ORDER_RE);
-            if (amazonNext?.[0]) pushCandidate(amazonNext[0], true);
+            if (amazonNext?.[0]) {
+              const coerced = coerceAmazonOrderId(amazonNext[0]);
+              pushCandidate(coerced ?? amazonNext[0], true);
+            }
             const spacedNext = nextLine.match(new RegExp(AMAZON_SPACED_PATTERN));
             if (spacedNext?.[0]) {
-              const digitsOnly = spacedNext[0].replace(/[^0-9]/g, '');
-              if (digitsOnly.length === 17) {
-                pushCandidate(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`, true);
-              }
+              const coerced = coerceAmazonOrderId(spacedNext[0]);
+              if (coerced) pushCandidate(coerced, true);
             }
             const genericNext = nextLine.match(GENERIC_ID_RE);
             if (genericNext?.[0]) pushCandidate(genericNext[0], true);
@@ -720,7 +739,10 @@ export async function extractOrderDetailsWithAi(
         }
 
         const amazon = line.match(AMAZON_ORDER_RE);
-        if (amazon?.[0]) pushCandidate(amazon[0], hasKeyword);
+        if (amazon?.[0]) {
+          const coerced = coerceAmazonOrderId(amazon[0]);
+          pushCandidate(coerced ?? amazon[0], hasKeyword);
+        }
 
         const flipkart = line.match(FLIPKART_ORDER_RE);
         if (flipkart?.[0]) pushCandidate(flipkart[0], hasKeyword);
@@ -747,9 +769,14 @@ export async function extractOrderDetailsWithAi(
 
       const spacedAmazon = Array.from(text.matchAll(AMAZON_SPACED_GLOBAL_RE)).map((m) => m[0]);
       for (const chunk of spacedAmazon) {
-        const digitsOnly = chunk.replace(/[^0-9]/g, '');
-        if (digitsOnly.length === 17) {
-          pushCandidate(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`, false);
+        const coerced = coerceAmazonOrderId(chunk);
+        if (coerced) pushCandidate(coerced, false);
+      }
+
+      const globalDigits = normalizeDigits(text).match(/\d{17}/g) || [];
+      for (const digits of globalDigits) {
+        if (digits.length === 17) {
+          pushCandidate(`${digits.slice(0, 3)}-${digits.slice(3, 10)}-${digits.slice(10)}`, false);
         }
       }
 
