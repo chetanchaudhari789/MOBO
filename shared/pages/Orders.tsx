@@ -223,7 +223,10 @@ export const Orders: React.FC = () => {
       const details = await api.orders.extractDetails(file);
       const normalizedOrderId =
         typeof details.orderId === 'string'
-          ? details.orderId.trim().replace(/\s+/g, '')
+          ? details.orderId
+              .trim()
+              .replace(/\s+/g, '')
+              .replace(/[^A-Z0-9\-_/]/gi, '')
           : '';
       const hasDigit = /\d/.test(normalizedOrderId);
       const looksLikeMarketplaceId =
@@ -232,7 +235,7 @@ export const Orders: React.FC = () => {
         /\b(?:MYN|MNT|ORD)\d{6,}\b/i.test(normalizedOrderId) ||
         /\b(?:MSH|MEESHO)\d{6,}\b/i.test(normalizedOrderId) ||
         /^\d{10,20}$/.test(normalizedOrderId) ||
-        (hasDigit && /^[A-Z0-9][A-Z0-9\-_/]{5,63}$/i.test(normalizedOrderId));
+        (hasDigit && normalizedOrderId.length >= 6 && normalizedOrderId.length <= 64);
       const safeOrderId = /^(null|undefined|n\/a|na)$/i.test(normalizedOrderId)
         ? ''
         : looksLikeMarketplaceId
