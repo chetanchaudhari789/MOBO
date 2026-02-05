@@ -221,18 +221,29 @@ export const Orders: React.FC = () => {
     setMatchStatus({ id: 'none', amount: 'none' });
     try {
       const details = await api.orders.extractDetails(file);
+      const normalizedOrderId =
+        typeof details.orderId === 'string'
+          ? details.orderId.trim().replace(/\s+/g, '')
+          : '';
+      const safeOrderId = /^(null|undefined|n\/a|na)$/i.test(normalizedOrderId)
+        ? ''
+        : normalizedOrderId;
+      const safeAmount =
+        typeof details.amount === 'number' && Number.isFinite(details.amount) && details.amount > 0
+          ? details.amount
+          : null;
       // If extraction can't read the image, allow manual entry without surfacing size errors.
       setExtractedDetails({
-        orderId: details.orderId || '',
-        amount: details.amount?.toString() || '',
+        orderId: safeOrderId,
+        amount: safeAmount?.toString() || '',
       });
 
       // [AI] Smart Extraction Verification Logic
       if (selectedProduct) {
-        const hasId = Boolean(details.orderId);
-        const hasAmount = typeof details.amount === 'number' && Number.isFinite(details.amount);
-        const amountMatch = hasAmount && Math.abs(details.amount - selectedProduct.price) < 10;
-        const idValid = hasId && details.orderId.length > 5;
+        const hasId = Boolean(safeOrderId);
+        const hasAmount = typeof safeAmount === 'number';
+        const amountMatch = hasAmount && Math.abs(safeAmount - selectedProduct.price) < 10;
+        const idValid = hasId && safeOrderId.length > 5;
         setMatchStatus({
           id: !hasId ? 'none' : idValid ? 'match' : 'mismatch',
           amount: !hasAmount ? 'none' : amountMatch ? 'match' : 'mismatch',
