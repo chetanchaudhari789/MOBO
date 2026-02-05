@@ -53,6 +53,7 @@ const envSchema = z.object({
   AI_MAX_HISTORY_MESSAGES: z.coerce.number().int().positive().default(6),
   AI_HISTORY_SUMMARY_CHARS: z.coerce.number().int().positive().default(400),
   AI_MIN_SECONDS_BETWEEN_CALLS: z.coerce.number().int().nonnegative().default(3),
+  AI_DEBUG_OCR: z.coerce.boolean().default(false),
 
   // Web push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),

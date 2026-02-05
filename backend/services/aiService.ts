@@ -919,7 +919,7 @@ export async function extractOrderDetailsWithAi(
           // eslint-disable-next-line no-await-in-loop
           text = await extractTextOnly(model, imageBase64);
           if (text) {
-            console.info('Order extract OCR pass', { label, model, length: text.length });
+            console.log('Order extract OCR pass', { label, model, length: text.length });
             return text;
           }
         } catch (innerError) {
@@ -939,12 +939,21 @@ export async function extractOrderDetailsWithAi(
     ];
 
     let ocrText = '';
+    let ocrLabel = 'none';
     let deterministic: { orderId: string | null; amount: number | null; notes: string[] } = {
       orderId: null,
       amount: null,
       notes: [],
     };
     let bestScore = 0;
+
+    if (env.AI_DEBUG_OCR) {
+      const parsed = parseDataUrl(payload.imageBase64);
+      console.log('Order extract input', {
+        mimeType: parsed.mimeType,
+        imageChars: payload.imageBase64.length,
+      });
+    }
 
     for (const variant of ocrVariants) {
       const candidateText = await runOcrPass(variant.image, variant.label);
@@ -954,6 +963,7 @@ export async function extractOrderDetailsWithAi(
       if (score > bestScore) {
         bestScore = score;
         ocrText = candidateText;
+        ocrLabel = variant.label;
         deterministic = candidateDeterministic;
       }
       if (score === 2) break;
@@ -969,13 +979,19 @@ export async function extractOrderDetailsWithAi(
       };
     }
 
-    console.info('Order extract OCR', { length: ocrText.length, preview: ocrText.slice(0, 400) });
+    if (env.AI_DEBUG_OCR) {
+      console.log('Order extract OCR', {
+        label: ocrLabel,
+        length: ocrText.length,
+        preview: ocrText.slice(0, 600),
+      });
+    }
 
     // deterministic already computed from the best OCR pass above
     const deterministicConfidence = deterministic.orderId && deterministic.amount ? 78 :
       deterministic.orderId || deterministic.amount ? 72 : 0;
 
-    console.info('Order extract deterministic', {
+    console.log('Order extract deterministic', {
       orderId: deterministic.orderId,
       amount: deterministic.amount,
       confidence: deterministicConfidence,
@@ -1029,7 +1045,7 @@ export async function extractOrderDetailsWithAi(
 
         if (aiResult.notes) notes.push(aiResult.notes);
           aiUsed = true;
-          console.info('Order extract AI', {
+          console.log('Order extract AI', {
             suggestedOrderId: aiSuggestedOrderId,
             suggestedAmount: aiSuggestedAmount,
             confidence: aiConfidence,
@@ -1049,7 +1065,7 @@ export async function extractOrderDetailsWithAi(
       confidenceScore = 55;
     }
 
-    console.info('Order extract final', {
+    console.log('Order extract final', {
       orderId: finalOrderId,
       amount: finalAmount,
       confidence: confidenceScore,
