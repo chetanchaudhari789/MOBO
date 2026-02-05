@@ -170,12 +170,18 @@ export const Orders: React.FC = () => {
         reader.onerror = () => reject(new Error('Failed to read file'));
         reader.readAsDataURL(file);
       });
-      const apiType = uploadType === 'rating' || uploadType === 'order' ? uploadType : null;
-      if (!apiType) throw new Error('Unsupported proof type');
-
-      await api.orders.submitClaim(selectedOrder.id, { type: apiType, data: base64 });
-      toast.success('Proof uploaded successfully!');
-      setSelectedOrder(null);
+        const hasOrderId = Boolean(details.orderId);
+        const hasAmount = typeof details.amount === 'number' && Number.isFinite(details.amount);
+        if (!hasOrderId && !hasAmount) {
+          setMatchStatus({ id: 'none', amount: 'none' });
+        } else {
+          const amountMatch = hasAmount && Math.abs(details.amount - selectedProduct.price) < 10;
+          const idValid = hasOrderId && details.orderId.length > 5;
+          setMatchStatus({
+            id: idValid ? 'match' : 'mismatch',
+            amount: amountMatch ? 'match' : 'mismatch',
+          });
+        }
       loadOrders();
     } catch (err: any) {
       toast.error(String(err?.message || 'Failed to upload proof'));

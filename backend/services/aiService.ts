@@ -879,11 +879,12 @@ export async function extractOrderDetailsWithAi(
     const notes: string[] = [...deterministic.notes];
 
     let aiUsed = false;
-    for (const model of GEMINI_MODEL_FALLBACKS) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const aiResult = await refineWithAi(model, ocrText, deterministic);
-        if (!aiResult) continue;
+    if (!(finalOrderId && finalAmount)) {
+      for (const model of GEMINI_MODEL_FALLBACKS.slice(0, 1)) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const aiResult = await refineWithAi(model, ocrText, deterministic);
+          if (!aiResult) continue;
 
         const aiSuggestedOrderId = sanitizeOrderId(aiResult.suggestedOrderId);
         const aiSuggestedAmount =
@@ -919,16 +920,17 @@ export async function extractOrderDetailsWithAi(
         }
 
         if (aiResult.notes) notes.push(aiResult.notes);
-        aiUsed = true;
-        console.info('Order extract AI', {
-          suggestedOrderId: aiSuggestedOrderId,
-          suggestedAmount: aiSuggestedAmount,
-          confidence: aiConfidence,
-        });
-        break;
-      } catch (innerError) {
-        lastError = innerError;
-        continue;
+          aiUsed = true;
+          console.info('Order extract AI', {
+            suggestedOrderId: aiSuggestedOrderId,
+            suggestedAmount: aiSuggestedAmount,
+            confidence: aiConfidence,
+          });
+          break;
+        } catch (innerError) {
+          lastError = innerError;
+          continue;
+        }
       }
     }
 
