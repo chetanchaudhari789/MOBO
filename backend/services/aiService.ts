@@ -212,8 +212,9 @@ export async function generateChatUiResponse(
 
   const clampText = (value: string, max: number) => (value.length > max ? value.slice(0, max) : value);
 
-  if (payload.image && payload.image.length > env.AI_MAX_IMAGE_CHARS) {
-    throw createInputError('Image payload too large');
+  let imageForPrompt = payload.image;
+  if (imageForPrompt && imageForPrompt.length > env.AI_MAX_IMAGE_CHARS) {
+    imageForPrompt = undefined;
   }
 
   const sanitizedMessage = sanitizeUserMessage(env, payload.message || '');
@@ -280,7 +281,7 @@ BEHAVIOR:
     estimateTokensFromText(systemPrompt) +
     estimateTokensFromText(safeMessage) +
     estimateTokensFromText(historyText) +
-    estimateTokensFromImage(payload.image || '');
+    estimateTokensFromImage(imageForPrompt || '');
 
   if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
     historyMessagesForPrompt = historyMessages.slice(-2);
@@ -297,7 +298,7 @@ BEHAVIOR:
       estimateTokensFromText(systemPrompt) +
       estimateTokensFromText(safeMessage) +
       estimateTokensFromText(historyText) +
-      estimateTokensFromImage(payload.image || '');
+      estimateTokensFromImage(imageForPrompt || '');
   }
 
   if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
@@ -311,19 +312,23 @@ BEHAVIOR:
       estimateTokensFromText(systemPrompt) +
       estimateTokensFromText(safeMessage) +
       estimateTokensFromText(historyText) +
-      estimateTokensFromImage(payload.image || '');
+      estimateTokensFromImage(imageForPrompt || '');
   }
 
-  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
-    throw createInputError('Payload too large');
+  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS && imageForPrompt) {
+    imageForPrompt = undefined;
+    estimatedTokens =
+      estimateTokensFromText(systemPrompt) +
+      estimateTokensFromText(safeMessage) +
+      estimateTokensFromText(historyText);
   }
 
-  const contents = payload.image
+  const contents = imageForPrompt
     ? [
         {
           inlineData: {
             mimeType: 'image/jpeg',
-            data: payload.image.split(',')[1] ?? payload.image,
+            data: imageForPrompt.split(',')[1] ?? imageForPrompt,
           },
         },
         { text: safeMessage || 'Analyze this image.' },
@@ -433,7 +438,12 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
   const ai = new GoogleGenAI({ apiKey });
 
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
-    throw createInputError('Image payload too large');
+    return {
+      orderIdMatch: false,
+      amountMatch: false,
+      confidenceScore: 0,
+      discrepancyNote: 'Auto verification unavailable. Please verify manually.',
+    };
   }
 
   const estimatedTokens =
@@ -442,7 +452,12 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     estimateTokensFromText(String(payload.expectedAmount));
 
   if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
-    throw createInputError('Payload too large');
+    return {
+      orderIdMatch: false,
+      amountMatch: false,
+      confidenceScore: 0,
+      discrepancyNote: 'Auto verification unavailable. Please verify manually.',
+    };
   }
 
   try {
@@ -522,7 +537,7 @@ export async function extractOrderDetailsWithAi(
       orderId: null,
       amount: null,
       confidenceScore: 0,
-      notes: 'Image payload too large for extraction. Please upload a smaller screenshot.',
+      notes: 'Auto extraction unavailable. Please enter details manually.',
     };
   }
 
@@ -532,7 +547,7 @@ export async function extractOrderDetailsWithAi(
       orderId: null,
       amount: null,
       confidenceScore: 0,
-      notes: 'Payload too large for extraction. Please crop and upload a smaller screenshot.',
+      notes: 'Auto extraction unavailable. Please enter details manually.',
     };
   }
 

@@ -25,12 +25,13 @@ function getApiBaseUrl(): string {
 
   // In Next.js deployments we rely on same-origin `/api/*` + Next rewrites.
   // This avoids CORS problems when NEXT_PUBLIC_API_URL points at a different origin.
+  const hasDirectApiUrl = Boolean(fromGlobal || fromVite || fromNext);
   const preferSameOriginProxy =
+    !hasDirectApiUrl &&
     typeof window !== 'undefined' &&
     typeof process !== 'undefined' &&
     (process as any).env &&
-    (String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET || '').trim() ||
-      String((process as any).env.NEXT_PUBLIC_API_URL || '').trim());
+    String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET || '').trim();
 
   const fromProxy = preferSameOriginProxy
     ? '/api'
@@ -294,60 +295,14 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * [FIX] Exported compressImage as it was missing and causing import errors in Chatbot.tsx.
- * Provides a simple placeholder for image compression logic.
+ * [FIX] Preserve original image quality. No client-side compression.
+ * Kept for backward compatibility with existing imports.
  */
 export const compressImage = async (
   base64: string,
-  options: { maxChars?: number } = {}
+  _options: { maxChars?: number } = {}
 ): Promise<string> => {
-  if (!base64 || !base64.startsWith('data:image')) return base64;
-
-  const MAX_CHARS = options.maxChars ?? 3_000_000;
-  if (base64.length <= MAX_CHARS) return base64;
-
-  const img = new Image();
-  const loadPromise = new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error('Failed to load image for compression'));
-  });
-  img.src = base64;
-  await loadPromise;
-
-  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-  const maxDim = 1024;
-  let targetW = img.width;
-  let targetH = img.height;
-  if (targetW > maxDim || targetH > maxDim) {
-    const scale = Math.min(maxDim / targetW, maxDim / targetH);
-    targetW = Math.round(targetW * scale);
-    targetH = Math.round(targetH * scale);
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return base64;
-  ctx.drawImage(img, 0, 0, targetW, targetH);
-
-  const tryQualities = [0.8, 0.7, 0.6, 0.5];
-  let output = base64;
-  for (const q of tryQualities) {
-    output = canvas.toDataURL('image/jpeg', clamp(q, 0.4, 0.9));
-    if (output.length <= MAX_CHARS) return output;
-  }
-
-  if (output.length > MAX_CHARS) {
-    const smaller = 768;
-    const scale = Math.min(smaller / targetW, smaller / targetH);
-    canvas.width = Math.max(1, Math.round(targetW * scale));
-    canvas.height = Math.max(1, Math.round(targetH * scale));
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    output = canvas.toDataURL('image/jpeg', 0.55);
-  }
-
-  return output;
+  return base64;
 };
 
 /**
@@ -459,11 +414,10 @@ export const api = {
     /** [FIX] Added missing extractDetails for Orders.tsx */
     extractDetails: async (file: File) => {
       const rawBase64 = await readFileAsDataUrl(file);
-      const imageBase64 = await compressImage(rawBase64, { maxChars: 3_000_000 });
       return fetchJson('/ai/extract-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ imageBase64 }),
+        body: JSON.stringify({ imageBase64: rawBase64 }),
       });
     },
   },

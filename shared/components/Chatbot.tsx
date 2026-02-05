@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useNotification } from '../context/NotificationContext';
-import { api, compressImage } from '../services/api';
+import { api } from '../services/api';
 import { Ticket, Order, Product } from '../types';
 import { ProductCard } from './ProductCard';
 
@@ -236,8 +236,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         reader.onload = () => resolve(reader.result as string);
         reader.readAsDataURL(attachment);
       });
-      // [Security] Image Compression
-      base64Image = await compressImage(rawBase64);
+      base64Image = rawBase64;
     }
 
     addMessage({

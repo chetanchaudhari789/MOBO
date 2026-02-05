@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { api, compressImage } from '../services/api';
+import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
@@ -33,7 +33,7 @@ const getSecondaryOrderId = (order: Order) => {
   return internal;
 };
 
-const MAX_PROOF_SIZE_BYTES = 12 * 1024 * 1024;
+const MAX_PROOF_SIZE_BYTES = 50 * 1024 * 1024;
 
 const isValidImageFile = (file: File) => {
   if (!file.type.startsWith('image/')) return false;
@@ -157,7 +157,7 @@ export const Orders: React.FC = () => {
     try {
       const file = e.target.files[0];
       if (!isValidImageFile(file)) {
-        throw new Error('Please upload a valid image (PNG/JPG, max 12MB).');
+        throw new Error('Please upload a valid image (PNG/JPG, max 50MB).');
       }
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -165,12 +165,10 @@ export const Orders: React.FC = () => {
         reader.onerror = () => reject(new Error('Failed to read file'));
         reader.readAsDataURL(file);
       });
-      const compressed = await compressImage(base64);
-
       const apiType = uploadType === 'rating' || uploadType === 'order' ? uploadType : null;
       if (!apiType) throw new Error('Unsupported proof type');
 
-      await api.orders.submitClaim(selectedOrder.id, { type: apiType, data: compressed });
+      await api.orders.submitClaim(selectedOrder.id, { type: apiType, data: base64 });
       toast.success('Proof uploaded successfully!');
       setSelectedOrder(null);
       loadOrders();
@@ -204,15 +202,14 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid order image (PNG/JPG, max 12MB).');
+      toast.error('Please upload a valid order image (PNG/JPG, max 50MB).');
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       const raw = reader.result as string;
-      const compressed = await compressImage(raw);
-      setFormScreenshot(compressed);
+      setFormScreenshot(raw);
     };
     reader.readAsDataURL(file);
 
@@ -220,14 +217,7 @@ export const Orders: React.FC = () => {
     setMatchStatus({ id: 'none', amount: 'none' });
     try {
       const details = await api.orders.extractDetails(file);
-      if (!details.orderId && !details.amount && details.notes) {
-        const note = String(details.notes || '').toLowerCase();
-        if (note.includes('large') || note.includes('payload')) {
-          toast.error('Image is too large. Please crop and upload a smaller screenshot.', {
-            title: 'Extraction',
-          });
-        }
-      }
+      // If extraction can't read the image, allow manual entry without surfacing size errors.
       setExtractedDetails({
         orderId: details.orderId || '',
         amount: details.amount?.toString() || '',
@@ -255,15 +245,14 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid rating image (PNG/JPG, max 12MB).');
+      toast.error('Please upload a valid rating image (PNG/JPG, max 50MB).');
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       const raw = reader.result as string;
-      const compressed = await compressImage(raw);
-      setRatingScreenshot(compressed);
+      setRatingScreenshot(raw);
     };
     reader.readAsDataURL(file);
   };

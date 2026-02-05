@@ -18,7 +18,7 @@ import { getRequester, isPrivileged } from '../services/authz.js';
 import { isGeminiConfigured, verifyProofWithAi } from '../services/aiService.js';
 
 export function makeOrdersController(env: Env) {
-  const MAX_PROOF_BYTES = 12 * 1024 * 1024;
+  const MAX_PROOF_BYTES = 50 * 1024 * 1024;
   const MIN_PROOF_BYTES = (env.SEED_E2E || env.NODE_ENV !== 'production') ? 1 : 10 * 1024;
 
   const getDataUrlByteSize = (raw: string) => {
@@ -34,7 +34,8 @@ export function makeOrdersController(env: Env) {
       throw new AppError(400, 'INVALID_PROOF_IMAGE', `${label} is too small or invalid.`);
     }
     if (size > MAX_PROOF_BYTES) {
-      throw new AppError(400, 'PROOF_TOO_LARGE', `${label} exceeds 5MB.`);
+      const limitMb = Math.round(MAX_PROOF_BYTES / (1024 * 1024));
+      throw new AppError(400, 'PROOF_TOO_LARGE', `${label} exceeds ${limitMb}MB.`);
     }
   };
   const findOrderForProof = async (orderId: string) => {
