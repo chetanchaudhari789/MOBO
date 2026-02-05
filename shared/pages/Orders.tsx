@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { api } from '../services/api';
+import { api, compressImage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
@@ -165,11 +165,12 @@ export const Orders: React.FC = () => {
         reader.onerror = () => reject(new Error('Failed to read file'));
         reader.readAsDataURL(file);
       });
+      const compressed = await compressImage(base64);
 
       const apiType = uploadType === 'rating' || uploadType === 'order' ? uploadType : null;
       if (!apiType) throw new Error('Unsupported proof type');
 
-      await api.orders.submitClaim(selectedOrder.id, { type: apiType, data: base64 });
+      await api.orders.submitClaim(selectedOrder.id, { type: apiType, data: compressed });
       toast.success('Proof uploaded successfully!');
       setSelectedOrder(null);
       loadOrders();
@@ -208,7 +209,11 @@ export const Orders: React.FC = () => {
     }
 
     const reader = new FileReader();
-    reader.onload = () => setFormScreenshot(reader.result as string);
+    reader.onload = async () => {
+      const raw = reader.result as string;
+      const compressed = await compressImage(raw);
+      setFormScreenshot(compressed);
+    };
     reader.readAsDataURL(file);
 
     setIsAnalyzing(true);
@@ -247,7 +252,11 @@ export const Orders: React.FC = () => {
     }
 
     const reader = new FileReader();
-    reader.onload = () => setRatingScreenshot(reader.result as string);
+    reader.onload = async () => {
+      const raw = reader.result as string;
+      const compressed = await compressImage(raw);
+      setRatingScreenshot(compressed);
+    };
     reader.readAsDataURL(file);
   };
 
