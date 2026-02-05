@@ -554,6 +554,33 @@ export async function extractOrderDetailsWithAi(
   try {
     let lastError: unknown = null;
 
+    const ORDER_KEYWORD_RE = /order\s*(id|no\.?|number|#)/i;
+    const EXCLUDED_LINE_RE = /tracking|shipment|awb|invoice|transaction|utr|payment|upi|ref(erence)?|ship/i;
+    const ORDER_LABEL_PATTERN = 'order\\s*(?:id|no\\.?|number|#)\\s*[:\\-#]?\\s*([A-Z0-9\\-_/]{6,40})';
+    const AMAZON_ORDER_PATTERN = '\\b\\d{3}-\\d{7}-\\d{7}\\b';
+    const FLIPKART_ORDER_PATTERN = '\\bOD\\d{6,}\\b';
+    const MYNTRA_ORDER_PATTERN = '\\b(?:MYN|MNT|ORD)\\d{6,}\\b';
+    const MEESHO_ORDER_PATTERN = '\\b(?:MSH|MEESHO)\\d{6,}\\b';
+    const AMAZON_SPACED_PATTERN = '(?:\\d[\\s\\-]?){17}';
+    const GENERIC_ID_PATTERN = '\\b[A-Z0-9]{8,}\\b';
+    const AMOUNT_LABEL_RE = /(grand total|amount paid|you paid|order total|final total|total|net amount|payable)/i;
+    const AMOUNT_VALUE_PATTERN = '₹?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
+    const INR_VALUE_PATTERN = '(?:₹|rs\\.?|inr)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
+
+    const ORDER_LABEL_RE = new RegExp(ORDER_LABEL_PATTERN, 'i');
+    const AMAZON_ORDER_RE = new RegExp(AMAZON_ORDER_PATTERN, 'i');
+    const AMAZON_ORDER_GLOBAL_RE = new RegExp(AMAZON_ORDER_PATTERN, 'gi');
+    const FLIPKART_ORDER_RE = new RegExp(FLIPKART_ORDER_PATTERN, 'i');
+    const FLIPKART_ORDER_GLOBAL_RE = new RegExp(FLIPKART_ORDER_PATTERN, 'gi');
+    const MYNTRA_ORDER_RE = new RegExp(MYNTRA_ORDER_PATTERN, 'i');
+    const MYNTRA_ORDER_GLOBAL_RE = new RegExp(MYNTRA_ORDER_PATTERN, 'gi');
+    const MEESHO_ORDER_RE = new RegExp(MEESHO_ORDER_PATTERN, 'i');
+    const MEESHO_ORDER_GLOBAL_RE = new RegExp(MEESHO_ORDER_PATTERN, 'gi');
+    const AMAZON_SPACED_GLOBAL_RE = new RegExp(AMAZON_SPACED_PATTERN, 'g');
+    const GENERIC_ID_RE = new RegExp(GENERIC_ID_PATTERN, 'i');
+    const AMOUNT_VALUE_GLOBAL_RE = new RegExp(AMOUNT_VALUE_PATTERN, 'g');
+    const INR_VALUE_GLOBAL_RE = new RegExp(INR_VALUE_PATTERN, 'gi');
+
     const sanitizeOrderId = (value: unknown) => {
       if (typeof value !== 'string') return null;
       const raw = value.trim();
@@ -567,146 +594,141 @@ export async function extractOrderDetailsWithAi(
       return raw;
     };
 
-    const normalizeText = (value: unknown) =>
-      typeof value === 'string'
-        ? value
-            .replace(/\r/g, '\n')
-            .split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean)
-            .join('\n')
-        : '';
+    const normalizeOcrText = (value: unknown) =>
+      typeof value === 'string' ? value.replace(/\r/g, '\n') : '';
 
-    const lineHasOrderKeyword = (line: string) =>
-      /order\s*(id|no\.?|number|#)/i.test(line);
+    const normalizeLine = (line: string) => line.trim();
 
-    const lineHasExcludedKeyword = (line: string) =>
-      /tracking|shipment|awb|invoice|transaction|utr|payment|upi|ref(erence)?|ship/i.test(line);
+    const hasOrderKeyword = (line: string) => ORDER_KEYWORD_RE.test(line);
+    const hasExcludedKeyword = (line: string) => EXCLUDED_LINE_RE.test(line);
 
-    const candidateOrderIdsFromText = (text: string) => {
-      const candidates: string[] = [];
-      const lines = text.split('\n');
+    const normalizeCandidate = (value: string) => value.replace(/[\s:]/g, '').replace(/[\.,]$/, '').trim();
 
-      for (const line of lines) {
-        if (!lineHasOrderKeyword(line)) continue;
-        if (lineHasExcludedKeyword(line)) continue;
-
-        const explicit = line.match(/order\s*(?:id|no\.?|number|#)\s*[:\-#]?\s*([A-Z0-9\-_/]{6,40})/i);
-        if (explicit?.[1]) candidates.push(explicit[1]);
-
-        const spaced = line.match(/order\s*(?:id|no\.?|number|#)\s*[:\-#]?\s*((?:\d[\s\-]?){12,30})/i);
-        if (spaced?.[1]) {
-          const digitsOnly = spaced[1].replace(/[^0-9]/g, '');
-          if (digitsOnly.length === 17) {
-            candidates.push(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`);
-          } else {
-            candidates.push(digitsOnly);
-          }
-        }
-
-        const amazon = line.match(/\b\d{3}-\d{7}-\d{7}\b/);
-        if (amazon?.[0]) candidates.push(amazon[0]);
-
-        const flipkart = line.match(/\bOD\d{6,}\b/i);
-        if (flipkart?.[0]) candidates.push(flipkart[0]);
-
-        const myntra = line.match(/\b(?:MYN|MNT|ORD)\d{6,}\b/i);
-        if (myntra?.[0]) candidates.push(myntra[0]);
-
-        const meesho = line.match(/\b(?:MSH|MEESHO)\d{6,}\b/i);
-        if (meesho?.[0]) candidates.push(meesho[0]);
-
-        const generic = line.match(/\b[A-Z0-9]{8,}\b/i);
-        if (generic?.[0]) candidates.push(generic[0]);
-      }
-
-      // Fallback scan for known patterns anywhere in text.
-      const amazonAll = text.match(/\b\d{3}-\d{7}-\d{7}\b/g) || [];
-      const flipkartAll = text.match(/\bOD\d{6,}\b/gi) || [];
-      const myntraAll = text.match(/\b(?:MYN|MNT|ORD)\d{6,}\b/gi) || [];
-      const meeshoAll = text.match(/\b(?:MSH|MEESHO)\d{6,}\b/gi) || [];
-      candidates.push(...amazonAll, ...flipkartAll);
-      candidates.push(...myntraAll, ...meeshoAll);
-
-      // Amazon order numbers often appear with spaces/hyphens: 408 9652341 7203568
-      const spacedAmazon = text.match(/(?:\d[\s\-]?){17}/g) || [];
-      for (const chunk of spacedAmazon) {
-        const digitsOnly = chunk.replace(/[^0-9]/g, '');
-        if (digitsOnly.length === 17) {
-          candidates.push(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`);
-        }
-      }
-
-      return candidates
-        .map((c) => sanitizeOrderId(c))
-        .filter((c): c is string => Boolean(c));
+    const scoreOrderId = (value: string, context: { hasKeyword: boolean; occursInText: boolean }) => {
+      const upper = value.toUpperCase();
+      let score = 0;
+      if (context.hasKeyword) score += 4;
+      if (upper.includes('-')) score += 2;
+      if (/\d/.test(upper) && /[A-Z]/.test(upper)) score += 2;
+      if (/^\d{10,20}$/.test(upper)) score += 1;
+      if (new RegExp(`^${AMAZON_ORDER_PATTERN}$`).test(upper)) score += 5;
+      if (new RegExp(`^${FLIPKART_ORDER_PATTERN}$`).test(upper)) score += 4;
+      if (new RegExp(`^${MYNTRA_ORDER_PATTERN}$`).test(upper)) score += 4;
+      if (new RegExp(`^${MEESHO_ORDER_PATTERN}$`).test(upper)) score += 4;
+      if (context.occursInText) score += 1;
+      return score;
     };
 
-    const amountFromText = (text: string) => {
-      const lines = text.split('\n');
-      const labelRegex = /(total|grand total|amount paid|paid|order total|final total|you paid|net amount|payable)/i;
-      const amountRegex = /₹?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/;
+    const parseAmountString = (raw: string | undefined | null) => {
+      if (!raw) return null;
+      const cleaned = raw.replace(/,/g, '');
+      const value = Number(cleaned);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const extractAmounts = (text: string) => {
+      const lines = text.split('\n').map(normalizeLine).filter(Boolean);
+      const labeledAmounts: number[] = [];
 
       for (const line of lines) {
-        if (!labelRegex.test(line)) continue;
-        const match = line.match(amountRegex);
-        if (match?.[1]) {
-          const cleaned = match[1].replace(/,/g, '');
-          const value = Number(cleaned);
-          if (Number.isFinite(value)) return value;
+        if (!AMOUNT_LABEL_RE.test(line)) continue;
+        const matches = line.matchAll(AMOUNT_VALUE_GLOBAL_RE);
+        for (const match of matches) {
+          const value = parseAmountString(match[1]);
+          if (value) labeledAmounts.push(value);
         }
       }
 
-      const fallbackMatch = text.match(/₹\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/);
-      if (fallbackMatch?.[1]) {
-        const cleaned = fallbackMatch[1].replace(/,/g, '');
-        const value = Number(cleaned);
-        if (Number.isFinite(value)) return value;
+      if (labeledAmounts.length) return Math.max(...labeledAmounts);
+
+      const inrMatches = text.matchAll(INR_VALUE_GLOBAL_RE);
+      const inrValues: number[] = [];
+      for (const match of inrMatches) {
+        const value = parseAmountString(match[1]);
+        if (value) inrValues.push(value);
       }
+      if (inrValues.length) return Math.max(...inrValues);
 
       return null;
     };
 
-    const amountFromTextFallback = (text: string) => {
-      const matches = text.match(/(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi) || [];
-      const values = matches
-        .map((m) => m.replace(/[^0-9.,]/g, ''))
-        .map((m) => Number(m.replace(/,/g, '')))
-        .filter((n) => Number.isFinite(n) && n > 0);
-      if (!values.length) return null;
-      return Math.max(...values);
+    const extractOrderId = (text: string) => {
+      const lines = text.split('\n').map(normalizeLine).filter(Boolean);
+      const candidates: Array<{ value: string; score: number }> = [];
+
+      const pushCandidate = (value: string, hasKeyword: boolean) => {
+        const sanitized = sanitizeOrderId(value);
+        if (!sanitized) return;
+        const occursInText = text.toLowerCase().includes(sanitized.toLowerCase());
+        const score = scoreOrderId(sanitized, { hasKeyword, occursInText });
+        candidates.push({ value: sanitized, score });
+      };
+
+      for (const line of lines) {
+        if (hasExcludedKeyword(line)) continue;
+        const hasKeyword = hasOrderKeyword(line);
+
+        if (hasKeyword) {
+          const labeled = line.match(ORDER_LABEL_RE);
+          if (labeled?.[1]) pushCandidate(labeled[1], true);
+
+          const spaced = line.match(new RegExp(AMAZON_SPACED_PATTERN));
+          if (spaced?.[0]) {
+            const digitsOnly = spaced[0].replace(/[^0-9]/g, '');
+            if (digitsOnly.length === 17) {
+              pushCandidate(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`, true);
+            }
+          }
+        }
+
+        const amazon = line.match(AMAZON_ORDER_RE);
+        if (amazon?.[0]) pushCandidate(amazon[0], hasKeyword);
+
+        const flipkart = line.match(FLIPKART_ORDER_RE);
+        if (flipkart?.[0]) pushCandidate(flipkart[0], hasKeyword);
+
+        const myntra = line.match(MYNTRA_ORDER_RE);
+        if (myntra?.[0]) pushCandidate(myntra[0], hasKeyword);
+
+        const meesho = line.match(MEESHO_ORDER_RE);
+        if (meesho?.[0]) pushCandidate(meesho[0], hasKeyword);
+
+        if (hasKeyword) {
+          const generic = line.match(GENERIC_ID_RE);
+          if (generic?.[0]) pushCandidate(generic[0], true);
+        }
+      }
+
+      const globalAmazon = Array.from(text.matchAll(AMAZON_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      const globalFlipkart = Array.from(text.matchAll(FLIPKART_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      const globalMyntra = Array.from(text.matchAll(MYNTRA_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      const globalMeesho = Array.from(text.matchAll(MEESHO_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      for (const value of [...globalAmazon, ...globalFlipkart, ...globalMyntra, ...globalMeesho]) {
+        pushCandidate(value, false);
+      }
+
+      const spacedAmazon = Array.from(text.matchAll(AMAZON_SPACED_GLOBAL_RE)).map((m) => m[0]);
+      for (const chunk of spacedAmazon) {
+        const digitsOnly = chunk.replace(/[^0-9]/g, '');
+        if (digitsOnly.length === 17) {
+          pushCandidate(`${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 10)}-${digitsOnly.slice(10)}`, false);
+        }
+      }
+
+      const unique = Array.from(new Map(candidates.map((c) => [normalizeCandidate(c.value), c])).values());
+      const sorted = unique.sort((a, b) => b.score - a.score || b.value.length - a.value.length);
+      return sorted[0]?.value || null;
     };
 
-    const normalizeCandidate = (value: string) =>
-      value
-        .replace(/[\s:]/g, '')
-        .replace(/[\.,]$/, '')
-        .trim();
-
-    const scoreOrderId = (value: string, rawText: string) => {
-      const upper = value.toUpperCase();
-      let score = 0;
-      if (upper.includes('-')) score += 2;
-      if (/\d/.test(upper) && /[A-Z]/.test(upper)) score += 2;
-      if (/^\d{10,20}$/.test(upper)) score += 1; // common numeric order ids
-      if (/^\d{3}-\d{7}-\d{7}$/.test(upper)) score += 4; // Amazon
-      if (/^OD\d{6,}$/.test(upper)) score += 3; // Flipkart
-      if (/^(MYN|MNT|ORD)\d{6,}$/.test(upper)) score += 3; // Myntra
-      if (/^(MSH|MEESHO)\d{6,}$/.test(upper)) score += 3; // Meesho
-      if (rawText && rawText.toLowerCase().includes(value.toLowerCase())) score += 1;
-      return score;
-    };
-
-    const pickBestOrderId = (candidates: string[], rawText: string) => {
-      const unique = Array.from(new Set(candidates.map(normalizeCandidate)))
-        .map((c) => sanitizeOrderId(c))
-        .filter((c): c is string => Boolean(c));
-      if (!unique.length) return null;
-      const scored = unique
-        .map((c) => ({ value: c, score: scoreOrderId(c, rawText) }))
-        .sort((a, b) => b.score - a.score);
-      return scored[0]?.value || null;
-    };
+    const strictOcrPrompt = [
+      'You are a strict OCR engine.',
+      'Return ONLY the exact visible text from the image.',
+      'Do NOT summarize.',
+      'Do NOT infer.',
+      'Do NOT fix spelling.',
+      'Do NOT add or remove words.',
+      'Preserve line breaks and spacing.',
+    ].join('\n');
 
     const extractTextOnly = async (model: string) => {
       const response = await ai.models.generateContent({
@@ -718,190 +740,181 @@ export async function extractOrderDetailsWithAi(
               data: payload.imageBase64.split(',')[1] ?? payload.imageBase64,
             },
           },
-          {
-            text: [
-              'You are an OCR system. Return ONLY the exact visible text from the screenshot.',
-              'Preserve line breaks. Do not summarize or add commentary.',
-            ].join('\n'),
-          },
+          { text: strictOcrPrompt },
         ],
         config: {
+          temperature: 0,
           maxOutputTokens: Math.min(env.AI_MAX_OUTPUT_TOKENS_EXTRACT, 512),
           responseMimeType: 'text/plain',
         },
       });
-      return normalizeText(response.text || '');
+      return normalizeOcrText(response.text || '');
     };
 
-    const orderIdFromLabeledLine = (text: string) => {
-      const lines = text.split('\n');
-      for (const line of lines) {
-        if (!lineHasOrderKeyword(line)) continue;
-        if (lineHasExcludedKeyword(line)) continue;
-        const match = line.match(/order\s*(?:id|no\.?|number|#)\s*[:\-#]?\s*([A-Z0-9\-_/]{6,40})/i);
-        if (match?.[1]) {
-          const cleaned = normalizeCandidate(match[1]);
-          const sanitized = sanitizeOrderId(cleaned);
-          if (sanitized) return sanitized;
-        }
-      }
-      return null;
+    const runDeterministicExtraction = (text: string) => {
+      const orderId = extractOrderId(text);
+      const amount = extractAmounts(text);
+      const notes: string[] = [];
+      if (orderId) notes.push('Deterministic order ID extracted.');
+      if (amount) notes.push('Deterministic amount extracted.');
+      return { orderId, amount, notes };
     };
 
-    let bestOcrOrderId: string | null = null;
-    let bestOcrAmount: number | null = null;
+    const refineWithAi = async (
+      model: string,
+      ocrText: string,
+      deterministic: { orderId: string | null; amount: number | null }
+    ) => {
+      const response = await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            text: [
+              'You are verifying OCR text for an e-commerce order.',
+              'Only respond with values that are explicitly visible in the OCR text provided.',
+              'Do NOT guess or invent values.',
+              `OCR_TEXT:\n${ocrText}`,
+              `DETERMINISTIC_ORDER_ID: ${deterministic.orderId ?? 'null'}`,
+              `DETERMINISTIC_AMOUNT: ${deterministic.amount ?? 'null'}`,
+              'If the OCR text contains a different Order ID or Amount, suggest the exact value.',
+              'If OCR text does not clearly show a value, omit it.',
+              'Return JSON only.',
+            ].join('\n'),
+          },
+        ],
+        config: {
+          temperature: 0,
+          maxOutputTokens: Math.min(env.AI_MAX_OUTPUT_TOKENS_EXTRACT, 256),
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              suggestedOrderId: { type: Type.STRING },
+              suggestedAmount: { type: Type.NUMBER },
+              confidenceScore: { type: Type.INTEGER },
+              notes: { type: Type.STRING },
+            },
+            required: ['confidenceScore'],
+          },
+        },
+      });
 
+      return safeJsonParse<any>(response.text) ?? null;
+    };
+
+    let ocrText = '';
     for (const model of GEMINI_MODEL_FALLBACKS) {
       try {
-        let ocrText = '';
-        try {
-          ocrText = await extractTextOnly(model);
-        } catch {
-          ocrText = '';
-        }
-        const ocrCandidates = ocrText ? candidateOrderIdsFromText(ocrText) : [];
-        const ocrOrderId = ocrText ? pickBestOrderId(ocrCandidates, ocrText) : null;
-        const ocrAmount = ocrText
-          ? amountFromText(ocrText) ?? amountFromTextFallback(ocrText)
-          : null;
-
-        if (ocrOrderId && !bestOcrOrderId) bestOcrOrderId = ocrOrderId;
-        if (ocrAmount && !bestOcrAmount) bestOcrAmount = ocrAmount;
-
-        if (ocrOrderId && ocrAmount) {
-          return {
-            orderId: ocrOrderId,
-            amount: ocrAmount,
-            confidenceScore: 75,
-            notes: 'Extracted via OCR parsing.',
-          };
-        }
-        const ocrLabeledId = ocrText ? orderIdFromLabeledLine(ocrText) : null;
-
         // eslint-disable-next-line no-await-in-loop
-        const response = await ai.models.generateContent({
-          model,
-          contents: [
-            {
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: payload.imageBase64.split(',')[1] ?? payload.imageBase64,
-              },
-            },
-            {
-              text: [
-                'Extract the external marketplace Order ID and the final paid amount from this receipt/screenshot.',
-                'Works for Amazon, Flipkart, Myntra, Meesho, and other platforms.',
-                'The Order ID must be the marketplace order identifier shown in the screenshot.',
-                'Do NOT return internal/system IDs (e.g., app IDs, DB IDs, SYS, E2E, or BUZZMA/MOBO).',
-                'Ignore shipment IDs, tracking IDs, invoice numbers, transaction IDs, and AWB numbers.',
-                'If multiple order IDs appear, return the one labeled Order ID / Order No / Order Number.',
-                'Amazon order number format example: 408-9652341-7203568.',
-                'Also include rawText: the exact text you can read from the screenshot (no guesses).',
-                'Also include orderIdCandidates and amountCandidates arrays if possible.',
-                'Return JSON only. If a value is not clearly visible, omit the field.',
-                'Amount must be a number in INR without currency symbols (e.g., 1499).',
-              ].join('\n'),
-            },
-          ],
-          config: {
-            maxOutputTokens: env.AI_MAX_OUTPUT_TOKENS_EXTRACT,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                orderId: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                confidenceScore: { type: Type.INTEGER },
-                notes: { type: Type.STRING },
-                rawText: { type: Type.STRING },
-                orderIdCandidates: { type: Type.ARRAY, items: { type: Type.STRING } },
-                amountCandidates: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-              },
-              required: ['confidenceScore'],
-            },
-          },
-        });
-
-        const parsed = safeJsonParse<any>(response.text);
-        if (!parsed) throw new Error('Failed to parse AI extraction response');
-
-        let rawText = normalizeText(parsed.rawText);
-        let orderId = sanitizeOrderId(parsed.orderId);
-        let amount =
-          typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) ? parsed.amount : null;
-
-        const candidateIds = Array.isArray(parsed.orderIdCandidates)
-          ? parsed.orderIdCandidates.map((c: any) => String(c || '').trim()).filter(Boolean)
-          : [];
-        const candidateAmounts = Array.isArray(parsed.amountCandidates)
-          ? parsed.amountCandidates
-              .map((n: any) => (typeof n === 'number' && Number.isFinite(n) ? n : null))
-              .filter((n: number | null): n is number => n !== null)
-          : [];
-
-        if (!orderId) {
-          const candidates = candidateOrderIdsFromText(rawText).concat(candidateIds);
-          orderId = pickBestOrderId(candidates, rawText);
-        }
-        if (!orderId && ocrLabeledId) {
-          orderId = ocrLabeledId;
-        }
-        if (!orderId && ocrOrderId) {
-          orderId = ocrOrderId;
-        }
-        if (!amount && rawText) {
-          amount = amountFromText(rawText);
-        }
-        if (!amount && rawText) {
-          amount = amountFromTextFallback(rawText);
-        }
-        if (!amount && candidateAmounts.length) {
-          amount = candidateAmounts[0];
-        }
-        if (!amount && ocrAmount) {
-          amount = ocrAmount;
-        }
-
-        if ((!orderId || !amount) && !rawText && ocrText) {
-          rawText = ocrText;
-        }
-        const confidenceScore =
-          typeof parsed.confidenceScore === 'number' && Number.isFinite(parsed.confidenceScore)
-            ? Math.max(0, Math.min(100, Math.round(parsed.confidenceScore)))
-            : 0;
-
-        const finalConfidence =
-          confidenceScore > 0
-            ? confidenceScore
-            : orderId || amount
-              ? 60
-              : 0;
-
-        console.info('Gemini extract usage estimate', { model, estimatedTokens });
-
-        return {
-          orderId,
-          amount,
-          confidenceScore: finalConfidence,
-          notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
-        };
+        ocrText = await extractTextOnly(model);
+        if (ocrText) break;
       } catch (innerError) {
         lastError = innerError;
         continue;
       }
     }
 
-    if (bestOcrOrderId || bestOcrAmount) {
+    if (!ocrText) {
+      console.warn('Order extract OCR failed: empty OCR output.');
       return {
-        orderId: bestOcrOrderId,
-        amount: bestOcrAmount,
-        confidenceScore: 55,
-        notes: 'Extracted via OCR parsing (fallback).',
+        orderId: null,
+        amount: null,
+        confidenceScore: 15,
+        notes: 'OCR failed to read text. Please upload a clearer screenshot.',
       };
     }
 
-    throw lastError ?? new Error('Gemini extraction failed');
+    console.info('Order extract OCR', { length: ocrText.length, preview: ocrText.slice(0, 400) });
+
+    const deterministic = runDeterministicExtraction(ocrText);
+    const deterministicConfidence = deterministic.orderId && deterministic.amount ? 78 :
+      deterministic.orderId || deterministic.amount ? 72 : 0;
+
+    console.info('Order extract deterministic', {
+      orderId: deterministic.orderId,
+      amount: deterministic.amount,
+      confidence: deterministicConfidence,
+    });
+
+    let finalOrderId = deterministic.orderId;
+    let finalAmount = deterministic.amount;
+    let confidenceScore = deterministicConfidence;
+    const notes: string[] = [...deterministic.notes];
+
+    let aiUsed = false;
+    for (const model of GEMINI_MODEL_FALLBACKS) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const aiResult = await refineWithAi(model, ocrText, deterministic);
+        if (!aiResult) continue;
+
+        const aiSuggestedOrderId = sanitizeOrderId(aiResult.suggestedOrderId);
+        const aiSuggestedAmount =
+          typeof aiResult.suggestedAmount === 'number' && Number.isFinite(aiResult.suggestedAmount)
+            ? aiResult.suggestedAmount
+            : null;
+        const aiConfidence =
+          typeof aiResult.confidenceScore === 'number' && Number.isFinite(aiResult.confidenceScore)
+            ? Math.max(0, Math.min(100, Math.round(aiResult.confidenceScore)))
+            : 0;
+
+        const orderIdVisible = aiSuggestedOrderId
+          ? ocrText.toLowerCase().includes(aiSuggestedOrderId.toLowerCase())
+          : false;
+        const amountVisible = aiSuggestedAmount
+          ? ocrText.includes(String(aiSuggestedAmount))
+          : false;
+
+        if (!finalOrderId && aiSuggestedOrderId && orderIdVisible) {
+          finalOrderId = aiSuggestedOrderId;
+          notes.push('AI suggested order ID validated against OCR text.');
+        }
+        if (!finalAmount && aiSuggestedAmount && amountVisible) {
+          finalAmount = aiSuggestedAmount;
+          notes.push('AI suggested amount validated against OCR text.');
+        }
+
+        if (finalOrderId && finalAmount && deterministic.orderId && deterministic.amount) {
+          confidenceScore = 90;
+          notes.push('AI agreed with deterministic extraction.');
+        } else if (finalOrderId || finalAmount) {
+          confidenceScore = Math.max(confidenceScore, deterministicConfidence || 55);
+        }
+
+        if (aiResult.notes) notes.push(aiResult.notes);
+        aiUsed = true;
+        console.info('Order extract AI', {
+          suggestedOrderId: aiSuggestedOrderId,
+          suggestedAmount: aiSuggestedAmount,
+          confidence: aiConfidence,
+        });
+        break;
+      } catch (innerError) {
+        lastError = innerError;
+        continue;
+      }
+    }
+
+    if (!finalOrderId && !finalAmount) {
+      confidenceScore = 25;
+      notes.push('Unable to extract order details from OCR text.');
+    } else if (!confidenceScore) {
+      confidenceScore = 55;
+    }
+
+    console.info('Order extract final', {
+      orderId: finalOrderId,
+      amount: finalAmount,
+      confidence: confidenceScore,
+      aiUsed,
+    });
+
+    return {
+      orderId: finalOrderId,
+      amount: finalAmount,
+      confidenceScore,
+      notes: notes.join(' '),
+    };
   } catch (error) {
     console.error('Gemini extraction error:', error);
     return {
