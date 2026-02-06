@@ -23,8 +23,8 @@ export type RealtimeEvent = {
 type Listener = (evt: RealtimeEvent) => void;
 
 const emitter = new EventEmitter();
-// Avoid MaxListeners warnings for many SSE clients.
-emitter.setMaxListeners(0);
+// Allow many SSE clients but cap to prevent resource exhaustion.
+emitter.setMaxListeners(500);
 
 export function publishRealtime(evt: RealtimeEvent) {
   emitter.emit('event', evt);

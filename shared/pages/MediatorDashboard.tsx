@@ -1828,6 +1828,72 @@ export const MediatorDashboard: React.FC = () => {
               )}
             </div>
 
+            {/* STEP PROGRESS BAR — shows mediator what stage the order is at */}
+            {(proofModal.requirements?.required?.length ?? 0) > 0 && (
+              <div className="bg-zinc-800/80 rounded-2xl border border-zinc-700/50 p-4 mt-1">
+                <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-wider mb-3">Verification Progress</h4>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                      proofModal.verification?.orderVerified ? 'bg-green-500 text-white' : 'bg-zinc-600 text-zinc-300'
+                    }`}>
+                      {proofModal.verification?.orderVerified ? '✓' : '1'}
+                    </div>
+                    <span className={`text-[10px] font-bold ${proofModal.verification?.orderVerified ? 'text-green-400' : 'text-zinc-400'}`}>Purchase</span>
+                  </div>
+                  <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.orderVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                  {proofModal.requirements?.required?.includes('review') && (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          proofModal.verification?.reviewVerified ? 'bg-green-500 text-white'
+                            : proofModal.requirements?.missingProofs?.includes('review') ? 'bg-amber-500 text-amber-900'
+                            : proofModal.verification?.orderVerified ? 'bg-purple-500 text-white'
+                            : 'bg-zinc-600 text-zinc-400'
+                        }`}>
+                          {proofModal.verification?.reviewVerified ? '✓' : '2'}
+                        </div>
+                        <span className={`text-[10px] font-bold ${
+                          proofModal.verification?.reviewVerified ? 'text-green-400'
+                            : proofModal.requirements?.missingProofs?.includes('review') ? 'text-amber-400'
+                            : 'text-zinc-400'
+                        }`}>Review{proofModal.requirements?.missingProofs?.includes('review') ? ' (missing)' : ''}</span>
+                      </div>
+                      <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.reviewVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                    </>
+                  )}
+                  {proofModal.requirements?.required?.includes('rating') && (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          proofModal.verification?.ratingVerified ? 'bg-green-500 text-white'
+                            : proofModal.requirements?.missingProofs?.includes('rating') ? 'bg-amber-500 text-amber-900'
+                            : proofModal.verification?.orderVerified ? 'bg-purple-500 text-white'
+                            : 'bg-zinc-600 text-zinc-400'
+                        }`}>
+                          {proofModal.verification?.ratingVerified ? '✓' : proofModal.requirements?.required?.includes('review') ? '3' : '2'}
+                        </div>
+                        <span className={`text-[10px] font-bold ${
+                          proofModal.verification?.ratingVerified ? 'text-green-400'
+                            : proofModal.requirements?.missingProofs?.includes('rating') ? 'text-amber-400'
+                            : 'text-zinc-400'
+                        }`}>Rating{proofModal.requirements?.missingProofs?.includes('rating') ? ' (missing)' : ''}</span>
+                      </div>
+                      <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.ratingVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                    </>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                      proofModal.affiliateStatus === 'Pending_Cooling' ? 'bg-green-500 text-white' : 'bg-zinc-600 text-zinc-400'
+                    }`}>
+                      {proofModal.affiliateStatus === 'Pending_Cooling' ? '✓' : '⚡'}
+                    </div>
+                    <span className={`text-[10px] font-bold ${proofModal.affiliateStatus === 'Pending_Cooling' ? 'text-green-400' : 'text-zinc-500'}`}>Done</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 2. DEAL SPECIFIC PROOFS */}
             {proofModal.items[0].dealType === 'Rating' && (
               <div className="bg-orange-950/20 rounded-2xl border border-orange-500/20 p-4">
@@ -1914,11 +1980,12 @@ export const MediatorDashboard: React.FC = () => {
             <button
               onClick={() => {
                 if (!proofModal) return;
+                const mv = proofModal.requirements?.missingVerifications ?? [];
                 const nextType: 'order' | 'review' | 'rating' = !proofModal.verification?.orderVerified
                   ? 'order'
-                  : proofModal.requirements?.required?.includes('review')
+                  : mv.includes('review')
                       ? 'review'
-                      : proofModal.requirements?.required?.includes('rating')
+                      : mv.includes('rating')
                         ? 'rating'
                         : 'order';
                 setRejectType(nextType);
@@ -1940,17 +2007,23 @@ export const MediatorDashboard: React.FC = () => {
                       (resp?.missingVerifications as any) || [];
 
                     if (resp?.approved) {
-                      toast.success('Purchase verified and order approved.');
+                      toast.success('Order approved! Cashback is now in cooling period. ✓');
+                      setProofModal(null);
                     } else if (missingProofs.length) {
-                      toast.info(`Purchase verified. Waiting on buyer proof: ${missingProofs.join(' + ')}.`);
+                      toast.info(`Purchase verified ✓ Buyer needs to upload: ${missingProofs.join(' + ')} proof.`);
                     } else if (missingVerifications.length) {
-                      toast.info(`Purchase verified. Awaiting step approval: ${missingVerifications.join(' + ')}.`);
+                      toast.info(`Purchase verified ✓ You can now verify: ${missingVerifications.join(' + ')} proof.`);
                     } else {
                       toast.success('Purchase verified.');
                     }
 
                     await loadData();
-                    setProofModal(null);
+                    // Keep modal open with refreshed order if more steps needed
+                    if (!resp?.approved && resp?.order) {
+                      setProofModal(resp.order);
+                    } else if (!resp?.approved) {
+                      setProofModal(null);
+                    }
                   } catch (err) {
                     const msg = err instanceof Error ? err.message : 'Failed to verify purchase';
                     toast.error(msg);
@@ -1967,23 +2040,20 @@ export const MediatorDashboard: React.FC = () => {
                     onClick={async () => {
                       try {
                         const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'review');
-                        const missingProofs: Array<'review' | 'rating'> =
-                          (resp?.missingProofs as any) || [];
-                        const missingVerifications: Array<'review' | 'rating'> =
-                          (resp?.missingVerifications as any) || [];
 
                         if (resp?.approved) {
-                          toast.success('Review verified and order approved.');
-                        } else if (missingProofs.length) {
-                          toast.info(`Review verified. Waiting on buyer proof: ${missingProofs.join(' + ')}.`);
-                        } else if (missingVerifications.length) {
-                          toast.info(`Review verified. Awaiting step approval: ${missingVerifications.join(' + ')}.`);
+                          toast.success('Review verified ✓ Order fully approved! Cashback in cooling period.');
+                          setProofModal(null);
                         } else {
-                          toast.success('Review verified.');
+                          toast.success('Review verified ✓');
                         }
 
                         await loadData();
-                        setProofModal(null);
+                        if (!resp?.approved && resp?.order) {
+                          setProofModal(resp.order);
+                        } else if (!resp?.approved) {
+                          setProofModal(null);
+                        }
                       } catch (err) {
                         const msg = err instanceof Error ? err.message : 'Failed to verify review';
                         toast.error(msg);
@@ -1996,7 +2066,7 @@ export const MediatorDashboard: React.FC = () => {
                     className="flex-1 py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
                     title={
                       proofModal?.requirements?.missingProofs?.includes('review')
-                        ? 'Buyer proof missing'
+                        ? 'Buyer hasn\'t uploaded review proof yet'
                         : !proofModal?.requirements?.missingVerifications?.includes('review')
                           ? 'Already verified'
                           : undefined
@@ -2011,23 +2081,20 @@ export const MediatorDashboard: React.FC = () => {
                     onClick={async () => {
                       try {
                         const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'rating');
-                        const missingProofs: Array<'review' | 'rating'> =
-                          (resp?.missingProofs as any) || [];
-                        const missingVerifications: Array<'review' | 'rating'> =
-                          (resp?.missingVerifications as any) || [];
 
                         if (resp?.approved) {
-                          toast.success('Rating verified and order approved.');
-                        } else if (missingProofs.length) {
-                          toast.info(`Rating verified. Waiting on buyer proof: ${missingProofs.join(' + ')}.`);
-                        } else if (missingVerifications.length) {
-                          toast.info(`Rating verified. Awaiting step approval: ${missingVerifications.join(' + ')}.`);
+                          toast.success('Rating verified ✓ Order fully approved! Cashback in cooling period.');
+                          setProofModal(null);
                         } else {
-                          toast.success('Rating verified.');
+                          toast.success('Rating verified ✓');
                         }
 
                         await loadData();
-                        setProofModal(null);
+                        if (!resp?.approved && resp?.order) {
+                          setProofModal(resp.order);
+                        } else if (!resp?.approved) {
+                          setProofModal(null);
+                        }
                       } catch (err) {
                         const msg = err instanceof Error ? err.message : 'Failed to verify rating';
                         toast.error(msg);
@@ -2040,7 +2107,7 @@ export const MediatorDashboard: React.FC = () => {
                     className="flex-1 py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
                     title={
                       proofModal?.requirements?.missingProofs?.includes('rating')
-                        ? 'Buyer proof missing'
+                        ? 'Buyer hasn\'t uploaded rating proof yet'
                         : !proofModal?.requirements?.missingVerifications?.includes('rating')
                           ? 'Already verified'
                           : undefined

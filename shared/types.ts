@@ -115,6 +115,10 @@ export interface Order {
   paymentStatus: PaymentStatus;
   affiliateStatus: AffiliateStatus;
   externalOrderId?: string;
+  frozen?: boolean;
+  frozenAt?: string;
+  frozenReason?: string;
+  settlementRef?: string;
   screenshots: { order?: string; payment?: string; review?: string; rating?: string };
   reviewLink?: string;
   managerName: string;

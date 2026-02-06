@@ -742,7 +742,31 @@ export function makeOpsController(env: Env) {
         const audience = buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
-        res.json({ ok: true, approved: (finalize as any).approved, ...(finalize as any) });
+
+        // Send push notification to buyer about verification status
+        const buyerId = String((order as any).userId || '').trim();
+        if (buyerId) {
+          const finResult = finalize as any;
+          let pushBody = 'Your purchase proof has been verified.';
+          if (finResult.approved) {
+            pushBody = 'All proofs verified! Your cashback is now in the cooling period.';
+          } else if (finResult.missingProofs?.length) {
+            pushBody = `Purchase verified! Please upload your ${(finResult.missingProofs as string[]).join(' & ')} proof to continue.`;
+          }
+          await sendPushToUser({
+            env, userId: buyerId, app: 'buyer',
+            payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
+          }).catch(() => {});
+        }
+
+        // Return refreshed order for UI update
+        const refreshed = await OrderModel.findById(order._id);
+        res.json({
+          ok: true,
+          approved: (finalize as any).approved,
+          ...(finalize as any),
+          order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+        });
       } catch (err) {
         next(err);
       }
@@ -822,7 +846,28 @@ export function makeOpsController(env: Env) {
         const audience = buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
-        res.json({ ok: true, approved: (finalize as any).approved, ...(finalize as any) });
+
+        // Notify buyer of step verification
+        const buyerId = String((order as any).userId || '').trim();
+        if (buyerId) {
+          const finResult = finalize as any;
+          let pushBody = `Your ${body.type} proof has been verified.`;
+          if (finResult.approved) {
+            pushBody = 'All proofs verified! Your cashback is now in the cooling period.';
+          }
+          await sendPushToUser({
+            env, userId: buyerId, app: 'buyer',
+            payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
+          }).catch(() => {});
+        }
+
+        const refreshed = await OrderModel.findById(order._id);
+        res.json({
+          ok: true,
+          approved: (finalize as any).approved,
+          ...(finalize as any),
+          order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+        });
       } catch (err) {
         next(err);
       }

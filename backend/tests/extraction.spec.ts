@@ -133,10 +133,7 @@ describe('order extraction (Tesseract fallback)', () => {
 
   it('handles a large phone-screenshot-sized image without rejecting', { timeout: 120_000 }, async () => {
     const env = makeTestEnv();
-    // Simulate a real phone screenshot: 1080x2400 JPEG with order text.
-    // This tests that the size limits and token estimation don't block real images.
     const width = 1080;
-    const height = 2400;
     const lines = [
       'Your Orders',
       '',
@@ -160,17 +157,108 @@ describe('order extraction (Tesseract fallback)', () => {
     const sizeKB = Math.round(imageBase64.length / 1024);
     console.log(`Large image size: ${sizeKB} KB (${imageBase64.length} chars)`);
 
-    // The image should NOT be rejected
     const result = await extractOrderDetailsWithAi(env, { imageBase64 });
     console.log('Large image result:', JSON.stringify(result, null, 2));
 
-    // Must not return the "Image too large" or "Auto extraction unavailable" error
     expect(result.notes).not.toContain('too large');
     expect(result.notes).not.toContain('unavailable');
     expect(result.confidenceScore).toBeGreaterThan(0);
-
-    // Should actually extract the order ID and amount
     expect(result.orderId).toMatch(/\d{3}-\d{7}-\d{7}/);
     expect(result.amount).toBe(522);
+  });
+
+  it('extracts Meesho order ID and amount', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'My Orders',
+      '',
+      'Order ID: MEESHO845123',
+      'Delivered on 1 Feb 2026',
+      '',
+      'Women Cotton Printed Kurti',
+      'Price: Rs 349.00',
+      'Total: Rs 349.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Meesho result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    expect(result.orderId).toMatch(/MEESHO\d+/i);
+    expect(result.amount).toBe(349);
+  });
+
+  it('extracts Myntra order ID', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'ORDER DETAILS',
+      'Order No: MYN3847291',
+      '',
+      'PUMA Running Shoes',
+      'Rs. 2,499.00',
+      'Grand Total: Rs 2,499.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Myntra result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    expect(result.orderId).toMatch(/MYN\d+/i);
+    expect(result.amount).toBe(2499);
+  });
+
+  it('extracts from desktop-style wide screenshot', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    // Simulate a 1920x1080 desktop screenshot with order info
+    const imageBase64 = await renderTextToImage(
+      [
+        'amazon.in - Your Orders',
+        '',
+        'Order Details',
+        '',
+        'Order #408-1234567-8901234',
+        '',
+        'Arriving Thursday',
+        'boAt Rockerz 450 Bluetooth',
+        'Amount Paid: Rs 1,299.00',
+      ],
+      1920,
+      36,
+    );
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Desktop result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    // Should extract order ID
+    const hasId = Boolean(result.orderId);
+    if (hasId) {
+      expect(result.orderId).toMatch(/\d{3}-\d{7}-\d{7}/);
+    }
+    // Amount paid label should help pick up the amount
+    if (result.amount) {
+      expect(result.amount).toBe(1299);
+    }
+    expect(hasId || result.amount).toBeTruthy();
+  });
+
+  it('handles Indian comma format and picks "Amount Paid" over MRP', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'Order Details',
+      'Order number 402-9876543-1234567',
+      '',
+      'MRP: Rs 45,999.00',
+      'Discount: Rs 16,000.00',
+      'Deal Price: Rs 29,999.00',
+      'Amount Paid: Rs 29,999.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Amount priority result:', JSON.stringify(result, null, 2));
+
+    expect(result.orderId).toMatch(/\d{3}-\d{7}-\d{7}/);
+    // Should pick "Amount Paid" (29999) as priority over MRP (45999)
+    expect(result.amount).toBe(29999);
   });
 });

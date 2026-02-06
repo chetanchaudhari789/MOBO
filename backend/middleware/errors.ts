@@ -87,6 +87,18 @@ export function errorHandler(
     });
     return;
   }
+
+  // Request body exceeds the configured limit (express.json's `limit` option).
+  if (anyErr && anyErr.type === 'entity.too.large') {
+    res.status(413).json({
+      error: {
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request body is too large. Please reduce the payload size.',
+      },
+      requestId,
+    });
+    return;
+  }
   const isProd = process.env.NODE_ENV === 'production';
 
   // eslint-disable-next-line no-console

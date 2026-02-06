@@ -51,9 +51,12 @@ export async function applyWalletCredit(input: WalletMutationInput) {
   const session = await mongoose.startSession();
   try {
     return await session.withTransaction(async () => {
+      // Use majority readConcern for idempotency to avoid stale reads after failover.
       const existingTx = await TransactionModel.findOne({
         idempotencyKey: input.idempotencyKey,
-      }).session(session);
+      })
+        .read('primary')
+        .session(session);
       if (existingTx) return existingTx;
 
       const wallet = await WalletModel.findOneAndUpdate(
@@ -69,6 +72,12 @@ export async function applyWalletCredit(input: WalletMutationInput) {
         },
         { upsert: true, new: true, session }
       );
+
+      // Safety: prevent runaway balances (configurable; default 1 crore paise = ₹1,00,000).
+      const MAX_BALANCE_PAISE = 1_00_00_000;
+      if (wallet && wallet.availablePaise > MAX_BALANCE_PAISE) {
+        throw new AppError(409, 'BALANCE_LIMIT_EXCEEDED', 'Wallet balance limit exceeded');
+      }
 
       const tx = await TransactionModel.create(
         [
@@ -103,9 +112,12 @@ export async function applyWalletDebit(input: WalletMutationInput) {
   const session = await mongoose.startSession();
   try {
     return await session.withTransaction(async () => {
+      // Use majority readConcern for idempotency to avoid stale reads after failover.
       const existingTx = await TransactionModel.findOne({
         idempotencyKey: input.idempotencyKey,
-      }).session(session);
+      })
+        .read('primary')
+        .session(session);
       if (existingTx) return existingTx;
 
       // Use findOneAndUpdate with optimistic locking (version check)

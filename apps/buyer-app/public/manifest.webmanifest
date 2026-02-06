@@ -89,13 +89,6 @@
       }
     }
   ],
-  "related_applications": [
-    {
-      "platform": "webapp",
-      "url": "https://www.buzzma.in/manifest.webmanifest",
-      "id": "/?source=pwa"
-    }
-  ],
   "iarc_rating_id": "000000",
   "shortcuts": [
     {

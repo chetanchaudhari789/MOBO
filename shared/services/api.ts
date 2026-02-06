@@ -210,9 +210,20 @@ function assertOnlineForWrite(init?: RequestInit) {
   }
 }
 
+/** Default request timeout (30s). Keeps the UI from hanging forever. */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  // If the caller already provides an AbortSignal, respect it.
+  if (init?.signal) return fetch(url, init);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function fetchJson(path: string, init?: RequestInit): Promise<any> {
   assertOnlineForWrite(init);
-  const res = await fetch(`${API_URL}${path}`, withRequestId(init));
+  const res = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(init));
   const payload = await readPayloadSafe(res);
 
   if (!res.ok && isAuthError(res, payload)) {
@@ -235,7 +246,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
 
 async function fetchOk(path: string, init?: RequestInit): Promise<void> {
   assertOnlineForWrite(init);
-  const res = await fetch(`${API_URL}${path}`, withRequestId(init));
+  const res = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(init));
   const payload = await readPayloadSafe(res);
 
   if (!res.ok && isAuthError(res, payload)) {
@@ -245,7 +256,7 @@ async function fetchOk(path: string, init?: RequestInit): Promise<void> {
         ...init,
         headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
       };
-      const retryRes = await fetch(`${API_URL}${path}`, withRequestId(retryInit));
+      const retryRes = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
       return;

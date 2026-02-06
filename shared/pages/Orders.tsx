@@ -299,12 +299,12 @@ export const Orders: React.FC = () => {
   };
 
   const submitNewOrder = async () => {
-    if (!selectedProduct || !user) return;
+    if (!selectedProduct || !user || isUploading) return;
     if (!formScreenshot) {
       toast.error('Please upload a valid order image before submitting.');
       return;
     }
-    const hasExtraction = Boolean(extractedDetails.orderId || extractedDetails.amount);
+    const hasExtraction = Boolean(extractedDetails.orderId || extractedDetails.amount !== '');
     const isDiscountDeal = selectedProduct.dealType === 'Discount';
     if (isDiscountDeal && hasExtraction && (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch')) {
       toast.error('Order proof does not look valid. Please upload a clearer proof.');
@@ -326,7 +326,10 @@ export const Orders: React.FC = () => {
             productId: selectedProduct.id,
             title: selectedProduct.title,
             image: selectedProduct.image,
-            priceAtPurchase: parseFloat(extractedDetails.amount) || selectedProduct.price,
+            priceAtPurchase:
+              extractedDetails.amount !== '' && !isNaN(parseFloat(extractedDetails.amount))
+                ? parseFloat(extractedDetails.amount)
+                : selectedProduct.price,
             commission: selectedProduct.commission,
             campaignId: selectedProduct.campaignId,
             dealType: selectedProduct.dealType,
@@ -428,7 +431,9 @@ export const Orders: React.FC = () => {
           />
         ) : (
           orders.map((order) => {
-            const dealType = order.items[0].dealType || 'Discount';
+            const firstItem = order.items?.[0];
+            if (!firstItem) return null; // Skip orders with no items
+            const dealType = firstItem.dealType || 'Discount';
             const isDiscount = dealType === 'Discount';
             const isReview = dealType === 'Review';
             const isRating = dealType === 'Rating';
@@ -436,8 +441,13 @@ export const Orders: React.FC = () => {
             const rejectionReason = order.rejection?.reason;
 
             const purchaseVerified = !!order.verification?.orderVerified;
+            const reviewVerified = !!order.verification?.reviewVerified;
+            const ratingVerified = !!order.verification?.ratingVerified;
             const missingProofs = order.requirements?.missingProofs ?? [];
             const missingVerifications = order.requirements?.missingVerifications ?? [];
+            const requiredSteps = order.requirements?.required ?? [];
+            const hasExtraSteps = requiredSteps.length > 0;
+            const hasMissingProofRequests = (order.missingProofRequests ?? []).length > 0;
             let displayStatus = 'PENDING';
             let statusClass = 'bg-orange-50 text-orange-700 border-orange-100';
 
@@ -450,18 +460,18 @@ export const Orders: React.FC = () => {
             } else if (rejectionReason) {
               displayStatus = 'ACTION REQUIRED';
               statusClass = 'bg-red-50 text-red-700 border-red-200';
+            } else if (order.affiliateStatus === 'Pending_Cooling') {
+              displayStatus = 'VERIFIED';
+              statusClass = 'bg-blue-50 text-blue-700 border-blue-100';
             } else if (String((order as any).workflowStatus || '') === 'UNDER_REVIEW' && !purchaseVerified) {
               displayStatus = 'UNDER REVIEW';
               statusClass = 'bg-slate-50 text-slate-700 border-slate-200';
             } else if (purchaseVerified && missingProofs.length > 0) {
-              displayStatus = 'ACTION REQUIRED';
+              displayStatus = 'UPLOAD PROOF';
               statusClass = 'bg-yellow-50 text-yellow-800 border-yellow-200';
             } else if (purchaseVerified && missingVerifications.length > 0) {
               displayStatus = 'AWAITING APPROVAL';
               statusClass = 'bg-purple-50 text-purple-700 border-purple-200';
-            } else if (order.affiliateStatus === 'Pending_Cooling') {
-              displayStatus = 'VERIFIED';
-              statusClass = 'bg-blue-50 text-blue-700 border-blue-100';
             }
 
             const settlementDate = order.expectedSettlementDate
@@ -508,19 +518,19 @@ export const Orders: React.FC = () => {
                 <div className="flex gap-4 mb-4">
                   <div className="w-20 h-20 bg-gray-50 rounded-2xl p-2 border border-gray-100 flex-shrink-0">
                     <img
-                      src={order.items[0].image}
+                      src={firstItem.image}
                       className="w-full h-full object-contain mix-blend-multiply"
                       alt="prod"
                     />
                   </div>
                   <div className="flex-1 min-w-0 py-1">
                     <h3 className="font-bold text-slate-900 text-base line-clamp-2 leading-tight mb-2">
-                      {order.items[0].title}
+                      {firstItem.title}
                     </h3>
                     <div className="flex items-center gap-3 text-xs font-bold text-slate-500">
                       <span>₹{order.total}</span>
                       <span>•</span>
-                      <span className="text-lime-600">+₹{order.items[0].commission} Reward</span>
+                      <span className="text-lime-600">+₹{firstItem.commission} Reward</span>
                     </div>
                   </div>
                 </div>
@@ -553,8 +563,146 @@ export const Orders: React.FC = () => {
                   )}
 
                 {rejectionReason && (
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-700">
-                    {rejectionReason}
+                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-700 flex items-start gap-2">
+                    <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="uppercase text-[9px] tracking-wider font-black text-red-500 block mb-0.5">
+                        {rejectionType === 'order' ? 'Purchase Proof' : rejectionType === 'review' ? 'Review Proof' : rejectionType === 'rating' ? 'Rating Proof' : 'Proof'} Rejected
+                      </span>
+                      {rejectionReason}
+                    </div>
+                  </div>
+                )}
+
+                {hasMissingProofRequests && !rejectionReason && (
+                  <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800 flex items-start gap-2">
+                    <Zap size={14} className="flex-shrink-0 mt-0.5 text-amber-500" />
+                    <div>
+                      <span className="uppercase text-[9px] tracking-wider font-black text-amber-600 block mb-0.5">
+                        Action Required
+                      </span>
+                      {(order.missingProofRequests ?? []).map((r, i) => (
+                        <span key={i}>
+                          Please upload your <strong>{r.type}</strong> proof.{r.note ? ` ${r.note}` : ''}
+                          {i < (order.missingProofRequests ?? []).length - 1 ? ' ' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP PROGRESS INDICATOR — shows buyers what step they're at */}
+                {hasExtraSteps && displayStatus !== 'SETTLED' && displayStatus !== 'FROZEN' && (
+                  <div className="mb-3 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-2">Steps to complete</p>
+                    <div className="flex items-center gap-1">
+                      {/* Step 1: Purchase */}
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          purchaseVerified
+                            ? 'bg-green-500 text-white'
+                            : rejectionType === 'order'
+                              ? 'bg-red-500 text-white'
+                              : 'bg-slate-200 text-slate-500'
+                        }`}>
+                          {purchaseVerified ? <Check size={12} strokeWidth={3} /> : '1'}
+                        </div>
+                        <span className={`text-[10px] font-bold ${purchaseVerified ? 'text-green-600' : 'text-slate-500'}`}>
+                          Purchase
+                        </span>
+                      </div>
+                      <div className={`flex-1 h-0.5 mx-1 rounded ${purchaseVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+
+                      {/* Step 2: Review or Rating proof upload */}
+                      {requiredSteps.includes('review') && (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                              reviewVerified
+                                ? 'bg-green-500 text-white'
+                                : rejectionType === 'review'
+                                  ? 'bg-red-500 text-white'
+                                  : !missingProofs.includes('review') && purchaseVerified
+                                    ? 'bg-purple-500 text-white'
+                                    : purchaseVerified
+                                      ? 'bg-yellow-400 text-yellow-900'
+                                      : 'bg-slate-200 text-slate-400'
+                            }`}>
+                              {reviewVerified ? <Check size={12} strokeWidth={3} /> : '2'}
+                            </div>
+                            <span className={`text-[10px] font-bold ${
+                              reviewVerified ? 'text-green-600' : purchaseVerified ? 'text-slate-700' : 'text-slate-400'
+                            }`}>
+                              Review
+                            </span>
+                          </div>
+                          <div className={`flex-1 h-0.5 mx-1 rounded ${reviewVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+                        </>
+                      )}
+
+                      {requiredSteps.includes('rating') && (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                              ratingVerified
+                                ? 'bg-green-500 text-white'
+                                : rejectionType === 'rating'
+                                  ? 'bg-red-500 text-white'
+                                  : !missingProofs.includes('rating') && purchaseVerified
+                                    ? 'bg-purple-500 text-white'
+                                    : purchaseVerified
+                                      ? 'bg-yellow-400 text-yellow-900'
+                                      : 'bg-slate-200 text-slate-400'
+                            }`}>
+                              {ratingVerified ? <Check size={12} strokeWidth={3} /> : requiredSteps.includes('review') ? '3' : '2'}
+                            </div>
+                            <span className={`text-[10px] font-bold ${
+                              ratingVerified ? 'text-green-600' : purchaseVerified ? 'text-slate-700' : 'text-slate-400'
+                            }`}>
+                              Rating
+                            </span>
+                          </div>
+                          <div className={`flex-1 h-0.5 mx-1 rounded ${ratingVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+                        </>
+                      )}
+
+                      {/* Final: Cashback */}
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          order.affiliateStatus === 'Pending_Cooling' || order.paymentStatus === 'Paid'
+                            ? 'bg-green-500 text-white'
+                            : 'bg-slate-200 text-slate-400'
+                        }`}>
+                          {order.affiliateStatus === 'Pending_Cooling' || order.paymentStatus === 'Paid'
+                            ? <Check size={12} strokeWidth={3} />
+                            : <Zap size={10} />}
+                        </div>
+                        <span className={`text-[10px] font-bold ${
+                          order.affiliateStatus === 'Pending_Cooling' || order.paymentStatus === 'Paid'
+                            ? 'text-green-600'
+                            : 'text-slate-400'
+                        }`}>
+                          Cashback
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Context message under the step bar */}
+                    {!purchaseVerified && !rejectionReason && (
+                      <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                        Waiting for your mediator to verify purchase proof…
+                      </p>
+                    )}
+                    {purchaseVerified && missingProofs.length > 0 && !rejectionReason && (
+                      <p className="text-[10px] text-yellow-700 mt-2 font-bold">
+                        ↓ Upload your {missingProofs.join(' & ')} proof below to continue.
+                      </p>
+                    )}
+                    {purchaseVerified && missingProofs.length === 0 && missingVerifications.length > 0 && !rejectionReason && (
+                      <p className="text-[10px] text-purple-600 mt-2 font-medium">
+                        All proofs uploaded! Waiting for mediator approval…
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -573,7 +721,8 @@ export const Orders: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-2 flex-wrap">
+                    {/* Re-upload order proof: only if rejected or missing */}
                     {(rejectionType === 'order' || !order.screenshots?.order) && (
                       <button
                         onClick={() => {
@@ -582,27 +731,29 @@ export const Orders: React.FC = () => {
                         }}
                         className="text-[10px] font-bold uppercase text-blue-600"
                       >
-                        Upload Order Proof
+                        {rejectionType === 'order' ? 'Reupload Purchase' : 'Upload Purchase Proof'}
                       </button>
                     )}
-                    {isReview && (!order.reviewLink || rejectionType === 'review') && (
+                    {/* Review upload: ONLY shown after purchase is verified by mediator */}
+                    {isReview && purchaseVerified && (!order.reviewLink || rejectionType === 'review') && (
                       <button
                         onClick={() => {
                           setSelectedOrder(order);
                           setUploadType('review');
                         }}
-                        className="text-[10px] font-bold uppercase text-blue-600"
+                        className="text-[10px] font-bold uppercase text-purple-600"
                       >
                         {rejectionType === 'review' ? 'Reupload Review' : 'Add Review'}
                       </button>
                     )}
-                    {isRating && (!order.screenshots?.rating || rejectionType === 'rating') && (
+                    {/* Rating upload: ONLY shown after purchase is verified by mediator */}
+                    {isRating && purchaseVerified && (!order.screenshots?.rating || rejectionType === 'rating') && (
                       <button
                         onClick={() => {
                           setSelectedOrder(order);
                           setUploadType('rating');
                         }}
-                        className="text-[10px] font-bold uppercase text-blue-600"
+                        className="text-[10px] font-bold uppercase text-purple-600"
                       >
                         {rejectionType === 'rating' ? 'Reupload Rating' : 'Add Rating'}
                       </button>

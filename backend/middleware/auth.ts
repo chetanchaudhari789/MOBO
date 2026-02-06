@@ -30,7 +30,7 @@ declare global {
 }
 
 async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContext> {
-  const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as jwt.JwtPayload;
+  const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload;
   const userId = String(decoded.sub || '');
 
   if (!userId) {
@@ -156,7 +156,7 @@ export function optionalAuth(env: Env) {
     }
 
     try {
-      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as jwt.JwtPayload;
+      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload;
       const userId = String(decoded.sub || '');
       if (!userId) {
         return next(new AppError(401, 'UNAUTHENTICATED', 'Invalid token'));

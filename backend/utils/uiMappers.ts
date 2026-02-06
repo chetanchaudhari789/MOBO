@@ -311,6 +311,22 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
       missingProofs,
       missingVerifications,
     },
+    rejection: o.rejection
+      ? {
+          type: o.rejection.type,
+          reason: o.rejection.reason,
+          rejectedAt: o.rejection.rejectedAt
+            ? new Date(o.rejection.rejectedAt).toISOString()
+            : undefined,
+        }
+      : undefined,
+    missingProofRequests: Array.isArray(o.missingProofRequests)
+      ? o.missingProofRequests.map((r: any) => ({
+          type: r?.type,
+          note: r?.note,
+          requestedAt: r?.requestedAt ? new Date(r.requestedAt).toISOString() : undefined,
+        }))
+      : [],
     managerName: o.managerName,
     agencyName: o.agencyName,
     brandName: o.brandName,

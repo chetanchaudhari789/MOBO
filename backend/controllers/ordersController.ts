@@ -565,8 +565,28 @@ export function makeOrdersController(env: Env) {
         }
 
         const wf = String((order as any).workflowStatus || 'CREATED');
-        if (wf !== 'ORDERED' && wf !== 'UNDER_REVIEW') {
+        if (wf !== 'ORDERED' && wf !== 'UNDER_REVIEW' && wf !== 'PROOF_SUBMITTED') {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot submit proof in state ${wf}`);
+        }
+
+        // Step-gating: buyer can only upload review/rating AFTER purchase is verified by mediator.
+        if (body.type === 'review' || body.type === 'rating') {
+          const purchaseVerified = !!(order as any).verification?.order?.verifiedAt;
+          if (!purchaseVerified) {
+            throw new AppError(409, 'PURCHASE_NOT_VERIFIED',
+              'Purchase proof must be verified by your mediator before uploading additional proofs.');
+          }
+
+          // Validate that the deal type actually requires this proof.
+          const dealTypes = (order.items ?? []).map((it: any) => String(it?.dealType || ''));
+          const requiresReview = dealTypes.includes('Review');
+          const requiresRating = dealTypes.includes('Rating');
+          if (body.type === 'review' && !requiresReview) {
+            throw new AppError(409, 'NOT_REQUIRED', 'This order does not require review proof.');
+          }
+          if (body.type === 'rating' && !requiresRating) {
+            throw new AppError(409, 'NOT_REQUIRED', 'This order does not require rating proof.');
+          }
         }
 
         if (body.type === 'review') {
