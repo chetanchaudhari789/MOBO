@@ -262,19 +262,21 @@ export const Orders: React.FC = () => {
         });
 
         if (hasId && hasAmount) {
-          toast.success('Order ID and Amount extracted successfully!');
+          toast.success('Order ID and Amount detected successfully!');
         } else if (hasId) {
-          toast.info('Order ID extracted. Please enter the paid amount manually.');
+          toast.success('Order ID detected! Amount field is ready to edit if needed.');
         } else if (hasAmount) {
-          toast.info('Amount extracted. Please enter Order ID manually.');
+          toast.success('Amount detected! You can enter the Order ID below.');
         } else {
-          toast.info('Could not auto-detect details. Please enter Order ID and Amount manually.');
+          toast.info('Screenshot uploaded. You can enter the Order ID and Amount below if needed.');
         }
       }
     } catch (e) {
       console.error(e);
-      const msg = String((e as any)?.message || 'Failed to extract details from screenshot');
-      toast.error(msg, { title: 'Extraction' });
+      // Still allow manual entry by showing empty extraction fields
+      setExtractedDetails({ orderId: '', amount: '' });
+      setMatchStatus({ id: 'none', amount: 'none' });
+      toast.info('Screenshot uploaded. Enter Order ID and Amount below.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -303,7 +305,8 @@ export const Orders: React.FC = () => {
       return;
     }
     const hasExtraction = Boolean(extractedDetails.orderId || extractedDetails.amount);
-    if (hasExtraction && (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch')) {
+    const isDiscountDeal = selectedProduct.dealType === 'Discount';
+    if (isDiscountDeal && hasExtraction && (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch')) {
       toast.error('Order proof does not look valid. Please upload a clearer proof.');
       return;
     }
@@ -888,9 +891,7 @@ export const Orders: React.FC = () => {
                 disabled={
                   !selectedProduct ||
                   !formScreenshot ||
-                  isUploading ||
-                  (selectedProduct?.dealType === 'Rating' && !ratingScreenshot) ||
-                  (selectedProduct?.dealType === 'Review' && !isValidReviewLink(reviewLinkInput))
+                  isUploading
                 }
                 className="w-full py-4 bg-black text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400 hover:text-black transition-all disabled:opacity-50 active:scale-95 shadow-lg"
               >

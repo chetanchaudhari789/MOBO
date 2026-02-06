@@ -535,28 +535,11 @@ export function aiRoutes(env: Env): Router {
       if (!ensureAiEnabled(res)) return;
       const payload = extractOrderSchema.parse(req.body);
 
-      // E2E runs should be deterministic and must not depend on external AI quotas.
-      if (env.SEED_E2E) {
-        res.json({
-          orderId: null,
-          amount: null,
-          confidenceScore: 0,
-          notes: 'E2E mode: AI extraction bypassed.',
-        });
-        return;
-      }
-
-      if (!isGeminiConfigured(env)) {
-        res.status(503).json({
-          error: { code: 'AI_NOT_CONFIGURED', message: 'Gemini is not configured.' },
-          requestId: getRequestId(res),
-        });
-        return;
-      }
-
       if (!enforceDailyLimit(req, res)) return;
       if (!enforceMinInterval(req, res)) return;
 
+      // extractOrderDetailsWithAi now works without Gemini via Tesseract.js
+      // fallback, so we no longer need to bypass in E2E or non-Gemini mode.
       const result = await extractOrderDetailsWithAi(env, { imageBase64: payload.imageBase64 });
       res.json(result);
     } catch (err) {

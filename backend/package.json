@@ -36,6 +36,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.0.1",
     "sharp": "^0.34.5",
+    "tesseract.js": "^7.0.0",
     "web-push": "^3.6.7",
     "zod": "^4.1.11"
   },

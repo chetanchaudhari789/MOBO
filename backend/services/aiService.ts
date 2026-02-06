@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import sharp from 'sharp';
+import { createWorker } from 'tesseract.js';
 import type { Env } from '../config/env.js';
 
 type ChatPayload = {
@@ -554,8 +555,8 @@ export async function extractOrderDetailsWithAi(
   env: Env,
   payload: ExtractOrderPayload
 ): Promise<{ orderId?: string | null; amount?: number | null; confidenceScore: number; notes?: string }> {
-  const apiKey = requireGeminiKey(env);
-  const ai = new GoogleGenAI({ apiKey });
+  const geminiAvailable = isGeminiConfigured(env);
+  const ai = geminiAvailable ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY! }) : null;
 
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
     return {
@@ -887,7 +888,7 @@ export async function extractOrderDetailsWithAi(
 
     const extractTextOnly = async (model: string, imageBase64: string) => {
       const parsed = parseDataUrl(imageBase64);
-      const response = await ai.models.generateContent({
+      const response = await ai!.models.generateContent({
         model,
         contents: [
           {
@@ -916,11 +917,35 @@ export async function extractOrderDetailsWithAi(
       return { orderId, amount, notes };
     };
 
+    /** Tesseract.js fallback: local OCR that works without any external API. */
+    const runTesseractOcr = async (imageBase64: string): Promise<string> => {
+      try {
+        const buf = getImageBuffer(imageBase64);
+        // Enhance the image for better Tesseract accuracy
+        const enhanced = await sharp(buf)
+          .resize({ width: 2200, withoutEnlargement: false })
+          .grayscale()
+          .normalize()
+          .sharpen()
+          .jpeg({ quality: 95 })
+          .toBuffer();
+
+        const worker = await createWorker('eng');
+        const { data } = await worker.recognize(enhanced);
+        await worker.terminate();
+        return normalizeOcrText(data.text || '');
+      } catch (err) {
+        console.warn('Tesseract OCR failed:', err);
+        return '';
+      }
+    };
+
     const refineWithAi = async (
       model: string,
       ocrText: string,
       deterministic: { orderId: string | null; amount: number | null }
     ) => {
+      if (!ai) return null;
       const response = await ai.models.generateContent({
         model,
         contents: [
@@ -962,30 +987,40 @@ export async function extractOrderDetailsWithAi(
     };
 
     const runOcrPass = async (imageBase64: string, label: string) => {
-      let text = '';
-      for (const model of GEMINI_MODEL_FALLBACKS) {
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          text = await extractTextOnly(model, imageBase64);
-          if (text) {
-            console.log('Order extract OCR pass', { label, model, length: text.length });
-            return text;
+      // Try Gemini OCR first (if available)
+      if (ai) {
+        let text = '';
+        for (const model of GEMINI_MODEL_FALLBACKS) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            text = await extractTextOnly(model, imageBase64);
+            if (text) {
+              console.log('Order extract OCR pass', { label, model, length: text.length });
+              return text;
+            }
+          } catch (innerError) {
+            _lastError = innerError;
+            continue;
           }
-        } catch (innerError) {
-          _lastError = innerError;
-          continue;
         }
       }
-      return '';
+      // Fallback: Tesseract.js local OCR (works without Gemini API key)
+      const tesseractText = await runTesseractOcr(imageBase64);
+      if (tesseractText) {
+        console.log('Order extract OCR pass (Tesseract)', { label, length: tesseractText.length });
+      }
+      return tesseractText;
     };
 
-    const ocrVariants: Array<{ label: string; image: string }> = [
+    const allOcrVariants: Array<{ label: string; image: string }> = [
       { label: 'original', image: payload.imageBase64 },
       { label: 'enhanced', image: await preprocessForOcr(payload.imageBase64) },
       { label: 'top-55', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.55 }) },
       { label: 'top-35', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.35 }) },
       { label: 'middle-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.25, height: 0.5 }) },
     ];
+    // When using Tesseract (no Gemini), limit variants to reduce processing time.
+    const ocrVariants = ai ? allOcrVariants : allOcrVariants.slice(0, 3);
 
     let ocrText = '';
     let ocrLabel = 'none';
@@ -1052,7 +1087,7 @@ export async function extractOrderDetailsWithAi(
     const notes: string[] = [...deterministic.notes];
 
     let aiUsed = false;
-    if (!(finalOrderId && finalAmount)) {
+    if (!(finalOrderId && finalAmount) && ai) {
       for (const model of GEMINI_MODEL_FALLBACKS.slice(0, 3)) {
         try {
           // eslint-disable-next-line no-await-in-loop
@@ -1128,12 +1163,12 @@ export async function extractOrderDetailsWithAi(
       notes: notes.join(' '),
     };
   } catch (error) {
-    console.error('Gemini extraction error:', error);
+    console.error('Order extraction error:', error);
     return {
       orderId: null,
       amount: null,
       confidenceScore: 0,
-      notes: `AI extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      notes: `Extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
