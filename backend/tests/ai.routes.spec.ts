@@ -98,7 +98,9 @@ describe('ai routes', () => {
       .post('/api/ai/extract-order')
       .send({ imageBase64: 'data:image/jpeg;base64,AAA' });
 
-    expect(res.status).toBe(503);
-    expect(res.body?.error?.code).toBe('AI_NOT_CONFIGURED');
+    // extract-order now runs Tesseract fallback even without Gemini,
+    // so it returns 200 with low-confidence results instead of 503.
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('confidenceScore');
   });
 });

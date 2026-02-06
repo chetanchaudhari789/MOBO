@@ -726,6 +726,19 @@ export async function extractOrderDetailsWithAi(
       return null;
     };
 
+    /** Fix common OCR letter/digit confusion for platform prefixes. */
+    const fixOcrPrefixes = (line: string) =>
+      line
+        // Flipkart: 0D → OD (zero mistaken for O)
+        .replace(/\b0D(\d{10,})\b/g, 'OD$1')
+        // Myntra: 0RD → ORD
+        .replace(/\b0RD(\d{6,})\b/g, 'ORD$1')
+        // Meesho: MSH/MEESH0 → MEESHO
+        .replace(/\bMEESH0/gi, 'MEESHO')
+        // Nykaa: NYK → NYK (already fine)
+        // Tata: TCL/TATA (already fine)
+        ;
+
     const extractOrderId = (text: string) => {
       const lines = text.split('\n').map(normalizeLine).filter(Boolean);
       const candidates: Array<{ value: string; score: number }> = [];
@@ -739,7 +752,7 @@ export async function extractOrderDetailsWithAi(
       };
 
       for (let i = 0; i < lines.length; i += 1) {
-        const line = lines[i];
+        const line = fixOcrPrefixes(lines[i]);
         if (hasExcludedKeyword(line)) continue;
         const hasKeyword = hasOrderKeyword(line);
 
@@ -806,10 +819,11 @@ export async function extractOrderDetailsWithAi(
         }
       }
 
-      const globalAmazon = Array.from(text.matchAll(AMAZON_ORDER_GLOBAL_RE)).map((m) => m[0]);
-      const globalFlipkart = Array.from(text.matchAll(FLIPKART_ORDER_GLOBAL_RE)).map((m) => m[0]);
-      const globalMyntra = Array.from(text.matchAll(MYNTRA_ORDER_GLOBAL_RE)).map((m) => m[0]);
-      const globalMeesho = Array.from(text.matchAll(MEESHO_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      const fixedText = fixOcrPrefixes(text);
+      const globalAmazon = Array.from(fixedText.matchAll(AMAZON_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      const globalFlipkart = Array.from(fixedText.matchAll(FLIPKART_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      const globalMyntra = Array.from(fixedText.matchAll(MYNTRA_ORDER_GLOBAL_RE)).map((m) => m[0]);
+      const globalMeesho = Array.from(fixedText.matchAll(MEESHO_ORDER_GLOBAL_RE)).map((m) => m[0]);
       for (const value of [...globalAmazon, ...globalFlipkart, ...globalMyntra, ...globalMeesho]) {
         pushCandidate(value, false);
       }
