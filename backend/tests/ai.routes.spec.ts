@@ -94,9 +94,15 @@ describe('ai routes', () => {
     expect(bad.status).toBe(400);
     expect(bad.body?.error?.code).toBe('BAD_REQUEST');
 
+    // Minimal valid 1x1 white PNG so Sharp/Tesseract can process it without
+    // "unsupported image format" errors.
+    const TINY_PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ' +
+      'AAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
     const res = await request(app)
       .post('/api/ai/extract-order')
-      .send({ imageBase64: 'data:image/jpeg;base64,AAA' });
+      .send({ imageBase64: TINY_PNG });
 
     // extract-order now runs Tesseract fallback even without Gemini,
     // so it returns 200 with low-confidence results instead of 503.

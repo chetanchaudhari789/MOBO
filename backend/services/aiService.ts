@@ -981,12 +981,39 @@ export async function extractOrderDetailsWithAi(
       return Buffer.from(parsed.data, 'base64');
     };
 
+    /**
+     * Check if a buffer starts with known image magic bytes.
+     * Prevents Sharp from crashing on garbage / corrupt / too-small data.
+     */
+    const isRecognizedImageBuffer = (buf: Buffer): boolean => {
+      if (buf.length < 4) return false;
+      // JPEG: FF D8 FF
+      if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return true;
+      // PNG: 89 50 4E 47
+      if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return true;
+      // WebP: RIFF....WEBP
+      if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return true;
+      // GIF: GIF87a / GIF89a
+      if (buf.toString('ascii', 0, 3) === 'GIF') return true;
+      // BMP: BM
+      if (buf[0] === 0x42 && buf[1] === 0x4D) return true;
+      // TIFF: II (little-endian) or MM (big-endian)
+      if ((buf[0] === 0x49 && buf[1] === 0x49) || (buf[0] === 0x4D && buf[1] === 0x4D)) return true;
+      // AVIF / HEIF: ....ftyp
+      if (buf.length >= 8 && buf.toString('ascii', 4, 8) === 'ftyp') return true;
+      return false;
+    };
+
     const preprocessForOcr = async (
       base64: string,
       crop?: { top?: number; left?: number; height?: number; width?: number },
     ) => {
       try {
-        const input = sharp(getImageBuffer(base64));
+        const rawBuf = getImageBuffer(base64);
+        if (!isRecognizedImageBuffer(rawBuf)) {
+          return base64; // Not a valid image — skip Sharp processing
+        }
+        const input = sharp(rawBuf);
         const metadata = await input.metadata();
         const imgWidth = metadata.width ?? 0;
         const imgHeight = metadata.height ?? 0;
@@ -1052,6 +1079,9 @@ export async function extractOrderDetailsWithAi(
       let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
       try {
         const buf = getImageBuffer(imageBase64);
+        if (!isRecognizedImageBuffer(buf)) {
+          return ''; // Not a valid image — skip Tesseract entirely
+        }
         // Enhance the image for better Tesseract accuracy
         const enhanced = await sharp(buf)
           .resize({ width: 2400, withoutEnlargement: false })
@@ -1161,8 +1191,11 @@ export async function extractOrderDetailsWithAi(
     // Detect if image is landscape (desktop/laptop) or portrait (phone)
     let isLandscape = false;
     try {
-      const meta = await sharp(getImageBuffer(payload.imageBase64)).metadata();
-      isLandscape = (meta.width ?? 0) > (meta.height ?? 0);
+      const orientBuf = getImageBuffer(payload.imageBase64);
+      if (isRecognizedImageBuffer(orientBuf)) {
+        const meta = await sharp(orientBuf).metadata();
+        isLandscape = (meta.width ?? 0) > (meta.height ?? 0);
+      }
     } catch { /* ignore — default to portrait */ }
 
     const allOcrVariants: Array<{ label: string; image: string }> = [
