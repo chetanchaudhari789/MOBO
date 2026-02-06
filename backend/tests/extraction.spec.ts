@@ -130,4 +130,47 @@ describe('order extraction (Tesseract fallback)', () => {
     // Should not crash and should report low confidence
     expect(result.confidenceScore).toBeLessThanOrEqual(30);
   });
+
+  it('handles a large phone-screenshot-sized image without rejecting', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    // Simulate a real phone screenshot: 1080x2400 JPEG with order text.
+    // This tests that the size limits and token estimation don't block real images.
+    const width = 1080;
+    const height = 2400;
+    const lines = [
+      'Your Orders',
+      '',
+      'Order Details',
+      'Order placed   5 February 2026',
+      'Order number   408-9652341-7203568',
+      '',
+      'Arriving Wednesday',
+      '',
+      'Avimee Herbal Keshpallav Hair Oil for Hair Growth',
+      'Sold by: Avimee_Herbal',
+      'Rs 522.00',
+      '',
+      'Track package          Cancel items',
+      '',
+      'Payment method',
+      'Amazon Pay ICICI Bank Credit Card ending in ****1234',
+    ];
+
+    const imageBase64 = await renderTextToImage(lines, width, 32);
+    const sizeKB = Math.round(imageBase64.length / 1024);
+    console.log(`Large image size: ${sizeKB} KB (${imageBase64.length} chars)`);
+
+    // The image should NOT be rejected
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Large image result:', JSON.stringify(result, null, 2));
+
+    // Must not return the "Image too large" or "Auto extraction unavailable" error
+    expect(result.notes).not.toContain('too large');
+    expect(result.notes).not.toContain('unavailable');
+    expect(result.confidenceScore).toBeGreaterThan(0);
+
+    // Should actually extract the order ID and amount
+    expect(result.orderId).toMatch(/\d{3}-\d{7}-\d{7}/);
+    expect(result.amount).toBe(522);
+  });
 });

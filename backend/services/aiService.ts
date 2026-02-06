@@ -98,7 +98,13 @@ function estimateTokensFromText(text: string): number {
 
 function estimateTokensFromImage(base64: string): number {
   if (!base64) return 0;
-  return Math.ceil(base64.length / 4);
+  // Gemini processes images as fixed 768×768 tiles.
+  // Most images fit in 1–4 tiles → ~258–1030 tokens regardless of file size.
+  // The base64 length only tells us the file size, NOT the token count.
+  // A conservative estimate: 1 tile (258 tokens) per 500KB of raw image data.
+  const rawBytes = Math.ceil(base64.length * 3 / 4);
+  const tilesEstimate = Math.max(1, Math.ceil(rawBytes / 500_000));
+  return tilesEstimate * 258;
 }
 
 function sanitizeUserMessage(env: Env, message: string): string {
@@ -563,19 +569,14 @@ export async function extractOrderDetailsWithAi(
       orderId: null,
       amount: null,
       confidenceScore: 0,
-      notes: 'Auto extraction unavailable. Please enter details manually.',
+      notes: 'Image too large. Please upload a smaller screenshot.',
     };
   }
 
-  const estimatedTokens = estimateTokensFromImage(payload.imageBase64);
-  if (estimatedTokens > env.AI_MAX_ESTIMATED_TOKENS) {
-    return {
-      orderId: null,
-      amount: null,
-      confidenceScore: 0,
-      notes: 'Auto extraction unavailable. Please enter details manually.',
-    };
-  }
+  // NOTE: Token estimation is NOT used as a gate here.
+  // Tesseract.js is local and free — no token limit applies.
+  // For Gemini, the API enforces its own token limits.
+  // The AI_MAX_IMAGE_CHARS check above is the sole size gate.
 
   try {
     let _lastError: unknown = null;
