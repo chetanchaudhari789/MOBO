@@ -1139,6 +1139,12 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; payouts are blocked');
         }
 
+        // Buyer must also be active to receive settlement credits.
+        const buyer = await UserModel.findById(order.userId).select({ status: 1, deletedAt: 1 }).lean();
+        if (!buyer || (buyer as any).deletedAt || buyer.status !== 'active') {
+          throw new AppError(409, 'FROZEN_SUSPENSION', 'Buyer is not active; settlement is blocked');
+        }
+
         const hasOpenDispute = await TicketModel.exists({
           orderId: String(order._id),
           status: 'Open',
@@ -1407,7 +1413,7 @@ export function makeOpsController(env: Env) {
             try {
               await applyWalletDebit({
                 idempotencyKey: `order-unsettle-debit-buyer-${order._id}`,
-                type: 'order_settlement_debit',
+                type: 'commission_reversal',
                 ownerUserId: buyerUserId,
                 fromUserId: buyerUserId,
                 toUserId: brandId,
@@ -1437,7 +1443,7 @@ export function makeOpsController(env: Env) {
               try {
                 await applyWalletDebit({
                   idempotencyKey: `order-unsettle-debit-mediator-${order._id}`,
-                  type: 'order_settlement_debit',
+                  type: 'margin_reversal',
                   ownerUserId: mediatorUserId,
                   fromUserId: mediatorUserId,
                   toUserId: brandId,
@@ -1787,6 +1793,11 @@ export function makeOpsController(env: Env) {
         const campaign = await CampaignModel.findById(body.id);
         if (!campaign || campaign.deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
+        // Campaign must be active to accept new assignments.
+        if (String((campaign as any).status || '').toLowerCase() !== 'active') {
+          throw new AppError(409, 'CAMPAIGN_NOT_ACTIVE', 'Campaign must be active to assign slots');
+        }
+
         // Campaign terms become immutable after the first real slot assignment.
         // Allow reassigning limits, but disallow changing economics once locked.
         if ((campaign as any).locked) {
@@ -1867,6 +1878,20 @@ export function makeOpsController(env: Env) {
           }
           current.set(code, assignmentObj as any);
         }
+
+        // Enforce totalSlots: sum of all assignment limits must not exceed campaign totalSlots.
+        const totalAssigned = Array.from(current.values()).reduce(
+          (sum, a) => sum + Number(typeof a === 'number' ? a : (a as any)?.limit ?? 0),
+          0
+        );
+        if (totalAssigned > (campaign.totalSlots ?? 0)) {
+          throw new AppError(
+            409,
+            'ASSIGNMENT_EXCEEDS_TOTAL_SLOTS',
+            `Total assigned slots (${totalAssigned}) exceed campaign capacity (${campaign.totalSlots})`
+          );
+        }
+
         campaign.assignments = current as any;
 
         if (body.dealType) campaign.dealType = body.dealType as any;
@@ -1991,6 +2016,16 @@ export function makeOpsController(env: Env) {
         // CRITICAL: Get mediator's payout from campaign.assignments
         const payoutPaise = Number((slotAssignment as any)?.payout ?? campaign.payoutPaise ?? 0);
 
+        // Business rule: commission cannot exceed payout (mediator margin would be negative).
+        if (commissionPaise > payoutPaise) {
+          throw new AppError(400, 'INVALID_ECONOMICS', 'Commission cannot exceed payout; mediator margin would be negative');
+        }
+
+        // Campaign must be active to publish a deal.
+        if (String((campaign as any).status || '').toLowerCase() !== 'active') {
+          throw new AppError(409, 'CAMPAIGN_NOT_ACTIVE', 'Campaign is not active; cannot publish deal');
+        }
+
         // CRITICAL: Check if deal already published to prevent re-publishing with different terms
         const existingDeal = await DealModel.findOne({
           campaignId: campaign._id,
@@ -2098,13 +2133,22 @@ export function makeOpsController(env: Env) {
         const wallet = await ensureWallet(String(user._id));
         const amountPaise = rupeesToPaise(body.amount);
 
+        // Deterministic idempotency: use requestId to prevent duplicate payouts on retry.
+        // Falls back to timestamp only if no requestId is present.
+        const requestId = String(
+          (req as any).headers?.['x-request-id'] ||
+          (res.locals as any)?.requestId ||
+          ''
+        ).trim();
+        const idempotencySuffix = requestId || `MANUAL-${Date.now()}`;
+
         const payout = await PayoutModel.create({
           beneficiaryUserId: user._id,
           walletId: wallet._id,
           amountPaise,
-          status: 'paid',
+          status: canAny ? 'paid' : 'recorded',
           provider: 'manual',
-          providerRef: `MANUAL-${Date.now()}`,
+          providerRef: idempotencySuffix,
           processedAt: new Date(),
           requestedAt: new Date(),
           createdBy: req.auth?.userId,

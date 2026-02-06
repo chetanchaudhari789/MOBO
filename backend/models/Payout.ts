@@ -1,6 +1,6 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
 
-export const PayoutStatus = ['requested', 'processing', 'paid', 'failed', 'canceled'] as const;
+export const PayoutStatus = ['requested', 'processing', 'paid', 'failed', 'canceled', 'recorded'] as const;
 export type PayoutStatus = (typeof PayoutStatus)[number];
 
 const payoutSchema = new Schema(

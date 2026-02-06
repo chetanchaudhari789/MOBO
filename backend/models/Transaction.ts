@@ -8,6 +8,8 @@ export const TransactionType = [
   'cashback_lock',
   'cashback_settle',
   'order_settlement_debit',
+  'commission_reversal',
+  'margin_reversal',
   'agency_payout',
   'agency_receipt',
   'payout_request',

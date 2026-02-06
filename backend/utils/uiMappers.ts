@@ -144,7 +144,7 @@ export function toUiDeal(d: DealDoc & { _id?: any } | any) {
     mediatorCode: safeText(d.mediatorCode),
     campaignId: String(d.campaignId),
     active: !!d.active,
-    inventoryCount: d.inventoryCount,
+    inventoryCount: d.inventoryCount ?? 0,
   };
 }
 
@@ -296,8 +296,10 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
     affiliateStatus: o.affiliateStatus,
     externalOrderId: o.externalOrderId,
     settlementRef: (o as any).settlementRef,
-    screenshots: o.screenshots ?? {},
-    reviewLink: o.reviewLink,
+    // Brand must never receive raw proof artifacts — only boolean flags.
+    hasOrderProof: !!(o.screenshots?.order || o.screenshots?.payment),
+    hasReviewProof,
+    hasRatingProof,
     verification: {
       orderVerified: !!orderVerifiedAt,
       orderVerifiedAt: orderVerifiedAt ? orderVerifiedAt.toISOString() : undefined,

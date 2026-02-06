@@ -100,7 +100,12 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   const [viewMode, setViewMode] = useState<'todo' | 'cooling'>('todo');
 
   const todayEarnings = orders
-    .filter((o: Order) => new Date(o.createdAt).toDateString() === new Date().toDateString())
+    .filter((o: Order) => {
+      if (new Date(o.createdAt).toDateString() !== new Date().toDateString()) return false;
+      // Only count settled or cooling orders — exclude rejected/fraud/frozen.
+      const status = String((o as any).affiliateStatus || '');
+      return status === 'Approved_Settled' || status === 'Pending_Cooling';
+    })
     .reduce((acc: number, o: Order) => acc + (o.items[0]?.commission || 0), 0);
 
   const getDealTypeBadge = (dealType: string) => {
@@ -125,7 +130,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
               Today's Profit
             </p>
             <h2 className="text-3xl font-black text-[#CCF381] tracking-tighter leading-none">
-              {formatCurrency(todayEarnings).replace('', '')}
+              {formatCurrency(todayEarnings)}
             </h2>
           </div>
         </div>
@@ -1371,6 +1376,14 @@ export const MediatorDashboard: React.FC = () => {
       setVerifiedUsers(ver);
       setTickets(tix);
 
+      // Keep the open proof-verification modal in sync with realtime order updates
+      // (e.g., buyer uploaded a new proof while the modal is open).
+      setProofModal((prev) => {
+        if (!prev) return prev;
+        const updated = ords.find((o: Order) => o.id === prev.id);
+        return updated || null;
+      });
+
       // Keep the open buyer/ledger view in sync with realtime profile updates
       // (e.g., UPI/QR updates emitted via `users.changed`).
       setSelectedBuyer((prev) => {
@@ -1717,7 +1730,7 @@ export const MediatorDashboard: React.FC = () => {
                   <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">
                     Expected Price
                   </p>
-                  <p className="text-sm font-bold text-lime-400">{proofModal.total}</p>
+                  <p className="text-sm font-bold text-lime-400">{formatCurrency(proofModal.total)}</p>
                 </div>
               </div>
 

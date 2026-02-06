@@ -26,6 +26,9 @@ import {
 const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || '').trim() || 'Pending';
 
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+
 const MAX_PROOF_SIZE_BYTES = 50 * 1024 * 1024;
 
 const isValidImageFile = (file: File) => {
@@ -457,6 +460,15 @@ export const Orders: React.FC = () => {
             } else if (order.affiliateStatus === 'Frozen_Disputed') {
               displayStatus = 'FROZEN';
               statusClass = 'bg-red-50 text-red-700 border-red-200';
+            } else if (order.affiliateStatus === 'Fraud_Alert') {
+              displayStatus = 'FRAUD FLAGGED';
+              statusClass = 'bg-red-100 text-red-800 border-red-300';
+            } else if (order.affiliateStatus === 'Rejected') {
+              displayStatus = 'REJECTED';
+              statusClass = 'bg-red-50 text-red-700 border-red-200';
+            } else if (order.affiliateStatus === 'Cap_Exceeded') {
+              displayStatus = 'CAP REACHED';
+              statusClass = 'bg-orange-100 text-orange-800 border-orange-200';
             } else if (rejectionReason) {
               displayStatus = 'ACTION REQUIRED';
               statusClass = 'bg-red-50 text-red-700 border-red-200';
@@ -528,9 +540,9 @@ export const Orders: React.FC = () => {
                       {firstItem.title}
                     </h3>
                     <div className="flex items-center gap-3 text-xs font-bold text-slate-500">
-                      <span>₹{order.total}</span>
+                      <span>{formatCurrency(order.total)}</span>
                       <span>•</span>
-                      <span className="text-lime-600">+₹{firstItem.commission} Reward</span>
+                      <span className="text-lime-600">+{formatCurrency(firstItem.commission)} Reward</span>
                     </div>
                   </div>
                 </div>
@@ -842,7 +854,7 @@ export const Orders: React.FC = () => {
                             <span className="text-[10px] font-bold text-slate-400 uppercase">
                               {p.platform}
                             </span>
-                            <span className="text-xs font-bold text-lime-600">₹{p.price}</span>
+                            <span className="text-xs font-bold text-lime-600">{formatCurrency(p.price)}</span>
                           </div>
                         </div>
                       </div>
@@ -862,7 +874,7 @@ export const Orders: React.FC = () => {
                         {selectedProduct.title}
                       </p>
                       <p className="text-xs font-bold text-lime-600 mt-1">
-                        Target Price: ₹{selectedProduct.price}
+                        Target Price: {formatCurrency(selectedProduct.price)}
                       </p>
                     </div>
                     <button

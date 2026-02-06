@@ -2143,7 +2143,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       {/* Sales Performance */}
                       <div className="col-span-4 flex flex-col items-center justify-center">
                         <p className="text-base font-black text-slate-900">
-                          {formatCurrency(salesRevenue).replace('', '')}
+                          {formatCurrency(salesRevenue)}
                         </p>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
                           {salesCount} Orders

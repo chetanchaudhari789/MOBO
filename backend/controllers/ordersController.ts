@@ -631,7 +631,10 @@ export function makeOrdersController(env: Env) {
         }
 
         const affiliateStatus = String(order.affiliateStatus || '');
-        if (affiliateStatus === 'Rejected' || affiliateStatus === 'Fraud_Alert') {
+        if (affiliateStatus === 'Fraud_Alert') {
+          throw new AppError(409, 'ORDER_FRAUD_FLAGGED', 'This order is flagged for fraud and requires admin review');
+        }
+        if (affiliateStatus === 'Rejected') {
           order.affiliateStatus = 'Unchecked';
         }
 

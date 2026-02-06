@@ -357,6 +357,12 @@ export function makeAdminController() {
     updateUserStatus: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = updateUserStatusSchema.parse(req.body);
+
+        // Guard: prevent admin from suspending themselves (could cause unrecoverable lockout).
+        if (String(body.userId) === String(req.auth?.userId) && body.status === 'suspended') {
+          throw new AppError(400, 'CANNOT_SELF_SUSPEND', 'Cannot suspend your own account');
+        }
+
         const before = await UserModel.findById(body.userId).select({ status: 1 }).lean();
         const user = await UserModel.findByIdAndUpdate(body.userId, { status: body.status }, { new: true });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');

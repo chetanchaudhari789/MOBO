@@ -10,7 +10,7 @@ import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/u
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';
-import { payoutAgencySchema } from '../validations/brand.js';
+import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchema } from '../validations/brand.js';
 import { TransactionModel } from '../models/Transaction.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
 import { publishRealtime } from '../services/realtimeHub.js';
@@ -445,15 +445,12 @@ export function makeBrandController() {
     createCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, userId, user } = getRequester(req);
-        const body = req.body as any;
+        const body = createBrandCampaignSchema.parse(req.body);
 
         const brandId = isPrivileged(roles) && body?.brandId ? String(body.brandId) : userId;
 
         // Brand must explicitly assign campaigns to specific connected agencies.
-        const allowed = Array.isArray(body.allowedAgencies) ? body.allowedAgencies : [];
-        if (!allowed.length) {
-          throw new AppError(400, 'INVALID_ALLOWED_AGENCIES', 'allowedAgencies is required');
-        }
+        const allowed = body.allowedAgencies;
 
         const normalizedAllowed = allowed.map((c: any) => String(c).trim()).filter(Boolean);
         const agencies = await UserModel.find({
@@ -541,13 +538,15 @@ export function makeBrandController() {
           ? (existing as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
           : [];
 
+        const body = updateBrandCampaignSchema.parse(req.body);
+
         if (!isPrivileged(roles)) {
           const ok = String((existing as any).brandUserId || '') === String(userId);
           if (!ok) throw new AppError(403, 'FORBIDDEN', 'Cannot modify campaigns outside your brand');
 
-          if (typeof (req.body as any)?.allowedAgencies !== 'undefined') {
-            const allowed = Array.isArray((req.body as any).allowedAgencies) ? (req.body as any).allowedAgencies : [];
-            const normalizedAllowed = allowed.map((c: any) => String(c).trim()).filter(Boolean);
+          if (typeof body.allowedAgencies !== 'undefined') {
+            const allowed = body.allowedAgencies ?? [];
+            const normalizedAllowed = allowed.map((c: string) => c.trim()).filter(Boolean);
             const agencies = await UserModel.find({
               mediatorCode: { $in: normalizedAllowed },
               roles: 'agency',
@@ -569,8 +568,6 @@ export function makeBrandController() {
             );
           }
         }
-
-        const body = req.body as any;
 
         // Non-negotiable: lock campaign mutability after the first order is created.
         const hasOrders = await OrderModel.exists({ 'items.campaignId': id, deletedAt: null });

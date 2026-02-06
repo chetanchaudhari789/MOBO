@@ -127,7 +127,7 @@ describe('ops deals: publish', () => {
     expect((deal as any)?.active).toBe(true);
   });
 
-  it('allows publishing even when commission exceeds payout', async () => {
+  it('rejects publishing when commission exceeds payout', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
       MONGODB_URI: 'mongodb+srv://REPLACE_ME',
@@ -172,13 +172,11 @@ describe('ops deals: publish', () => {
         mediatorCode,
       });
 
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('ok', true);
+    // Commission (999₹ = 99900 paise) exceeds payout (0 paise); should be rejected.
+    expect(res.status).toBe(400);
+    expect(res.body?.error?.code).toBe('INVALID_ECONOMICS');
 
     const deal = await DealModel.findOne({ campaignId: (campaign as any)._id, mediatorCode, deletedAt: null }).lean();
-    expect(deal).toBeTruthy();
-    expect((deal as any)?.commissionPaise).toBe(999_00);
-    expect((deal as any)?.payoutPaise).toBe(0);
-    expect((deal as any)?.active).toBe(true);
+    expect(deal).toBeFalsy();
   });
 });
