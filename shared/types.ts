@@ -167,6 +167,8 @@ export interface Campaign {
   originalPrice: number;
   payout: number;
   assignmentCommission?: number;
+  assignmentPayout?: number;
+  assignmentDetails?: Record<string, { limit: number; payout: number; commission: number }>;
   image: string;
   productUrl: string;
   totalSlots: number;

@@ -135,6 +135,12 @@ export const Orders: React.FC = () => {
     try {
       const data = await api.orders.getUserOrders(user.id);
       setOrders(data);
+      // Keep proof modal in sync with refreshed data
+      setProofToView((prev) => {
+        if (!prev) return prev;
+        const updated = (data as Order[]).find((o: Order) => o.id === prev.id);
+        return updated || null;
+      });
     } catch (e) {
       console.error(e);
     } finally {
@@ -164,7 +170,10 @@ export const Orders: React.FC = () => {
       }, 500);
     };
     const unsub = subscribeRealtime((msg) => {
-      if (msg.type === 'orders.changed') schedule();
+      if (msg.type === 'orders.changed' || msg.type === 'notifications.changed') schedule();
+      if (msg.type === 'tickets.changed') {
+        loadTickets();
+      }
       if (msg.type === 'deals.changed') {
         // Keep filters/product titles in sync (non-critical, but avoids stale UI).
         api.products

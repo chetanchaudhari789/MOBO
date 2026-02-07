@@ -2404,7 +2404,9 @@ export const MediatorDashboard: React.FC = () => {
             </div>
             {/* Net earnings breakdown */}
             {(() => {
-              const payoutVal = dealBuilder.payout || 0;
+              // Use the per-assignment payout (set by agency during slot allocation)
+              // which defaults to the campaign-level payout if no override exists.
+              const payoutVal = (dealBuilder as any).assignmentPayout ?? dealBuilder.payout ?? 0;
               const commVal = parseInt(commission) || 0;
               const net = payoutVal - commVal;
               return (

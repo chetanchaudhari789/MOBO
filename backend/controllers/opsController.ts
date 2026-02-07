@@ -280,6 +280,10 @@ export function makeOpsController(env: Env) {
             const assignment = findAssignmentForMediator(c.assignments, requesterMediatorCode);
             const commissionPaise = Number((assignment as any)?.commissionPaise ?? 0);
             (mapped as any).assignmentCommission = Math.round(commissionPaise) / 100;
+            // Expose the per-assignment payout override (in rupees) so the mediator UI
+            // can show the correct payout in the Net Earnings panel.
+            const assignmentPayoutPaise = Number((assignment as any)?.payout ?? c.payoutPaise ?? 0);
+            (mapped as any).assignmentPayout = Math.round(assignmentPayoutPaise) / 100;
           }
           return mapped;
         });

@@ -592,22 +592,44 @@ const OrdersView = ({ user }: any) => {
     );
   };
 
+  const fetchOrders = async () => {
+    setIsLoading(true);
+    try {
+      const data = await api.brand.getBrandOrders(user.name);
+      setOrders(data);
+      // Keep proof modal in sync with refreshed data
+      setViewProofOrder((prev) => {
+        if (!prev) return prev;
+        const updated = (data as Order[]).find((o: Order) => o.id === prev.id);
+        return updated || null;
+      });
+    } catch {
+      setOrders([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let cancelled = false;
-    const fetch = async () => {
-      setIsLoading(true);
-      try {
-        const data = await api.brand.getBrandOrders(user.name);
-        if (!cancelled) setOrders(data);
-      } catch {
-        if (!cancelled) setOrders([]);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
+    fetchOrders();
+  }, [user]);
+
+  // Real-time: refresh orders when any order/deal changes.
+  useEffect(() => {
+    let timer: any = null;
+    const schedule = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        fetchOrders();
+      }, 700);
     };
-    fetch();
+    const unsub = subscribeRealtime((msg) => {
+      if (msg.type === 'orders.changed' || msg.type === 'deals.changed') schedule();
+    });
     return () => {
-      cancelled = true;
+      unsub();
+      if (timer) clearTimeout(timer);
     };
   }, [user]);
 
@@ -1623,7 +1645,8 @@ export const BrandDashboard: React.FC = () => {
         msg.type === 'users.changed' ||
         msg.type === 'wallets.changed' ||
         msg.type === 'deals.changed' ||
-        msg.type === 'notifications.changed'
+        msg.type === 'notifications.changed' ||
+        msg.type === 'tickets.changed'
       ) {
         schedule();
       }

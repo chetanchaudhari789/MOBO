@@ -1461,7 +1461,10 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     setSelectedDealType(c.dealType || 'Discount');
     setCustomPrice(c.price.toString());
     setCustomPayout(c.payout.toString());
-    setCommissionOnDeal('0');
+    // Pre-fill commission from previously saved assignment value.
+    const details = (c as any).assignmentDetails || {};
+    const savedComm = Object.values(details).find((d: any) => typeof d?.commission === 'number' && d.commission > 0);
+    setCommissionOnDeal(savedComm ? String((savedComm as any).commission) : '0');
     setCommissionToMediator(c.payout.toString());
     setAssignModal(c);
   };
@@ -1673,7 +1676,11 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                               setSelectedDealType(c.dealType || 'Discount');
                               setCustomPrice(c.price.toString());
                               setCustomPayout(c.payout.toString());
-                              setCommissionOnDeal('0');
+                              // Pre-fill commission from previously saved assignment value.
+                              // Pick the first mediator assignment that has a non-zero commission.
+                              const details = (c as any).assignmentDetails || {};
+                              const savedComm = Object.values(details).find((d: any) => typeof d?.commission === 'number' && d.commission > 0);
+                              setCommissionOnDeal(savedComm ? String((savedComm as any).commission) : '0');
                               setCommissionToMediator(c.payout.toString());
                             }}
                             className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95"
@@ -2307,6 +2314,15 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [selectedMediator, setSelectedMediator] = useState<User | null>(null);
   const [payoutAmount, setPayoutAmount] = useState('');
   const [proofOrder, setProofOrder] = useState<Order | null>(null);
+
+  // Keep proof modal in sync when allOrders updates from real-time
+  useEffect(() => {
+    setProofOrder((prev) => {
+      if (!prev) return prev;
+      const updated = allOrders.find((o: Order) => o.id === prev.id);
+      return updated || null;
+    });
+  }, [allOrders]);
 
   const activeMediators = mediators.filter((m: User) => m.status === 'active');
   const pendingMediators = mediators.filter((m: User) => m.status === 'pending');
@@ -3032,7 +3048,8 @@ export const AgencyDashboard: React.FC = () => {
         msg.type === 'users.changed' ||
         msg.type === 'wallets.changed' ||
         msg.type === 'deals.changed' ||
-        msg.type === 'notifications.changed'
+        msg.type === 'notifications.changed' ||
+        msg.type === 'tickets.changed'
       ) {
         schedule();
       }

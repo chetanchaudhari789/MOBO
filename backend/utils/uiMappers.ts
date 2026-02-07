@@ -76,19 +76,27 @@ export function toUiCampaign(c: CampaignDoc & { _id?: any } | any) {
     c.assignments instanceof Map ? Object.fromEntries(c.assignments) : c.assignments;
 
   // UI expects assignments as "slots per code" (number). The DB schema supports
-  // { limit, payout? } objects; normalize those objects down to their limit.
+  // { limit, payout?, commissionPaise? } objects; normalize those objects down to their limit.
   const assignments: Record<string, number> = {};
+  const assignmentDetails: Record<string, { limit: number; payout: number; commission: number }> = {};
   if (assignmentsObj && typeof assignmentsObj === 'object') {
     for (const [code, raw] of Object.entries(assignmentsObj)) {
       if (typeof raw === 'number') {
         assignments[code] = raw;
+        assignmentDetails[code] = { limit: raw, payout: paiseToRupees(c.payoutPaise), commission: 0 };
         continue;
       }
       if (raw && typeof raw === 'object' && typeof (raw as any).limit === 'number') {
         assignments[code] = (raw as any).limit;
+        assignmentDetails[code] = {
+          limit: (raw as any).limit,
+          payout: paiseToRupees(typeof (raw as any).payout === 'number' ? (raw as any).payout : c.payoutPaise),
+          commission: paiseToRupees((raw as any).commissionPaise ?? 0),
+        };
         continue;
       }
       assignments[code] = 0;
+      assignmentDetails[code] = { limit: 0, payout: paiseToRupees(c.payoutPaise), commission: 0 };
     }
   }
 
@@ -111,6 +119,7 @@ export function toUiCampaign(c: CampaignDoc & { _id?: any } | any) {
     createdAt: c.createdAt ? new Date(c.createdAt).getTime() : Date.now(),
     returnWindowDays: c.returnWindowDays,
     dealType: c.dealType,
+    assignmentDetails,
   };
 }
 
@@ -244,7 +253,7 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
   };
 }
 
-// Brand must never receive buyer PII or raw proof artifacts.
+// Brand must never receive buyer PII (name, phone, etc.) but CAN see proof artifacts.
 export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
@@ -296,7 +305,9 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
     affiliateStatus: o.affiliateStatus,
     externalOrderId: o.externalOrderId,
     settlementRef: (o as any).settlementRef,
-    // Brand must never receive raw proof artifacts — only boolean flags.
+    // Brand can see proof artifacts to verify that orders are genuine.
+    screenshots: o.screenshots ?? {},
+    reviewLink: o.reviewLink,
     hasOrderProof: !!(o.screenshots?.order || o.screenshots?.payment),
     hasReviewProof,
     hasRatingProof,

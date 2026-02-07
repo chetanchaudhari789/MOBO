@@ -284,8 +284,15 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       if (u.status === 'fulfilled') setUsers(u.value);
       else console.error('Admin Users Fetch Error:', u.reason);
 
-      if (o.status === 'fulfilled') setOrders(o.value);
-      else console.error('Admin Financials Fetch Error:', o.reason);
+      if (o.status === 'fulfilled') {
+        setOrders(o.value);
+        // Keep proof modal in sync with refreshed data
+        setProofModal((prev) => {
+          if (!prev) return prev;
+          const updated = (o.value as Order[]).find((ord: Order) => ord.id === prev.id);
+          return updated || null;
+        });
+      } else console.error('Admin Financials Fetch Error:', o.reason);
 
       if (p.status === 'fulfilled') setProducts(p.value);
       else console.error('Admin Products Fetch Error:', p.reason);
