@@ -11,7 +11,10 @@ export const reactivateOrderSchema = z.object({
   reason: z.string().min(1).max(500).optional(),
 });
 
-const normalizeRole = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeRole = (value: unknown) => {
+  const s = String(value ?? '').trim().toLowerCase();
+  return s || undefined;
+};
 const normalizeOptionalString = (value: unknown) => {
   const s = String(value ?? '').trim();
   return s || undefined;

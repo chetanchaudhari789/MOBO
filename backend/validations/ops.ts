@@ -29,7 +29,11 @@ export const requestMissingProofSchema = z.object({
   note: z.string().max(300).optional(),
 });
 
-const normalizeQueryString = (value: unknown) => String(value || '').trim();
+const normalizeQueryString = (value: unknown) => {
+  if (value === undefined || value === null) return undefined;
+  const s = String(value).trim();
+  return s === '' ? undefined : s;
+};
 
 export const opsOrdersQuerySchema = z.object({
   mediatorCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
