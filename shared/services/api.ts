@@ -460,8 +460,10 @@ export const api = {
   },
   ops: {
     /** [FIX] Expanded ops object with all methods used by MediatorDashboard and AgencyDashboard */
-    getMediators: async (agencyCode: string) => {
-      return fetchJson(`/ops/mediators?agencyCode=${encodeURIComponent(agencyCode)}`, {
+    getMediators: async (agencyCode: string, opts?: { search?: string }) => {
+      const params = new URLSearchParams({ agencyCode });
+      if (opts?.search) params.set('search', opts.search);
+      return fetchJson(`/ops/mediators?${params}`, {
         headers: { ...authHeaders() },
       });
     },
@@ -736,19 +738,32 @@ export const api = {
         headers: { ...authHeaders() },
       }),
     /** [FIX] Updated getUsers to accept an optional role argument for AdminPortal.tsx */
-    getUsers: async (role: string = 'all') =>
-      fetchJson(`/admin/users?role=${encodeURIComponent(role)}`, {
+    getUsers: async (role: string = 'all', opts?: { search?: string; status?: string }) => {
+      const params = new URLSearchParams({ role });
+      if (opts?.search) params.set('search', opts.search);
+      if (opts?.status) params.set('status', opts.status);
+      return fetchJson(`/admin/users?${params}`, {
         headers: { ...authHeaders() },
-      }),
+      });
+    },
     /** [FIX] Added missing admin methods used in AdminPortal.tsx */
-    getFinancials: async () =>
-      fetchJson('/admin/financials', {
+    getFinancials: async (opts?: { status?: string }) => {
+      const params = new URLSearchParams();
+      if (opts?.status) params.set('status', opts.status);
+      const qs = params.toString();
+      return fetchJson(`/admin/financials${qs ? '?' + qs : ''}`, {
         headers: { ...authHeaders() },
-      }),
-    getProducts: async () =>
-      fetchJson('/admin/products', {
+      });
+    },
+    getProducts: async (opts?: { search?: string; active?: string }) => {
+      const params = new URLSearchParams();
+      if (opts?.search) params.set('search', opts.search);
+      if (opts?.active) params.set('active', opts.active);
+      const qs = params.toString();
+      return fetchJson(`/admin/products${qs ? '?' + qs : ''}`, {
         headers: { ...authHeaders() },
-      }),
+      });
+    },
     deleteProduct: async (dealId: string) => {
       await fetchOk(`/admin/products/${encodeURIComponent(dealId)}`, {
         method: 'DELETE',

@@ -562,6 +562,7 @@ const OrdersView = ({ user }: any) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [viewProofOrder, setViewProofOrder] = useState<Order | null>(null);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
 
   const getOrderStatusBadge = (o: Order) => {
@@ -615,7 +616,12 @@ const OrdersView = ({ user }: any) => {
     const title = String(o.items?.[0]?.title || '').toLowerCase();
     const internal = String(o.id || '').toLowerCase();
     const external = String(o.externalOrderId || '').toLowerCase();
-    return internal.includes(q) || external.includes(q) || title.includes(q);
+    const textMatch = internal.includes(q) || external.includes(q) || title.includes(q);
+    if (statusFilter !== 'All') {
+      const st = String(o.affiliateStatus === 'Unchecked' ? o.paymentStatus : o.affiliateStatus || '').toLowerCase();
+      if (st !== statusFilter.toLowerCase()) return false;
+    }
+    return textMatch;
   });
 
   const handleExport = () => {
@@ -746,6 +752,18 @@ const OrdersView = ({ user }: any) => {
                 </button>
               )}
             </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-4 py-3.5 bg-white border border-zinc-200 rounded-2xl text-sm font-bold outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-100 transition-all shadow-sm text-zinc-900"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="Pending_Cooling">Cooling</option>
+              <option value="Approved_Settled">Settled</option>
+              <option value="Paid">Paid</option>
+              <option value="Rejected_Fraud">Fraud</option>
+            </select>
             <button
               onClick={handleExport}
               className="flex items-center gap-2 px-5 py-3.5 bg-zinc-900 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-black transition-all active:scale-95 whitespace-nowrap"

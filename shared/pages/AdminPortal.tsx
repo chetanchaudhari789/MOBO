@@ -187,6 +187,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [inviteRole, setInviteRole] = useState<'agency' | 'brand'>('agency');
   const [inviteLabel, setInviteLabel] = useState('');
 
+  // Order/inventory filters
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('All');
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [proofModal, setProofModal] = useState<Order | null>(null);
+
   // Settings State
   const [configEmail, setConfigEmail] = useState('admin@buzzma.world');
 
@@ -577,6 +583,37 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     }
     return result;
   }, [users, userRoleFilter, userSearch]);
+
+  const filteredOrders = useMemo(() => {
+    let result = orders;
+    if (orderStatusFilter !== 'All') {
+      result = result.filter((o) => {
+        const status = o.affiliateStatus === 'Unchecked' ? o.paymentStatus : o.affiliateStatus;
+        return String(status).toLowerCase() === orderStatusFilter.toLowerCase();
+      });
+    }
+    if (orderSearch.trim()) {
+      const q = orderSearch.trim().toLowerCase();
+      result = result.filter(
+        (o) =>
+          (o.externalOrderId || o.id || '').toLowerCase().includes(q) ||
+          (o.buyerName || '').toLowerCase().includes(q) ||
+          (o.items?.[0]?.title || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [orders, orderStatusFilter, orderSearch]);
+
+  const filteredProducts = useMemo(() => {
+    if (!inventorySearch.trim()) return products;
+    const q = inventorySearch.trim().toLowerCase();
+    return products.filter(
+      (p) =>
+        (p.title || '').toLowerCase().includes(q) ||
+        (p.category || '').toLowerCase().includes(q) ||
+        (p.platform || '').toLowerCase().includes(q)
+    );
+  }, [products, inventorySearch]);
 
   // --- AUTH GUARD ---
   if (!user || user.role !== 'admin') {
@@ -1316,7 +1353,31 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     <Download size={14} /> Export Report
                   </button>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="p-4 border-b border-slate-100 flex gap-3 flex-wrap items-center">
+                  <div className="flex-1 min-w-[200px]">
+                    <Input
+                      placeholder="Search orders (ID, buyer, product)..."
+                      value={orderSearch}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderSearch(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                  <select
+                    value={orderStatusFilter}
+                    onChange={(e) => setOrderStatusFilter(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Pending_Cooling">Cooling</option>
+                    <option value="Approved_Settled">Settled</option>
+                    <option value="Rejected_Fraud">Fraud</option>
+                    <option value="Rejected_Expired">Expired</option>
+                    <option value="Paid">Paid</option>
+                  </select>
+                  <span className="text-xs text-slate-400 font-bold">{filteredOrders.length} orders</span>
+                </div>
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                   <table className="w-full text-left">
                     <thead className="bg-slate-50/80 text-xs font-extrabold uppercase text-slate-400 tracking-wider sticky top-0 z-10">
                       <tr>
@@ -1324,11 +1385,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                         <th className="p-5">Date</th>
                         <th className="p-5">Amount</th>
                         <th className="p-5">Customer</th>
+                        <th className="p-5">Proofs</th>
                         <th className="p-5 text-right">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 text-sm font-medium">
-                      {orders.slice(0, 50).map((o) => (
+                      {filteredOrders.slice(0, 200).map((o) => (
                         <tr key={o.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="p-5">
                             <div className="font-mono text-slate-500">
@@ -1340,6 +1402,15 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           </td>
                           <td className="p-5 font-mono text-slate-900 font-bold">{o.total}</td>
                           <td className="p-5 text-slate-700">{o.buyerName}</td>
+                          <td className="p-5">
+                            <button
+                              type="button"
+                              onClick={() => setProofModal(o)}
+                              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline"
+                            >
+                              View
+                            </button>
+                          </td>
                           <td className="p-5 text-right">
                             <StatusBadge
                               status={
@@ -1360,8 +1431,17 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
             {/* INVENTORY VIEW */}
             {view === 'inventory' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden animate-enter">
-                <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                   <h3 className="font-extrabold text-lg text-slate-900">Live Inventory</h3>
+                  <span className="text-xs text-slate-400 font-bold">{filteredProducts.length} products</span>
+                </div>
+                <div className="p-4 border-b border-slate-100">
+                  <Input
+                    placeholder="Search products (name, category, platform)..."
+                    value={inventorySearch}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInventorySearch(e.target.value)}
+                    className="text-sm"
+                  />
                 </div>
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 text-xs font-extrabold uppercase text-slate-400 tracking-wider">
@@ -1375,7 +1455,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-sm font-medium">
-                    {products.map((p) => (
+                    {filteredProducts.map((p) => (
                       <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-5">
                           <div className="flex items-center gap-3">
@@ -1464,6 +1544,46 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
             )}
           </div>
         </div>
+
+      {/* Proof Viewer Modal */}
+      {proofModal && (
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setProofModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+              <div>
+                <h3 className="font-extrabold text-lg text-slate-900">Order Proofs</h3>
+                <p className="text-xs text-slate-500 font-mono mt-1">{proofModal.externalOrderId || proofModal.id}</p>
+              </div>
+              <button type="button" onClick={() => setProofModal(null)} className="p-2 rounded-lg hover:bg-slate-100">
+                <span className="text-slate-400 text-xl font-bold">&times;</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-slate-400 font-bold text-xs uppercase">Buyer</span><p className="font-bold text-slate-900">{proofModal.buyerName}</p></div>
+                <div><span className="text-slate-400 font-bold text-xs uppercase">Amount</span><p className="font-bold text-slate-900">₹{proofModal.total}</p></div>
+                <div><span className="text-slate-400 font-bold text-xs uppercase">Status</span><p><StatusBadge status={proofModal.affiliateStatus === 'Unchecked' ? proofModal.paymentStatus : proofModal.affiliateStatus} /></p></div>
+                <div><span className="text-slate-400 font-bold text-xs uppercase">Payment</span><p className="font-bold text-slate-900">{proofModal.paymentStatus}</p></div>
+              </div>
+              {[
+                { label: 'Purchase Proof', url: proofModal.screenshots?.order },
+                { label: 'Rating Proof', url: proofModal.screenshots?.rating },
+                { label: 'Review Proof', url: proofModal.screenshots?.review },
+                { label: 'Payment Screenshot', url: proofModal.screenshots?.payment },
+              ].map(({ label, url }) => (
+                <div key={label}>
+                  <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2">{label}</h4>
+                  {url ? (
+                    <img src={url} alt={label} className="w-full max-h-[300px] object-contain rounded-xl border border-slate-200 bg-slate-50" />
+                  ) : (
+                    <div className="py-4 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-200">Not uploaded</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </DesktopShell>
   );
 };

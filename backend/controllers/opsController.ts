@@ -2047,9 +2047,10 @@ export function makeOpsController(env: Env) {
         // CRITICAL: Get mediator's payout from campaign.assignments
         const payoutPaise = Number((slotAssignment as any)?.payout ?? campaign.payoutPaise ?? 0);
 
-        // Business rule: commission cannot exceed payout (mediator margin would be negative).
+        // Business rule: commission cannot exceed payout.
+        // Negative commission is allowed (mediator absorbs loss to attract buyers).
         if (commissionPaise > payoutPaise) {
-          throw new AppError(400, 'INVALID_ECONOMICS', 'Commission cannot exceed payout; mediator margin would be negative');
+          throw new AppError(400, 'INVALID_ECONOMICS', 'Commission cannot exceed payout');
         }
 
         // Campaign must be active to publish a deal.

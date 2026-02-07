@@ -399,8 +399,29 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [newStatus, setNewStatus] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [financeSearch, setFinanceSearch] = useState('');
+  const [financeStatusFilter, setFinanceStatusFilter] = useState<string>('All');
 
-  const ledger = allOrders;
+  const ledger = useMemo(() => {
+    let result = allOrders as Order[];
+    if (financeStatusFilter !== 'All') {
+      result = result.filter((o: Order) => {
+        const st = o.affiliateStatus === 'Unchecked' ? o.paymentStatus : o.affiliateStatus;
+        return String(st).toLowerCase() === financeStatusFilter.toLowerCase();
+      });
+    }
+    if (financeSearch.trim()) {
+      const q = financeSearch.trim().toLowerCase();
+      result = result.filter((o: Order) =>
+        (getPrimaryOrderId(o) || '').toLowerCase().includes(q) ||
+        (o.buyerName || '').toLowerCase().includes(q) ||
+        (o.brandName || '').toLowerCase().includes(q) ||
+        (o.items?.[0]?.title || '').toLowerCase().includes(q) ||
+        (o.managerName || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [allOrders, financeSearch, financeStatusFilter]);
 
   // Updated Calc Logic
   const settledVolume = ledger
@@ -581,6 +602,33 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
           >
             <Download size={16} /> Export Report
           </button>
+        </div>
+
+        {/* Finance Search + Filter */}
+        <div className="px-6 py-3 border-b border-slate-100 flex gap-3 flex-wrap items-center">
+          <div className="flex-1 min-w-[180px] relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={financeSearch}
+              onChange={(e) => setFinanceSearch(e.target.value)}
+              placeholder="Search orders, buyers, mediators..."
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:border-purple-300 focus:ring-2 focus:ring-purple-100 outline-none"
+            />
+          </div>
+          <select
+            value={financeStatusFilter}
+            onChange={(e) => setFinanceStatusFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+          >
+            <option value="All">All Statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Pending_Cooling">Cooling</option>
+            <option value="Approved_Settled">Settled</option>
+            <option value="Paid">Paid</option>
+            <option value="Rejected_Fraud">Fraud</option>
+          </select>
+          <span className="text-xs text-slate-400 font-bold">{ledger.length} records</span>
         </div>
 
         <div className="flex-1 overflow-auto p-0 scrollbar-hide">
@@ -1210,6 +1258,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [assignModal, setAssignModal] = useState<Campaign | null>(null);
   const [createModal, setCreateModal] = useState(false);
   const [assignments, setAssignments] = useState<Record<string, number>>({});
+  const [inventorySearch, setInventorySearch] = useState('');
   const [assignSearch, setAssignSearch] = useState('');
   const [selectedDealType, setSelectedDealType] = useState<string>('Discount');
   const [customPrice, setCustomPrice] = useState<string>('');
@@ -1233,21 +1282,35 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
   // Active Inventory = what agency is already managing (at least one sub-mediator has assignments)
   const activeInventory = useMemo(() => {
-    return campaigns.filter(
+    const base = campaigns.filter(
       (c: Campaign) =>
         c.allowedAgencies.includes(user.mediatorCode) &&
         Object.keys(c.assignments || {}).some((code) => myMediatorCodes.includes(code))
     );
-  }, [campaigns, user.mediatorCode, myMediatorCodes]);
+    if (!inventorySearch.trim()) return base;
+    const q = inventorySearch.trim().toLowerCase();
+    return base.filter((c: Campaign) =>
+      (c.title || '').toLowerCase().includes(q) ||
+      (c.platform || '').toLowerCase().includes(q) ||
+      (c.brand || '').toLowerCase().includes(q)
+    );
+  }, [campaigns, user.mediatorCode, myMediatorCodes, inventorySearch]);
 
   // Filter campaigns for "Offered by Brands" (where agency is allowed but no sub-mediators have slots yet)
   const offeredCampaigns = useMemo(() => {
-    return campaigns.filter(
+    const base = campaigns.filter(
       (c: Campaign) =>
         c.allowedAgencies.includes(user.mediatorCode) &&
         !Object.keys(c.assignments || {}).some((code) => myMediatorCodes.includes(code))
     );
-  }, [campaigns, user.mediatorCode, myMediatorCodes]);
+    if (!inventorySearch.trim()) return base;
+    const q = inventorySearch.trim().toLowerCase();
+    return base.filter((c: Campaign) =>
+      (c.title || '').toLowerCase().includes(q) ||
+      (c.platform || '').toLowerCase().includes(q) ||
+      (c.brand || '').toLowerCase().includes(q)
+    );
+  }, [campaigns, user.mediatorCode, myMediatorCodes, inventorySearch]);
 
   // New Campaign Form
   const [newCampaign, setNewCampaign] = useState({
@@ -1504,6 +1567,18 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         >
           <Plus size={16} /> <span>Add Campaign</span>
         </button>
+      </div>
+
+      {/* Inventory Search */}
+      <div className="relative">
+        <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          value={inventorySearch}
+          onChange={(e) => setInventorySearch(e.target.value)}
+          placeholder="Search campaigns..."
+          className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-purple-300 focus:ring-2 focus:ring-purple-100 outline-none"
+        />
       </div>
 
       {/* Content Area */}

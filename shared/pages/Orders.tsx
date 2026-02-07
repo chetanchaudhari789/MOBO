@@ -85,6 +85,28 @@ export const Orders: React.FC = () => {
   const [ticketIssue, setTicketIssue] = useState('Cashback not received');
   const [ticketDesc, setTicketDesc] = useState('');
 
+  // Order list search & filter
+  const [orderListSearch, setOrderListSearch] = useState('');
+  const [orderListStatus, setOrderListStatus] = useState<string>('All');
+
+  const displayOrders = useMemo(() => {
+    let result = orders;
+    if (orderListStatus !== 'All') {
+      result = result.filter((o) => {
+        const st = String(o.affiliateStatus === 'Unchecked' ? o.paymentStatus : o.affiliateStatus || '').toLowerCase();
+        return st === orderListStatus.toLowerCase();
+      });
+    }
+    if (orderListSearch.trim()) {
+      const q = orderListSearch.trim().toLowerCase();
+      result = result.filter((o) =>
+        (o.items?.[0]?.title || '').toLowerCase().includes(q) ||
+        (o.externalOrderId || o.id || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [orders, orderListSearch, orderListStatus]);
+
   // Fixed: Defined filteredProducts logic for the New Order Modal
   const filteredProducts = useMemo(() => {
     return availableProducts.filter((p) => {
@@ -417,6 +439,31 @@ export const Orders: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24 scrollbar-hide">
+        {/* Search & Filter */}
+        <div className="flex gap-2 items-center">
+          <div className="flex-1 relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              value={orderListSearch}
+              onChange={(e) => setOrderListSearch(e.target.value)}
+              placeholder="Search orders..."
+              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 bg-white text-xs font-medium focus:border-zinc-400 focus:ring-2 focus:ring-zinc-100 outline-none"
+            />
+          </div>
+          <select
+            value={orderListStatus}
+            onChange={(e) => setOrderListStatus(e.target.value)}
+            className="px-3 py-2.5 rounded-xl border border-zinc-200 bg-white text-xs font-bold"
+          >
+            <option value="All">All</option>
+            <option value="Pending">Pending</option>
+            <option value="Pending_Cooling">Cooling</option>
+            <option value="Approved_Settled">Settled</option>
+            <option value="Paid">Paid</option>
+          </select>
+        </div>
+
         {isLoading ? (
           <div className="flex justify-center py-10 text-lime-500">
             <Spinner className="w-6 h-6" />
@@ -432,8 +479,14 @@ export const Orders: React.FC = () => {
               </Button>
             }
           />
+        ) : displayOrders.length === 0 ? (
+          <EmptyState
+            title="No matching orders"
+            description="Try a different search or filter."
+            icon={<Search size={40} className="text-zinc-300" />}
+          />
         ) : (
-          orders.map((order) => {
+          displayOrders.map((order) => {
             const firstItem = order.items?.[0];
             if (!firstItem) return null; // Skip orders with no items
             const dealType = firstItem.dealType || 'Discount';

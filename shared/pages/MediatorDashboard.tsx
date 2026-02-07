@@ -36,6 +36,9 @@ import {
   AlertTriangle,
   Sparkles,
   Loader2,
+  Search,
+  Download,
+  Filter,
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
@@ -48,6 +51,23 @@ const formatCurrency = (amount: number) =>
     currency: 'INR',
     maximumFractionDigits: 0,
   }).format(amount);
+
+const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
+  const escape = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+const matchesSearch = (query: string, ...fields: (string | undefined)[]) => {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return fields.some((f) => f && f.toLowerCase().includes(q));
+};
 
 const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || order.id || '').trim();
@@ -89,8 +109,18 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   // Verification queue is workflow-driven.
   // Orders can remain UNDER_REVIEW even after purchase verification if review/rating is still pending.
   const { toast } = useToast();
-  const actionRequiredOrders = orders.filter((o: Order) => String(o.workflowStatus || '') === 'UNDER_REVIEW');
-  const coolingOrders = orders.filter((o: Order) => o.affiliateStatus === 'Pending_Cooling');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const actionRequiredOrders = useMemo(() =>
+    orders.filter((o: Order) => String(o.workflowStatus || '') === 'UNDER_REVIEW')
+      .filter((o: Order) => matchesSearch(searchQuery, o.items[0]?.title, o.buyerName, getPrimaryOrderId(o))),
+    [orders, searchQuery]
+  );
+  const coolingOrders = useMemo(() =>
+    orders.filter((o: Order) => o.affiliateStatus === 'Pending_Cooling')
+      .filter((o: Order) => matchesSearch(searchQuery, o.items[0]?.title, o.buyerName, getPrimaryOrderId(o))),
+    [orders, searchQuery]
+  );
 
   // Identify disputed orders
   const disputedOrderIds = new Set(
@@ -212,6 +242,47 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
           </div>
         </section>
       )}
+
+      {/* Search + Export */}
+      <div className="flex gap-2 items-center">
+        <div className="flex-1 relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search orders..."
+            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-100 bg-white text-xs font-medium focus:border-zinc-300 focus:ring-2 focus:ring-zinc-100 outline-none"
+          />
+        </div>
+        <button
+          type="button"
+          aria-label="Export orders CSV"
+          title="Export orders CSV"
+          onClick={() => {
+            const allOrders = orders as Order[];
+            if (!allOrders.length) { toast.error('No orders to export'); return; }
+            downloadCsv(
+              `mediator-orders-${new Date().toISOString().slice(0, 10)}.csv`,
+              ['Order ID', 'Product', 'Buyer', 'Amount', 'Commission', 'Status', 'Payment', 'Date'],
+              allOrders.map((o) => [
+                getPrimaryOrderId(o),
+                o.items[0]?.title || '',
+                o.buyerName || '',
+                String(o.total || 0),
+                String(o.items[0]?.commission || 0),
+                String(o.affiliateStatus || o.workflowStatus || ''),
+                String(o.paymentStatus || ''),
+                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
+              ])
+            );
+            toast.success('Orders exported');
+          }}
+          className="p-2.5 rounded-xl border border-zinc-100 bg-white hover:bg-zinc-50 transition-colors"
+        >
+          <Download size={14} className="text-zinc-600" />
+        </button>
+      </div>
 
       {/* Order Verification Section */}
       <section>
@@ -426,6 +497,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
 
 const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: any) => {
   const { toast } = useToast();
+  const [marketSearch, setMarketSearch] = useState('');
   const dealByCampaignId = useMemo(() => {
     const m = new Map<string, Product>();
     (deals || []).forEach((d: Product) => {
@@ -435,8 +507,14 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
   }, [deals]);
 
   const unpublishedCampaigns = useMemo(() => {
-    return (campaigns || []).filter((c: Campaign) => !dealByCampaignId.has(String(c.id)));
-  }, [campaigns, dealByCampaignId]);
+    return (campaigns || []).filter((c: Campaign) => !dealByCampaignId.has(String(c.id)))
+      .filter((c: Campaign) => matchesSearch(marketSearch, c.title, c.platform, c.brand));
+  }, [campaigns, dealByCampaignId, marketSearch]);
+
+  const filteredDeals = useMemo(() => {
+    if (!Array.isArray(deals)) return [];
+    return deals.filter((d: Product) => matchesSearch(marketSearch, d.title, d.platform));
+  }, [deals, marketSearch]);
 
   const [mode, setMode] = useState<'published' | 'unpublished'>('published');
 
@@ -450,6 +528,18 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
             Published deals are separated from unpublished inventory.
           </p>
         </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+        <input
+          type="text"
+          value={marketSearch}
+          onChange={(e) => setMarketSearch(e.target.value)}
+          placeholder="Search deals & campaigns..."
+          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-100 bg-white text-xs font-medium focus:border-zinc-300 focus:ring-2 focus:ring-zinc-100 outline-none"
+        />
       </div>
 
       <div className="bg-white rounded-[1.5rem] border border-zinc-100 shadow-sm p-1">
@@ -500,11 +590,11 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
           <div className="flex items-center justify-between px-1 mb-3">
             <h3 className="font-bold text-base text-zinc-900 tracking-tight">Published Deals</h3>
             <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-              {Array.isArray(deals) ? deals.length : 0}
+              {filteredDeals.length}
             </span>
           </div>
           <div className="grid grid-cols-1 gap-4">
-            {!Array.isArray(deals) || deals.length === 0 ? (
+            {filteredDeals.length === 0 ? (
               <div className="bg-white rounded-[1.5rem] border border-zinc-100 p-4">
                 {loading ? (
                   <EmptyState
@@ -523,7 +613,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                 )}
               </div>
             ) : (
-              deals.map((d: Product) => (
+              filteredDeals.map((d: Product) => (
                 <div
                   key={String(d.id)}
                   className="bg-white p-4 rounded-[1.5rem] border border-zinc-100 shadow-sm flex flex-col relative overflow-hidden"
@@ -548,11 +638,23 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                       <h4 className="font-bold text-zinc-900 text-base leading-tight line-clamp-1 mb-2">
                         {d.title}
                       </h4>
-                      <div className="flex items-center gap-2">
-                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                          Price
-                        </p>
-                        <p className="text-sm font-black text-zinc-900">{formatCurrency(d.price)}</p>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1">
+                          <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                            Price
+                          </p>
+                          <p className="text-sm font-black text-zinc-900">{formatCurrency(d.price)}</p>
+                        </div>
+                        {typeof d.commission === 'number' && (
+                          <div className="flex items-center gap-1">
+                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                              Commission
+                            </p>
+                            <p className={`text-sm font-black ${d.commission < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                              {d.commission < 0 ? `−${formatCurrency(Math.abs(d.commission))}` : formatCurrency(d.commission)}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -670,6 +772,15 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
 
 const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders, onRefresh: _onRefresh, onSelectUser }: any) => {
   const { toast } = useToast();
+  const [squadSearch, setSquadSearch] = useState('');
+  const filteredVerified = useMemo(() =>
+    verifiedUsers.filter((u: User) => matchesSearch(squadSearch, u.name, u.mobile)),
+    [verifiedUsers, squadSearch]
+  );
+  const filteredPending = useMemo(() =>
+    pendingUsers.filter((u: User) => matchesSearch(squadSearch, u.name, u.mobile)),
+    [pendingUsers, squadSearch]
+  );
   return (
     <div className="space-y-5 animate-enter">
       <div
@@ -706,6 +817,18 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
         </div>
       </div>
 
+      {/* Search */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+        <input
+          type="text"
+          value={squadSearch}
+          onChange={(e) => setSquadSearch(e.target.value)}
+          placeholder="Search buyers..."
+          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-100 bg-white text-xs font-medium focus:border-zinc-300 focus:ring-2 focus:ring-zinc-100 outline-none"
+        />
+      </div>
+
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
           <h3 className="font-bold text-base text-zinc-900 tracking-tight">Active Roster</h3>
@@ -729,9 +852,18 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
                 className="bg-transparent border-0 py-10"
               />
             </div>
+          ) : filteredVerified.length === 0 ? (
+            <div className="p-4">
+              <EmptyState
+                title="No matching buyers"
+                description="Try a different search term."
+                icon={<Search size={22} className="text-zinc-400" />}
+                className="bg-transparent border-0 py-10"
+              />
+            </div>
           ) : (
             <div className="divide-y divide-zinc-50">
-              {verifiedUsers.map((u: User) => (
+              {filteredVerified.map((u: User) => (
                 <div
                   key={u.id}
                   onClick={() => onSelectUser(u)}
@@ -1441,7 +1573,7 @@ export const MediatorDashboard: React.FC = () => {
   const handlePublish = async () => {
     if (!dealBuilder || !user?.mediatorCode) return;
     try {
-      const commissionValue = Math.max(0, Math.trunc(Number(commission || 0)));
+      const commissionValue = Math.trunc(Number(commission || 0));
       await api.ops.publishDeal(dealBuilder.id, commissionValue, user.mediatorCode);
       setDealBuilder(null);
       setCommission('');
@@ -2270,6 +2402,22 @@ export const MediatorDashboard: React.FC = () => {
                 </p>
               </div>
             </div>
+            {/* Net earnings breakdown */}
+            {(() => {
+              const payoutVal = dealBuilder.payout || 0;
+              const commVal = parseInt(commission) || 0;
+              const net = payoutVal - commVal;
+              return (
+                <div className={`p-3 rounded-[1rem] border mb-4 text-center ${net < 0 ? 'bg-red-50 border-red-200' : net === 0 ? 'bg-zinc-50 border-zinc-100' : 'bg-green-50 border-green-200'}`}>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400 mb-0.5">Your Net Earnings</p>
+                  <p className={`text-xl font-black ${net < 0 ? 'text-red-600' : net === 0 ? 'text-zinc-500' : 'text-green-700'}`}>
+                    {net < 0 ? `−₹${Math.abs(net)}` : formatCurrency(net)}
+                  </p>
+                  {net < 0 && <p className="text-[9px] text-red-500 mt-1">You absorb ₹{Math.abs(net)} loss on this deal</p>}
+                  <p className="text-[8px] text-zinc-400 mt-1">Payout ₹{payoutVal} − Commission ₹{commVal}</p>
+                </div>
+              );
+            })()}
             <div className="space-y-3 mb-6">
               <label className="text-[10px] font-black text-zinc-900 uppercase ml-2 block tracking-wide">
                 Buyer commission (₹)
@@ -2278,14 +2426,13 @@ export const MediatorDashboard: React.FC = () => {
                 type="number"
                 autoFocus
                 value={commission}
-                min={0}
                 onChange={(e) => {
                   const raw = e.target.value;
-                  if (raw === '') {
-                    setCommission('');
+                  if (raw === '' || raw === '-') {
+                    setCommission(raw);
                     return;
                   }
-                  const n = Math.max(0, Math.trunc(Number(raw)));
+                  const n = Math.trunc(Number(raw));
                   setCommission(String(n));
                 }}
                 className="w-full bg-white border-2 border-zinc-100 rounded-[1.5rem] p-4 text-2xl font-black text-center focus:border-[#CCF381] focus:ring-4 focus:ring-[#CCF381]/20 outline-none transition-all placeholder:text-zinc-200"

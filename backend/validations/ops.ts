@@ -113,8 +113,8 @@ export const updateCampaignStatusSchema = z.object({
 
 export const publishDealSchema = z.object({
   id: z.string().min(1), // campaign id
-  // Commission is optional; empty/omitted commission means 0.
-  commission: z.number().nonnegative().default(0),
+  // Commission can be negative (mediator absorbs the loss to attract buyers).
+  commission: z.number().default(0),
   mediatorCode: z.string().min(1),
 });
 
