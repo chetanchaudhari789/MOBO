@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errors.js';
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
 import { OrderModel } from '../models/Order.js';
-import { adminUsersQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
+import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { writeAuditLog } from '../services/audit.js';
 import { SuspensionModel } from '../models/Suspension.js';
@@ -68,6 +68,14 @@ export function makeAdminController() {
 
         const query: any = { deletedAt: null };
         if (dbRole) query.role = dbRole;
+        if (queryParams.status && queryParams.status !== 'all') {
+          query.status = queryParams.status;
+        }
+        if (queryParams.search) {
+          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = { $regex: escaped, $options: 'i' };
+          query.$or = [{ name: regex }, { mobile: regex }, { email: regex }, { mediatorCode: regex }];
+        }
 
         const users = await UserModel.find(query).sort({ createdAt: -1 }).limit(5000).lean();
         const wallets = await WalletModel.find({ ownerUserId: { $in: users.map((u) => u._id) } }).lean();
@@ -79,9 +87,15 @@ export function makeAdminController() {
       }
     },
 
-    getFinancials: async (_req: Request, res: Response, next: NextFunction) => {
+    getFinancials: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const orders = await OrderModel.find({ deletedAt: null })
+        const queryParams = adminFinancialsQuerySchema.parse(req.query);
+        const query: any = { deletedAt: null };
+        if (queryParams.status && queryParams.status !== 'all') {
+          query.affiliateStatus = queryParams.status;
+        }
+
+        const orders = await OrderModel.find(query)
           .sort({ createdAt: -1 })
           .limit(5000)
           .lean();
@@ -153,9 +167,20 @@ export function makeAdminController() {
       }
     },
 
-    getProducts: async (_req: Request, res: Response, next: NextFunction) => {
+    getProducts: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const deals = await DealModel.find({ deletedAt: null })
+        const queryParams = adminProductsQuerySchema.parse(req.query);
+        const query: any = { deletedAt: null };
+        if (queryParams.active && queryParams.active !== 'all') {
+          query.active = queryParams.active === 'true';
+        }
+        if (queryParams.search) {
+          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = { $regex: escaped, $options: 'i' };
+          query.$or = [{ title: regex }, { mediatorCode: regex }, { platform: regex }];
+        }
+
+        const deals = await DealModel.find(query)
           .sort({ createdAt: -1 })
           .limit(5000)
           .lean();

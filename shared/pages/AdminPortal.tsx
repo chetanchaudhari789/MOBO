@@ -183,6 +183,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
   // Filters
   const [userRoleFilter, setUserRoleFilter] = useState<string>('All');
+  const [userSearch, setUserSearch] = useState('');
   const [inviteRole, setInviteRole] = useState<'agency' | 'brand'>('agency');
   const [inviteLabel, setInviteLabel] = useState('');
 
@@ -560,9 +561,22 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   };
 
   const filteredUsers = useMemo(() => {
-    if (userRoleFilter === 'All') return users;
-    return users.filter((u) => u.role.toLowerCase() === userRoleFilter.toLowerCase());
-  }, [users, userRoleFilter]);
+    let result = users;
+    if (userRoleFilter !== 'All') {
+      result = result.filter((u) => u.role.toLowerCase() === userRoleFilter.toLowerCase());
+    }
+    if (userSearch.trim()) {
+      const q = userSearch.trim().toLowerCase();
+      result = result.filter(
+        (u) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || '').toLowerCase().includes(q) ||
+          (u.email || '').toLowerCase().includes(q) ||
+          (u.mediatorCode || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [users, userRoleFilter, userSearch]);
 
   // --- AUTH GUARD ---
   if (!user || user.role !== 'admin') {
@@ -1041,25 +1055,47 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
             {/* USERS VIEW */}
             {view === 'users' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-0 animate-enter">
-                <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                  <div className="flex gap-2">
-                    {['All', 'Brand', 'Agency', 'Mediator', 'User'].map((role) => (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => setUserRoleFilter(role)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
-                          userRoleFilter === role
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-md'
-                            : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        {role}
-                      </button>
-                    ))}
+                <div className="p-5 border-b border-slate-100 flex flex-col gap-3 bg-slate-50/50">
+                  <div className="flex justify-between items-center">
+                    <div className="flex gap-2">
+                      {['All', 'Brand', 'Agency', 'Mediator', 'User'].map((role) => (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => setUserRoleFilter(role)}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                            userRoleFilter === role
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-md'
+                              : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      {filteredUsers.length} Records
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    {filteredUsers.length} Records
+                  <div className="relative">
+                    <Users size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search by name, mobile, email, or code..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full pl-10 pr-10 py-2.5 rounded-xl text-sm border border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-all bg-white placeholder:text-slate-400"
+                    />
+                    {userSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setUserSearch('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                        aria-label="Clear search"
+                      >
+                        <XCircle size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="overflow-x-auto">

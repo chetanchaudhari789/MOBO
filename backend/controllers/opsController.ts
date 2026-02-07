@@ -27,6 +27,8 @@ import {
   opsOrdersQuerySchema,
   opsMediatorQuerySchema,
   opsCodeQuerySchema,
+  opsCampaignsQuerySchema,
+  opsDealsQuerySchema,
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiUser } from '../utils/uiMappers.js';
@@ -203,12 +205,20 @@ export function makeOpsController(env: Env) {
         if (!agencyCode) throw new AppError(400, 'INVALID_AGENCY_CODE', 'agencyCode required');
         if (!isPrivileged(roles)) requireAnyRole(roles, 'agency');
 
-        const mediators = await UserModel.find({
+        const mQuery: any = {
           roles: 'mediator',
           parentCode: agencyCode,
           deletedAt: null,
-        })
+        };
+        if (queryParams.search) {
+          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = { $regex: escaped, $options: 'i' };
+          mQuery.$or = [{ name: regex }, { mobile: regex }, { mediatorCode: regex }];
+        }
+
+        const mediators = await UserModel.find(mQuery)
           .sort({ createdAt: -1 })
+          .limit(5000)
           .lean();
 
         const wallets = await WalletModel.find({ ownerUserId: { $in: mediators.map((m) => m._id) } }).lean();
@@ -221,12 +231,16 @@ export function makeOpsController(env: Env) {
     getCampaigns: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
-        const requested = typeof req.query.mediatorCode === 'string' ? req.query.mediatorCode : undefined;
+        const queryParams = opsCampaignsQuerySchema.parse(req.query);
+        const requested = queryParams.mediatorCode || undefined;
 
         // Scope campaigns by requester unless admin/ops.
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
 
         const query: any = { deletedAt: null };
+        if (queryParams.status && queryParams.status !== 'all') {
+          query.status = queryParams.status;
+        }
         if (code) {
           // Agency visibility must include campaigns assigned to any of its sub-mediators.
           // Otherwise, ops/admin assigning slots directly to mediator codes makes the campaign
@@ -278,12 +292,13 @@ export function makeOpsController(env: Env) {
     getDeals: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, user } = getRequester(req);
-        const requestedCode = typeof req.query.mediatorCode === 'string' ? req.query.mediatorCode : '';
+        const queryParams = opsDealsQuerySchema.parse(req.query);
+        const requestedCode = queryParams.mediatorCode || '';
 
         let mediatorCodes: string[] = [];
         if (isPrivileged(roles)) {
           if (!requestedCode) throw new AppError(400, 'INVALID_CODE', 'mediatorCode required');
-          const requestedRole = typeof req.query.role === 'string' ? req.query.role : '';
+          const requestedRole = queryParams.role || '';
           if (requestedRole === 'agency') {
             mediatorCodes = await listMediatorCodesForAgency(requestedCode);
           } else {
@@ -375,13 +390,21 @@ export function makeOpsController(env: Env) {
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
         if (!code) throw new AppError(400, 'INVALID_CODE', 'code required');
 
-        const users = await UserModel.find({
+        const pQuery: any = {
           role: 'shopper',
           parentCode: code,
           isVerifiedByMediator: false,
           deletedAt: null,
-        })
+        };
+        if (queryParams.search) {
+          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = { $regex: escaped, $options: 'i' };
+          pQuery.$or = [{ name: regex }, { mobile: regex }];
+        }
+
+        const users = await UserModel.find(pQuery)
           .sort({ createdAt: -1 })
+          .limit(5000)
           .lean();
 
         const wallets = await WalletModel.find({ ownerUserId: { $in: users.map((u) => u._id) } }).lean();
@@ -399,13 +422,21 @@ export function makeOpsController(env: Env) {
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
         if (!code) throw new AppError(400, 'INVALID_CODE', 'code required');
 
-        const users = await UserModel.find({
+        const vQuery: any = {
           role: 'shopper',
           parentCode: code,
           isVerifiedByMediator: true,
           deletedAt: null,
-        })
+        };
+        if (queryParams.search) {
+          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = { $regex: escaped, $options: 'i' };
+          vQuery.$or = [{ name: regex }, { mobile: regex }];
+        }
+
+        const users = await UserModel.find(vQuery)
           .sort({ createdAt: -1 })
+          .limit(5000)
           .lean();
 
         const wallets = await WalletModel.find({ ownerUserId: { $in: users.map((u) => u._id) } }).lean();

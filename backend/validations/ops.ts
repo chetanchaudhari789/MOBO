@@ -41,10 +41,26 @@ export const opsOrdersQuerySchema = z.object({
 
 export const opsMediatorQuerySchema = z.object({
   agencyCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
+  search: z.preprocess(normalizeQueryString, z.string().max(120).optional()),
 });
 
 export const opsCodeQuerySchema = z.object({
   code: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
+  search: z.preprocess(normalizeQueryString, z.string().max(120).optional()),
+});
+
+export const opsCampaignsQuerySchema = z.object({
+  mediatorCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
+  status: z.preprocess(normalizeQueryString, z.enum(['all', 'active', 'paused', 'completed', 'draft']).default('all')),
+});
+
+export const opsDealsQuerySchema = z.object({
+  mediatorCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
+  role: z.preprocess(normalizeQueryString, z.enum(['agency', 'mediator']).optional()),
+});
+
+export const deleteByIdParamSchema = z.object({
+  id: z.string().min(1),
 });
 export const settleOrderSchema = z.object({
   orderId: z.string().min(1),

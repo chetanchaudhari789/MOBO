@@ -12,10 +12,35 @@ export const reactivateOrderSchema = z.object({
 });
 
 const normalizeRole = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeOptionalString = (value: unknown) => {
+  const s = String(value ?? '').trim();
+  return s || undefined;
+};
 
 export const adminUsersQuerySchema = z.object({
   role: z.preprocess(
     normalizeRole,
     z.enum(['all', 'user', 'mediator', 'agency', 'brand', 'admin']).default('all')
+  ),
+  search: z.preprocess(normalizeOptionalString, z.string().max(120).optional()),
+  status: z.preprocess(
+    normalizeOptionalString,
+    z.enum(['all', 'active', 'suspended', 'pending']).default('all')
+  ),
+});
+
+export const adminFinancialsQuerySchema = z.object({
+  status: z.preprocess(
+    normalizeOptionalString,
+    z.enum(['all', 'Pending_Cooling', 'Verified', 'Settled', 'Fraud_Alert', 'Unchecked', 'Frozen']).default('all')
+  ),
+  search: z.preprocess(normalizeOptionalString, z.string().max(120).optional()),
+});
+
+export const adminProductsQuerySchema = z.object({
+  search: z.preprocess(normalizeOptionalString, z.string().max(120).optional()),
+  active: z.preprocess(
+    normalizeOptionalString,
+    z.enum(['all', 'true', 'false']).default('all')
   ),
 });
