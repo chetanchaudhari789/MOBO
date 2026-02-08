@@ -1340,9 +1340,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     }
 
     const isInternal = String(assignModal.brandId || '') === String(user?.id || '');
-    const mediatorCommission = commissionToMediator.trim() ? Number(commissionToMediator) : 0;
+    const mediatorPayout = commissionToMediator.trim() ? Number(commissionToMediator) : 0;
     const commission = isInternal ? 0 : commissionOnDeal.trim() ? Number(commissionOnDeal) : 0;
-    if (!Number.isFinite(mediatorCommission) || mediatorCommission < 0) {
+    if (!Number.isFinite(mediatorPayout) || mediatorPayout < 0) {
       toast.error('Commission to mediator must be 0 or more');
       return;
     }
@@ -1353,8 +1353,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     const dealType = selectedDealType !== (assignModal.dealType || 'Discount') ? selectedDealType : undefined;
 
     try {
-      // Updated API call to include dealType, price, and payout
-      await api.ops.assignSlots(assignModal.id, positiveAssignments, dealType, undefined, undefined, commission);
+      // Send mediator payout and commission so backend stores them per-assignment
+      await api.ops.assignSlots(assignModal.id, positiveAssignments, dealType, undefined, mediatorPayout, commission);
       toast.success('Distribution saved');
       setAssignModal(null);
       setAssignments({});
@@ -1461,11 +1461,13 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     setSelectedDealType(c.dealType || 'Discount');
     setCustomPrice(c.price.toString());
     setCustomPayout(c.payout.toString());
-    // Pre-fill commission from previously saved assignment value.
+    // Pre-fill commission & payout from previously saved assignment values.
     const details = (c as any).assignmentDetails || {};
-    const savedComm = Object.values(details).find((d: any) => typeof d?.commission === 'number' && d.commission > 0);
-    setCommissionOnDeal(savedComm ? String((savedComm as any).commission) : '0');
-    setCommissionToMediator(c.payout.toString());
+    const detailValues = Object.values(details) as Array<{ limit: number; payout: number; commission: number }>;
+    const savedComm = detailValues.find((d) => typeof d?.commission === 'number' && d.commission > 0);
+    setCommissionOnDeal(savedComm ? String(savedComm.commission) : '0');
+    const savedPayout = detailValues.find((d) => typeof d?.payout === 'number' && d.payout > 0);
+    setCommissionToMediator(savedPayout ? String(savedPayout.payout) : c.payout.toString());
     setAssignModal(c);
   };
 
@@ -1676,12 +1678,13 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                               setSelectedDealType(c.dealType || 'Discount');
                               setCustomPrice(c.price.toString());
                               setCustomPayout(c.payout.toString());
-                              // Pre-fill commission from previously saved assignment value.
-                              // Pick the first mediator assignment that has a non-zero commission.
+                              // Pre-fill commission & payout from previously saved assignment values.
                               const details = (c as any).assignmentDetails || {};
-                              const savedComm = Object.values(details).find((d: any) => typeof d?.commission === 'number' && d.commission > 0);
-                              setCommissionOnDeal(savedComm ? String((savedComm as any).commission) : '0');
-                              setCommissionToMediator(c.payout.toString());
+                              const detailValues = Object.values(details) as Array<{ limit: number; payout: number; commission: number }>;
+                              const savedComm = detailValues.find((d) => typeof d?.commission === 'number' && d.commission > 0);
+                              setCommissionOnDeal(savedComm ? String(savedComm.commission) : '0');
+                              const savedPayout = detailValues.find((d) => typeof d?.payout === 'number' && d.payout > 0);
+                              setCommissionToMediator(savedPayout ? String(savedPayout.payout) : c.payout.toString());
                             }}
                             className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95"
                           >
@@ -2097,7 +2100,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
-                        Commission to Mediator (₹)
+                        Payout to Mediator (₹)
                       </label>
                       <div className="bg-white border border-slate-200 rounded-lg shadow-sm h-8 px-2 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
                         <span className="text-xs font-bold text-slate-400 mr-2"></span>

@@ -1468,6 +1468,16 @@ export const MediatorDashboard: React.FC = () => {
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
 
+  // Pre-fill buyer commission from agency's suggested commission when opening deal builder.
+  useEffect(() => {
+    if (dealBuilder) {
+      const agencyComm = dealBuilder.assignmentCommission ?? 0;
+      setCommission(agencyComm ? String(agencyComm) : '');
+    } else {
+      setCommission('');
+    }
+  }, [dealBuilder]);
+
   // AI Analysis State
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -2440,6 +2450,7 @@ export const MediatorDashboard: React.FC = () => {
                 className="w-full bg-white border-2 border-zinc-100 rounded-[1.5rem] p-4 text-2xl font-black text-center focus:border-[#CCF381] focus:ring-4 focus:ring-[#CCF381]/20 outline-none transition-all placeholder:text-zinc-200"
                 placeholder="0"
               />
+              <p className="text-[9px] text-zinc-400 text-center">Use negative value to give buyers a discount from your payout</p>
             </div>
             <button
               onClick={handlePublish}

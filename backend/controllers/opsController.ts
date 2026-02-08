@@ -1894,19 +1894,23 @@ export function makeOpsController(env: Env) {
         const commissionPaise =
           typeof body.commission !== 'undefined' ? rupeesToPaise(body.commission) : undefined;
 
+        // Payout override from body.payout (agency sets this as "Commission to Mediator").
+        const payoutOverridePaise =
+          typeof body.payout !== 'undefined' ? rupeesToPaise(body.payout) : undefined;
+
         // NEW SCHEMA: assignments is Map<string, { limit: number, payout?: number, commissionPaise?: number }>
         const current = campaign.assignments instanceof Map ? campaign.assignments : new Map();
         for (const [code, assignment] of positiveEntries) {
           // Support both old format (number) and new format ({ limit, payout })
           const assignmentObj = typeof assignment === 'number'
-            ? { limit: assignment, payout: campaign.payoutPaise }
+            ? { limit: assignment, payout: payoutOverridePaise ?? campaign.payoutPaise }
             : {
                 limit: (assignment as any).limit,
                 // API payloads use rupees like the rest of ops endpoints; store payout in paise.
                 payout:
                   typeof (assignment as any).payout === 'number'
                     ? rupeesToPaise((assignment as any).payout)
-                    : campaign.payoutPaise,
+                    : (payoutOverridePaise ?? campaign.payoutPaise),
               };
           if (typeof commissionPaise !== 'undefined') {
             (assignmentObj as any).commissionPaise = commissionPaise;
@@ -1931,7 +1935,8 @@ export function makeOpsController(env: Env) {
 
         if (body.dealType) campaign.dealType = body.dealType as any;
         if (typeof body.price !== 'undefined') campaign.pricePaise = rupeesToPaise(body.price);
-        if (typeof body.payout !== 'undefined') campaign.payoutPaise = rupeesToPaise(body.payout);
+        // Note: body.payout is used for per-assignment payout override (already applied above).
+        // Do NOT update campaign.payoutPaise — that is the brand's campaign-level payout.
 
         // Once we have at least one real assignment, lock the campaign terms.
         if (!(campaign as any).locked) {
@@ -2044,8 +2049,9 @@ export function makeOpsController(env: Env) {
         }
 
         const slotAssignment = findAssignmentForMediator((campaign as any).assignments, requestedCode);
-        const assignmentCommissionPaise = Number((slotAssignment as any)?.commissionPaise ?? -1);
-        const commissionPaise = assignmentCommissionPaise >= 0 ? assignmentCommissionPaise : rupeesToPaise(body.commission);
+        // Mediator always controls buyer commission. The agency's stored commissionPaise
+        // is the default/suggestion; the mediator overrides it via body.commission.
+        const commissionPaise = rupeesToPaise(body.commission);
         const pricePaise = Number(campaign.pricePaise ?? 0) + commissionPaise;
 
         // CRITICAL: Get mediator's payout from campaign.assignments
