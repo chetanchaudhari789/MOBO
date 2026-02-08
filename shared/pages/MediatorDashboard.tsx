@@ -2386,6 +2386,12 @@ export const MediatorDashboard: React.FC = () => {
                   {dealBuilder.platform}
                 </span>
               </div>
+              {/* Agency commission badge */}
+              <div className="flex-shrink-0 bg-emerald-50 border border-emerald-200 rounded-[1rem] px-3 py-2 flex flex-col items-center justify-center">
+                <p className="text-[8px] font-bold text-emerald-500 uppercase tracking-wider">Commission</p>
+                <p className="text-lg font-black text-emerald-700">₹{(dealBuilder as any).assignmentPayout ?? dealBuilder.payout ?? 0}</p>
+                <p className="text-[7px] text-emerald-400">from agency</p>
+              </div>
             </div>
             <div className="bg-zinc-50 p-4 rounded-[1.5rem] border border-zinc-100 mb-6 flex items-center justify-between relative overflow-hidden">
               <div className="relative z-10">
@@ -2414,11 +2420,12 @@ export const MediatorDashboard: React.FC = () => {
             </div>
             {/* Net earnings breakdown */}
             {(() => {
-              // Use the per-assignment payout (set by agency during slot allocation)
-              // which defaults to the campaign-level payout if no override exists.
-              const payoutVal = (dealBuilder as any).assignmentPayout ?? dealBuilder.payout ?? 0;
-              const commVal = parseInt(commission) || 0;
-              const net = payoutVal - commVal;
+              // Agency commission = what agency pays mediator per deal
+              const agencyComm = (dealBuilder as any).assignmentPayout ?? dealBuilder.payout ?? 0;
+              // Buyer commission = what mediator adds to the deal price (can be negative)
+              const buyerComm = parseInt(commission) || 0;
+              // Net earnings = agency commission + buyer commission
+              const net = agencyComm + buyerComm;
               return (
                 <div className={`p-3 rounded-[1rem] border mb-4 text-center ${net < 0 ? 'bg-red-50 border-red-200' : net === 0 ? 'bg-zinc-50 border-zinc-100' : 'bg-green-50 border-green-200'}`}>
                   <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400 mb-0.5">Your Net Earnings</p>
@@ -2426,7 +2433,7 @@ export const MediatorDashboard: React.FC = () => {
                     {net < 0 ? `−₹${Math.abs(net)}` : formatCurrency(net)}
                   </p>
                   {net < 0 && <p className="text-[9px] text-red-500 mt-1">You absorb ₹{Math.abs(net)} loss on this deal</p>}
-                  <p className="text-[8px] text-zinc-400 mt-1">Payout ₹{payoutVal} − Commission ₹{commVal}</p>
+                  <p className="text-[8px] text-zinc-400 mt-1">Agency ₹{agencyComm} {buyerComm >= 0 ? '+' : '−'} Your ₹{Math.abs(buyerComm)}</p>
                 </div>
               );
             })()}
@@ -2450,7 +2457,7 @@ export const MediatorDashboard: React.FC = () => {
                 className="w-full bg-white border-2 border-zinc-100 rounded-[1.5rem] p-4 text-2xl font-black text-center focus:border-[#CCF381] focus:ring-4 focus:ring-[#CCF381]/20 outline-none transition-all placeholder:text-zinc-200"
                 placeholder="0"
               />
-              <p className="text-[9px] text-zinc-400 text-center">Use negative value to give buyers a discount from your payout</p>
+              <p className="text-[9px] text-zinc-400 text-center">Use negative value to give buyers a discount from your commission</p>
             </div>
             <button
               onClick={handlePublish}

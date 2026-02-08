@@ -127,7 +127,7 @@ describe('ops deals: publish', () => {
     expect((deal as any)?.active).toBe(true);
   });
 
-  it('rejects publishing when commission exceeds payout', async () => {
+  it('rejects publishing when buyer discount exceeds agency commission', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
       MONGODB_URI: 'mongodb+srv://REPLACE_ME',
@@ -144,7 +144,7 @@ describe('ops deals: publish', () => {
     const mediatorCode = E2E_ACCOUNTS.mediator.mediatorCode;
 
     const campaign = await CampaignModel.create({
-      title: 'Publish Campaign (commission > payout allowed)',
+      title: 'Publish Campaign (negative commission exceeds agency commission)',
       brandUserId: agency.userId as any,
       brandName: 'Agency Inventory',
       platform: 'Amazon',
@@ -159,7 +159,7 @@ describe('ops deals: publish', () => {
       usedSlots: 0,
       status: 'active',
       allowedAgencyCodes: [],
-      assignments: new Map([[mediatorCode, { limit: 3, payout: 0 }]]),
+      assignments: new Map([[mediatorCode, { limit: 3, payout: 500 }]]),  // ₹5 agency commission
       createdBy: agency.userId as any,
     });
 
@@ -168,11 +168,11 @@ describe('ops deals: publish', () => {
       .set('Authorization', `Bearer ${mediator.token}`)
       .send({
         id: String(campaign._id),
-        commission: 999,
+        commission: -10,  // ₹-10 buyer discount, net = 5 + (-10) = -5 < 0
         mediatorCode,
       });
 
-    // Commission (999₹ = 99900 paise) exceeds payout (0 paise); should be rejected.
+    // Net earnings (500 paise + (-1000 paise) = -500 paise) is negative; should be rejected.
     expect(res.status).toBe(400);
     expect(res.body?.error?.code).toBe('INVALID_ECONOMICS');
 

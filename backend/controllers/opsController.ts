@@ -1834,12 +1834,12 @@ export function makeOpsController(env: Env) {
         }
 
         // Campaign terms become immutable after the first real slot assignment.
-        // Allow reassigning limits, but disallow changing economics once locked.
+        // Only structural changes (dealType, price) are locked.
+        // Per-assignment overrides (payout, commission) can always be updated.
         if ((campaign as any).locked) {
           const attemptingTermChange =
             typeof (body as any).dealType !== 'undefined' ||
-            typeof (body as any).price !== 'undefined' ||
-            typeof (body as any).payout !== 'undefined';
+            typeof (body as any).price !== 'undefined';
           if (attemptingTermChange) {
             throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is locked after slot assignment; create a new campaign to change terms');
           }
@@ -2054,13 +2054,14 @@ export function makeOpsController(env: Env) {
         const commissionPaise = rupeesToPaise(body.commission);
         const pricePaise = Number(campaign.pricePaise ?? 0) + commissionPaise;
 
-        // CRITICAL: Get mediator's payout from campaign.assignments
+        // CRITICAL: Get mediator's commission from agency (per-assignment payout override)
         const payoutPaise = Number((slotAssignment as any)?.payout ?? campaign.payoutPaise ?? 0);
 
-        // Business rule: commission cannot exceed payout.
-        // Negative commission is allowed (mediator absorbs loss to attract buyers).
-        if (commissionPaise > payoutPaise) {
-          throw new AppError(400, 'INVALID_ECONOMICS', 'Commission cannot exceed payout');
+        // Business rule: net earnings (agency commission + buyer commission) cannot be negative.
+        // Negative buyer commission is allowed (mediator gives discount from own earnings).
+        const netEarnings = payoutPaise + commissionPaise;
+        if (netEarnings < 0) {
+          throw new AppError(400, 'INVALID_ECONOMICS', 'Buyer discount cannot exceed your commission from agency');
         }
 
         // Campaign must be active to publish a deal.

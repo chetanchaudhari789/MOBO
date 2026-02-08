@@ -2100,7 +2100,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
-                        Payout to Mediator (₹)
+                        Commission to Mediator (₹)
                       </label>
                       <div className="bg-white border border-slate-200 rounded-lg shadow-sm h-8 px-2 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
                         <span className="text-xs font-bold text-slate-400 mr-2"></span>
