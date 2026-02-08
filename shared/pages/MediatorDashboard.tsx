@@ -2386,11 +2386,11 @@ export const MediatorDashboard: React.FC = () => {
                   {dealBuilder.platform}
                 </span>
               </div>
-              {/* Agency commission badge */}
-              <div className="flex-shrink-0 bg-emerald-50 border border-emerald-200 rounded-[1rem] px-3 py-2 flex flex-col items-center justify-center">
-                <p className="text-[8px] font-bold text-emerald-500 uppercase tracking-wider">Commission</p>
-                <p className="text-lg font-black text-emerald-700">₹{(dealBuilder as any).assignmentPayout ?? dealBuilder.payout ?? 0}</p>
-                <p className="text-[7px] text-emerald-400">from agency</p>
+              {/* Agency commission badge — visible at top-right of deal card */}
+              <div className="flex-shrink-0 bg-blue-50 border-2 border-blue-300 rounded-[1rem] px-3 py-2 flex flex-col items-center justify-center shadow-sm">
+                <p className="text-[8px] font-bold text-blue-500 uppercase tracking-wider">Agency Commission</p>
+                <p className="text-lg font-black text-blue-700">₹{(dealBuilder as any).assignmentPayout ?? dealBuilder.payout ?? 0}</p>
+                <p className="text-[7px] text-blue-400 font-semibold">from agency</p>
               </div>
             </div>
             <div className="bg-zinc-50 p-4 rounded-[1.5rem] border border-zinc-100 mb-6 flex items-center justify-between relative overflow-hidden">
@@ -2425,6 +2425,8 @@ export const MediatorDashboard: React.FC = () => {
               // Buyer commission = what mediator adds to the deal price (can be negative)
               const buyerComm = parseInt(commission) || 0;
               // Net earnings = agency commission + buyer commission
+              // Example: agency pays ₹10, mediator adds ₹5 buyer commission → net = ₹15
+              // Example: agency pays ₹10, mediator adds -₹5 (discount) → net = ₹5
               const net = agencyComm + buyerComm;
               return (
                 <div className={`p-3 rounded-[1rem] border mb-4 text-center ${net < 0 ? 'bg-red-50 border-red-200' : net === 0 ? 'bg-zinc-50 border-zinc-100' : 'bg-green-50 border-green-200'}`}>
@@ -2433,7 +2435,9 @@ export const MediatorDashboard: React.FC = () => {
                     {net < 0 ? `−₹${Math.abs(net)}` : formatCurrency(net)}
                   </p>
                   {net < 0 && <p className="text-[9px] text-red-500 mt-1">You absorb ₹{Math.abs(net)} loss on this deal</p>}
-                  <p className="text-[8px] text-zinc-400 mt-1">Agency ₹{agencyComm} {buyerComm >= 0 ? '+' : '−'} Your ₹{Math.abs(buyerComm)}</p>
+                  <p className="text-[8px] text-zinc-400 mt-1">
+                    Agency ₹{agencyComm} {buyerComm >= 0 ? '+' : '−'} Your Commission ₹{Math.abs(buyerComm)} = ₹{net}
+                  </p>
                 </div>
               );
             })()}

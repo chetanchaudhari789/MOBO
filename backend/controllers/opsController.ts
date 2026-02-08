@@ -1626,7 +1626,7 @@ export function makeOpsController(env: Env) {
         const campaign = await CampaignModel.create({
           title: body.title,
           brandUserId: userId as any,
-          brandName: String((requester as any).name || 'Inventory'),
+          brandName: body.brandName?.trim() || String((requester as any).name || 'Inventory'),
           platform: body.platform,
           image: body.image,
           productUrl: body.productUrl,

@@ -1323,6 +1323,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     originalPrice: '',
     image: '',
     productUrl: '',
+    brandName: '',
   });
 
   const handleAssign = async () => {
@@ -1411,6 +1412,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         originalPrice,
         dealType: newCampaign.dealType as any,
         allowedAgencies: [user.mediatorCode],
+        brandName: newCampaign.brandName.trim() || undefined,
       });
       toast.success('Campaign created');
       setCreateModal(false);
@@ -1424,6 +1426,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         originalPrice: '',
         image: '',
         productUrl: '',
+        brandName: '',
       });
       onRefresh();
     } catch (err) {
@@ -1594,9 +1597,11 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               <thead className="bg-slate-50 text-slate-400 text-[10px] font-extrabold uppercase tracking-wider sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th className="p-5 pl-8 whitespace-nowrap">Campaign Name</th>
+                  <th className="p-5 whitespace-nowrap">Brand</th>
                   <th className="p-5 whitespace-nowrap">Platform</th>
                   <th className="p-5 whitespace-nowrap">Deal Type</th>
                   <th className="p-5 text-center whitespace-nowrap">Status</th>
+                  <th className="p-5 whitespace-nowrap">Created</th>
                   <th className="p-5 text-right whitespace-nowrap">Units</th>
                   <th className="p-5 pr-8 text-center whitespace-nowrap">Distribution</th>
                 </tr>
@@ -1604,7 +1609,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               <tbody className="divide-y divide-slate-50 text-sm">
                 {activeInventory.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8">
+                    <td colSpan={8} className="p-8">
                       {loading ? (
                         <EmptyState
                           title="Loading inventory"
@@ -1642,6 +1647,11 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                         </div>
                       </td>
                       <td className="p-5">
+                        <span className="text-xs font-bold text-indigo-700 truncate max-w-[120px] block">
+                          {c.brand || '—'}
+                        </span>
+                      </td>
+                      <td className="p-5">
                         <span className="text-[10px] font-bold text-slate-500 uppercase bg-slate-100 px-2 py-1 rounded border border-slate-200">
                           {c.platform}
                         </span>
@@ -1664,6 +1674,11 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                           className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border shadow-sm ${c.status === 'Active' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
                         >
                           {c.status}
+                        </span>
+                      </td>
+                      <td className="p-5">
+                        <span className="text-[10px] font-medium text-slate-500">
+                          {c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                         </span>
                       </td>
                       <td className="p-5 text-right font-mono text-slate-700 font-bold">
@@ -1832,6 +1847,17 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   value={newCampaign.title}
                   onChange={(e) => setNewCampaign({ ...newCampaign, title: e.target.value })}
                   placeholder="Product Title"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Brand Name</label>
+                <input
+                  type="text"
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-purple-200 focus:bg-white focus:ring-4 focus:ring-purple-50 transition-all"
+                  value={newCampaign.brandName}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, brandName: e.target.value })}
+                  placeholder="e.g. Samsung, Nike"
                 />
               </div>
 

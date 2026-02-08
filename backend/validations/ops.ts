@@ -80,6 +80,7 @@ export const createCampaignSchema = z.object({
   // For privileged roles (admin/ops): required and must point at a brand user.
   // For non-privileged (agency/mediator): optional; backend will default to requester.
   brandUserId: z.string().min(1).optional(),
+  brandName: z.string().max(200).optional(),
   title: z.string().min(1).max(200),
   platform: z.string().min(1).max(80),
   dealType: z.enum(['Discount', 'Review', 'Rating']).optional(),

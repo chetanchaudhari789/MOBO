@@ -1515,6 +1515,11 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                       <span className="text-[9px] font-bold text-zinc-400 uppercase">Cost</span>
                       <span className="text-xs font-black text-zinc-900">{c.price}</span>
                     </div>
+                    <div className="w-[1px] h-6 bg-zinc-100"></div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-bold text-zinc-400 uppercase">Created</span>
+                      <span className="text-[10px] font-medium text-zinc-500">{c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>
+                    </div>
                   </div>
                 </div>
               </div>
