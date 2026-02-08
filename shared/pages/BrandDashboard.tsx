@@ -1059,6 +1059,33 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
   const [editingId, setEditingId] = useState<string | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [campaignSearch, setCampaignSearch] = useState('');
+  const [filterDealType, setFilterDealType] = useState<string>('All');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
+
+  const filteredCampaigns = useMemo(() => {
+    let result = campaigns as Campaign[];
+    if (campaignSearch.trim()) {
+      const q = campaignSearch.trim().toLowerCase();
+      result = result.filter((c: Campaign) =>
+        (c.title || '').toLowerCase().includes(q) ||
+        (c.platform || '').toLowerCase().includes(q)
+      );
+    }
+    if (filterDealType !== 'All') {
+      result = result.filter((c: Campaign) => (c.dealType || 'Discount') === filterDealType);
+    }
+    if (filterDateFrom) {
+      const from = new Date(filterDateFrom).getTime();
+      result = result.filter((c: Campaign) => (c.createdAt || 0) >= from);
+    }
+    if (filterDateTo) {
+      const to = new Date(filterDateTo).getTime() + 86400000;
+      result = result.filter((c: Campaign) => (c.createdAt || 0) < to);
+    }
+    return result;
+  }, [campaigns, campaignSearch, filterDealType, filterDateFrom, filterDateTo]);
 
   // Create Form State
   const initialForm = {
@@ -1458,6 +1485,53 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
         </button>
       </div>
 
+      {/* Search + Filters */}
+      <div className="flex gap-3 flex-wrap items-center mb-6">
+        <div className="flex-1 min-w-[180px] relative">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={campaignSearch}
+            onChange={(e) => setCampaignSearch(e.target.value)}
+            placeholder="Search campaigns..."
+            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 bg-white text-sm font-medium focus:border-lime-300 focus:ring-2 focus:ring-lime-100 outline-none"
+          />
+        </div>
+        <select
+          value={filterDealType}
+          onChange={(e) => setFilterDealType(e.target.value)}
+          className="px-3 py-3 rounded-xl border border-zinc-200 text-xs font-bold bg-white"
+        >
+          <option value="All">All Deal Types</option>
+          <option value="Discount">Discount</option>
+          <option value="Review">Review</option>
+          <option value="Rating">Rating</option>
+        </select>
+        <input
+          type="date"
+          value={filterDateFrom}
+          onChange={(e) => setFilterDateFrom(e.target.value)}
+          className="px-3 py-2.5 rounded-xl border border-zinc-200 text-xs font-bold bg-white"
+          title="From date"
+        />
+        <input
+          type="date"
+          value={filterDateTo}
+          onChange={(e) => setFilterDateTo(e.target.value)}
+          className="px-3 py-2.5 rounded-xl border border-zinc-200 text-xs font-bold bg-white"
+          title="To date"
+        />
+        {(filterDealType !== 'All' || filterDateFrom || filterDateTo) && (
+          <button
+            onClick={() => { setFilterDealType('All'); setFilterDateFrom(''); setFilterDateTo(''); }}
+            className="px-3 py-2.5 rounded-xl border border-red-200 text-xs font-bold text-red-500 bg-red-50 hover:bg-red-100 transition-colors"
+          >
+            Clear Filters
+          </button>
+        )}
+        <span className="text-xs text-zinc-400 font-bold">{filteredCampaigns.length} campaigns</span>
+      </div>
+
       {loading ? (
         <EmptyState
           title="Loading campaigns"
@@ -1465,24 +1539,24 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
           icon={<Spinner className="w-6 h-6 text-zinc-400" />}
           className="bg-transparent"
         />
-      ) : campaigns.length === 0 ? (
+      ) : filteredCampaigns.length === 0 ? (
         <EmptyState
-          title="No campaigns yet"
-          description="Launch your first campaign to start selling."
+          title={campaigns.length === 0 ? "No campaigns yet" : "No matching campaigns"}
+          description={campaigns.length === 0 ? "Launch your first campaign to start selling." : "Try adjusting your search or filters."}
           icon={<Briefcase size={22} className="text-zinc-400" />}
-          action={
+          action={campaigns.length === 0 ? (
             <button
               onClick={() => setView('create')}
               className="px-6 py-3 bg-lime-400 text-black rounded-xl font-bold text-xs hover:bg-lime-300 transition-colors"
             >
               Create first campaign
             </button>
-          }
+          ) : undefined}
           className="rounded-[2.5rem] py-20"
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-          {campaigns.map((c: Campaign) => (
+          {filteredCampaigns.map((c: Campaign) => (
             <div
               key={c.id}
               className="bg-white p-5 rounded-[2rem] border border-zinc-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col"

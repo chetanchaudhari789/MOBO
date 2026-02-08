@@ -1259,6 +1259,10 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [createModal, setCreateModal] = useState(false);
   const [assignments, setAssignments] = useState<Record<string, number>>({});
   const [inventorySearch, setInventorySearch] = useState('');
+  const [filterDealType, setFilterDealType] = useState<string>('All');
+  const [filterBrand, setFilterBrand] = useState<string>('All');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [assignSearch, setAssignSearch] = useState('');
   const [selectedDealType, setSelectedDealType] = useState<string>('Discount');
   const [customPrice, setCustomPrice] = useState<string>('');
@@ -1280,6 +1284,41 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     [mediators]
   );
 
+  // Helper: apply search + filters to a campaign list
+  const applyFilters = (list: Campaign[]) => {
+    let result = list;
+    if (inventorySearch.trim()) {
+      const q = inventorySearch.trim().toLowerCase();
+      result = result.filter((c: Campaign) =>
+        (c.title || '').toLowerCase().includes(q) ||
+        (c.platform || '').toLowerCase().includes(q) ||
+        (c.brand || '').toLowerCase().includes(q)
+      );
+    }
+    if (filterDealType !== 'All') {
+      result = result.filter((c: Campaign) => (c.dealType || 'Discount') === filterDealType);
+    }
+    if (filterBrand !== 'All') {
+      result = result.filter((c: Campaign) => (c.brand || '') === filterBrand);
+    }
+    if (filterDateFrom) {
+      const from = new Date(filterDateFrom).getTime();
+      result = result.filter((c: Campaign) => (c.createdAt || 0) >= from);
+    }
+    if (filterDateTo) {
+      const to = new Date(filterDateTo).getTime() + 86400000; // end of day
+      result = result.filter((c: Campaign) => (c.createdAt || 0) < to);
+    }
+    return result;
+  };
+
+  // Unique brand names across all campaigns for filter dropdown
+  const brandOptions = useMemo(() => {
+    const brands = new Set<string>();
+    campaigns.forEach((c: Campaign) => { if (c.brand) brands.add(c.brand); });
+    return Array.from(brands).sort();
+  }, [campaigns]);
+
   // Active Inventory = what agency is already managing (at least one sub-mediator has assignments)
   const activeInventory = useMemo(() => {
     const base = campaigns.filter(
@@ -1287,14 +1326,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         c.allowedAgencies.includes(user.mediatorCode) &&
         Object.keys(c.assignments || {}).some((code) => myMediatorCodes.includes(code))
     );
-    if (!inventorySearch.trim()) return base;
-    const q = inventorySearch.trim().toLowerCase();
-    return base.filter((c: Campaign) =>
-      (c.title || '').toLowerCase().includes(q) ||
-      (c.platform || '').toLowerCase().includes(q) ||
-      (c.brand || '').toLowerCase().includes(q)
-    );
-  }, [campaigns, user.mediatorCode, myMediatorCodes, inventorySearch]);
+    return applyFilters(base);
+  }, [campaigns, user.mediatorCode, myMediatorCodes, inventorySearch, filterDealType, filterBrand, filterDateFrom, filterDateTo]);
 
   // Filter campaigns for "Offered by Brands" (where agency is allowed but no sub-mediators have slots yet)
   const offeredCampaigns = useMemo(() => {
@@ -1303,14 +1336,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         c.allowedAgencies.includes(user.mediatorCode) &&
         !Object.keys(c.assignments || {}).some((code) => myMediatorCodes.includes(code))
     );
-    if (!inventorySearch.trim()) return base;
-    const q = inventorySearch.trim().toLowerCase();
-    return base.filter((c: Campaign) =>
-      (c.title || '').toLowerCase().includes(q) ||
-      (c.platform || '').toLowerCase().includes(q) ||
-      (c.brand || '').toLowerCase().includes(q)
-    );
-  }, [campaigns, user.mediatorCode, myMediatorCodes, inventorySearch]);
+    return applyFilters(base);
+  }, [campaigns, user.mediatorCode, myMediatorCodes, inventorySearch, filterDealType, filterBrand, filterDateFrom, filterDateTo]);
 
   // New Campaign Form
   const [newCampaign, setNewCampaign] = useState({
@@ -1577,16 +1604,60 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
         </button>
       </div>
 
-      {/* Inventory Search */}
-      <div className="relative">
-        <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Inventory Search + Filters */}
+      <div className="flex gap-3 flex-wrap items-center">
+        <div className="flex-1 min-w-[180px] relative">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={inventorySearch}
+            onChange={(e) => setInventorySearch(e.target.value)}
+            placeholder="Search campaigns..."
+            className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-purple-300 focus:ring-2 focus:ring-purple-100 outline-none"
+          />
+        </div>
+        <select
+          value={filterDealType}
+          onChange={(e) => setFilterDealType(e.target.value)}
+          className="px-3 py-3 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+        >
+          <option value="All">All Deal Types</option>
+          <option value="Discount">Discount</option>
+          <option value="Review">Review</option>
+          <option value="Rating">Rating</option>
+        </select>
+        <select
+          value={filterBrand}
+          onChange={(e) => setFilterBrand(e.target.value)}
+          className="px-3 py-3 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+        >
+          <option value="All">All Brands</option>
+          {brandOptions.map((b) => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+        </select>
         <input
-          type="text"
-          value={inventorySearch}
-          onChange={(e) => setInventorySearch(e.target.value)}
-          placeholder="Search campaigns..."
-          className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-purple-300 focus:ring-2 focus:ring-purple-100 outline-none"
+          type="date"
+          value={filterDateFrom}
+          onChange={(e) => setFilterDateFrom(e.target.value)}
+          className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+          title="From date"
         />
+        <input
+          type="date"
+          value={filterDateTo}
+          onChange={(e) => setFilterDateTo(e.target.value)}
+          className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+          title="To date"
+        />
+        {(filterDealType !== 'All' || filterBrand !== 'All' || filterDateFrom || filterDateTo) && (
+          <button
+            onClick={() => { setFilterDealType('All'); setFilterBrand('All'); setFilterDateFrom(''); setFilterDateTo(''); }}
+            className="px-3 py-2.5 rounded-xl border border-red-200 text-xs font-bold text-red-500 bg-red-50 hover:bg-red-100 transition-colors"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Content Area */}
