@@ -16,6 +16,10 @@ const ticketSchema = new Schema(
 
     status: { type: String, enum: TicketStatuses, default: 'Open', index: true },
 
+    resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    resolvedAt: { type: Date },
+    resolutionNote: { type: String, trim: true, maxlength: 1000 },
+
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     deletedAt: { type: Date, index: true },

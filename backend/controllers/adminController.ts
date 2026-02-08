@@ -14,6 +14,7 @@ import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../ser
 import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
 import { SystemConfigModel } from '../models/SystemConfig.js';
 import { updateSystemConfigSchema } from '../validations/systemConfig.js';
+import { AuditLogModel } from '../models/AuditLog.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 
@@ -52,6 +53,14 @@ export function makeAdminController() {
           { $set: update, $setOnInsert: { key: 'system' } },
           { upsert: true, new: true }
         ).lean();
+
+        await writeAuditLog({
+          req,
+          action: 'SYSTEM_CONFIG_UPDATED',
+          entityType: 'SystemConfig',
+          entityId: 'system',
+          metadata: { updatedFields: Object.keys(update) },
+        });
 
         res.json({ adminContactEmail: doc?.adminContactEmail ?? body.adminContactEmail ?? 'admin@buzzma.world' });
       } catch (err) {
@@ -509,6 +518,62 @@ export function makeAdminController() {
         });
 
         res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    getAuditLogs: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const {
+          action,
+          entityType,
+          entityId,
+          actorUserId,
+          from,
+          to,
+          page: pageStr,
+          limit: limitStr,
+        } = req.query as Record<string, string | undefined>;
+
+        const page = Math.max(1, parseInt(pageStr || '1', 10) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(limitStr || '50', 10) || 50));
+        const skip = (page - 1) * limit;
+
+        const filter: Record<string, any> = {};
+        if (action) filter.action = action;
+        if (entityType) filter.entityType = entityType;
+        if (entityId) filter.entityId = entityId;
+        if (actorUserId) filter.actorUserId = actorUserId;
+
+        if (from || to) {
+          filter.createdAt = {};
+          if (from) {
+            const d = new Date(from);
+            if (!isNaN(d.getTime())) filter.createdAt.$gte = d;
+          }
+          if (to) {
+            const d = new Date(to);
+            if (!isNaN(d.getTime())) filter.createdAt.$lte = d;
+          }
+          if (Object.keys(filter.createdAt).length === 0) delete filter.createdAt;
+        }
+
+        const [logs, total] = await Promise.all([
+          AuditLogModel.find(filter)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(),
+          AuditLogModel.countDocuments(filter),
+        ]);
+
+        res.json({
+          logs,
+          total,
+          page,
+          pages: Math.ceil(total / limit),
+        });
       } catch (err) {
         next(err);
       }

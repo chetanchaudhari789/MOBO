@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
@@ -1104,6 +1105,14 @@ export function makeOpsController(env: Env) {
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
+        await writeAuditLog({
+          req,
+          action: 'MISSING_PROOF_REQUESTED',
+          entityType: 'Order',
+          entityId: String(order._id),
+          metadata: { proofType: body.type, note: body.note },
+        });
+
         const buyerId = String((order as any).userId || '').trim();
         if (buyerId) {
           await sendPushToUser({
@@ -1257,51 +1266,71 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'MISSING_BRAND', 'Cannot settle: missing brand ownership');
           }
 
+          // Pre-create wallets outside the transaction — ensureWallet is idempotent
+          // and runs upserts that would conflict with the transaction session.
           await ensureWallet(brandId);
+          await ensureWallet(buyerUserId);
 
-          await applyWalletDebit({
-            idempotencyKey: `order-settlement-debit-${order._id}`,
-            type: 'order_settlement_debit',
-            ownerUserId: brandId,
-            fromUserId: brandId,
-            toUserId: buyerUserId,
-            amountPaise: payoutPaise,
-            orderId: String(order._id),
-            campaignId: campaignId ? String(campaignId) : undefined,
-            metadata: { reason: 'ORDER_PAYOUT', dealId: productId, mediatorCode },
-          });
-
-          // Credit buyer commission.
-          if (buyerCommissionPaise > 0) {
-            await ensureWallet(buyerUserId);
-            await applyWalletCredit({
-              idempotencyKey: `order-commission-${order._id}`,
-              type: 'commission_settle',
-              ownerUserId: buyerUserId,
-              amountPaise: buyerCommissionPaise,
-              orderId: String(order._id),
-              campaignId: campaignId ? String(campaignId) : undefined,
-              metadata: { reason: 'ORDER_COMMISSION', dealId: productId },
-            });
-          }
-
-          // Credit mediator margin (payout - commission).
+          // Look up mediator for margin credit (done outside txn to avoid read conflicts).
           const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
+          let mediatorUserId: string | null = null;
           if (mediatorMarginPaise > 0 && mediatorCode) {
             const mediator = await UserModel.findOne({ mediatorCode }).lean();
             if (mediator && !(mediator as any).deletedAt) {
-              const mediatorUserId = String((mediator as any)._id);
+              mediatorUserId = String((mediator as any)._id);
               await ensureWallet(mediatorUserId);
-              await applyWalletCredit({
-                idempotencyKey: `order-margin-${order._id}`,
-                type: 'commission_settle',
-                ownerUserId: mediatorUserId,
-                amountPaise: mediatorMarginPaise,
+            }
+          }
+
+          // Atomic settlement: wrap all wallet mutations in a single MongoDB session
+          // so that partial failures (e.g., brand debit succeeds but buyer credit fails)
+          // are rolled back automatically, preventing money creation/destruction.
+          const settlementSession = await mongoose.startSession();
+          try {
+            await settlementSession.withTransaction(async () => {
+              await applyWalletDebit({
+                idempotencyKey: `order-settlement-debit-${order._id}`,
+                type: 'order_settlement_debit',
+                ownerUserId: brandId,
+                fromUserId: brandId,
+                toUserId: buyerUserId,
+                amountPaise: payoutPaise,
                 orderId: String(order._id),
                 campaignId: campaignId ? String(campaignId) : undefined,
-                metadata: { reason: 'ORDER_MARGIN', dealId: productId, mediatorCode },
+                metadata: { reason: 'ORDER_PAYOUT', dealId: productId, mediatorCode },
+                session: settlementSession,
               });
-            }
+
+              // Credit buyer commission.
+              if (buyerCommissionPaise > 0) {
+                await applyWalletCredit({
+                  idempotencyKey: `order-commission-${order._id}`,
+                  type: 'commission_settle',
+                  ownerUserId: buyerUserId,
+                  amountPaise: buyerCommissionPaise,
+                  orderId: String(order._id),
+                  campaignId: campaignId ? String(campaignId) : undefined,
+                  metadata: { reason: 'ORDER_COMMISSION', dealId: productId },
+                  session: settlementSession,
+                });
+              }
+
+              // Credit mediator margin (payout - commission).
+              if (mediatorUserId && mediatorMarginPaise > 0) {
+                await applyWalletCredit({
+                  idempotencyKey: `order-margin-${order._id}`,
+                  type: 'commission_settle',
+                  ownerUserId: mediatorUserId,
+                  amountPaise: mediatorMarginPaise,
+                  orderId: String(order._id),
+                  campaignId: campaignId ? String(campaignId) : undefined,
+                  metadata: { reason: 'ORDER_MARGIN', dealId: productId, mediatorCode },
+                  session: settlementSession,
+                });
+              }
+            });
+          } finally {
+            settlementSession.endSession();
           }
         }
         order.paymentStatus = 'Paid';
@@ -1429,76 +1458,70 @@ export function makeOpsController(env: Env) {
           const buyerUserId = String(order.createdBy);
           if (!brandId) throw new AppError(409, 'MISSING_BRAND', 'Cannot revert: missing brand ownership');
 
-          // Credit brand back first.
+          // Atomic unsettlement: wrap all wallet mutations in a single MongoDB session
+          // so that partial failures are rolled back, preventing inconsistent ledger states.
+          // Pre-create wallets and resolve mediator outside the transaction.
           await ensureWallet(brandId);
-          await applyWalletCredit({
-            idempotencyKey: `order-unsettle-credit-brand-${order._id}`,
-            type: 'refund',
-            ownerUserId: brandId,
-            fromUserId: buyerUserId,
-            toUserId: brandId,
-            amountPaise: payoutPaise,
-            orderId: String(order._id),
-            campaignId: campaignId ? String(campaignId) : undefined,
-            metadata: { reason: 'ORDER_UNSETTLE', dealId: productId, mediatorCode },
-          });
 
-          // Then debit buyer commission back.
-          if (buyerCommissionPaise > 0) {
-            try {
-              await applyWalletDebit({
-                idempotencyKey: `order-unsettle-debit-buyer-${order._id}`,
-                type: 'commission_reversal',
-                ownerUserId: buyerUserId,
-                fromUserId: buyerUserId,
-                toUserId: brandId,
-                amountPaise: buyerCommissionPaise,
-                orderId: String(order._id),
-                campaignId: campaignId ? String(campaignId) : undefined,
-                metadata: { reason: 'ORDER_UNSETTLE_COMMISSION', dealId: productId },
-              });
-            } catch (e: any) {
-              const code = (e as any)?.code;
-              if (code === 'INSUFFICIENT_FUNDS') {
-                throw new AppError(
-                  409,
-                  'INSUFFICIENT_FUNDS_FOR_REVERSAL',
-                  'Cannot revert: buyer has insufficient balance to reverse commission'
-                );
-              }
-              throw e;
-            }
-          }
-
-          // Then debit mediator margin back.
+          let unsettleMediatorUserId: string | null = null;
           if (mediatorMarginPaise > 0 && mediatorCode) {
             const mediator = await UserModel.findOne({ mediatorCode }).lean();
             if (mediator && !(mediator as any).deletedAt) {
-              const mediatorUserId = String((mediator as any)._id);
-              try {
+              unsettleMediatorUserId = String((mediator as any)._id);
+            }
+          }
+
+          const unsettleSession = await mongoose.startSession();
+          try {
+            await unsettleSession.withTransaction(async () => {
+              // Credit brand back first.
+              await applyWalletCredit({
+                idempotencyKey: `order-unsettle-credit-brand-${order._id}`,
+                type: 'refund',
+                ownerUserId: brandId,
+                fromUserId: buyerUserId,
+                toUserId: brandId,
+                amountPaise: payoutPaise,
+                orderId: String(order._id),
+                campaignId: campaignId ? String(campaignId) : undefined,
+                metadata: { reason: 'ORDER_UNSETTLE', dealId: productId, mediatorCode },
+                session: unsettleSession,
+              });
+
+              // Then debit buyer commission back.
+              if (buyerCommissionPaise > 0) {
+                await applyWalletDebit({
+                  idempotencyKey: `order-unsettle-debit-buyer-${order._id}`,
+                  type: 'commission_reversal',
+                  ownerUserId: buyerUserId,
+                  fromUserId: buyerUserId,
+                  toUserId: brandId,
+                  amountPaise: buyerCommissionPaise,
+                  orderId: String(order._id),
+                  campaignId: campaignId ? String(campaignId) : undefined,
+                  metadata: { reason: 'ORDER_UNSETTLE_COMMISSION', dealId: productId },
+                  session: unsettleSession,
+                });
+              }
+
+              // Then debit mediator margin back.
+              if (unsettleMediatorUserId && mediatorMarginPaise > 0) {
                 await applyWalletDebit({
                   idempotencyKey: `order-unsettle-debit-mediator-${order._id}`,
                   type: 'margin_reversal',
-                  ownerUserId: mediatorUserId,
-                  fromUserId: mediatorUserId,
+                  ownerUserId: unsettleMediatorUserId,
+                  fromUserId: unsettleMediatorUserId,
                   toUserId: brandId,
                   amountPaise: mediatorMarginPaise,
                   orderId: String(order._id),
                   campaignId: campaignId ? String(campaignId) : undefined,
                   metadata: { reason: 'ORDER_UNSETTLE_MARGIN', dealId: productId, mediatorCode },
+                  session: unsettleSession,
                 });
-              } catch (e: any) {
-                const code = (e as any)?.code;
-                if (code === 'INSUFFICIENT_FUNDS') {
-                  throw new AppError(
-                    409,
-                    'INSUFFICIENT_FUNDS_FOR_REVERSAL',
-                    'Cannot revert: mediator has insufficient balance to reverse margin'
-                  );
-                }
-                throw e;
               }
-            }
+            });
+          } finally {
+            unsettleSession.endSession();
           }
         }
 
@@ -1728,6 +1751,14 @@ export function makeOpsController(env: Env) {
             agencyCodes: allowed,
             roles: ['admin', 'ops'],
           },
+        });
+
+        await writeAuditLog({
+          req,
+          action: 'CAMPAIGN_STATUS_CHANGED',
+          entityType: 'Campaign',
+          entityId: String((campaign as any)._id),
+          metadata: { previousStatus, newStatus: nextStatus },
         });
 
         res.json(toUiCampaign((campaign as any).toObject ? (campaign as any).toObject() : (campaign as any)));

@@ -23,7 +23,7 @@ function writeSse(res: any, evt: { event: string; data?: any }): boolean {
   }
 }
 
-function shouldDeliver(evt: RealtimeEvent, ctx: { userId: string; roles: Role[] }): boolean {
+function shouldDeliver(evt: RealtimeEvent, ctx: { userId: string; roles: Role[]; mediatorCode?: string; parentCode?: string; brandCode?: string }): boolean {
   const aud = evt.audience;
   // Fail closed: realtime events must declare an explicit audience.
   // Use { audience: { broadcast: true } } for broadcasts.
@@ -31,6 +31,22 @@ function shouldDeliver(evt: RealtimeEvent, ctx: { userId: string; roles: Role[] 
   if (aud.broadcast) return true;
   if (Array.isArray(aud.userIds) && aud.userIds.includes(ctx.userId)) return true;
   if (Array.isArray(aud.roles) && aud.roles.some((r) => ctx.roles.includes(r))) return true;
+
+  // Multi-tenant audience targeting by code fields
+  const normalizeCode = (v: string) => String(v || '').trim().toLowerCase();
+  const mediatorCodeNorm = normalizeCode(ctx.mediatorCode || '');
+  const parentCodeNorm = normalizeCode(ctx.parentCode || '');
+  const brandCodeNorm = normalizeCode(ctx.brandCode || '');
+
+  if (mediatorCodeNorm && ctx.roles.includes('agency') && Array.isArray(aud.agencyCodes) &&
+      aud.agencyCodes.map((c) => normalizeCode(c)).includes(mediatorCodeNorm)) return true;
+  if (mediatorCodeNorm && ctx.roles.includes('mediator') && Array.isArray(aud.mediatorCodes) &&
+      aud.mediatorCodes.map((c) => normalizeCode(c)).includes(mediatorCodeNorm)) return true;
+  if (brandCodeNorm && ctx.roles.includes('brand') && Array.isArray(aud.brandCodes) &&
+      aud.brandCodes.map((c) => normalizeCode(c)).includes(brandCodeNorm)) return true;
+  if (parentCodeNorm && Array.isArray(aud.parentCodes) &&
+      aud.parentCodes.map((c) => normalizeCode(c)).includes(parentCodeNorm)) return true;
+
   return false;
 }
 
@@ -74,11 +90,6 @@ export function realtimeRoutes(env: Env) {
     const parentCode = String((req.auth?.user as any)?.parentCode || '').trim();
     const brandCode = String((req.auth?.user as any)?.brandCode || '').trim();
 
-    const normalizeCode = (value: string) => value.trim().toLowerCase();
-    const mediatorCodeNorm = normalizeCode(mediatorCode);
-    const parentCodeNorm = normalizeCode(parentCode);
-    const brandCodeNorm = normalizeCode(brandCode);
-
     let cleaned = false;
     let ping: ReturnType<typeof setInterval> | null = null;
     let unsubscribe: (() => void) | null = null;
@@ -118,31 +129,7 @@ export function realtimeRoutes(env: Env) {
     }
 
     unsubscribe = subscribeRealtime((evt) => {
-      const aud = evt.audience;
-      const baseAllowed = shouldDeliver(evt, { userId, roles });
-      if (!baseAllowed && aud) {
-        // Additional scoping for multi-tenant data. These are evaluated in addition
-        // to userIds/roles so we can target events to the *specific* agency/mediator/brand.
-        const allowByAgency =
-          roles.includes('agency') &&
-          Array.isArray(aud.agencyCodes) &&
-          aud.agencyCodes.map((c) => String(c || '').trim().toLowerCase()).includes(mediatorCodeNorm);
-        const allowByMediator =
-          roles.includes('mediator') &&
-          Array.isArray(aud.mediatorCodes) &&
-          aud.mediatorCodes.map((c) => String(c || '').trim().toLowerCase()).includes(mediatorCodeNorm);
-        const allowByBrand =
-          roles.includes('brand') &&
-          Array.isArray(aud.brandCodes) &&
-          aud.brandCodes.map((c) => String(c || '').trim().toLowerCase()).includes(brandCodeNorm);
-        const allowByParent =
-          Array.isArray(aud.parentCodes) &&
-          aud.parentCodes.map((c) => String(c || '').trim().toLowerCase()).includes(parentCodeNorm);
-
-        if (!(allowByAgency || allowByMediator || allowByBrand || allowByParent)) return;
-      } else if (!baseAllowed) {
-        return;
-      }
+      if (!shouldDeliver(evt, { userId, roles, mediatorCode, parentCode, brandCode })) return;
       if (!writeSse(res, { event: evt.type, data: { ts: evt.ts, payload: evt.payload } })) {
         cleanup();
       }

@@ -27,9 +27,17 @@ const unsubscribeSchema = z.object({
 
 export function makePushNotificationsController(env: Env) {
   return {
-    publicKey: async (_req: Request, res: Response) => {
-      const publicKey = getVapidPublicKey(env);
-      res.json({ publicKey });
+    publicKey: async (_req: Request, res: Response, next: NextFunction) => {
+      try {
+        const publicKey = getVapidPublicKey(env);
+        if (!publicKey) {
+          res.json({ publicKey: null, error: 'Push notifications not configured' });
+          return;
+        }
+        res.json({ publicKey });
+      } catch (err) {
+        next(err);
+      }
     },
 
     subscribe: async (req: Request, res: Response, next: NextFunction) => {

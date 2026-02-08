@@ -380,8 +380,10 @@ export function makeOrdersController(env: Env) {
             }
 
             // Slot consumption happens on ORDERED.
-            campaign.usedSlots = (campaign.usedSlots ?? 0) + 1;
-            await campaign.save({ session });
+            await CampaignModel.updateOne(
+              { _id: campaign._id },
+              { $inc: { usedSlots: 1 } },
+            ).session(session);
 
             (existing as any).brandUserId = campaign.brandUserId;
             (existing as any).items = body.items.map((it) => ({
@@ -433,8 +435,10 @@ export function makeOrdersController(env: Env) {
             return updated;
           }
 
-          campaign.usedSlots = (campaign.usedSlots ?? 0) + 1;
-          await campaign.save({ session });
+          await CampaignModel.updateOne(
+            { _id: campaign._id },
+            { $inc: { usedSlots: 1 } },
+          ).session(session);
 
           const order = await OrderModel.create(
             [

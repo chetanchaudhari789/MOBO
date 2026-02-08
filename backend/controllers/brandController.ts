@@ -138,7 +138,7 @@ export function makeBrandController() {
       }
     },
 
-    getTransactions: async (_req: Request, res: Response) => {
+    getTransactions: async (_req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, userId } = getRequester(_req);
         const requested = typeof (_req.query as any).brandId === 'string' ? String((_req.query as any).brandId) : '';
@@ -183,9 +183,8 @@ export function makeBrandController() {
             };
           })
         );
-      } catch {
-        // Keep UI resilient: ledger isn't critical for core flows.
-        res.json([]);
+      } catch (err) {
+        next(err);
       }
     },
 
@@ -645,6 +644,15 @@ export function makeBrandController() {
             roles: ['admin', 'ops'],
           },
         });
+
+        await writeAuditLog({
+          req,
+          action: 'CAMPAIGN_UPDATED',
+          entityType: 'Campaign',
+          entityId: String((campaign as any)._id),
+          metadata: { updatedFields: Object.keys(update) },
+        });
+
         res.json(toUiCampaign(campaign.toObject()));
       } catch (err) {
         next(err);

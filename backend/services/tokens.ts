@@ -3,7 +3,7 @@ import type { Env } from '../config/env.js';
 import type { Role } from '../models/User.js';
 
 export function signAccessToken(env: Env, userId: string, roles: Role[]): string {
-  return jwt.sign({ roles }, env.JWT_ACCESS_SECRET, {
+  return jwt.sign({ roles, typ: 'access' }, env.JWT_ACCESS_SECRET, {
     subject: userId,
     expiresIn: env.JWT_ACCESS_TTL_SECONDS,
   });

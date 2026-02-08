@@ -7,17 +7,29 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
 /** Block requests to private / link-local / loopback addresses (SSRF protection). */
 function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
   // Loopback
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return true;
-  // RFC-1918 / link-local / metadata
+  if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1') return true;
+  // Block encoded forms of loopback (e.g. 0x7f000001, 0177.0.0.1)
+  if (/^0[xo]/.test(h) || /^\d+$/.test(h)) return true;
+  // IPv6 private / link-local ranges
+  if (h.startsWith('[')) {
+    const inner = h.slice(1, -1);
+    // fc00::/7 (unique local), fe80::/10 (link-local), ::1 (loopback)
+    if (/^f[cd]/i.test(inner) || /^fe[89ab]/i.test(inner) || inner === '::1') return true;
+  }
+  // RFC-1918 / link-local / metadata (IPv4)
   const parts = hostname.split('.').map(Number);
   if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
     if (parts[0] === 10) return true;
     if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
     if (parts[0] === 192 && parts[1] === 168) return true;
     if (parts[0] === 169 && parts[1] === 254) return true; // AWS metadata etc.
+    if (parts[0] === 127) return true; // entire 127.0.0.0/8
     if (parts[0] === 0) return true;
   }
+  // Block cloud metadata hostnames
+  if (h === 'metadata.google.internal' || h === 'metadata.google.com') return true;
   return false;
 }
 

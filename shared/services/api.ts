@@ -233,7 +233,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
         ...init,
         headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
       };
-      const retryRes = await fetch(`${API_URL}${path}`, withRequestId(retryInit));
+      const retryRes = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
       return fixMojibakeDeep(retryPayload);
@@ -441,7 +441,8 @@ export const api = {
       products: Product[],
       orders: Order[],
       tickets: Ticket[],
-      image?: string
+      image?: string,
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>,
     ) => {
       return fetchJson('/ai/chat', {
         method: 'POST',
@@ -454,6 +455,7 @@ export const api = {
           orders,
           tickets,
           image,
+          history,
         }),
       });
     },

@@ -8,6 +8,7 @@ import { getRequester, isPrivileged } from '../services/authz.js';
 import { OrderModel } from '../models/Order.js';
 import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
 import { publishRealtime } from '../services/realtimeHub.js';
+import { writeAuditLog } from '../services/audit.js';
 
 async function buildTicketAudience(ticket: any) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -207,6 +208,15 @@ export function makeTicketsController() {
           audience,
         });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        await writeAuditLog({
+          req,
+          action: 'TICKET_CREATED',
+          entityType: 'Ticket',
+          entityId: String((ticket as any)._id),
+          metadata: { issueType: body.issueType, orderId: body.orderId },
+        });
+
         res.status(201).json(toUiTicket(ticket.toObject()));
       } catch (err) {
         next(err);
@@ -234,11 +244,19 @@ export function makeTicketsController() {
           }
         }
 
-        const ticket = await TicketModel.findByIdAndUpdate(
-          id,
-          { status: body.status, updatedBy: userId as any },
-          { new: true }
-        );
+        const previousStatus = String((existing as any).status || '');
+
+        // Track resolution metadata when status transitions to Resolved or Rejected.
+        const updatePayload: any = { status: body.status, updatedBy: userId as any };
+        if ((body.status === 'Resolved' || body.status === 'Rejected') && previousStatus === 'Open') {
+          updatePayload.resolvedBy = userId;
+          updatePayload.resolvedAt = new Date();
+          if ((body as any).resolutionNote) {
+            updatePayload.resolutionNote = String((body as any).resolutionNote).slice(0, 1000);
+          }
+        }
+
+        const ticket = await TicketModel.findByIdAndUpdate(id, updatePayload, { new: true });
         if (!ticket) throw new AppError(404, 'TICKET_NOT_FOUND', 'Ticket not found');
 
         const audience = await buildTicketAudience(ticket);
@@ -249,6 +267,18 @@ export function makeTicketsController() {
           audience,
         });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        const auditAction = body.status === 'Resolved' ? 'TICKET_RESOLVED'
+          : body.status === 'Rejected' ? 'TICKET_REJECTED'
+          : 'TICKET_UPDATED';
+        await writeAuditLog({
+          req,
+          action: auditAction,
+          entityType: 'Ticket',
+          entityId: id,
+          metadata: { previousStatus, newStatus: body.status },
+        });
+
         res.json(toUiTicket(ticket.toObject()));
       } catch (err) {
         next(err);
@@ -294,6 +324,14 @@ export function makeTicketsController() {
           audience,
         });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        await writeAuditLog({
+          req,
+          action: 'TICKET_DELETED',
+          entityType: 'Ticket',
+          entityId: id,
+          metadata: { status: String((existing as any).status) },
+        });
 
         res.json({ ok: true });
       } catch (err) {

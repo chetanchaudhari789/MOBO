@@ -3,6 +3,16 @@ import request from 'supertest';
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
+import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
+
+/** Helper: login and return bearer token */
+async function loginShopper(app: any) {
+  const res = await request(app)
+    .post('/api/auth/login')
+    .send({ mobile: E2E_ACCOUNTS.shopper.mobile, password: E2E_ACCOUNTS.shopper.password });
+  expect(res.status).toBe(200);
+  return res.body.tokens.accessToken as string;
+}
 
 describe('ai routes', () => {
   afterEach(async () => {
@@ -73,9 +83,14 @@ describe('ai routes', () => {
     });
 
     await connectMongo(env);
+    await seedE2E();
     const app = createApp(env);
+    const token = await loginShopper(app);
 
-    const bad = await request(app).post('/api/ai/verify-proof').send({ expectedOrderId: 'ORD-1', expectedAmount: 100 });
+    const bad = await request(app)
+      .post('/api/ai/verify-proof')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ expectedOrderId: 'ORD-1', expectedAmount: 100 });
     expect(bad.status).toBe(400);
     expect(bad.body?.error?.code).toBe('BAD_REQUEST');
   });
@@ -88,9 +103,14 @@ describe('ai routes', () => {
     });
 
     await connectMongo(env);
+    await seedE2E();
     const app = createApp(env);
+    const token = await loginShopper(app);
 
-    const bad = await request(app).post('/api/ai/extract-order').send({});
+    const bad = await request(app)
+      .post('/api/ai/extract-order')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
     expect(bad.status).toBe(400);
     expect(bad.body?.error?.code).toBe('BAD_REQUEST');
 
@@ -102,6 +122,7 @@ describe('ai routes', () => {
 
     const res = await request(app)
       .post('/api/ai/extract-order')
+      .set('Authorization', `Bearer ${token}`)
       .send({ imageBase64: TINY_PNG });
 
     // extract-order now runs Tesseract fallback even without Gemini,

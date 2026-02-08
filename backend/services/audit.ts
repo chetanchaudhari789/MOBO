@@ -26,7 +26,9 @@ export async function writeAuditLog(params: AuditParams): Promise<void> {
       userAgent: params.req?.header('user-agent') || undefined,
       metadata: params.metadata,
     });
-  } catch {
-    // Audit logs must never break business flows.
+  } catch (err) {
+    // Audit logs must never break business flows, but we log failures
+    // so security-relevant events are not silently lost.
+    console.error('[audit] Failed to write audit log:', params.action, params.entityType, params.entityId, err);
   }
 }

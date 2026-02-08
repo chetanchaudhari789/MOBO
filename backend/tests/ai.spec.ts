@@ -82,19 +82,23 @@ describe('AI Service', () => {
   });
 
   describe('verifyProofWithAi', () => {
-    it('should handle proof verification without API key gracefully', async () => {
+    it('should fall back to OCR verification when API key is missing', async () => {
       const envWithoutKey = { ...env, GEMINI_API_KEY: '' };
 
       // Simple base64 1x1 white pixel image
       const testImage = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA//2Q==';
 
-      await expect(
-        verifyProofWithAi(envWithoutKey, {
-          imageBase64: testImage,
-          expectedOrderId: 'ORD-123',
-          expectedAmount: 1999,
-        })
-      ).rejects.toThrow('Gemini is not configured');
+      const result = await verifyProofWithAi(envWithoutKey, {
+        imageBase64: testImage,
+        expectedOrderId: 'ORD-123',
+        expectedAmount: 1999,
+      });
+
+      // OCR fallback returns a result (not a throw) with low confidence for a blank image
+      expect(result).toHaveProperty('orderIdMatch');
+      expect(result).toHaveProperty('amountMatch');
+      expect(result).toHaveProperty('confidenceScore');
+      expect(typeof result.orderIdMatch).toBe('boolean');
     });
 
     it('should return structured verification result', { skip: !process.env.GEMINI_API_KEY }, async () => {

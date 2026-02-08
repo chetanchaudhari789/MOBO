@@ -494,7 +494,7 @@ export function aiRoutes(env: Env): Router {
     }
   });
 
-  router.post('/verify-proof', limiterVerifyProof, async (req, res, next) => {
+  router.post('/verify-proof', requireAuth(env), limiterVerifyProof, async (req, res, next) => {
     try {
       if (!ensureAiEnabled(res)) return;
       const payload = proofSchema.parse(req.body);
@@ -530,7 +530,7 @@ export function aiRoutes(env: Env): Router {
     }
   });
 
-  router.post('/extract-order', limiterExtractOrder, async (req, res, next) => {
+  router.post('/extract-order', requireAuth(env), limiterExtractOrder, async (req, res, next) => {
     try {
       if (!ensureAiEnabled(res)) return;
       const payload = extractOrderSchema.parse(req.body);

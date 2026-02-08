@@ -119,15 +119,20 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   }, [user, refresh]);
 
   const notifications = useMemo(() => {
+    const safeParse = (v: string | undefined) => {
+      if (!v) return 0;
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : 0;
+    };
     const merged = [...local, ...inbox]
       .filter((n) => !dismissedIds.has(n.id))
       .map((n) => {
-        const ts = n.createdAt ? Date.parse(n.createdAt) : Date.now();
+        const ts = safeParse(n.createdAt) || Date.now();
         return { ...n, read: ts <= lastSeenAt };
       })
       .sort((a, b) => {
-        const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
-        const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+        const ta = safeParse(a.createdAt);
+        const tb = safeParse(b.createdAt);
         return tb - ta;
       })
       .slice(0, 50);
@@ -163,7 +168,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       }
       return next;
     });
-  }, []);
+  }, [user?.id, storageScope]);
 
   const showNotification = useCallback((notification: Omit<AppNotification, 'id'>) => {
     const id = Date.now().toString();

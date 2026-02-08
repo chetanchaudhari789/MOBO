@@ -48,5 +48,7 @@ export function adminRoutes(env: Env): Router {
 
   router.post('/orders/reactivate', admin.reactivateOrder);
 
+  router.get('/audit-logs', admin.getAuditLogs);
+
   return router;
 }

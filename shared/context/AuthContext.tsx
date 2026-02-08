@@ -111,7 +111,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const cleanPass = String(pass || '').trim();
     const loggedInUser = (await api.auth.login(cleanMobile, cleanPass)) as User;
     setUser(loggedInUser);
-    localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
+    try { localStorage.setItem('mobo_session', JSON.stringify(loggedInUser)); } catch { /* storage full or restricted */ }
     emitAuthChange();
     return loggedInUser;
   };
@@ -121,7 +121,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const cleanPass = String(pass || '').trim();
     const loggedInUser = (await api.auth.loginAdmin(cleanUsername, cleanPass)) as User;
     setUser(loggedInUser);
-    localStorage.setItem('mobo_session', JSON.stringify(loggedInUser));
+    try { localStorage.setItem('mobo_session', JSON.stringify(loggedInUser)); } catch { /* storage full or restricted */ }
     emitAuthChange();
     return loggedInUser;
   };
@@ -129,7 +129,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const register = async (name: string, mobile: string, pass: string, mediatorCode: string) => {
     const newUser = await api.auth.register(name, mobile, pass, mediatorCode);
     setUser(newUser);
-    localStorage.setItem('mobo_session', JSON.stringify(newUser));
+    try { localStorage.setItem('mobo_session', JSON.stringify(newUser)); } catch { /* storage full or restricted */ }
     emitAuthChange();
   };
 
@@ -149,27 +149,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const newUser = result as User;
     setUser(newUser);
-    localStorage.setItem('mobo_session', JSON.stringify(newUser));
+    try { localStorage.setItem('mobo_session', JSON.stringify(newUser)); } catch { /* storage full or restricted */ }
     emitAuthChange();
   };
 
   const registerBrand = async (name: string, mobile: string, pass: string, brandCode: string) => {
     const newUser = await api.auth.registerBrand(name, mobile, pass, brandCode);
     setUser(newUser);
-    localStorage.setItem('mobo_session', JSON.stringify(newUser));
+    try { localStorage.setItem('mobo_session', JSON.stringify(newUser)); } catch { /* storage full or restricted */ }
     emitAuthChange();
   };
 
   const updateUser = async (updates: Partial<User>) => {
     if (!user) return;
-    try {
-      const updatedUser = await api.auth.updateProfile(user.id, updates);
-      setUser(updatedUser);
-      localStorage.setItem('mobo_session', JSON.stringify(updatedUser));
-      emitAuthChange();
-    } catch (e) {
-      throw e;
-    }
+    const updatedUser = await api.auth.updateProfile(user.id, updates);
+    setUser(updatedUser);
+    try { localStorage.setItem('mobo_session', JSON.stringify(updatedUser)); } catch { /* storage full or restricted */ }
+    emitAuthChange();
   };
 
   const logout = () => {

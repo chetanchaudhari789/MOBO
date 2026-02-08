@@ -327,6 +327,15 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           }))
         : [];
 
+      // Build conversation history from recent messages for multi-turn context.
+      const history = messages
+        .filter((m) => m.role === 'user' || m.role === 'model')
+        .slice(-6)
+        .map((m) => ({
+          role: m.role === 'model' ? ('assistant' as const) : ('user' as const),
+          content: String(m.text || '').slice(0, 300),
+        }));
+
       const response = await api.chat.sendMessage(
         safeText,
         user?.id || 'guest',
@@ -334,7 +343,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         productsForAi,
         ordersForAi,
         ticketsForAi,
-        base64Image
+        base64Image,
+        history,
       );
 
       // Recommendation 1: Dynamic Navigation Handling

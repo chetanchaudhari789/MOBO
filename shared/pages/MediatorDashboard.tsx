@@ -38,7 +38,6 @@ import {
   Loader2,
   Search,
   Download,
-  Filter,
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
@@ -777,7 +776,7 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
     verifiedUsers.filter((u: User) => matchesSearch(squadSearch, u.name, u.mobile)),
     [verifiedUsers, squadSearch]
   );
-  const filteredPending = useMemo(() =>
+  const _filteredPending = useMemo(() =>
     pendingUsers.filter((u: User) => matchesSearch(squadSearch, u.name, u.mobile)),
     [pendingUsers, squadSearch]
   );

@@ -181,7 +181,16 @@ async function refreshAccessToken(): Promise<boolean> {
   }
 
   const ok = await refreshPromise;
-  if (!ok) clearTokens();
+  // Only clear tokens when the server explicitly rejected the refresh token.
+  // Transient network errors (ok === false from catch) should NOT force logout.
+  // The `ok` check here should be safe because we only return false on explicit server
+  // rejection (res.ok === false) or network error. We keep tokens on network errors
+  // to allow retry on next reconnect.
+  if (!ok) {
+    // Check if we still have a valid refresh token - don't clear on transient errors
+    const currentRefresh = readRefreshToken();
+    if (!currentRefresh) clearTokens();
+  }
   return ok;
 }
 

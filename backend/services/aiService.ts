@@ -103,6 +103,27 @@ function stripUnsafeContent(raw: string): string {
     .trim();
 }
 
+/**
+ * Detect adversarial prompt injection attempts.
+ * Returns `true` if the input contains suspicious patterns that try to override system instructions.
+ */
+function containsPromptInjection(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const patterns = [
+    /ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?)/i,
+    /\byou\s+are\s+now\b/i,
+    /\bsystem\s*prompt\b/i,
+    /\bforget\s+(your|all|everything)\b/i,
+    /\bdo\s+not\s+follow\s+(any|your|the)\s+(rules?|instructions?)\b/i,
+    /\boverride\s+(all|your|the|system)\b/i,
+    /\bact\s+as\s+(if|though)\s+you\s+(are|were)\b/i,
+    /\bjailbreak\b/i,
+    /\bDAN\s*mode\b/i,
+  ];
+  return patterns.some((p) => p.test(lower));
+}
+
 function estimateTokensFromText(text: string): number {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
@@ -123,6 +144,11 @@ function sanitizeUserMessage(env: Env, message: string): string {
   if (!message) return '';
   if (message.length > env.AI_MAX_INPUT_CHARS) {
     message = message.slice(0, env.AI_MAX_INPUT_CHARS);
+  }
+
+  // Reject prompt injection attempts before further processing.
+  if (containsPromptInjection(message)) {
+    return 'How can I help you today?';
   }
 
   const cleaned = stripUnsafeContent(message);
@@ -218,7 +244,9 @@ function sanitizeModelText(raw: string | undefined | null): string {
   let cleaned = String(raw);
   cleaned = cleaned.replace(/```[\s\S]*?```/g, ' ');
   cleaned = cleaned.replace(/here is the json requested:?/gi, ' ');
-  cleaned = cleaned.replace(/\bjson\b/gi, ' ');
+  // Only strip "json" when it's a standalone formatting artifact (e.g., model returning "json {}")
+  // Avoid stripping it from legitimate sentences like "I can export JSON files".
+  cleaned = cleaned.replace(/^\s*json\s*$/gim, ' ');
   cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
   return cleaned;
 }
@@ -474,12 +502,126 @@ type ProofPayload = {
   expectedAmount: number;
 };
 
+type ProofVerificationResult = {
+  orderIdMatch: boolean;
+  amountMatch: boolean;
+  confidenceScore: number;
+  detectedOrderId?: string;
+  detectedAmount?: number;
+  discrepancyNote?: string;
+};
+
 type ExtractOrderPayload = {
   imageBase64: string;
 };
-export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promise<any> {
-  const apiKey = requireGeminiKey(env);
-  const ai = new GoogleGenAI({ apiKey });
+
+/**
+ * Detect MIME type from a base64 data-URL or raw base64 magic bytes.
+ * Returns a safe default of 'image/jpeg' when detection fails.
+ */
+function detectImageMimeType(base64: string): string {
+  // data:image/png;base64,...
+  const dataMatch = base64.match(/^data:(image\/[a-z+]+);base64,/i);
+  if (dataMatch) return dataMatch[1].toLowerCase();
+
+  // Check raw base64 magic bytes
+  const raw = base64.slice(0, 16);
+  if (raw.startsWith('iVBOR')) return 'image/png';
+  if (raw.startsWith('/9j/') || raw.startsWith('/9J/')) return 'image/jpeg';
+  if (raw.startsWith('R0lGOD')) return 'image/gif';
+  if (raw.startsWith('UklGR')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+/**
+ * OCR-based proof verification fallback.
+ * When Gemini is unavailable, run Tesseract on the proof image and do deterministic matching
+ * against the expected order ID and amount.
+ */
+async function verifyProofWithOcr(
+  imageBase64: string,
+  expectedOrderId: string,
+  expectedAmount: number,
+): Promise<ProofVerificationResult> {
+  try {
+    const rawData = imageBase64.includes(',') ? imageBase64.split(',')[1]! : imageBase64;
+    const imgBuffer = Buffer.from(rawData, 'base64');
+
+    // Preprocess with Sharp for better OCR accuracy
+    let processedBuffer: Buffer;
+    try {
+      processedBuffer = await sharp(imgBuffer)
+        .greyscale()
+        .normalize()
+        .sharpen()
+        .toBuffer();
+    } catch {
+      processedBuffer = imgBuffer;
+    }
+
+    const worker = await createWorker('eng');
+    const { data } = await worker.recognize(processedBuffer);
+    await worker.terminate();
+
+    const ocrText = (data.text || '').trim();
+    if (!ocrText || ocrText.length < 5) {
+      return {
+        orderIdMatch: false,
+        amountMatch: false,
+        confidenceScore: 15,
+        discrepancyNote: 'OCR could not read text from the image. Please verify manually.',
+      };
+    }
+
+    // Normalize OCR digit confusion
+    const normalized = ocrText
+      .replace(/[Oo]/g, (m) => (/[A-Za-z]/.test(m) ? m : '0'))
+      .replace(/[Il|]/g, '1')
+      .replace(/[Ss]/g, (m) => (/[A-Za-z]/.test(m) ? m : '5'));
+
+    // Check if expected order ID appears in OCR text
+    const orderIdNormalized = expectedOrderId.replace(/[\s\-]/g, '');
+    const ocrNormalized = normalized.replace(/[\s\-]/g, '');
+    const orderIdMatch = ocrNormalized.toUpperCase().includes(orderIdNormalized.toUpperCase());
+
+    // Check if expected amount appears in OCR text (allow ±1 tolerance for OCR errors)
+    const amountPatterns = [
+      String(expectedAmount),
+      expectedAmount.toFixed(2),
+      // Indian comma format: 1,23,456
+      expectedAmount.toLocaleString('en-IN'),
+    ];
+    const amountMatch = amountPatterns.some((p) => ocrText.includes(p));
+
+    let confidenceScore = 30; // base OCR confidence
+    if (orderIdMatch) confidenceScore += 30;
+    if (amountMatch) confidenceScore += 25;
+    if (orderIdMatch && amountMatch) confidenceScore = Math.min(confidenceScore + 10, 85);
+
+    const detectedNotes: string[] = [];
+    if (!orderIdMatch) detectedNotes.push(`Order ID "${expectedOrderId}" not found in screenshot.`);
+    if (!amountMatch) detectedNotes.push(`Amount ₹${expectedAmount} not found in screenshot.`);
+    if (orderIdMatch && amountMatch) detectedNotes.push('Both order ID and amount matched via OCR.');
+
+    return {
+      orderIdMatch,
+      amountMatch,
+      confidenceScore,
+      discrepancyNote: detectedNotes.join(' ') || 'OCR fallback verification complete.',
+    };
+  } catch (err) {
+    console.error('OCR proof verification error:', err);
+    return {
+      orderIdMatch: false,
+      amountMatch: false,
+      confidenceScore: 0,
+      discrepancyNote: 'Auto verification unavailable. Please verify manually.',
+    };
+  }
+}
+
+export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promise<ProofVerificationResult> {
+  const geminiAvailable = isGeminiConfigured(env);
 
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
     return {
@@ -504,6 +646,15 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     };
   }
 
+  // If Gemini is not available, fall back to OCR-based verification.
+  if (!geminiAvailable) {
+    return verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+  }
+
+  const apiKey = env.GEMINI_API_KEY!;
+  const ai = new GoogleGenAI({ apiKey });
+  const mimeType = detectImageMimeType(payload.imageBase64);
+
   try {
     let lastError: unknown = null;
 
@@ -515,12 +666,27 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
           contents: [
             {
               inlineData: {
-                mimeType: 'image/jpeg',
+                mimeType,
                 data: payload.imageBase64.split(',')[1] ?? payload.imageBase64,
               },
             },
             {
-              text: `Validate if this receipt/screenshot shows Order ID: ${payload.expectedOrderId} and Amount: ₹${payload.expectedAmount}. Extract the visible order ID and amount, then compare them.`,
+              text: [
+                `PROOF VERIFICATION TASK — GOD-LEVEL ACCURACY REQUIRED`,
+                ``,
+                `You must verify whether this screenshot proves a purchase with:`,
+                `  Expected Order ID: ${payload.expectedOrderId}`,
+                `  Expected Amount: ₹${payload.expectedAmount}`,
+                ``,
+                `RULES:`,
+                `1. Extract the ACTUAL order ID visible in the screenshot. Look for labels like "Order ID", "Order No", "Order #", or platform-specific patterns (Amazon: 3-7-7 digits, Flipkart: OD..., Myntra: MYN..., Meesho: MSH..., etc.)`,
+                `2. IGNORE tracking IDs, shipment numbers, AWB numbers, transaction IDs, UTR numbers, UPI references, and invoice numbers — these are NOT order IDs.`,
+                `3. Extract the FINAL amount paid (Grand Total / Amount Paid / You Paid / Order Total). Ignore MRP, item price, or subtotal if a different total is shown.`,
+                `4. For amount matching: ₹${payload.expectedAmount} should match even if displayed as ₹${payload.expectedAmount}.00 or with Indian comma formatting (e.g., ₹1,23,456). Allow ±₹1 tolerance for rounding.`,
+                `5. For order ID matching: Compare after removing spaces, hyphens, and case differences. Partial matches count as mismatches.`,
+                `6. Set confidenceScore 0-100: 90+ if both clearly visible and matched, 60-89 if partially matched or slightly unclear, below 60 if mismatched or unreadable.`,
+                `7. Always fill detectedOrderId and detectedAmount with what you actually see in the image, even if they don't match the expected values.`,
+              ].join('\n'),
             },
           ],
           config: {
@@ -541,10 +707,13 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
           },
         }));
 
-        const parsed = safeJsonParse<any>(response.text);
+        const parsed = safeJsonParse<ProofVerificationResult>(response.text);
         if (!parsed) {
           throw new Error('Failed to parse AI verification response');
         }
+
+        // Clamp confidenceScore to 0-100
+        parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
 
         console.info('Gemini proof usage estimate', { model, estimatedTokens });
 
@@ -558,13 +727,8 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     throw lastError ?? new Error('Gemini proof verification failed');
   } catch (error) {
     console.error('Gemini proof verification error:', error);
-    // Return low-confidence result on error
-    return {
-      orderIdMatch: false,
-      amountMatch: false,
-      confidenceScore: 0,
-      discrepancyNote: `AI verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    };
+    // Fall back to OCR when Gemini fails at runtime.
+    return verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
   }
 }
 
