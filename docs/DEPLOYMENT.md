@@ -11,6 +11,44 @@ Before deploying, verify locally from repo root:
 - Run backend tests: `npm run test:backend`
 - Run E2E tests: `npm run test:e2e`
 
+---
+
+## Branch Strategy
+
+| Branch    | Purpose            | Backend (Render)       | Database (Atlas) | Frontends (Vercel)     |
+| --------- | ------------------ | ---------------------- | ---------------- | ---------------------- |
+| `main`    | **Production**     | Production Web Service | `mobo`           | Production deployments |
+| `develop` | **Staging / Test** | Staging Web Service    | `mobo_staging`   | Preview deployments    |
+
+**Workflow:**
+
+1. All new features / changes go into `develop` first
+2. Test on staging (separate Render service + separate database)
+3. When confirmed stable, merge `develop` → `main` via Pull Request
+4. Production auto-deploys from `main`
+
+**Rules:**
+
+- Never push directly to `main` — always merge from `develop`
+- `main` is always stable and live for real users
+- `develop` is for testing — breaking it is OK
+
+---
+
+## Database Naming
+
+The backend uses `MONGODB_DBNAME` env var to choose which database to use.
+If not set, it defaults to `mobo` (never the Mongoose default `test`).
+
+| Environment | `MONGODB_DBNAME` | Actual DB          |
+| ----------- | ---------------- | ------------------ |
+| Production  | `mobo`           | `mobo`             |
+| Staging     | `mobo_staging`   | `mobo_staging`     |
+| E2E tests   | (auto)           | `mobo_e2e`         |
+| Local dev   | (auto)           | `mobo` (in-memory) |
+
+---
+
 ## Backend (Render)
 
 Recommended: Render **Web Service** running Node.
@@ -30,11 +68,23 @@ Required env vars:
 
 - `NODE_ENV=production`
 - `MONGODB_URI=...` (Atlas)
+- `MONGODB_DBNAME=mobo` (production) or `mobo_staging` (staging)
 - `JWT_ACCESS_SECRET=...` (>= 20 chars)
 - `JWT_REFRESH_SECRET=...` (>= 20 chars)
 - `CORS_ORIGINS=https://<buyer>,https://<mediator>,https://<agency>,https://<brand>,https://<admin>`
   - Recommended: exact origins.
   - Wildcards/hostname entries are supported if needed (less strict), e.g. `https://*.vercel.app` or `.vercel.app`.
+
+### Staging Backend (Render — second Web Service)
+
+Create a **second** Render Web Service pointing to the same repo but tracking the `develop` branch.
+
+- Same build/start commands as production
+- Different env vars:
+  - `NODE_ENV=production` (still production mode for realistic testing)
+  - `MONGODB_DBNAME=mobo_staging`
+  - `CORS_ORIGINS=<staging portal origins>`
+  - All other env vars same as production but can use separate JWT secrets
 
 Health check:
 
