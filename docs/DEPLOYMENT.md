@@ -15,15 +15,15 @@ Before deploying, verify locally from repo root:
 
 ## Branch Strategy
 
-| Branch    | Purpose            | Backend (Render)       | Database (Atlas) | Frontends (Vercel)     |
-| --------- | ------------------ | ---------------------- | ---------------- | ---------------------- |
-| `main`    | **Production**     | Production Web Service | `mobo`           | Production deployments |
-| `develop` | **Staging / Test** | Staging Web Service    | `mobo_staging`   | Preview deployments    |
+| Branch    | Purpose            | Backend (Render)                             | Database (Atlas) | Frontends (Vercel)            |
+| --------- | ------------------ | -------------------------------------------- | ---------------- | ----------------------------- |
+| `main`    | **Production**     | https://mobo-agig.onrender.com               | `mobo`           | Production deployments        |
+| `develop` | **Staging / Test** | _(create a second Render Web Service below)_ | `mobo_staging`   | Preview / staging deployments |
 
 **Workflow:**
 
 1. All new features / changes go into `develop` first
-2. Test on staging (separate Render service + separate database)
+2. Test on staging (separate Render service + separate database `mobo_staging`)
 3. When confirmed stable, merge `develop` → `main` via Pull Request
 4. Production auto-deploys from `main`
 
@@ -35,10 +35,20 @@ Before deploying, verify locally from repo root:
 
 ---
 
-## Database Naming
+## Live URLs
 
-The backend uses `MONGODB_DBNAME` env var to choose which database to use.
-If not set, it defaults to `mobo` (never the Mongoose default `test`).
+### Production
+
+| Service  | URL                            | Branch |
+| -------- | ------------------------------ | ------ |
+| Backend  | https://mobo-agig.onrender.com | `main` |
+| Buyer    | https://www.buzzma.in          | `main` |
+| Mediator | https://www.mediatorbuzzma.in  | `main` |
+| Agency   | https://www.agencybuzzma.in    | `main` |
+| Brand    | https://www.brandbuzzma.in     | `main` |
+| Admin    | https://moboadmin.vercel.app   | `main` |
+
+### Database Naming
 
 | Environment | `MONGODB_DBNAME` | Actual DB          |
 | ----------- | ---------------- | ------------------ |
@@ -67,28 +77,27 @@ If you see `TS2688: Cannot find type definition file for 'node'` on Render, it m
 Required env vars:
 
 - `NODE_ENV=production`
-- `MONGODB_URI=...` (Atlas)
-- `MONGODB_DBNAME=mobo` (production) or `mobo_staging` (staging)
+- `MONGODB_URI=mongodb+srv://...@cluster0.qycj89f.mongodb.net/?appName=Cluster0` (Atlas)
+- `MONGODB_DBNAME=mobo`
 - `JWT_ACCESS_SECRET=...` (>= 20 chars)
 - `JWT_REFRESH_SECRET=...` (>= 20 chars)
-- `CORS_ORIGINS=https://<buyer>,https://<mediator>,https://<agency>,https://<brand>,https://<admin>`
-  - Recommended: exact origins.
-  - Wildcards/hostname entries are supported if needed (less strict), e.g. `https://*.vercel.app` or `.vercel.app`.
-
-### Staging Backend (Render — second Web Service)
-
-Create a **second** Render Web Service pointing to the same repo but tracking the `develop` branch.
-
-- Same build/start commands as production
-- Different env vars:
-  - `NODE_ENV=production` (still production mode for realistic testing)
-  - `MONGODB_DBNAME=mobo_staging`
-  - `CORS_ORIGINS=<staging portal origins>`
-  - All other env vars same as production but can use separate JWT secrets
+- `CORS_ORIGINS=https://www.buzzma.in,https://www.mediatorbuzzma.in,https://www.agencybuzzma.in,https://www.brandbuzzma.in,https://moboadmin.vercel.app`
 
 Health check:
 
 - `GET /api/health`
+- Production: https://mobo-agig.onrender.com/api/health
+
+### Staging Backend (Render — second Web Service)
+
+Create a **second** Render Web Service for the `develop` branch:
+
+1. Render → New Web Service → same GitHub repo → **Branch: `develop`**
+2. Same build/start commands as production
+3. Environment variables — same as production **except**:
+   - `MONGODB_DBNAME=mobo_staging`
+   - `CORS_ORIGINS=<staging portal origins>` (can use `.vercel.app` wildcard for previews)
+   - Different `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET`
 
 ## Admin login (production)
 
@@ -120,6 +129,16 @@ Deploy each portal as its own Vercel project with Root Directory set to:
 
 Each portal must set:
 
-- `NEXT_PUBLIC_API_PROXY_TARGET=https://<your-backend-host>`
+- `NEXT_PUBLIC_API_PROXY_TARGET=https://mobo-agig.onrender.com`
+
+Current production portal URLs:
+
+| Portal   | Vercel URL                    |
+| -------- | ----------------------------- |
+| Buyer    | https://www.buzzma.in         |
+| Mediator | https://www.mediatorbuzzma.in |
+| Agency   | https://www.agencybuzzma.in   |
+| Brand    | https://www.brandbuzzma.in    |
+| Admin    | https://moboadmin.vercel.app  |
 
 That keeps the UI contract stable (`/api/*` on the client, rewritten server-side to the backend).
