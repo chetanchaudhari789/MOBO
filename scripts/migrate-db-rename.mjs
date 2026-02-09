@@ -29,7 +29,7 @@
  *   - Does NOT drop the old database — you do that manually after verifying
  */
 
-import { MongoClient } from 'mongodb';
+import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
@@ -50,15 +50,20 @@ console.log(`\n📦 MongoDB Database Migration`);
 console.log(`   Source: "${SOURCE_DB}"  →  Target: "${TARGET_DB}"`);
 console.log(`   Cluster: ${MONGODB_URI.replace(/:([^:@]+)@/, ':***@')}\n`);
 
-const client = new MongoClient(MONGODB_URI);
+// Connect using mongoose (which bundles the mongodb driver)
+const conn = await mongoose.createConnection(MONGODB_URI, {
+  dbName: SOURCE_DB,
+  serverSelectionTimeoutMS: 15000,
+}).asPromise();
+
+console.log('✅ Connected to cluster\n');
+
+// Get the underlying native client so we can access both databases
+const client = conn.getClient();
+const sourceDb = client.db(SOURCE_DB);
+const targetDb = client.db(TARGET_DB);
 
 try {
-  await client.connect();
-  console.log('✅ Connected to cluster\n');
-
-  const sourceDb = client.db(SOURCE_DB);
-  const targetDb = client.db(TARGET_DB);
-
   // List all collections in source
   const collections = await sourceDb.listCollections().toArray();
   const collectionNames = collections
@@ -167,5 +172,5 @@ try {
   console.error('Fatal error:', err);
   process.exit(1);
 } finally {
-  await client.close();
+  await conn.close();
 }
