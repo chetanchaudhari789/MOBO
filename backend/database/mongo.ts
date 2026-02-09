@@ -3,6 +3,14 @@ import type { Env } from '../config/env.js';
 import path from 'node:path';
 import fs from 'node:fs';
 
+/**
+ * Default database name when MONGODB_DBNAME is not set and the connection URI
+ * does not contain an explicit database path.  Without this, Mongoose would
+ * silently fall back to the built-in default "test", which is confusing in
+ * production and can accidentally mix dev/test data with real data.
+ */
+const DEFAULT_DBNAME = 'mobo';
+
 let memoryServer: { stop: () => Promise<unknown>; getUri: () => string } | null = null;
 let memoryServerInit: Promise<{ stop: () => Promise<unknown>; getUri: () => string }> | null = null;
 let isIntentionalDisconnect = false;
@@ -143,9 +151,35 @@ export async function connectMongo(env: Env): Promise<void> {
       mongoUri = ms.getUri();
     }
 
+    // Resolve the effective database name:
+    // 1. Explicit env var  (MONGODB_DBNAME)  — highest priority
+    // 2. Database name embedded in the URI   — e.g. mongodb+srv://…/mydb
+    // 3. Fallback constant DEFAULT_DBNAME    — prevents Mongoose defaulting to "test"
+    const resolvedDbName = (() => {
+      if (env.MONGODB_DBNAME) return env.MONGODB_DBNAME;
+      try {
+        // For SRV URIs, URL parsing puts the db name in the pathname.
+        const parsed = new URL(mongoUri);
+        const dbFromUri = parsed.pathname.replace(/^\//, '').split('/')[0];
+        if (dbFromUri && dbFromUri !== 'test') return undefined;   // let Mongoose use the URI path
+      } catch {
+        // non-standard URI format — fall through to default
+      }
+      return DEFAULT_DBNAME;
+    })();
+
+    if (env.NODE_ENV === 'production' && resolvedDbName === 'test') {
+      console.warn(
+        '⚠️  WARNING: Production is using database name "test". ' +
+        'Set MONGODB_DBNAME or include the database name in MONGODB_URI to avoid this.'
+      );
+    }
+
+    console.log(`MongoDB: connecting to db "${resolvedDbName ?? '(from URI)'}"`);
+
     await mongoose.connect(mongoUri, {
       autoIndex: env.NODE_ENV !== 'production',
-      ...(env.MONGODB_DBNAME ? { dbName: env.MONGODB_DBNAME } : {}),
+      ...(resolvedDbName ? { dbName: resolvedDbName } : {}),
       // Connection pool configuration for production performance
       maxPoolSize: 50,              // Maximum number of connections
       minPoolSize: 10,              // Minimum connections maintained
