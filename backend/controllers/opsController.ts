@@ -183,9 +183,6 @@ export function makeOpsController(env: Env) {
           }
           throw new AppError(409, 'TOO_MANY_PENDING', 'Brand has too many pending connection requests');
         }
-        if (!updated.modifiedCount) {
-          throw new AppError(409, 'ALREADY_REQUESTED', 'Connection already exists or is already pending');
-        }
 
         await writeAuditLog({
           req,
