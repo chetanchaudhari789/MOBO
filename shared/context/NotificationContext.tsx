@@ -84,9 +84,10 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     refresh();
 
     if (connected) return;
+    // Poll more frequently (30s) when realtime is disconnected as a fallback
     const t = setInterval(() => {
       refresh();
-    }, 60_000);
+    }, 30_000);
     return () => clearInterval(t);
   }, [user, refresh, connected]);
 
@@ -159,6 +160,14 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     setDismissedIds((prev) => {
       const next = new Set(prev);
       next.add(id);
+      // Prune dismissed IDs to prevent unbounded localStorage growth
+      const MAX_DISMISSED = 500;
+      if (next.size > MAX_DISMISSED) {
+        const arr = Array.from(next);
+        const pruned = arr.slice(arr.length - MAX_DISMISSED);
+        next.clear();
+        pruned.forEach((v) => next.add(v));
+      }
       if (user?.id) {
         try {
           localStorage.setItem(`${STORAGE_DISMISSED}${storageScope}`, JSON.stringify(Array.from(next)));
@@ -171,7 +180,9 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   }, [user?.id, storageScope]);
 
   const showNotification = useCallback((notification: Omit<AppNotification, 'id'>) => {
-    const id = Date.now().toString();
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const newNotification: AppNotification = {
       ...notification,
       id,

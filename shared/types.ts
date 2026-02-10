@@ -41,7 +41,7 @@ export interface User {
 
   // KYC & Verification
   kycStatus?: KycStatus;
-  kycDocuments?: any;
+  kycDocuments?: KycDocument[];
 
   // Consumer
   isVerifiedByMediator?: boolean;
@@ -248,4 +248,164 @@ export interface ChatMessage {
   isError?: boolean;
   relatedProducts?: Product[];
   relatedOrders?: Order[];
+}
+
+// ─── AI Response Types ───────────────────────────────────
+export type AiIntent =
+  | 'greeting'
+  | 'search_deals'
+  | 'check_order_status'
+  | 'check_ticket_status'
+  | 'navigation'
+  | 'unknown';
+
+export type AiNavigateTo = 'home' | 'explore' | 'orders' | 'profile';
+
+export interface ChatResponse {
+  text: string;
+  intent: AiIntent;
+  navigateTo?: AiNavigateTo;
+  uiType?: 'product_card' | 'order_card';
+  data?: Product[] | Order[];
+}
+
+export interface AiProofVerificationResult {
+  orderIdMatch: boolean;
+  amountMatch: boolean;
+  confidenceScore: number;
+  detectedOrderId?: string;
+  detectedAmount?: number;
+  discrepancyNote?: string;
+}
+
+export interface AiRatingVerificationResult {
+  accountNameMatch: boolean;
+  productNameMatch: boolean;
+  detectedAccountName?: string;
+  detectedProductName?: string;
+  confidenceScore: number;
+  discrepancyNote?: string;
+}
+
+export interface AiReturnWindowVerificationResult {
+  orderIdMatch: boolean;
+  productNameMatch: boolean;
+  amountMatch: boolean;
+  soldByMatch: boolean;
+  returnWindowClosed: boolean;
+  confidenceScore: number;
+  detectedReturnWindow?: string;
+  discrepancyNote?: string;
+}
+
+export interface ExtractedOrderDetails {
+  orderId?: string | null;
+  amount?: number | null;
+  orderDate?: string | null;
+  soldBy?: string | null;
+  productName?: string | null;
+  confidenceScore: number;
+  notes?: string;
+}
+
+// ─── Financial / Backtracking Types ──────────────────────
+export type TransactionType =
+  | 'brand_deposit'
+  | 'agency_payout'
+  | 'agency_receipt'
+  | 'commission_settle'
+  | 'payout_complete'
+  | 'order_settlement_debit'
+  | 'cashback_credit'
+  | 'cashback_reversal'
+  | 'platform_fee'
+  | 'refund_credit'
+  | 'refund_debit'
+  | 'manual_credit'
+  | 'manual_debit'
+  | 'escrow_lock'
+  | 'escrow_release';
+
+export interface Transaction {
+  id: string;
+  idempotencyKey: string;
+  type: TransactionType;
+  status: 'completed' | 'pending' | 'failed' | 'reversed';
+  amountPaise: number;
+  currency: string;
+  walletId: string;
+  fromUserId?: string;
+  toUserId?: string;
+  orderId?: string;
+  campaignId?: string;
+  payoutId?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface Wallet {
+  id: string;
+  ownerUserId: string;
+  currency: string;
+  availablePaise: number;
+  pendingPaise: number;
+  lockedPaise: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PayoutRecord {
+  id: string;
+  userId: string;
+  amountPaise: number;
+  status: 'requested' | 'processing' | 'paid' | 'failed' | 'canceled';
+  providerRef?: string;
+  beneficiaryName?: string;
+  upiId?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface LedgerEntry {
+  id: string;
+  type: TransactionType;
+  amountPaise: number;
+  fromUser?: { id: string; name: string; role: string };
+  toUser?: { id: string; name: string; role: string };
+  orderId?: string;
+  campaignId?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  actor: string;
+  actorRole?: string;
+  action: string;
+  entity: string;
+  entityId?: string;
+  ip?: string;
+  userAgent?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+// ─── KYC Types ───────────────────────────────────────────
+export interface KycDocument {
+  type: 'aadhaar' | 'pan' | 'gst' | 'business_license' | 'other';
+  documentId: string;
+  verified: boolean;
+  verifiedAt?: string;
+  uploadedAt: string;
+  fileUrl?: string;
+}
+
+// ─── System Config Types ─────────────────────────────────
+export interface SystemConfig {
+  adminContactEmail?: string;
+  platformName?: string;
+  maintenanceMode?: boolean;
+  features?: Record<string, boolean>;
 }

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   ArrowRight,
@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
-import { Ticket, Order, Product } from '../types';
+import { Ticket, Order, Product, AiNavigateTo } from '../types';
 import { ProductCard } from './ProductCard';
 
 /** Build the API base URL so we can proxy marketplace images through our backend. */
@@ -92,7 +92,7 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
 };
 
 export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }) => {
-  const { messages, addMessage } = useChat();
+  const { messages, addMessage, setUserId } = useChat();
   const { notifications, removeNotification, unreadCount, markAllRead } = useNotification();
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -105,15 +105,20 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const placeholders = [
+  const placeholders = useMemo(() => [
     'Find me loot deals...',
     'Check my latest order',
     'Where is my cashback?',
     'Navigate to my profile',
-  ];
+  ], []);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
   const { user } = useAuth();
+
+  // Sync chat session with logged-in user for per-user message scoping
+  useEffect(() => {
+    setUserId(user?.id ?? null);
+  }, [user?.id, setUserId]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -293,7 +298,17 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         reader.onerror = () => reject(new Error('Failed to read file'));
         reader.onabort = () => reject(new Error('File read aborted'));
         reader.readAsDataURL(attachment);
-      }).catch(() => '');
+      }).catch((readErr) => {
+        console.warn('FileReader error:', readErr);
+        addMessage({
+          id: makeMessageId(),
+          role: 'model',
+          text: 'Failed to read the attached image. Please try a different file.',
+          isError: true,
+          timestamp: Date.now(),
+        });
+        return '';
+      });
       if (rawBase64) base64Image = rawBase64;
     }
 
@@ -372,10 +387,15 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         history,
       );
 
-      // Recommendation 1: Dynamic Navigation Handling
-      if (response.navigateTo && response.intent === 'navigation') {
+      // Recommendation 1: Dynamic Navigation Handling with validation
+      const VALID_NAV_TARGETS: AiNavigateTo[] = ['home', 'explore', 'orders', 'profile'];
+      if (
+        response.navigateTo &&
+        response.intent === 'navigation' &&
+        VALID_NAV_TARGETS.includes(response.navigateTo as AiNavigateTo)
+      ) {
         setTimeout(() => {
-          onNavigate?.(response.navigateTo as any);
+          onNavigate?.(response.navigateTo as AiNavigateTo);
         }, 1500);
       }
 
@@ -657,14 +677,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                       <div className="flex gap-4">
                         <div className="w-14 h-14 bg-slate-50 rounded-xl p-1.5 border border-slate-100 flex-shrink-0">
                           <img
-                            src={proxyImageUrl(order.items[0].image) || ''}
+                            src={proxyImageUrl(order.items?.[0]?.image) || ''}
                             className="w-full h-full object-contain mix-blend-multiply"
                             alt=""
                           />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-bold text-slate-900 truncate mb-1">
-                            {order.items[0].title}
+                            {order.items?.[0]?.title || 'Order'}
                           </p>
                           <div className="flex justify-between items-end">
                             <div className="flex flex-col">
