@@ -73,7 +73,13 @@ export const Orders: React.FC = () => {
   const [ratingScreenshot, setRatingScreenshot] = useState<string | null>(null);
   const [reviewLinkInput, setReviewLinkInput] = useState('');
 
-  const [extractedDetails, setExtractedDetails] = useState({ orderId: '', amount: '' });
+  const [extractedDetails, setExtractedDetails] = useState<{
+    orderId: string;
+    amount: string;
+    orderDate?: string;
+    soldBy?: string;
+    productName?: string;
+  }>({ orderId: '', amount: '' });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   // [AI] Smart Extraction UI State
   const [matchStatus, setMatchStatus] = useState<{
@@ -282,6 +288,9 @@ export const Orders: React.FC = () => {
       setExtractedDetails({
         orderId: safeOrderId,
         amount: safeAmount?.toString() || '',
+        orderDate: typeof details.orderDate === 'string' ? details.orderDate : undefined,
+        soldBy: typeof details.soldBy === 'string' ? details.soldBy : undefined,
+        productName: typeof details.productName === 'string' ? details.productName : undefined,
       });
 
       // [AI] Smart Extraction Verification Logic
@@ -345,13 +354,11 @@ export const Orders: React.FC = () => {
       return;
     }
     const missingExtras: string[] = [];
-    if (selectedProduct.dealType === 'Rating' && !ratingScreenshot) missingExtras.push('rating');
-    if (selectedProduct.dealType === 'Review' && !isValidReviewLink(reviewLinkInput)) missingExtras.push('review');
+    // Rating/review proofs are now submitted after mediator verifies order screenshot.
+    // No longer required at creation time.
     setIsUploading(true);
     try {
       const screenshots: any = { order: formScreenshot };
-      if (ratingScreenshot && selectedProduct.dealType === 'Rating')
-        screenshots.rating = ratingScreenshot;
 
       await api.orders.create(
         user.id,
@@ -379,14 +386,11 @@ export const Orders: React.FC = () => {
             selectedProduct.dealType === 'Review' && isValidReviewLink(reviewLinkInput)
               ? reviewLinkInput
               : undefined,
+          orderDate: extractedDetails.orderDate || undefined,
+          soldBy: extractedDetails.soldBy || undefined,
+          extractedProductName: extractedDetails.productName || undefined,
         }
       );
-
-      if (missingExtras.length) {
-        toast.info(
-          `Order submitted. Please upload your ${missingExtras.join(' + ')} proof to complete cashback.`
-        );
-      }
 
       setIsNewOrderModalOpen(false);
       setSelectedProduct(null);
@@ -606,6 +610,13 @@ export const Orders: React.FC = () => {
                       <span>•</span>
                       <span className="text-lime-600">+{formatCurrency(firstItem.commission)} Reward</span>
                     </div>
+                    {/* AI-extracted metadata */}
+                    {(order.soldBy || order.orderDate) && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px] text-slate-400 font-medium">
+                        {order.soldBy && <span>Seller: {order.soldBy}</span>}
+                        {order.orderDate && <span>Ordered: {new Date(order.orderDate).toLocaleDateString()}</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1054,56 +1065,30 @@ export const Orders: React.FC = () => {
                     </div>
                   )}
 
-                  {selectedProduct?.dealType === 'Rating' && (
-                    <div className="space-y-2 animate-enter">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                        Rating Screenshot
-                      </label>
-                      <label
-                        className={`w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${ratingScreenshot ? 'border-orange-200' : 'border-gray-200'}`}
-                      >
-                        {ratingScreenshot ? (
-                          <img
-                            src={ratingScreenshot}
-                            className="w-full h-full object-cover opacity-80"
-                            alt="rating preview"
-                          />
-                        ) : (
-                          <>
-                            <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                              <Star size={20} className="text-orange-400" />
-                            </div>
-                            <span className="text-xs font-bold text-slate-400">
-                              Upload Rating Screenshot
-                            </span>
-                          </>
-                        )}
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept="image/*"
-                          onChange={handleNewRatingScreenshot}
-                        />
-                      </label>
+                  {/* Show AI-extracted metadata */}
+                  {formScreenshot && !isAnalyzing && (extractedDetails.orderDate || extractedDetails.soldBy || extractedDetails.productName) && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1.5 animate-enter">
+                      <p className="text-[10px] font-bold text-blue-500 uppercase flex items-center gap-1">
+                        <ScanLine size={10} /> AI Extracted Details
+                      </p>
+                      {extractedDetails.productName && (
+                        <p className="text-xs text-slate-700"><span className="font-bold text-slate-500">Product:</span> {extractedDetails.productName}</p>
+                      )}
+                      {extractedDetails.soldBy && (
+                        <p className="text-xs text-slate-700"><span className="font-bold text-slate-500">Sold By:</span> {extractedDetails.soldBy}</p>
+                      )}
+                      {extractedDetails.orderDate && (
+                        <p className="text-xs text-slate-700"><span className="font-bold text-slate-500">Order Date:</span> {extractedDetails.orderDate}</p>
+                      )}
                     </div>
                   )}
 
-                  {selectedProduct?.dealType === 'Review' && (
-                    <div className="space-y-2 animate-enter">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                        Review Link
-                      </label>
-                      <input
-                        value={reviewLinkInput}
-                        onChange={(e) => setReviewLinkInput(e.target.value)}
-                        placeholder="https://..."
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-400"
-                      />
-                      {reviewLinkInput && !isValidReviewLink(reviewLinkInput) && (
-                        <p className="text-[10px] font-bold text-red-500">
-                          Enter a valid https link.
-                        </p>
-                      )}
+                  {/* For Rating/Review deals, rating/review proof is submitted AFTER mediator verifies order screenshot */}
+                  {(selectedProduct?.dealType === 'Rating' || selectedProduct?.dealType === 'Review') && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 animate-enter">
+                      <p className="text-[11px] font-bold text-amber-700 flex items-center gap-1.5">
+                        <CalendarClock size={13} /> {selectedProduct.dealType === 'Rating' ? 'Rating screenshot' : 'Review link'} can be submitted after your order screenshot is verified by the mediator.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1314,6 +1299,31 @@ export const Orders: React.FC = () => {
                       Review link not submitted.
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Order Timeline / Audit Trail */}
+              {proofToView.events && proofToView.events.length > 0 && (
+                <div className="space-y-2 mt-2 border-t border-slate-100 pt-3">
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Order Timeline</div>
+                  <div className="space-y-1.5">
+                    {proofToView.events.map((evt, idx) => {
+                      const label = (evt.type || '').replace(/_/g, ' ');
+                      return (
+                        <div key={idx} className="flex items-start gap-2 text-[10px]">
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1 flex-shrink-0" />
+                          <div>
+                            <span className="font-bold text-slate-600 uppercase">{label}</span>
+                            {evt.at && (
+                              <span className="text-slate-400 ml-2">
+                                {new Date(evt.at).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

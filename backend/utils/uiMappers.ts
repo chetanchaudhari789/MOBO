@@ -7,6 +7,13 @@ import type { DealDoc } from '../models/Deal.js';
 import type { TicketDoc } from '../models/Ticket.js';
 import { paiseToRupees } from './money.js';
 
+/** Safely convert a value to ISO string, returning undefined for invalid dates. */
+function safeIso(val: any): string | undefined {
+  if (!val) return undefined;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 export function toUiRole(role: string): 'user' | 'agency' | 'mediator' | 'brand' | 'admin' {
   if (role === 'shopper') return 'user';
   if (role === 'ops') return 'admin';
@@ -202,7 +209,7 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     status: o.status,
     workflowStatus: o.workflowStatus,
     frozen: !!o.frozen,
-    frozenAt: o.frozenAt ? new Date(o.frozenAt).toISOString() : undefined,
+    frozenAt: safeIso(o.frozenAt),
     frozenReason: o.frozenReason,
     paymentStatus: o.paymentStatus,
     affiliateStatus: o.affiliateStatus,
@@ -246,10 +253,19 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     buyerName: o.buyerName,
     buyerMobile: o.buyerMobile,
     brandName: o.brandName,
+    orderDate: safeIso(o.orderDate),
+    soldBy: o.soldBy,
+    extractedProductName: o.extractedProductName,
     createdAt: new Date(o.createdAt ?? o.createdAtIso ?? Date.now()).toISOString(),
-    expectedSettlementDate: o.expectedSettlementDate
-      ? new Date(o.expectedSettlementDate).toISOString()
-      : undefined,
+    expectedSettlementDate: safeIso(o.expectedSettlementDate),
+    // Audit trail: sanitized event log (strip internal metadata)
+    events: Array.isArray(o.events)
+      ? o.events.map((e: any) => ({
+          type: e.type,
+          at: safeIso(e.at),
+          metadata: e.metadata ? { ...e.metadata, aiVerification: undefined } : undefined,
+        }))
+      : [],
   };
 }
 
@@ -299,7 +315,7 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
     status: o.status,
     workflowStatus: o.workflowStatus,
     frozen: !!o.frozen,
-    frozenAt: o.frozenAt ? new Date(o.frozenAt).toISOString() : undefined,
+    frozenAt: safeIso(o.frozenAt),
     frozenReason: o.frozenReason,
     paymentStatus: o.paymentStatus,
     affiliateStatus: o.affiliateStatus,
@@ -343,10 +359,18 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
     managerName: o.managerName,
     agencyName: o.agencyName,
     brandName: o.brandName,
+    orderDate: safeIso(o.orderDate),
+    soldBy: o.soldBy,
+    extractedProductName: o.extractedProductName,
     createdAt: new Date(o.createdAt ?? o.createdAtIso ?? Date.now()).toISOString(),
-    expectedSettlementDate: o.expectedSettlementDate
-      ? new Date(o.expectedSettlementDate).toISOString()
-      : undefined,
+    expectedSettlementDate: safeIso(o.expectedSettlementDate),
+    // Audit trail (brand view: omit actorUserId for privacy)
+    events: Array.isArray(o.events)
+      ? o.events.map((e: any) => ({
+          type: e.type,
+          at: safeIso(e.at),
+        }))
+      : [],
   };
 }
 

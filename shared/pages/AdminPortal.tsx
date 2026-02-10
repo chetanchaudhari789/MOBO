@@ -30,6 +30,7 @@ import {
   Terminal,
   HeadphonesIcon,
   Trash2,
+  ClipboardList,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -51,7 +52,8 @@ type ViewMode =
   | 'finance'
   | 'settings'
   | 'invites'
-  | 'support';
+  | 'support'
+  | 'audit-logs';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -195,6 +197,11 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
   // Settings State
   const [configEmail, setConfigEmail] = useState('admin@buzzma.world');
+
+  // Audit Logs State
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditFilter, setAuditFilter] = useState('');
 
   const fetchSystemConfig = async () => {
     try {
@@ -518,6 +525,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       'Mediator Code',
       'Agency Name',
       'Internal Ref',
+      'Sold By',
+      'Order Date',
+      'Extracted Product',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -551,6 +561,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.managerName || 'N/A',
         `"${(order.agencyName || 'Partner Agency').replace(/"/g, '""')}"`,
         order.id,
+        `"${(order.soldBy || '').replace(/"/g, '""')}"`,
+        order.orderDate ? new Date(order.orderDate).toLocaleDateString() : '',
+        `"${(order.extractedProductName || '').replace(/"/g, '""')}"`,
         order.screenshots?.order ? hyperlinkYes(buildProofUrl(order.id, 'order')) : 'No',
         order.screenshots?.payment ? hyperlinkYes(buildProofUrl(order.id, 'payment')) : 'No',
         order.screenshots?.rating ? hyperlinkYes(buildProofUrl(order.id, 'rating')) : 'No',
@@ -788,6 +801,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 label="Settings"
                 active={view === 'settings'}
                 onClick={() => switchView('settings')}
+              />
+              <SidebarItem
+                icon={ClipboardList}
+                label="Audit Logs"
+                active={view === 'audit-logs'}
+                onClick={() => switchView('audit-logs')}
               />
             </div>
           </div>
@@ -1549,6 +1568,99 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 </div>
               </div>
             )}
+
+            {/* AUDIT LOGS VIEW */}
+            {view === 'audit-logs' && (
+              <div className="animate-enter">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <ClipboardList size={24} /> Audit Logs
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setAuditLoading(true);
+                      try {
+                        const data = await api.admin.getAuditLogs({ limit: 100 });
+                        setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []);
+                      } catch (e) {
+                        console.error(e);
+                        toast.error('Failed to load audit logs');
+                      } finally {
+                        setAuditLoading(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-700 transition-all"
+                  >
+                    {auditLoading ? 'Loading...' : 'Refresh'}
+                  </button>
+                </div>
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    value={auditFilter}
+                    onChange={(e) => setAuditFilter(e.target.value)}
+                    placeholder="Filter by action, entity, or actor..."
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="p-4 text-left text-[10px] font-bold text-slate-400 uppercase">Time</th>
+                        <th className="p-4 text-left text-[10px] font-bold text-slate-400 uppercase">Action</th>
+                        <th className="p-4 text-left text-[10px] font-bold text-slate-400 uppercase">Entity</th>
+                        <th className="p-4 text-left text-[10px] font-bold text-slate-400 uppercase">Actor</th>
+                        <th className="p-4 text-left text-[10px] font-bold text-slate-400 uppercase">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLogs
+                        .filter((log) => {
+                          if (!auditFilter.trim()) return true;
+                          const q = auditFilter.toLowerCase();
+                          return (
+                            (log.action || '').toLowerCase().includes(q) ||
+                            (log.entityType || '').toLowerCase().includes(q) ||
+                            (log.entityId || '').toLowerCase().includes(q) ||
+                            (log.actorUserId || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((log: any, idx: number) => (
+                          <tr key={log.id || idx} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="p-4 text-xs text-slate-500 font-mono whitespace-nowrap">
+                              {log.createdAt ? new Date(log.createdAt).toLocaleString() : '-'}
+                            </td>
+                            <td className="p-4">
+                              <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold uppercase">
+                                {(log.action || '').replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="p-4 text-xs font-mono text-slate-600">
+                              {log.entityType && <span className="text-slate-400">{log.entityType}/</span>}
+                              <span className="text-slate-700 break-all">{log.entityId?.slice(-8) || '-'}</span>
+                            </td>
+                            <td className="p-4 text-xs font-mono text-slate-500">
+                              {log.actorUserId?.slice(-8) || 'System'}
+                            </td>
+                            <td className="p-4 text-[10px] text-slate-400 max-w-[200px] truncate">
+                              {log.metadata ? JSON.stringify(log.metadata).slice(0, 80) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      {auditLogs.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-sm text-slate-400 font-bold">
+                            Click Refresh to load audit logs.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1571,6 +1683,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 <div><span className="text-slate-400 font-bold text-xs uppercase">Amount</span><p className="font-bold text-slate-900">₹{proofModal.total}</p></div>
                 <div><span className="text-slate-400 font-bold text-xs uppercase">Status</span><p><StatusBadge status={proofModal.affiliateStatus === 'Unchecked' ? proofModal.paymentStatus : proofModal.affiliateStatus} /></p></div>
                 <div><span className="text-slate-400 font-bold text-xs uppercase">Payment</span><p className="font-bold text-slate-900">{proofModal.paymentStatus}</p></div>
+                {proofModal.soldBy && <div><span className="text-slate-400 font-bold text-xs uppercase">Sold By</span><p className="font-bold text-slate-900">{proofModal.soldBy}</p></div>}
+                {proofModal.orderDate && <div><span className="text-slate-400 font-bold text-xs uppercase">Order Date</span><p className="font-bold text-slate-900">{new Date(proofModal.orderDate).toLocaleDateString()}</p></div>}
+                {proofModal.extractedProductName && <div className="col-span-2"><span className="text-slate-400 font-bold text-xs uppercase">Extracted Product</span><p className="font-bold text-slate-900">{proofModal.extractedProductName}</p></div>}
               </div>
               {[
                 { label: 'Purchase Proof', url: proofModal.screenshots?.order },

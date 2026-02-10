@@ -78,6 +78,11 @@ const orderSchema = new Schema(
 
     externalOrderId: { type: String, trim: true },
 
+    // AI-extracted metadata from order screenshot
+    orderDate: { type: Date },
+    soldBy: { type: String, trim: true },
+    extractedProductName: { type: String, trim: true },
+
     // Optional payout/settlement reference (e.g., UTR) recorded during settlement.
     settlementRef: { type: String, trim: true },
 

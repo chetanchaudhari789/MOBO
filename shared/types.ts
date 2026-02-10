@@ -115,6 +115,9 @@ export interface Order {
   paymentStatus: PaymentStatus;
   affiliateStatus: AffiliateStatus;
   externalOrderId?: string;
+  orderDate?: string;
+  soldBy?: string;
+  extractedProductName?: string;
   frozen?: boolean;
   frozenAt?: string;
   frozenReason?: string;
@@ -154,6 +157,14 @@ export interface Order {
     note?: string;
     requestedAt?: string;
     requestedBy?: string;
+  }>;
+
+  // Audit trail - order event history
+  events?: Array<{
+    type: string;
+    at: string;
+    actorUserId?: string;
+    metadata?: Record<string, any>;
   }>;
 }
 

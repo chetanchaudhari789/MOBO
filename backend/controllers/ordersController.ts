@@ -281,10 +281,17 @@ export function makeOrdersController(env: Env) {
         if (allowE2eBypass) {
           // E2E/dev runs should not rely on external AI services.
         } else if (isGeminiConfigured(env)) {
+          // Use the total paid amount (Grand Total) for verification, not item price.
+          // The buyer enters the Grand Total from the order screenshot, which may include
+          // shipping, marketplace fees, taxes etc.
+          const expectedAmount = body.items.reduce(
+            (acc: number, it: any) => acc + (Number(it.priceAtPurchase) || 0) * (Number(it.quantity) || 1),
+            0
+          );
           const verification = await verifyProofWithAi(env, {
             imageBase64: body.screenshots.order,
             expectedOrderId: resolvedExternalOrderId || body.externalOrderId || '',
-            expectedAmount: Number(item.priceAtPurchase) || 0,
+            expectedAmount,
           });
 
           if (!verification?.orderIdMatch || !verification?.amountMatch || verification?.confidenceScore < 60) {
@@ -413,6 +420,12 @@ export function makeOrdersController(env: Env) {
             (existing as any).externalOrderId = resolvedExternalOrderId;
             (existing as any).screenshots = body.screenshots ?? {};
             (existing as any).reviewLink = body.reviewLink;
+            if (body.orderDate) {
+              const d = new Date(body.orderDate);
+              if (!isNaN(d.getTime())) (existing as any).orderDate = d;
+            }
+            if (body.soldBy) (existing as any).soldBy = body.soldBy;
+            if (body.extractedProductName) (existing as any).extractedProductName = body.extractedProductName;
             (existing as any).events = pushOrderEvent((existing as any).events as any, {
               type: 'ORDERED',
               at: new Date(),
@@ -473,6 +486,9 @@ export function makeOrdersController(env: Env) {
                 externalOrderId: resolvedExternalOrderId,
                 screenshots: body.screenshots ?? {},
                 reviewLink: body.reviewLink,
+                ...(body.orderDate && !isNaN(new Date(body.orderDate).getTime()) ? { orderDate: new Date(body.orderDate) } : {}),
+                ...(body.soldBy ? { soldBy: body.soldBy } : {}),
+                ...(body.extractedProductName ? { extractedProductName: body.extractedProductName } : {}),
                 events: pushOrderEvent([], {
                   type: 'ORDERED',
                   at: new Date(),
@@ -612,7 +628,9 @@ export function makeOrdersController(env: Env) {
           if (env.SEED_E2E) {
             // E2E runs should not rely on external AI services.
           } else if (isGeminiConfigured(env) && expectedOrderId) {
-            const expectedAmount = Number((order as any).items?.[0]?.priceAtPurchasePaise || 0) / 100;
+            const expectedAmount = ((order as any).items ?? []).reduce(
+              (acc: number, it: any) => acc + (Number(it?.priceAtPurchasePaise) || 0) * (Number(it?.quantity) || 1), 0
+            ) / 100;
             aiVerification = await verifyProofWithAi(env, {
               imageBase64: body.data,
               expectedOrderId,
