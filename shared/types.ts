@@ -169,6 +169,17 @@ export interface Order {
     detectedProductName?: string;
     confidenceScore?: number;
   };
+  // AI verification for return window screenshot
+  returnWindowAiVerification?: {
+    orderIdMatch?: boolean;
+    productNameMatch?: boolean;
+    amountMatch?: boolean;
+    soldByMatch?: boolean;
+    returnWindowClosed?: boolean;
+    confidenceScore?: number;
+    detectedReturnWindow?: string;
+    discrepancyNote?: string;
+  };
   // Return window cooling period
   returnWindowDays?: number;
 

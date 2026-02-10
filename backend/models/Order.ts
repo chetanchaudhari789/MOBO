@@ -108,6 +108,17 @@ const orderSchema = new Schema(
       detectedProductName: { type: String, trim: true },
       confidenceScore: { type: Number },
     },
+    // AI verification result for return window screenshot
+    returnWindowAiVerification: {
+      orderIdMatch: { type: Boolean },
+      productNameMatch: { type: Boolean },
+      amountMatch: { type: Boolean },
+      soldByMatch: { type: Boolean },
+      returnWindowClosed: { type: Boolean },
+      confidenceScore: { type: Number },
+      detectedReturnWindow: { type: String, trim: true },
+      discrepancyNote: { type: String, trim: true },
+    },
 
     rejection: {
       type: {

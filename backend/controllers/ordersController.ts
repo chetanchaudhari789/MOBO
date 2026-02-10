@@ -697,11 +697,10 @@ export function makeOrdersController(env: Env) {
             }
           }
 
-          const screenshots: any = { ...(order.screenshots ?? {}), returnWindow: body.data };
+          order.screenshots = { ...(order.screenshots ?? {}), returnWindow: body.data } as any;
           if (returnWindowResult) {
-            screenshots.returnWindowAiVerification = returnWindowResult;
+            (order as any).returnWindowAiVerification = returnWindowResult;
           }
-          order.screenshots = screenshots;
           if ((order as any).rejection?.type === 'returnWindow') {
             (order as any).rejection = undefined;
           }
