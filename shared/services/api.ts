@@ -135,7 +135,6 @@ async function refreshTokens(): Promise<TokenPair | null> {
         return readTokens();
       } catch {
         clearTokens();
-        notifyAuthExpired();
         return null;
       } finally {
         refreshPromise = null;

@@ -76,7 +76,12 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     );
 
     // Safety: prevent runaway balances (configurable; default 1 crore paise = ₹1,00,000).
-    const MAX_BALANCE_PAISE = Number(process.env.WALLET_MAX_BALANCE_PAISE) || 1_00_00_000;
+    const rawMaxBalance = process.env.WALLET_MAX_BALANCE_PAISE;
+    const parsedMaxBalance = rawMaxBalance === undefined ? NaN : Number(rawMaxBalance);
+    const MAX_BALANCE_PAISE =
+      Number.isFinite(parsedMaxBalance) && parsedMaxBalance > 0
+        ? Math.floor(parsedMaxBalance)
+        : 1_00_00_000;
     if (wallet && wallet.availablePaise > MAX_BALANCE_PAISE) {
       throw new AppError(409, 'BALANCE_LIMIT_EXCEEDED', 'Wallet balance limit exceeded');
     }

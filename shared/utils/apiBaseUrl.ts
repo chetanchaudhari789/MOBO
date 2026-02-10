@@ -41,13 +41,14 @@ export function getApiBaseUrl(): string {
   // In Next.js deployments we rely on same-origin `/api/*` + Next rewrites.
   // This avoids CORS/preflight problems when env vars point at a different origin.
   const hasDirectApiUrl = Boolean(fromGlobal || fromVite || fromNext);
-  const preferSameOriginProxy =
+  const preferSameOriginProxy = Boolean(
     !hasDirectApiUrl &&
     typeof window !== 'undefined' &&
     typeof process !== 'undefined' &&
     (process as any).env &&
     (String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET || '').trim() ||
-      String((process as any).env.NEXT_PUBLIC_API_URL || '').trim());
+      String((process as any).env.NEXT_PUBLIC_API_URL || '').trim())
+  );
 
   const fromProxy = preferSameOriginProxy
     ? '/api'
