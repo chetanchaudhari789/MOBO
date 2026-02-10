@@ -353,7 +353,6 @@ export const Orders: React.FC = () => {
       toast.error('Order proof does not look valid. Please upload a clearer proof.');
       return;
     }
-    const missingExtras: string[] = [];
     // Rating/review proofs are now submitted after mediator verifies order screenshot.
     // No longer required at creation time.
     setIsUploading(true);

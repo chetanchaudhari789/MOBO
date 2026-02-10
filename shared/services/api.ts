@@ -826,8 +826,8 @@ export const api = {
       const params = new URLSearchParams();
       if (filters?.action) params.append('action', filters.action);
       if (filters?.entityType) params.append('entityType', filters.entityType);
-      if (filters?.limit) params.append('limit', String(filters.limit));
-      if (filters?.page) params.append('page', String(filters.page));
+      if (filters?.limit != null) params.append('limit', String(filters.limit));
+      if (filters?.page != null) params.append('page', String(filters.page));
       const qs = params.toString();
       return fetchJson(`/admin/audit-logs${qs ? '?' + qs : ''}`, {
         headers: { ...authHeaders() },

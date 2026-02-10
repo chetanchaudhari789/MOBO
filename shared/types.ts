@@ -162,7 +162,7 @@ export interface Order {
   // Audit trail - order event history
   events?: Array<{
     type: string;
-    at: string;
+    at?: string;
     actorUserId?: string;
     metadata?: Record<string, any>;
   }>;

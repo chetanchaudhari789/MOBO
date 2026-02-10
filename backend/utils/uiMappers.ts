@@ -260,11 +260,17 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     expectedSettlementDate: safeIso(o.expectedSettlementDate),
     // Audit trail: sanitized event log (strip internal metadata)
     events: Array.isArray(o.events)
-      ? o.events.map((e: any) => ({
-          type: e.type,
-          at: safeIso(e.at),
-          metadata: e.metadata ? { ...e.metadata, aiVerification: undefined } : undefined,
-        }))
+      ? o.events
+          .map((e: any) => {
+            const at = safeIso(e.at);
+            if (!at) return null;
+            return {
+              type: e.type,
+              at,
+              metadata: e.metadata ? { ...e.metadata, aiVerification: undefined } : undefined,
+            };
+          })
+          .filter((e: any) => e !== null)
       : [],
   };
 }

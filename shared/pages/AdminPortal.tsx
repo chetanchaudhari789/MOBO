@@ -1616,8 +1616,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       </tr>
                     </thead>
                     <tbody>
-                      {auditLogs
-                        .filter((log) => {
+                      {(() => {
+                        const filteredLogs = auditLogs.filter((log) => {
                           if (!auditFilter.trim()) return true;
                           const q = auditFilter.toLowerCase();
                           return (
@@ -1626,8 +1626,19 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             (log.entityId || '').toLowerCase().includes(q) ||
                             (log.actorUserId || '').toLowerCase().includes(q)
                           );
-                        })
-                        .map((log: any, idx: number) => (
+                        });
+
+                        if (filteredLogs.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-sm text-slate-400 font-bold">
+                                {auditLogs.length === 0 ? 'Click Refresh to load audit logs.' : 'No results match your filter.'}
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filteredLogs.map((log: any, idx: number) => (
                           <tr key={log.id || idx} className="border-b border-slate-100 hover:bg-slate-50">
                             <td className="p-4 text-xs text-slate-500 font-mono whitespace-nowrap">
                               {log.createdAt ? new Date(log.createdAt).toLocaleString() : '-'}
@@ -1648,14 +1659,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                               {log.metadata ? JSON.stringify(log.metadata).slice(0, 80) : '-'}
                             </td>
                           </tr>
-                        ))}
-                      {auditLogs.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="p-8 text-center text-sm text-slate-400 font-bold">
-                            Click Refresh to load audit logs.
-                          </td>
-                        </tr>
-                      )}
+                        ));
+                      })()}
                     </tbody>
                   </table>
                 </div>
