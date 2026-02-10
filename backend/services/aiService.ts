@@ -733,6 +733,331 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
 }
 
 
+// ──────────────────────────────────────────────────────────
+// RATING SCREENSHOT VERIFICATION
+// Verifies: 1) Account holder name matches buyer name
+//           2) Product name in rating matches expected product
+// ──────────────────────────────────────────────────────────
+
+export type RatingVerificationPayload = {
+  imageBase64: string;
+  expectedBuyerName: string;
+  expectedProductName: string;
+};
+
+export type RatingVerificationResult = {
+  accountNameMatch: boolean;
+  productNameMatch: boolean;
+  detectedAccountName?: string;
+  detectedProductName?: string;
+  confidenceScore: number;
+  discrepancyNote?: string;
+};
+
+async function verifyRatingWithOcr(
+  imageBase64: string,
+  expectedBuyerName: string,
+  expectedProductName: string,
+): Promise<RatingVerificationResult> {
+  try {
+    const rawData = imageBase64.includes(',') ? imageBase64.split(',')[1]! : imageBase64;
+    const imgBuffer = Buffer.from(rawData, 'base64');
+    let processedBuffer: Buffer;
+    try {
+      processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer();
+    } catch { processedBuffer = imgBuffer; }
+
+    const worker = await createWorker('eng');
+    const { data } = await worker.recognize(processedBuffer);
+    await worker.terminate();
+    const ocrText = (data.text || '').trim();
+    if (!ocrText || ocrText.length < 5) {
+      return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
+        discrepancyNote: 'OCR could not read text from the rating screenshot.' };
+    }
+
+    const lower = ocrText.toLowerCase();
+    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
+    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+    const nameMatches = buyerParts.filter(p => lower.includes(p));
+    const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+
+    // Product name matching: check if significant keywords from product name appear
+    const productTokens = expectedProductName.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(t => t.length >= 3);
+    const matchedTokens = productTokens.filter(t => lower.includes(t));
+    const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+
+    let confidenceScore = 20;
+    if (accountNameMatch) confidenceScore += 35;
+    if (productNameMatch) confidenceScore += 35;
+
+    // Try to detect the actual account name shown
+    const nameLineRe = /(?:public\s*name|profile|account|by|reviewer|reviewed|written\s*by|posted\s*by)\s*[:\-]?\s*(.{2,40})/i;
+    const nameMatch = ocrText.match(nameLineRe);
+    const detectedAccountName = nameMatch?.[1]?.trim() || undefined;
+
+    return {
+      accountNameMatch, productNameMatch, confidenceScore,
+      detectedAccountName,
+      detectedProductName: matchedTokens.length > 0 ? matchedTokens.join(' ') : undefined,
+      discrepancyNote: [
+        !accountNameMatch ? `Buyer name "${expectedBuyerName}" not found in screenshot.` : '',
+        !productNameMatch ? `Product name not matching in screenshot.` : '',
+        accountNameMatch && productNameMatch ? 'Account name and product matched via OCR.' : '',
+      ].filter(Boolean).join(' '),
+    };
+  } catch (err) {
+    console.error('OCR rating verification error:', err);
+    return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
+      discrepancyNote: 'Rating verification unavailable. Please verify manually.' };
+  }
+}
+
+export async function verifyRatingScreenshotWithAi(
+  env: Env,
+  payload: RatingVerificationPayload,
+): Promise<RatingVerificationResult> {
+  if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
+    return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
+      discrepancyNote: 'Image too large for auto verification.' };
+  }
+
+  if (!isGeminiConfigured(env)) {
+    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName);
+  }
+
+  const apiKey = env.GEMINI_API_KEY!;
+  const ai = new GoogleGenAI({ apiKey });
+  const mimeType = detectImageMimeType(payload.imageBase64);
+
+  try {
+    let lastError: unknown = null;
+    for (const model of GEMINI_MODEL_FALLBACKS) {
+      try {
+        const response = await withModelTimeout(ai.models.generateContent({
+          model,
+          contents: [
+            { inlineData: { mimeType, data: payload.imageBase64.split(',')[1] ?? payload.imageBase64 } },
+            { text: [
+              `RATING SCREENSHOT VERIFICATION — GOD-LEVEL ACCURACY REQUIRED`,
+              ``,
+              `Verify this RATING/REVIEW screenshot:`,
+              `  Expected Account Name (buyer): ${payload.expectedBuyerName}`,
+              `  Expected Product Name: ${payload.expectedProductName}`,
+              ``,
+              `RULES:`,
+              `1. Find the REVIEWER / ACCOUNT NAME shown in the screenshot. This is the person who wrote the review or gave the rating. It may appear as "public name", "profile name", or at the top of the review.`,
+              `2. Compare the account name with "${payload.expectedBuyerName}" — allow for nickname variations, case differences, and abbreviated names. The key name words must match.`,
+              `3. Find the PRODUCT NAME visible in the rating screenshot. Compare it to "${payload.expectedProductName}" — key words should match (brand, model, type). Exact match not required.`,
+              `4. If the account name or product does not match, this is potential FRAUD (someone rating a different product or using a different account).`,
+              `5. Set confidenceScore 0-100 based on how clearly visible and matching both fields are.`,
+              `6. Always fill detectedAccountName and detectedProductName with what you actually see.`,
+            ].join('\n') },
+          ],
+          config: {
+            maxOutputTokens: env.AI_MAX_OUTPUT_TOKENS_PROOF,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                accountNameMatch: { type: Type.BOOLEAN },
+                productNameMatch: { type: Type.BOOLEAN },
+                confidenceScore: { type: Type.INTEGER },
+                detectedAccountName: { type: Type.STRING },
+                detectedProductName: { type: Type.STRING },
+                discrepancyNote: { type: Type.STRING },
+              },
+              required: ['accountNameMatch', 'productNameMatch', 'confidenceScore'],
+            },
+          },
+        }));
+
+        const parsed = safeJsonParse<RatingVerificationResult>(response.text);
+        if (!parsed) throw new Error('Failed to parse AI rating verification response');
+        parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
+        return parsed;
+      } catch (innerError) { lastError = innerError; continue; }
+    }
+    throw lastError ?? new Error('Gemini rating verification failed');
+  } catch (error) {
+    console.error('Gemini rating verification error:', error);
+    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName);
+  }
+}
+
+
+// ──────────────────────────────────────────────────────────
+// RETURN WINDOW / DELIVERY SCREENSHOT VERIFICATION
+// Verifies: product name, order number, sold by, grand total, delivery status
+// ──────────────────────────────────────────────────────────
+
+export type ReturnWindowVerificationPayload = {
+  imageBase64: string;
+  expectedOrderId: string;
+  expectedProductName: string;
+  expectedAmount: number;
+  expectedSoldBy?: string;
+};
+
+export type ReturnWindowVerificationResult = {
+  orderIdMatch: boolean;
+  productNameMatch: boolean;
+  amountMatch: boolean;
+  soldByMatch: boolean;
+  returnWindowClosed: boolean;
+  confidenceScore: number;
+  detectedReturnWindow?: string;
+  discrepancyNote?: string;
+};
+
+async function verifyReturnWindowWithOcr(
+  imageBase64: string,
+  expected: ReturnWindowVerificationPayload,
+): Promise<ReturnWindowVerificationResult> {
+  try {
+    const rawData = imageBase64.includes(',') ? imageBase64.split(',')[1]! : imageBase64;
+    const imgBuffer = Buffer.from(rawData, 'base64');
+    let processedBuffer: Buffer;
+    try { processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer(); }
+    catch { processedBuffer = imgBuffer; }
+
+    const worker = await createWorker('eng');
+    const { data } = await worker.recognize(processedBuffer);
+    await worker.terminate();
+    const ocrText = (data.text || '').trim();
+    if (!ocrText || ocrText.length < 5) {
+      return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
+        returnWindowClosed: false, confidenceScore: 10,
+        discrepancyNote: 'OCR could not read text from the delivery screenshot.' };
+    }
+
+    const lower = ocrText.toLowerCase();
+    const orderIdNorm = expected.expectedOrderId.replace(/[\s\-]/g, '').toLowerCase();
+    const ocrNorm = ocrText.replace(/[\s\-]/g, '').toLowerCase();
+    const orderIdMatch = ocrNorm.includes(orderIdNorm);
+
+    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3);
+    const matchedProd = productTokens.filter(t => lower.includes(t));
+    const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+
+    const amountStr = String(expected.expectedAmount);
+    const amountMatch = ocrText.includes(amountStr) || ocrText.includes(expected.expectedAmount.toFixed(2));
+
+    const soldByMatch = expected.expectedSoldBy
+      ? lower.includes(expected.expectedSoldBy.toLowerCase().trim())
+      : true;
+
+    // Check for return window closure keywords
+    const returnWindowRe = /return\s*window\s*(closed|expired|ended|over|passed)|no\s*return|non.?returnable|delivered/i;
+    const returnWindowClosed = returnWindowRe.test(ocrText);
+
+    let confidenceScore = 15;
+    if (orderIdMatch) confidenceScore += 20;
+    if (productNameMatch) confidenceScore += 20;
+    if (amountMatch) confidenceScore += 15;
+    if (soldByMatch) confidenceScore += 10;
+    if (returnWindowClosed) confidenceScore += 10;
+
+    return {
+      orderIdMatch, productNameMatch, amountMatch, soldByMatch, returnWindowClosed, confidenceScore,
+      discrepancyNote: [
+        !orderIdMatch ? `Order ID "${expected.expectedOrderId}" not found.` : '',
+        !productNameMatch ? 'Product name mismatch.' : '',
+        !amountMatch ? `Amount ₹${expected.expectedAmount} not found.` : '',
+        !soldByMatch && expected.expectedSoldBy ? `Seller "${expected.expectedSoldBy}" not found.` : '',
+        !returnWindowClosed ? 'Return window status not confirmed.' : '',
+      ].filter(Boolean).join(' ') || 'OCR verification complete.',
+    };
+  } catch (err) {
+    console.error('OCR return window verification error:', err);
+    return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
+      returnWindowClosed: false, confidenceScore: 0,
+      discrepancyNote: 'Return window verification unavailable. Please verify manually.' };
+  }
+}
+
+export async function verifyReturnWindowWithAi(
+  env: Env,
+  payload: ReturnWindowVerificationPayload,
+): Promise<ReturnWindowVerificationResult> {
+  if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
+    return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
+      returnWindowClosed: false, confidenceScore: 0,
+      discrepancyNote: 'Image too large for auto verification.' };
+  }
+
+  if (!isGeminiConfigured(env)) {
+    return verifyReturnWindowWithOcr(payload.imageBase64, payload);
+  }
+
+  const apiKey = env.GEMINI_API_KEY!;
+  const ai = new GoogleGenAI({ apiKey });
+  const mimeType = detectImageMimeType(payload.imageBase64);
+
+  try {
+    let lastError: unknown = null;
+    for (const model of GEMINI_MODEL_FALLBACKS) {
+      try {
+        const response = await withModelTimeout(ai.models.generateContent({
+          model,
+          contents: [
+            { inlineData: { mimeType, data: payload.imageBase64.split(',')[1] ?? payload.imageBase64 } },
+            { text: [
+              `RETURN WINDOW / DELIVERY SCREENSHOT VERIFICATION — GOD-LEVEL ACCURACY REQUIRED`,
+              ``,
+              `Verify this delivery/return window screenshot against the order:`,
+              `  Expected Order ID: ${payload.expectedOrderId}`,
+              `  Expected Product Name: ${payload.expectedProductName}`,
+              `  Expected Grand Total: ₹${payload.expectedAmount}`,
+              `  Expected Sold By: ${payload.expectedSoldBy || 'N/A'}`,
+              ``,
+              `RULES:`,
+              `1. Find the ORDER ID in the screenshot and compare to "${payload.expectedOrderId}".`,
+              `2. Find the PRODUCT NAME and compare key words to "${payload.expectedProductName}".`,
+              `3. Find the GRAND TOTAL / AMOUNT and compare to ₹${payload.expectedAmount} (±₹1 tolerance).`,
+              `4. Find "Sold by" / "Seller" and compare to "${payload.expectedSoldBy || 'N/A'}".`,
+              `5. Check if the RETURN WINDOW is CLOSED/EXPIRED. Look for: "Return window closed", "No longer returnable", delivery date that is > 7 days ago, or text indicating the item cannot be returned.`,
+              `6. Set confidenceScore 0-100 based on match quality.`,
+              `7. Fill all detected fields with what you actually see in the image.`,
+            ].join('\n') },
+          ],
+          config: {
+            maxOutputTokens: env.AI_MAX_OUTPUT_TOKENS_PROOF,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                orderIdMatch: { type: Type.BOOLEAN },
+                productNameMatch: { type: Type.BOOLEAN },
+                amountMatch: { type: Type.BOOLEAN },
+                soldByMatch: { type: Type.BOOLEAN },
+                returnWindowClosed: { type: Type.BOOLEAN },
+                confidenceScore: { type: Type.INTEGER },
+                detectedReturnWindow: { type: Type.STRING },
+                discrepancyNote: { type: Type.STRING },
+              },
+              required: ['orderIdMatch', 'productNameMatch', 'amountMatch', 'soldByMatch', 'returnWindowClosed', 'confidenceScore'],
+            },
+          },
+        }));
+
+        const parsed = safeJsonParse<ReturnWindowVerificationResult>(response.text);
+        if (!parsed) throw new Error('Failed to parse AI return window verification response');
+        parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
+        return parsed;
+      } catch (innerError) { lastError = innerError; continue; }
+    }
+    throw lastError ?? new Error('Gemini return window verification failed');
+  } catch (error) {
+    console.error('Gemini return window verification error:', error);
+    return verifyReturnWindowWithOcr(payload.imageBase64, payload);
+  }
+}
+
+
 export async function extractOrderDetailsWithAi(
   env: Env,
   payload: ExtractOrderPayload

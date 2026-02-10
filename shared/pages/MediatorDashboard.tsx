@@ -38,6 +38,7 @@ import {
   Loader2,
   Search,
   Download,
+  Package,
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
@@ -1462,7 +1463,7 @@ export const MediatorDashboard: React.FC = () => {
   const [proofModal, setProofModal] = useState<Order | null>(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [rejectType, setRejectType] = useState<'order' | 'review' | 'rating'>('order');
+  const [rejectType, setRejectType] = useState<'order' | 'review' | 'rating' | 'returnWindow'>('order');
   const [dealBuilder, setDealBuilder] = useState<Campaign | null>(null);
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
@@ -2060,6 +2061,28 @@ export const MediatorDashboard: React.FC = () => {
                       <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.ratingVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
                     </>
                   )}
+                  {(proofModal.requirements?.required as string[] ?? []).includes('returnWindow') && (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          (proofModal.verification as any)?.returnWindowVerified ? 'bg-green-500 text-white'
+                            : (proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? 'bg-amber-500 text-amber-900'
+                            : proofModal.verification?.orderVerified ? 'bg-purple-500 text-white'
+                            : 'bg-zinc-600 text-zinc-400'
+                        }`}>
+                          {(proofModal.verification as any)?.returnWindowVerified ? '✓' :
+                            ((proofModal.requirements?.required?.includes('review') && proofModal.requirements?.required?.includes('rating')) ? '4' :
+                             (proofModal.requirements?.required?.includes('review') || proofModal.requirements?.required?.includes('rating')) ? '3' : '2')}
+                        </div>
+                        <span className={`text-[10px] font-bold ${
+                          (proofModal.verification as any)?.returnWindowVerified ? 'text-green-400'
+                            : (proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? 'text-amber-400'
+                            : 'text-zinc-400'
+                        }`}>Return Window{(proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? ' (missing)' : ''}</span>
+                      </div>
+                      <div className={`flex-1 h-0.5 rounded ${(proofModal.verification as any)?.returnWindowVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                    </>
+                  )}
                   <div className="flex items-center gap-1.5">
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
                       proofModal.affiliateStatus === 'Pending_Cooling' ? 'bg-green-500 text-white' : 'bg-zinc-600 text-zinc-400'
@@ -2089,6 +2112,24 @@ export const MediatorDashboard: React.FC = () => {
                     Rating Screenshot Missing
                   </div>
                 )}
+                {/* AI rating verification results */}
+                {(proofModal as any).ratingAiVerification && (
+                  <div className="mt-3 space-y-1 text-[10px]">
+                    <p className={`font-bold ${(proofModal as any).ratingAiVerification.accountNameMatch ? 'text-green-400' : 'text-red-400'}`}>
+                      Account Name: {(proofModal as any).ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
+                      {(proofModal as any).ratingAiVerification.detectedAccountName && (
+                        <span className="text-zinc-500 ml-1">(detected: {(proofModal as any).ratingAiVerification.detectedAccountName})</span>
+                      )}
+                    </p>
+                    <p className={`font-bold ${(proofModal as any).ratingAiVerification.productNameMatch ? 'text-green-400' : 'text-red-400'}`}>
+                      Product Name: {(proofModal as any).ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                      {(proofModal as any).ratingAiVerification.detectedProductName && (
+                        <span className="text-zinc-500 ml-1">(detected: {(proofModal as any).ratingAiVerification.detectedProductName})</span>
+                      )}
+                    </p>
+                    <p className="text-zinc-500">Confidence: {(proofModal as any).ratingAiVerification.confidenceScore}%</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2116,6 +2157,29 @@ export const MediatorDashboard: React.FC = () => {
                     Review Link Missing
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Return Window Proof */}
+            {(proofModal.requirements?.required as string[] ?? []).includes('returnWindow') && (
+              <div className="bg-teal-950/20 rounded-2xl border border-teal-500/20 p-4">
+                <h4 className="text-xs font-bold text-teal-400 uppercase mb-3 flex items-center gap-2">
+                  <Package size={14} /> Return Window Check
+                </h4>
+                {(proofModal.screenshots as any)?.returnWindow ? (
+                  <img
+                    src={(proofModal.screenshots as any).returnWindow}
+                    className="w-full rounded-xl border border-teal-500/20"
+                    alt="Return Window Proof"
+                  />
+                ) : (
+                  <div className="p-4 text-center border border-dashed border-teal-900/50 rounded-xl text-teal-400/50 text-xs">
+                    Return Window Screenshot Missing
+                  </div>
+                )}
+                <p className="text-[10px] text-zinc-500 mt-2">
+                  Cooling Period: {(proofModal as any).returnWindowDays ?? 10} days
+                </p>
               </div>
             )}
           </div>
@@ -2159,13 +2223,15 @@ export const MediatorDashboard: React.FC = () => {
               onClick={() => {
                 if (!proofModal) return;
                 const mv = proofModal.requirements?.missingVerifications ?? [];
-                const nextType: 'order' | 'review' | 'rating' = !proofModal.verification?.orderVerified
+                const nextType: 'order' | 'review' | 'rating' | 'returnWindow' = !proofModal.verification?.orderVerified
                   ? 'order'
                   : mv.includes('review')
                       ? 'review'
                       : mv.includes('rating')
                         ? 'rating'
-                        : 'order';
+                        : (mv as string[]).includes('returnWindow')
+                          ? 'returnWindow'
+                          : 'order';
                 setRejectType(nextType);
                 setRejectReason('');
                 setRejectModalOpen(true);
@@ -2179,9 +2245,9 @@ export const MediatorDashboard: React.FC = () => {
                 onClick={async () => {
                   try {
                     const resp = await api.ops.verifyOrderClaim(proofModal.id);
-                    const missingProofs: Array<'review' | 'rating'> =
+                    const missingProofs: Array<'review' | 'rating' | 'returnWindow'> =
                       (resp?.missingProofs as any) || [];
-                    const missingVerifications: Array<'review' | 'rating'> =
+                    const missingVerifications: Array<'review' | 'rating' | 'returnWindow'> =
                       (resp?.missingVerifications as any) || [];
 
                     if (resp?.approved) {
@@ -2295,6 +2361,47 @@ export const MediatorDashboard: React.FC = () => {
                   </button>
                 )}
 
+                {(proofModal?.requirements?.required as string[] ?? []).includes('returnWindow') && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'returnWindow' as any);
+
+                        if (resp?.approved) {
+                          toast.success('Return window verified ✓ Order fully approved! Cashback in cooling period.');
+                          setProofModal(null);
+                        } else {
+                          toast.success('Return window verified ✓');
+                        }
+
+                        await loadData();
+                        if (!resp?.approved && resp?.order) {
+                          setProofModal(resp.order);
+                        } else if (!resp?.approved) {
+                          setProofModal(null);
+                        }
+                      } catch (err) {
+                        const msg = err instanceof Error ? err.message : 'Failed to verify return window';
+                        toast.error(msg);
+                      }
+                    }}
+                    disabled={
+                      !!(proofModal?.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ||
+                      !(proofModal?.requirements?.missingVerifications as string[] ?? []).includes('returnWindow')
+                    }
+                    className="flex-1 py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
+                    title={
+                      (proofModal?.requirements?.missingProofs as string[] ?? []).includes('returnWindow')
+                        ? 'Buyer hasn\'t uploaded return window proof yet'
+                        : !(proofModal?.requirements?.missingVerifications as string[] ?? []).includes('returnWindow')
+                          ? 'Already verified'
+                          : undefined
+                    }
+                  >
+                    <CheckCircle2 size={18} strokeWidth={3} /> Verify Return Window
+                  </button>
+                )}
+
                 {!proofModal?.requirements?.required?.length && (
                   <button
                     disabled
@@ -2333,12 +2440,13 @@ export const MediatorDashboard: React.FC = () => {
             <label className="text-[10px] font-bold text-zinc-400 uppercase">Proof Type</label>
             <select
               value={rejectType}
-              onChange={(e) => setRejectType(e.target.value as 'order' | 'review' | 'rating')}
+              onChange={(e) => setRejectType(e.target.value as 'order' | 'review' | 'rating' | 'returnWindow')}
               className="mt-2 w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm font-bold"
             >
               <option value="order">Order Proof</option>
               <option value="review">Review Proof</option>
               <option value="rating">Rating Proof</option>
+              <option value="returnWindow">Return Window Proof</option>
             </select>
 
             <label className="text-[10px] font-bold text-zinc-400 uppercase mt-4 block">

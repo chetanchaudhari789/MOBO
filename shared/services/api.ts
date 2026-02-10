@@ -555,21 +555,21 @@ export const api = {
         body: JSON.stringify({ orderId }),
       });
     },
-    verifyOrderRequirement: async (orderId: string, type: 'review' | 'rating') => {
+    verifyOrderRequirement: async (orderId: string, type: 'review' | 'rating' | 'returnWindow') => {
       return fetchJson('/ops/orders/verify-requirement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ orderId, type }),
       });
     },
-    rejectOrderProof: async (orderId: string, type: 'order' | 'review' | 'rating', reason: string) => {
+    rejectOrderProof: async (orderId: string, type: 'order' | 'review' | 'rating' | 'returnWindow', reason: string) => {
       return fetchJson('/ops/orders/reject-proof', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ orderId, type, reason }),
       });
     },
-    requestMissingProof: async (orderId: string, type: 'review' | 'rating', note?: string) => {
+    requestMissingProof: async (orderId: string, type: 'review' | 'rating' | 'returnWindow', note?: string) => {
       return fetchJson('/ops/orders/request-proof', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },

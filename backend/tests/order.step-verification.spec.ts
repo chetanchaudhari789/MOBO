@@ -112,13 +112,33 @@ describe('order step verification (purchase vs review/rating)', () => {
 
     expect(verifyReviewRes.status).toBe(200);
     expect(verifyReviewRes.body).toHaveProperty('ok', true);
-    expect(verifyReviewRes.body).toHaveProperty('approved', true);
+    // Review verified but returnWindow still missing for Review deals
+    expect(verifyReviewRes.body).toHaveProperty('approved', false);
+    expect(verifyReviewRes.body.missingProofs).toContain('returnWindow');
+
+    // Submit returnWindow proof
+    const submitReturnWindowRes = await request(app)
+      .post('/api/orders/claim')
+      .set('Authorization', `Bearer ${shopper.token}`)
+      .send({ orderId, type: 'returnWindow', data: LARGE_DATA_URL });
+    expect(submitReturnWindowRes.status).toBe(200);
+
+    // Verify returnWindow
+    const verifyReturnWindowRes = await request(app)
+      .post('/api/ops/orders/verify-requirement')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ orderId, type: 'returnWindow' });
+
+    expect(verifyReturnWindowRes.status).toBe(200);
+    expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
+    expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
     const finalOrder = await OrderModel.findById(orderId).lean();
     expect(finalOrder).toBeTruthy();
     expect(String((finalOrder as any).workflowStatus)).toBe('APPROVED');
     expect(String((finalOrder as any).affiliateStatus)).toBe('Pending_Cooling');
     expect(!!(finalOrder as any).verification?.review?.verifiedAt).toBe(true);
+    expect(!!(finalOrder as any).verification?.returnWindow?.verifiedAt).toBe(true);
   });
 
   it('keeps order UNDER_REVIEW when purchase verified but rating proof missing, then approves after rating verified', async () => {
@@ -197,12 +217,32 @@ describe('order step verification (purchase vs review/rating)', () => {
 
     expect(verifyRatingRes.status).toBe(200);
     expect(verifyRatingRes.body).toHaveProperty('ok', true);
-    expect(verifyRatingRes.body).toHaveProperty('approved', true);
+    // Rating verified but returnWindow still missing for Rating deals
+    expect(verifyRatingRes.body).toHaveProperty('approved', false);
+    expect(verifyRatingRes.body.missingProofs).toContain('returnWindow');
+
+    // Submit returnWindow proof
+    const submitReturnWindowRes = await request(app)
+      .post('/api/orders/claim')
+      .set('Authorization', `Bearer ${shopper.token}`)
+      .send({ orderId, type: 'returnWindow', data: LARGE_DATA_URL });
+    expect(submitReturnWindowRes.status).toBe(200);
+
+    // Verify returnWindow
+    const verifyReturnWindowRes = await request(app)
+      .post('/api/ops/orders/verify-requirement')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ orderId, type: 'returnWindow' });
+
+    expect(verifyReturnWindowRes.status).toBe(200);
+    expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
+    expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
     const finalOrder = await OrderModel.findById(orderId).lean();
     expect(finalOrder).toBeTruthy();
     expect(String((finalOrder as any).workflowStatus)).toBe('APPROVED');
     expect(String((finalOrder as any).affiliateStatus)).toBe('Pending_Cooling');
     expect(!!(finalOrder as any).verification?.rating?.verifiedAt).toBe(true);
+    expect(!!(finalOrder as any).verification?.returnWindow?.verifiedAt).toBe(true);
   });
 });

@@ -122,7 +122,7 @@ export interface Order {
   frozenAt?: string;
   frozenReason?: string;
   settlementRef?: string;
-  screenshots: { order?: string; payment?: string; review?: string; rating?: string };
+  screenshots: { order?: string; payment?: string; review?: string; rating?: string; returnWindow?: string };
   reviewLink?: string;
   managerName: string;
   agencyName?: string;
@@ -140,24 +140,37 @@ export interface Order {
     reviewVerifiedAt?: string;
     ratingVerified?: boolean;
     ratingVerifiedAt?: string;
+    returnWindowVerified?: boolean;
+    returnWindowVerifiedAt?: string;
   };
   requirements?: {
-    required?: Array<'review' | 'rating'>;
-    missingProofs?: Array<'review' | 'rating'>;
-    missingVerifications?: Array<'review' | 'rating'>;
+    required?: Array<'review' | 'rating' | 'returnWindow'>;
+    missingProofs?: Array<'review' | 'rating' | 'returnWindow'>;
+    missingVerifications?: Array<'review' | 'rating' | 'returnWindow'>;
   };
   rejection?: {
-    type?: 'order' | 'review' | 'rating';
+    type?: 'order' | 'review' | 'rating' | 'returnWindow';
     reason?: string;
     rejectedAt?: string;
     rejectedBy?: string;
   };
   missingProofRequests?: Array<{
-    type?: 'review' | 'rating';
+    type?: 'review' | 'rating' | 'returnWindow';
     note?: string;
     requestedAt?: string;
     requestedBy?: string;
   }>;
+
+  // AI verification for rating screenshot
+  ratingAiVerification?: {
+    accountNameMatch?: boolean;
+    productNameMatch?: boolean;
+    detectedAccountName?: string;
+    detectedProductName?: string;
+    confidenceScore?: number;
+  };
+  // Return window cooling period
+  returnWindowDays?: number;
 
   // Audit trail - order event history
   events?: Array<{

@@ -94,13 +94,25 @@ const orderSchema = new Schema(
       payment: { type: String },
       review: { type: String },
       rating: { type: String },
+      returnWindow: { type: String },
     },
     reviewLink: { type: String, trim: true },
+
+    // Return window cooling period in days (default 10)
+    returnWindowDays: { type: Number, default: 10, min: 0, max: 90 },
+    // AI verification result for rating screenshot (account name + product match)
+    ratingAiVerification: {
+      accountNameMatch: { type: Boolean },
+      productNameMatch: { type: Boolean },
+      detectedAccountName: { type: String, trim: true },
+      detectedProductName: { type: String, trim: true },
+      confidenceScore: { type: Number },
+    },
 
     rejection: {
       type: {
         type: String,
-        enum: ['order', 'review', 'rating'],
+        enum: ['order', 'review', 'rating', 'returnWindow'],
       },
       reason: { type: String, trim: true },
       rejectedAt: { type: Date },
@@ -111,7 +123,7 @@ const orderSchema = new Schema(
       {
         type: {
           type: String,
-          enum: ['review', 'rating'],
+          enum: ['review', 'rating', 'returnWindow'],
           required: true,
         },
         note: { type: String, trim: true },
@@ -120,7 +132,7 @@ const orderSchema = new Schema(
       },
     ],
 
-    // Step-level verification (purchase vs review/rating requirements)
+    // Step-level verification (purchase vs review/rating/returnWindow requirements)
     verification: {
       order: {
         verifiedAt: { type: Date },
@@ -131,6 +143,10 @@ const orderSchema = new Schema(
         verifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
       },
       rating: {
+        verifiedAt: { type: Date },
+        verifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      },
+      returnWindow: {
         verifiedAt: { type: Date },
         verifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
       },

@@ -168,27 +168,33 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
+  const requiresReturnWindow = requiresReview || requiresRating;
 
   const hasReviewProof = !!(o.reviewLink || o.screenshots?.review);
   const hasRatingProof = !!o.screenshots?.rating;
+  const hasReturnWindowProof = !!o.screenshots?.returnWindow;
 
   const orderVerifiedAt = o.verification?.order?.verifiedAt ? new Date(o.verification.order.verifiedAt) : null;
   const reviewVerifiedAt = o.verification?.review?.verifiedAt ? new Date(o.verification.review.verifiedAt) : null;
   const ratingVerifiedAt = o.verification?.rating?.verifiedAt ? new Date(o.verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = o.verification?.returnWindow?.verifiedAt ? new Date(o.verification.returnWindow.verifiedAt) : null;
 
-  const requiredSteps: Array<'review' | 'rating'> = [
+  const requiredSteps: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview ? (['review'] as const) : []),
     ...(requiresRating ? (['rating'] as const) : []),
+    ...(requiresReturnWindow ? (['returnWindow'] as const) : []),
   ];
 
-  const missingProofs: Array<'review' | 'rating'> = [
+  const missingProofs: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview && !hasReviewProof ? (['review'] as const) : []),
     ...(requiresRating && !hasRatingProof ? (['rating'] as const) : []),
+    ...(requiresReturnWindow && !hasReturnWindowProof ? (['returnWindow'] as const) : []),
   ];
 
-  const missingVerifications: Array<'review' | 'rating'> = [
+  const missingVerifications: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview && !reviewVerifiedAt ? (['review'] as const) : []),
     ...(requiresRating && !ratingVerifiedAt ? (['rating'] as const) : []),
+    ...(requiresReturnWindow && !returnWindowVerifiedAt ? (['returnWindow'] as const) : []),
   ];
   return {
     id: String(o._id ?? o.id),
@@ -234,12 +240,22 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
       reviewVerifiedAt: reviewVerifiedAt ? reviewVerifiedAt.toISOString() : undefined,
       ratingVerified: !!ratingVerifiedAt,
       ratingVerifiedAt: ratingVerifiedAt ? ratingVerifiedAt.toISOString() : undefined,
+      returnWindowVerified: !!returnWindowVerifiedAt,
+      returnWindowVerifiedAt: returnWindowVerifiedAt ? returnWindowVerifiedAt.toISOString() : undefined,
     },
     requirements: {
       required: requiredSteps,
       missingProofs,
       missingVerifications,
     },
+    ratingAiVerification: o.ratingAiVerification ? {
+      accountNameMatch: o.ratingAiVerification.accountNameMatch,
+      productNameMatch: o.ratingAiVerification.productNameMatch,
+      detectedAccountName: o.ratingAiVerification.detectedAccountName,
+      detectedProductName: o.ratingAiVerification.detectedProductName,
+      confidenceScore: o.ratingAiVerification.confidenceScore,
+    } : undefined,
+    returnWindowDays: o.returnWindowDays ?? 10,
     missingProofRequests: Array.isArray(o.missingProofRequests)
       ? o.missingProofRequests.map((r: any) => ({
           type: r?.type,
@@ -274,27 +290,33 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
+  const requiresReturnWindow = requiresReview || requiresRating;
 
   const hasReviewProof = !!(o.reviewLink || o.screenshots?.review);
   const hasRatingProof = !!o.screenshots?.rating;
+  const hasReturnWindowProof = !!o.screenshots?.returnWindow;
 
   const orderVerifiedAt = o.verification?.order?.verifiedAt ? new Date(o.verification.order.verifiedAt) : null;
   const reviewVerifiedAt = o.verification?.review?.verifiedAt ? new Date(o.verification.review.verifiedAt) : null;
   const ratingVerifiedAt = o.verification?.rating?.verifiedAt ? new Date(o.verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = o.verification?.returnWindow?.verifiedAt ? new Date(o.verification.returnWindow.verifiedAt) : null;
 
-  const requiredSteps: Array<'review' | 'rating'> = [
+  const requiredSteps: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview ? (['review'] as const) : []),
     ...(requiresRating ? (['rating'] as const) : []),
+    ...(requiresReturnWindow ? (['returnWindow'] as const) : []),
   ];
 
-  const missingProofs: Array<'review' | 'rating'> = [
+  const missingProofs: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview && !hasReviewProof ? (['review'] as const) : []),
     ...(requiresRating && !hasRatingProof ? (['rating'] as const) : []),
+    ...(requiresReturnWindow && !hasReturnWindowProof ? (['returnWindow'] as const) : []),
   ];
 
-  const missingVerifications: Array<'review' | 'rating'> = [
+  const missingVerifications: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview && !reviewVerifiedAt ? (['review'] as const) : []),
     ...(requiresRating && !ratingVerifiedAt ? (['rating'] as const) : []),
+    ...(requiresReturnWindow && !returnWindowVerifiedAt ? (['returnWindow'] as const) : []),
   ];
 
   return {
@@ -327,6 +349,7 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
     hasOrderProof: !!(o.screenshots?.order || o.screenshots?.payment),
     hasReviewProof,
     hasRatingProof,
+    hasReturnWindowProof,
     verification: {
       orderVerified: !!orderVerifiedAt,
       orderVerifiedAt: orderVerifiedAt ? orderVerifiedAt.toISOString() : undefined,
@@ -334,6 +357,8 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
       reviewVerifiedAt: reviewVerifiedAt ? reviewVerifiedAt.toISOString() : undefined,
       ratingVerified: !!ratingVerifiedAt,
       ratingVerifiedAt: ratingVerifiedAt ? ratingVerifiedAt.toISOString() : undefined,
+      returnWindowVerified: !!returnWindowVerifiedAt,
+      returnWindowVerifiedAt: returnWindowVerifiedAt ? returnWindowVerifiedAt.toISOString() : undefined,
     },
     requirements: {
       required: requiredSteps,
