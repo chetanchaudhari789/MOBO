@@ -16,6 +16,7 @@ import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { isGeminiConfigured, verifyProofWithAi, verifyRatingScreenshotWithAi, verifyReturnWindowWithAi } from '../services/aiService.js';
+import { writeAuditLog } from '../services/audit.js';
 
 export function makeOrdersController(env: Env) {
   const MAX_PROOF_BYTES = 50 * 1024 * 1024;
@@ -651,9 +652,9 @@ export function makeOrdersController(env: Env) {
                 expectedBuyerName: buyerName,
                 expectedProductName: productName,
               });
-              // Block submission if both name AND product mismatch with high confidence
+              // Block submission if both name AND product mismatch with high confidence (≥70 for anti-fraud strength)
               if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
-                  && ratingAiResult.confidenceScore >= 60) {
+                  && ratingAiResult.confidenceScore >= 70) {
                 throw new AppError(422, 'RATING_VERIFICATION_FAILED',
                   'Rating screenshot does not match: the account name and product must match your order. ' +
                   (ratingAiResult.discrepancyNote || ''));
@@ -670,6 +671,22 @@ export function makeOrdersController(env: Env) {
               detectedProductName: ratingAiResult.detectedProductName,
               confidenceScore: ratingAiResult.confidenceScore,
             };
+
+            // Audit trail: record AI rating verification for backtracking
+            writeAuditLog({
+              req,
+              action: 'ai.verify_rating',
+              entityType: 'order',
+              entityId: String(order._id),
+              metadata: {
+                accountNameMatch: ratingAiResult.accountNameMatch,
+                productNameMatch: ratingAiResult.productNameMatch,
+                confidenceScore: ratingAiResult.confidenceScore,
+                detectedAccountName: ratingAiResult.detectedAccountName,
+                detectedProductName: ratingAiResult.detectedProductName,
+                discrepancyNote: ratingAiResult.discrepancyNote,
+              },
+            });
           }
           if ((order as any).rejection?.type === 'rating') {
             (order as any).rejection = undefined;
@@ -702,6 +719,25 @@ export function makeOrdersController(env: Env) {
             (order as any).rejection = undefined;
           }
           (order as any).__aiReturnWindowVerification = returnWindowResult || undefined;
+
+          // Audit trail: record AI return window verification for backtracking
+          if (returnWindowResult) {
+            writeAuditLog({
+              req,
+              action: 'ai.verify_return_window',
+              entityType: 'order',
+              entityId: String(order._id),
+              metadata: {
+                orderIdMatch: returnWindowResult.orderIdMatch,
+                productNameMatch: returnWindowResult.productNameMatch,
+                amountMatch: returnWindowResult.amountMatch,
+                soldByMatch: returnWindowResult.soldByMatch,
+                returnWindowClosed: returnWindowResult.returnWindowClosed,
+                confidenceScore: returnWindowResult.confidenceScore,
+                discrepancyNote: returnWindowResult.discrepancyNote,
+              },
+            });
+          }
         } else if (body.type === 'order') {
           assertProofImageSize(body.data, 'Order proof');
           const expectedOrderId = String(order.externalOrderId || '').trim();

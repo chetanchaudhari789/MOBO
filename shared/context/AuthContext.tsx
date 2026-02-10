@@ -1,6 +1,6 @@
-﻿import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User } from '../types';
-import { api } from '../services/api';
+import { api, onAuthExpired } from '../services/api';
 import { subscribeRealtime, stopRealtime } from '../services/realtime';
 
 interface AuthContextType {
@@ -168,13 +168,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     emitAuthChange();
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('mobo_session');
     localStorage.removeItem('mobo_tokens_v1');
     stopRealtime();
     emitAuthChange();
-  };
+  }, []);
+
+  // Force-logout when api.ts detects an unrecoverable 401 (refresh token expired).
+  useEffect(() => {
+    const unsub = onAuthExpired(() => {
+      logout();
+    });
+    return unsub;
+  }, [logout]);
 
   return (
     <AuthContext.Provider
