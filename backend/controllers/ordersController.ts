@@ -697,11 +697,14 @@ export function makeOrdersController(env: Env) {
             }
           }
 
-          order.screenshots = { ...(order.screenshots ?? {}), returnWindow: body.data } as any;
+          const screenshots: any = { ...(order.screenshots ?? {}), returnWindow: body.data };
+          if (returnWindowResult) {
+            screenshots.returnWindowAiVerification = returnWindowResult;
+          }
+          order.screenshots = screenshots;
           if ((order as any).rejection?.type === 'returnWindow') {
             (order as any).rejection = undefined;
           }
-          (order as any).__aiReturnWindowVerification = returnWindowResult || undefined;
         } else if (body.type === 'order') {
           assertProofImageSize(body.data, 'Order proof');
           const expectedOrderId = String(order.externalOrderId || '').trim();

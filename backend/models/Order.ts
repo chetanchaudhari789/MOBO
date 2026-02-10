@@ -98,8 +98,8 @@ const orderSchema = new Schema(
     },
     reviewLink: { type: String, trim: true },
 
-    // Return window cooling period in days (default 10)
-    returnWindowDays: { type: Number, default: 10, min: 0, max: 90 },
+    // Return window cooling period in days (default 14)
+    returnWindowDays: { type: Number, default: 14, min: 0, max: 90 },
     // AI verification result for rating screenshot (account name + product match)
     ratingAiVerification: {
       accountNameMatch: { type: Boolean },
