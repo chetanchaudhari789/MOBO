@@ -82,7 +82,7 @@ export const createOrderSchema = z
 export const submitClaimSchema = z
   .object({
     orderId: z.string().min(1),
-    type: z.enum(['review', 'rating', 'order']),
+    type: z.enum(['review', 'rating', 'order', 'returnWindow']),
     data: z.string().min(1),
   })
   .superRefine((value, ctx) => {

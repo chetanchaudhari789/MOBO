@@ -15,7 +15,7 @@ import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
-import { isGeminiConfigured, verifyProofWithAi } from '../services/aiService.js';
+import { isGeminiConfigured, verifyProofWithAi, verifyRatingScreenshotWithAi, verifyReturnWindowWithAi } from '../services/aiService.js';
 
 export function makeOrdersController(env: Env) {
   const MAX_PROOF_BYTES = 50 * 1024 * 1024;
@@ -50,6 +50,7 @@ export function makeOrdersController(env: Env) {
     if (proofType === 'payment') return order.screenshots?.payment || '';
     if (proofType === 'rating') return order.screenshots?.rating || '';
     if (proofType === 'review') return order.reviewLink || order.screenshots?.review || '';
+    if (proofType === 'returnwindow') return order.screenshots?.returnWindow || '';
     return '';
   };
 
@@ -90,7 +91,7 @@ export function makeOrdersController(env: Env) {
             const proofType = String(req.params.type || '').trim().toLowerCase();
             if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
 
-            const allowedTypes = new Set(['order', 'payment', 'rating', 'review']);
+            const allowedTypes = new Set(['order', 'payment', 'rating', 'review', 'returnwindow']);
             if (!allowedTypes.has(proofType)) {
               throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
             }
@@ -152,7 +153,7 @@ export function makeOrdersController(env: Env) {
             const proofType = String(req.params.type || '').trim().toLowerCase();
             if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
 
-            const allowedTypes = new Set(['order', 'payment', 'rating', 'review']);
+            const allowedTypes = new Set(['order', 'payment', 'rating', 'review', 'returnwindow']);
             if (!allowedTypes.has(proofType)) {
               throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
             }
@@ -609,6 +610,27 @@ export function makeOrdersController(env: Env) {
           }
         }
 
+        // Return window step: gated behind rating verification for Rating/Review deals
+        if (body.type === 'returnWindow') {
+          const purchaseVerified = !!(order as any).verification?.order?.verifiedAt;
+          if (!purchaseVerified) {
+            throw new AppError(409, 'PURCHASE_NOT_VERIFIED',
+              'Purchase proof must be verified before uploading return window proof.');
+          }
+          // For Rating/Review deals, rating/review must be verified first
+          const dealTypes = (order.items ?? []).map((it: any) => String(it?.dealType || ''));
+          const requiresRating = dealTypes.includes('Rating');
+          const requiresReview = dealTypes.includes('Review');
+          if (requiresRating && !(order as any).verification?.rating?.verifiedAt) {
+            throw new AppError(409, 'RATING_NOT_VERIFIED',
+              'Rating proof must be verified before uploading return window proof.');
+          }
+          if (requiresReview && !(order as any).verification?.review?.verifiedAt) {
+            throw new AppError(409, 'REVIEW_NOT_VERIFIED',
+              'Review proof must be verified before uploading return window proof.');
+          }
+        }
+
         if (body.type === 'review') {
           order.reviewLink = body.data;
           if ((order as any).rejection?.type === 'review') {
@@ -616,10 +638,70 @@ export function makeOrdersController(env: Env) {
           }
         } else if (body.type === 'rating') {
           assertProofImageSize(body.data, 'Rating proof');
+
+          // AI verification: check account name matches buyer + product name matches
+          let ratingAiResult: any = null;
+          if (!env.SEED_E2E) {
+            const buyerUser = await UserModel.findById(order.userId).select({ name: 1 }).lean();
+            const buyerName = String(buyerUser?.name || (order as any).buyerName || '').trim();
+            const productName = String((order.items?.[0] as any)?.title || (order as any).extractedProductName || '').trim();
+            if (buyerName && productName) {
+              ratingAiResult = await verifyRatingScreenshotWithAi(env, {
+                imageBase64: body.data,
+                expectedBuyerName: buyerName,
+                expectedProductName: productName,
+              });
+              // Block submission if both name AND product mismatch with high confidence
+              if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
+                  && ratingAiResult.confidenceScore >= 60) {
+                throw new AppError(422, 'RATING_VERIFICATION_FAILED',
+                  'Rating screenshot does not match: the account name and product must match your order. ' +
+                  (ratingAiResult.discrepancyNote || ''));
+              }
+            }
+          }
+
           order.screenshots = { ...(order.screenshots ?? {}), rating: body.data } as any;
+          if (ratingAiResult) {
+            (order as any).ratingAiVerification = {
+              accountNameMatch: ratingAiResult.accountNameMatch,
+              productNameMatch: ratingAiResult.productNameMatch,
+              detectedAccountName: ratingAiResult.detectedAccountName,
+              detectedProductName: ratingAiResult.detectedProductName,
+              confidenceScore: ratingAiResult.confidenceScore,
+            };
+          }
           if ((order as any).rejection?.type === 'rating') {
             (order as any).rejection = undefined;
           }
+        } else if (body.type === 'returnWindow') {
+          assertProofImageSize(body.data, 'Return window proof');
+
+          // AI verification: check order ID, product name, amount, sold by
+          let returnWindowResult: any = null;
+          if (!env.SEED_E2E) {
+            const expectedOrderId = String(order.externalOrderId || '').trim();
+            const expectedProductName = String((order.items?.[0] as any)?.title || '').trim();
+            const expectedAmount = ((order as any).items ?? []).reduce(
+              (acc: number, it: any) => acc + (Number(it?.priceAtPurchasePaise) || 0) * (Number(it?.quantity) || 1), 0
+            ) / 100;
+            const expectedSoldBy = String((order as any).soldBy || '').trim();
+            if (expectedOrderId) {
+              returnWindowResult = await verifyReturnWindowWithAi(env, {
+                imageBase64: body.data,
+                expectedOrderId,
+                expectedProductName,
+                expectedAmount,
+                expectedSoldBy: expectedSoldBy || undefined,
+              });
+            }
+          }
+
+          order.screenshots = { ...(order.screenshots ?? {}), returnWindow: body.data } as any;
+          if ((order as any).rejection?.type === 'returnWindow') {
+            (order as any).rejection = undefined;
+          }
+          (order as any).__aiReturnWindowVerification = returnWindowResult || undefined;
         } else if (body.type === 'order') {
           assertProofImageSize(body.data, 'Order proof');
           const expectedOrderId = String(order.externalOrderId || '').trim();

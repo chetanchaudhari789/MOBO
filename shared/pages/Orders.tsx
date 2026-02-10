@@ -56,7 +56,7 @@ export const Orders: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [uploadType, setUploadType] = useState<'order' | 'payment' | 'rating' | 'review'>('order');
+  const [uploadType, setUploadType] = useState<'order' | 'payment' | 'rating' | 'review' | 'returnWindow'>('order');
   const [proofToView, setProofToView] = useState<Order | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -512,6 +512,7 @@ export const Orders: React.FC = () => {
             const purchaseVerified = !!order.verification?.orderVerified;
             const reviewVerified = !!order.verification?.reviewVerified;
             const ratingVerified = !!order.verification?.ratingVerified;
+            const returnWindowVerified = !!(order.verification as any)?.returnWindowVerified;
             const missingProofs = order.requirements?.missingProofs ?? [];
             const missingVerifications = order.requirements?.missingVerifications ?? [];
             const requiredSteps = order.requirements?.required ?? [];
@@ -652,7 +653,7 @@ export const Orders: React.FC = () => {
                     <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                     <div>
                       <span className="uppercase text-[9px] tracking-wider font-black text-red-500 block mb-0.5">
-                        {rejectionType === 'order' ? 'Purchase Proof' : rejectionType === 'review' ? 'Review Proof' : rejectionType === 'rating' ? 'Rating Proof' : 'Proof'} Rejected
+                        {rejectionType === 'order' ? 'Purchase Proof' : rejectionType === 'review' ? 'Review Proof' : rejectionType === 'rating' ? 'Rating Proof' : rejectionType === 'returnWindow' ? 'Return Window Proof' : 'Proof'} Rejected
                       </span>
                       {rejectionReason}
                     </div>
@@ -751,6 +752,36 @@ export const Orders: React.FC = () => {
                         </>
                       )}
 
+                      {/* Return Window step */}
+                      {requiredSteps.includes('returnWindow' as any) && (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                              returnWindowVerified
+                                ? 'bg-green-500 text-white'
+                                : rejectionType === 'returnWindow'
+                                  ? 'bg-red-500 text-white'
+                                  : !(missingProofs as string[]).includes('returnWindow') && (ratingVerified || !requiredSteps.includes('rating'))
+                                    ? 'bg-purple-500 text-white'
+                                    : (ratingVerified || !requiredSteps.includes('rating'))
+                                      ? 'bg-yellow-400 text-yellow-900'
+                                      : 'bg-slate-200 text-slate-400'
+                            }`}>
+                              {returnWindowVerified ? <Check size={12} strokeWidth={3} /> :
+                                (requiredSteps.includes('review') && requiredSteps.includes('rating') ? '4' :
+                                 requiredSteps.includes('review') || requiredSteps.includes('rating') ? '3' : '2')
+                              }
+                            </div>
+                            <span className={`text-[10px] font-bold ${
+                              returnWindowVerified ? 'text-green-600' : purchaseVerified ? 'text-slate-700' : 'text-slate-400'
+                            }`}>
+                              Return Window
+                            </span>
+                          </div>
+                          <div className={`flex-1 h-0.5 mx-1 rounded ${returnWindowVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+                        </>
+                      )}
+
                       {/* Final: Cashback */}
                       <div className="flex items-center gap-1.5">
                         <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
@@ -780,7 +811,7 @@ export const Orders: React.FC = () => {
                     )}
                     {purchaseVerified && missingProofs.length > 0 && !rejectionReason && (
                       <p className="text-[10px] text-yellow-700 mt-2 font-bold">
-                        ↓ Upload your {missingProofs.join(' & ')} proof below to continue.
+                        ↓ Upload your {(missingProofs as string[]).map(p => p === 'returnWindow' ? 'return window' : p).join(' & ')} proof below to continue.
                       </p>
                     )}
                     {purchaseVerified && missingProofs.length === 0 && missingVerifications.length > 0 && !rejectionReason && (
@@ -841,6 +872,21 @@ export const Orders: React.FC = () => {
                         className="text-[10px] font-bold uppercase text-purple-600"
                       >
                         {rejectionType === 'rating' ? 'Reupload Rating' : 'Add Rating'}
+                      </button>
+                    )}
+                    {/* Return Window upload: ONLY shown after rating/review is verified */}
+                    {requiredSteps.includes('returnWindow' as any) && purchaseVerified
+                      && (ratingVerified || !requiredSteps.includes('rating'))
+                      && (reviewVerified || !requiredSteps.includes('review'))
+                      && (!(order.screenshots as any)?.returnWindow || rejectionType === 'returnWindow') && (
+                      <button
+                        onClick={() => {
+                          setSelectedOrder(order);
+                          setUploadType('returnWindow');
+                        }}
+                        className="text-[10px] font-bold uppercase text-teal-600"
+                      >
+                        {rejectionType === 'returnWindow' ? 'Reupload Return Window' : 'Upload Return Window'}
                       </button>
                     )}
                     <button
@@ -1302,6 +1348,22 @@ export const Orders: React.FC = () => {
                 </div>
               )}
 
+              {/* Return Window Proof */}
+              <div className="space-y-2">
+                <div className="text-[10px] font-bold uppercase text-slate-400">Return Window Proof</div>
+                {(proofToView.screenshots as any)?.returnWindow ? (
+                  <img
+                    src={(proofToView.screenshots as any).returnWindow}
+                    className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
+                    alt="Return window proof"
+                  />
+                ) : (
+                  <div className="p-4 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 font-bold">
+                    Return window proof not submitted.
+                  </div>
+                )}
+              </div>
+
               {/* Order Timeline / Audit Trail */}
               {proofToView.events && proofToView.events.length > 0 && (
                 <div className="space-y-2 mt-2 border-t border-slate-100 pt-3">
@@ -1356,7 +1418,7 @@ export const Orders: React.FC = () => {
             </button>
 
             <h3 className="text-lg font-extrabold text-slate-900 mb-1">
-              {uploadType === 'review' ? 'Submit Review Link' : 'Upload Proof'}
+              {uploadType === 'review' ? 'Submit Review Link' : uploadType === 'returnWindow' ? 'Upload Return Window' : 'Upload Proof'}
             </h3>
             <p className="text-xs text-slate-500 font-bold uppercase mb-5">
               Order {getPrimaryOrderId(selectedOrder)}
@@ -1384,7 +1446,7 @@ export const Orders: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block">
-                  {uploadType === 'rating' ? 'Rating Screenshot' : 'Proof'}
+                  {uploadType === 'rating' ? 'Rating Screenshot' : uploadType === 'returnWindow' ? 'Return Window Screenshot' : 'Proof'}
                 </label>
                 <label className="block w-full rounded-2xl border-2 border-dashed border-slate-200 p-6 text-center cursor-pointer hover:border-slate-300">
                   <div className="text-sm font-bold text-slate-700">Choose an image</div>

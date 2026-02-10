@@ -65,24 +65,28 @@ function mapUsersWithWallets(users: any[], wallets: any[]) {
   return users.map((u) => toUiUser(u, byUserId.get(String(u._id))));
 }
 
-function getRequiredStepsForOrder(order: any): Array<'review' | 'rating'> {
+function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'returnWindow'> {
   const dealTypes = (order.items ?? [])
     .map((it: any) => String(it?.dealType || ''))
     .filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
+  // Return window is required for Rating/Review deals (not Discount-only deals)
+  const requiresReturnWindow = requiresReview || requiresRating;
   return [
     ...(requiresReview ? (['review'] as const) : []),
     ...(requiresRating ? (['rating'] as const) : []),
+    ...(requiresReturnWindow ? (['returnWindow'] as const) : []),
   ];
 }
 
-function hasProofForRequirement(order: any, type: 'review' | 'rating'): boolean {
+function hasProofForRequirement(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
   if (type === 'review') return !!(order.reviewLink || order.screenshots?.review);
+  if (type === 'returnWindow') return !!order.screenshots?.returnWindow;
   return !!order.screenshots?.rating;
 }
 
-function isRequirementVerified(order: any, type: 'review' | 'rating'): boolean {
+function isRequirementVerified(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
   return !!order.verification?.[type]?.verifiedAt;
 }
 
@@ -987,6 +991,18 @@ export function makeOpsController(env: Env) {
             }
             if ((order as any).verification?.rating) {
               (order as any).verification.rating = undefined;
+            }
+            // Also clear ratingAiVerification when rating is rejected
+            if ((order as any).ratingAiVerification) {
+              (order as any).ratingAiVerification = undefined;
+            }
+          }
+          if (body.type === 'returnWindow') {
+            if ((order as any).screenshots?.returnWindow) {
+              (order as any).screenshots.returnWindow = undefined;
+            }
+            if ((order as any).verification?.returnWindow) {
+              (order as any).verification.returnWindow = undefined;
             }
           }
         }

@@ -49,6 +49,7 @@ import {
   Hourglass,
   Gift,
   BookmarkPlus,
+  Package,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -469,7 +470,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     };
 
     const apiBase = getApiBase();
-    const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review') => {
+    const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
@@ -503,6 +504,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Proof: Payment',
       'Proof: Rating',
       'Proof: Review Link',
+      'Proof: Return Window',
     ];
 
     const csvRows = [headers.join(',')];
@@ -540,6 +542,9 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
         (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
+          : 'No',
+        (o.screenshots as any)?.returnWindow
+          ? hyperlinkYes(buildProofUrl(o.id, 'returnWindow'))
           : 'No',
       ];
       csvRows.push(row.join(','));
@@ -3060,9 +3065,23 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   )}
                 </div>
               )}
-            </div>
 
-            <div className="pt-4 mt-2 border-t border-slate-100">
+              {/* 4. Return Window Proof */}
+              {(proofOrder.screenshots as any)?.returnWindow && (
+                <div className="space-y-2 animate-slide-up">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-widest">
+                    <Package size={14} /> Return Window
+                  </div>
+                  <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
+                    <img
+                      src={(proofOrder.screenshots as any).returnWindow}
+                      className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
+                      alt="Return Window proof"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
               <button
                 onClick={() => setProofOrder(null)}
                 className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"

@@ -42,6 +42,7 @@ import {
   Phone,
   Mail,
   Camera,
+  Package,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
@@ -663,7 +664,7 @@ const OrdersView = ({ user }: any) => {
     };
 
     const apiBase = getApiBase();
-    const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review') => {
+    const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
@@ -697,6 +698,7 @@ const OrdersView = ({ user }: any) => {
       'Proof: Payment',
       'Proof: Rating',
       'Proof: Review Link',
+      'Proof: Return Window',
     ];
 
     const csvRows = [headers.join(',')];
@@ -734,6 +736,9 @@ const OrdersView = ({ user }: any) => {
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
         (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
+          : 'No',
+        (o.screenshots as any)?.returnWindow
+          ? hyperlinkYes(buildProofUrl(o.id, 'returnWindow'))
           : 'No',
       ];
       csvRows.push(row.join(','));
@@ -1031,7 +1036,23 @@ const OrdersView = ({ user }: any) => {
                 </div>
               )}
 
-              {/* 4. Payment Proof (Optional/Generic) */}
+              {/* 4. Return Window Proof */}
+              {(viewProofOrder.screenshots as any)?.returnWindow && (
+                <div className="space-y-2 animate-slide-up">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-widest">
+                    <Package size={14} /> Return Window
+                  </div>
+                  <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
+                    <img
+                      src={(viewProofOrder.screenshots as any).returnWindow}
+                      className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
+                      alt="Return Window proof"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Payment Proof (Optional/Generic) */}
               {viewProofOrder.screenshots?.payment &&
                 viewProofOrder.screenshots.payment !== 'verified' && (
                   <div className="space-y-2">
