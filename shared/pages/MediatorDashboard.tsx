@@ -1875,6 +1875,30 @@ export const MediatorDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* AI-Extracted Metadata */}
+              {(proofModal.soldBy || proofModal.orderDate || proofModal.extractedProductName) && (
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  {proofModal.extractedProductName && (
+                    <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
+                      <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Product Name</p>
+                      <p className="text-[11px] font-bold text-zinc-200 line-clamp-2">{proofModal.extractedProductName}</p>
+                    </div>
+                  )}
+                  {proofModal.soldBy && (
+                    <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
+                      <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Sold By</p>
+                      <p className="text-[11px] font-bold text-zinc-200">{proofModal.soldBy}</p>
+                    </div>
+                  )}
+                  {proofModal.orderDate && (
+                    <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
+                      <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Order Date</p>
+                      <p className="text-[11px] font-bold text-zinc-200">{new Date(proofModal.orderDate).toLocaleDateString()}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {proofModal.screenshots?.order ? (
                 <div className="mt-4">
                   <p className="text-[10px] text-zinc-500 font-bold uppercase mb-2">

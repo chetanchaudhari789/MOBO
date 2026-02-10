@@ -43,6 +43,10 @@ export const createOrderSchema = z
     .optional(),
   externalOrderId: z.string().min(1).max(128).optional(),
   reviewLink: z.string().min(1).max(2000).optional(),
+  // AI-extracted metadata from order screenshot
+  orderDate: z.string().max(100).optional(),
+  soldBy: z.string().max(200).optional(),
+  extractedProductName: z.string().max(500).optional(),
 })
   .superRefine((value, ctx) => {
     if (value.reviewLink && !isHttpsUrl(value.reviewLink)) {

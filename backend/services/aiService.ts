@@ -736,7 +736,15 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
 export async function extractOrderDetailsWithAi(
   env: Env,
   payload: ExtractOrderPayload
-): Promise<{ orderId?: string | null; amount?: number | null; confidenceScore: number; notes?: string }> {
+): Promise<{
+  orderId?: string | null;
+  amount?: number | null;
+  orderDate?: string | null;
+  soldBy?: string | null;
+  productName?: string | null;
+  confidenceScore: number;
+  notes?: string;
+}> {
   const geminiAvailable = isGeminiConfigured(env);
   const ai = geminiAvailable ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY! }) : null;
 
@@ -982,6 +990,131 @@ export async function extractOrderDetailsWithAi(
       if (bareValues.length) return Math.max(...bareValues);
 
       return null;
+    };
+
+    /** Extract order date from OCR text. */
+    const extractOrderDate = (text: string): string | null => {
+      const lines = text.split('\n').map(normalizeLine).filter(Boolean);
+
+      // Look for lines containing date-related keywords
+      const dateKeywordRe = /\b(order\s*(placed|date)|placed\s*on|date|ordered\s*on|purchase\s*date|bought\s*on)\b/i;
+      // Date patterns: "7 February 2026", "07-02-2026", "07/02/2026", "Feb 7, 2026", "2026-02-07"
+      const datePatterns = [
+        /(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/i,
+        /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})/i,
+        /(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/,
+        /(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/,
+        /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i,
+        /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i,
+      ];
+
+      // First try lines with date keywords
+      for (const line of lines) {
+        if (!dateKeywordRe.test(line)) continue;
+        for (const pattern of datePatterns) {
+          const match = line.match(pattern);
+          if (match) return match[0].trim();
+        }
+      }
+
+      // Fallback: look for any date-like pattern in the entire text
+      for (const pattern of datePatterns) {
+        const match = text.match(pattern);
+        if (match) return match[0].trim();
+      }
+
+      return null;
+    };
+
+    /** Extract "Sold by" merchant name from OCR text. */
+    const extractSoldBy = (text: string): string | null => {
+      const lines = text.split('\n').map(normalizeLine).filter(Boolean);
+
+      const soldByRe = /\b(sold\s*by|seller|shipped\s*by|fulfilled\s*by|dispatched\s*by)\s*[:\-]?\s*/i;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(soldByRe);
+        if (match) {
+          // Extract the text after "Sold by:"
+          const afterKeyword = line.slice(match.index! + match[0].length).trim();
+          if (afterKeyword && afterKeyword.length >= 2 && afterKeyword.length <= 120) {
+            // Clean up common OCR artifacts
+            const cleaned = afterKeyword
+              .replace(/[^A-Za-z0-9\s&.,\-'()]/g, '')
+              .replace(/\s{2,}/g, ' ')
+              .trim();
+            if (cleaned.length >= 2) return cleaned;
+          }
+          // Check next line if this line only has the label
+          const nextLine = lines[i + 1];
+          if (nextLine && nextLine.length >= 2 && nextLine.length <= 120) {
+            const cleaned = nextLine
+              .replace(/[^A-Za-z0-9\s&.,\-'()]/g, '')
+              .replace(/\s{2,}/g, ' ')
+              .trim();
+            if (cleaned.length >= 2) return cleaned;
+          }
+        }
+      }
+
+      return null;
+    };
+
+    /** Extract product name from OCR text. */
+    const extractProductName = (text: string): string | null => {
+      const lines = text.split('\n').map(normalizeLine).filter(Boolean);
+
+      // Look for common product name patterns in e-commerce screenshots
+      // Typically the product name is the longest descriptive line near the top
+      // or near price/amount information
+      const excludePatterns = [
+        /^(order|tracking|invoice|payment|ship|deliver|cancel|return|refund|subtotal|total|grand|amount|paid|you paid|item|qty|quantity)/i,
+        /^\d+$/,
+        /^[₹$€]\s*\d/,
+        /^(rs|inr)\b/i,
+        /^(sold|seller|fulfilled|dispatched)\s*by/i,
+        /^(arriving|expected|estimated)\s*(on|by|date|delivery)/i,
+        /^(your|my)\s*(account|order|address)/i,
+        /^(ship\s*to|deliver\s*to|billing)/i,
+        /^\d{1,2}\s*(january|february|march|april|may|june|july|august|september|october|november|december)/i,
+      ];
+
+      // Heuristic: find lines that look like product titles
+      // Product names tend to be: 20-200 chars, contain mixed case or title case,
+      // contain brand/product words, are near image or price references
+      const candidates: Array<{ name: string; score: number }> = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.length < 10 || line.length > 250) continue;
+        if (excludePatterns.some(p => p.test(line))) continue;
+
+        let score = 0;
+        // Longer descriptive lines score higher (likely product names)
+        if (line.length >= 20 && line.length <= 150) score += 3;
+        if (line.length >= 30) score += 1;
+        // Contains common product keywords
+        if (/\b(for|with|pack|set|kit|box|ml|gm|kg|ltr|pcs|combo)\b/i.test(line)) score += 3;
+        // Contains pipe or dash separators (common in e-commerce titles)
+        if (/[|]/.test(line)) score += 2;
+        // Mixed case (product titles tend to be mixed case)
+        if (/[A-Z]/.test(line) && /[a-z]/.test(line)) score += 1;
+        // Near price/amount lines
+        if (i > 0 && /₹|rs\.?|inr|price/i.test(lines[i - 1] || '')) score += 1;
+        if (i < lines.length - 1 && /₹|rs\.?|inr|price/i.test(lines[i + 1] || '')) score += 2;
+        // Near "sold by" lines
+        if (i > 0 && /sold\s*by/i.test(lines[i - 1] || '')) score += 1;
+        if (i < lines.length - 1 && /sold\s*by/i.test(lines[i + 1] || '')) score += 2;
+
+        if (score >= 3) {
+          candidates.push({ name: line.replace(/\s{2,}/g, ' ').trim(), score });
+        }
+      }
+
+      if (candidates.length === 0) return null;
+      candidates.sort((a, b) => b.score - a.score);
+      return candidates[0].name;
     };
 
     /** Fix common OCR letter/digit confusion for platform prefixes. */
@@ -1232,10 +1365,16 @@ export async function extractOrderDetailsWithAi(
     const runDeterministicExtraction = (text: string) => {
       const orderId = extractOrderId(text);
       const amount = extractAmounts(text);
+      const orderDate = extractOrderDate(text);
+      const soldBy = extractSoldBy(text);
+      const productName = extractProductName(text);
       const notes: string[] = [];
       if (orderId) notes.push('Deterministic order ID extracted.');
       if (amount) notes.push('Deterministic amount extracted.');
-      return { orderId, amount, notes };
+      if (orderDate) notes.push('Order date extracted.');
+      if (soldBy) notes.push('Seller info extracted.');
+      if (productName) notes.push('Product name extracted.');
+      return { orderId, amount, orderDate, soldBy, productName, notes };
     };
 
     /** Tesseract.js fallback: local OCR that works without any external API. */
@@ -1282,7 +1421,7 @@ export async function extractOrderDetailsWithAi(
     const refineWithAi = async (
       model: string,
       ocrText: string,
-      deterministic: { orderId: string | null; amount: number | null }
+      deterministic: { orderId: string | null; amount: number | null; orderDate: string | null; soldBy: string | null; productName: string | null }
     ) => {
       if (!ai) return null;
       const response = await withModelTimeout(ai.models.generateContent({
@@ -1293,27 +1432,36 @@ export async function extractOrderDetailsWithAi(
               'TASK: EXTRACT E-COMMERCE ORDER DETAILS FROM OCR TEXT.',
               'PRIORITY: GOD-LEVEL ACCURACY REQUIRED.',
               '1. EXTRACT the Order ID exactly as it appears (Amazon 404-..., Flipkart OD..., Myntra, Jio, etc.).',
-              '2. EXTRACT the Final Order Amount.',
-              '3. IGNORE ambiguous single/double digit numbers.',
-              '4. IGNORE system UUIDs or IDs that look like "SYS-..." or internal codes.',
-              '5. If a DETERMINISTIC_ORDER_ID is provided and looks correct, confirmation it.',
-              '6. If OCR text is messy but contains a likely Order ID, EXTRACT IT. Do not return null if a partial match exists.',
+              '2. EXTRACT the Final Order Amount (Grand Total / Amount Paid / You Paid — NOT item price or subtotal).',
+              '3. EXTRACT the Order Date (when the order was placed).',
+              '4. EXTRACT "Sold by" / Seller name.',
+              '5. EXTRACT the Product Name / Item title.',
+              '6. IGNORE ambiguous single/double digit numbers.',
+              '7. IGNORE system UUIDs or IDs that look like "SYS-..." or internal codes.',
+              '8. If a DETERMINISTIC value is provided and looks correct, confirm it.',
+              '9. If OCR text is messy but contains a likely Order ID, EXTRACT IT. Do not return null if a partial match exists.',
               `OCR_TEXT (Start):\n${ocrText}\n(End OCR_TEXT)`,
               `DETERMINISTIC_ORDER_ID: ${deterministic.orderId ?? 'null'}`,
               `DETERMINISTIC_AMOUNT: ${deterministic.amount ?? 'null'}`,
-              'Return JSON with suggestedOrderId, suggestedAmount, confidenceScore (0-100), and notes.',
+              `DETERMINISTIC_ORDER_DATE: ${deterministic.orderDate ?? 'null'}`,
+              `DETERMINISTIC_SOLD_BY: ${deterministic.soldBy ?? 'null'}`,
+              `DETERMINISTIC_PRODUCT_NAME: ${deterministic.productName ?? 'null'}`,
+              'Return JSON with suggestedOrderId, suggestedAmount, suggestedOrderDate, suggestedSoldBy, suggestedProductName, confidenceScore (0-100), and notes.',
             ].join('\n'),
           },
         ],
         config: {
           temperature: 0,
-          maxOutputTokens: Math.min(env.AI_MAX_OUTPUT_TOKENS_EXTRACT, 256),
+          maxOutputTokens: Math.min(env.AI_MAX_OUTPUT_TOKENS_EXTRACT, 512),
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
             properties: {
               suggestedOrderId: { type: Type.STRING },
               suggestedAmount: { type: Type.NUMBER },
+              suggestedOrderDate: { type: Type.STRING },
+              suggestedSoldBy: { type: Type.STRING },
+              suggestedProductName: { type: Type.STRING },
               confidenceScore: { type: Type.INTEGER },
               notes: { type: Type.STRING },
             },
@@ -1391,15 +1539,21 @@ export async function extractOrderDetailsWithAi(
 
     let ocrText = '';
     let ocrLabel = 'none';
-    let deterministic: { orderId: string | null; amount: number | null; notes: string[] } = {
+    let deterministic: { orderId: string | null; amount: number | null; orderDate: string | null; soldBy: string | null; productName: string | null; notes: string[] } = {
       orderId: null,
       amount: null,
+      orderDate: null,
+      soldBy: null,
+      productName: null,
       notes: [],
     };
     let bestScore = 0;
     // Accumulate results across OCR passes — one crop may find the ID, another the amount
     let accumulatedOrderId: string | null = null;
     let accumulatedAmount: number | null = null;
+    let accumulatedOrderDate: string | null = null;
+    let accumulatedSoldBy: string | null = null;
+    let accumulatedProductName: string | null = null;
     const allOcrTexts: string[] = [];
 
     if (env.AI_DEBUG_OCR) {
@@ -1422,6 +1576,15 @@ export async function extractOrderDetailsWithAi(
       }
       if (candidateDeterministic.amount && !accumulatedAmount) {
         accumulatedAmount = candidateDeterministic.amount;
+      }
+      if (candidateDeterministic.orderDate && !accumulatedOrderDate) {
+        accumulatedOrderDate = candidateDeterministic.orderDate;
+      }
+      if (candidateDeterministic.soldBy && !accumulatedSoldBy) {
+        accumulatedSoldBy = candidateDeterministic.soldBy;
+      }
+      if (candidateDeterministic.productName && !accumulatedProductName) {
+        accumulatedProductName = candidateDeterministic.productName;
       }
 
       const score = (candidateDeterministic.orderId ? 1 : 0) + (candidateDeterministic.amount ? 1 : 0);
@@ -1446,6 +1609,18 @@ export async function extractOrderDetailsWithAi(
       deterministic.amount = accumulatedAmount;
       deterministic.notes.push('Amount from alternate crop.');
     }
+    if (!deterministic.orderDate && accumulatedOrderDate) {
+      deterministic.orderDate = accumulatedOrderDate;
+      deterministic.notes.push('Order date from alternate crop.');
+    }
+    if (!deterministic.soldBy && accumulatedSoldBy) {
+      deterministic.soldBy = accumulatedSoldBy;
+      deterministic.notes.push('Seller info from alternate crop.');
+    }
+    if (!deterministic.productName && accumulatedProductName) {
+      deterministic.productName = accumulatedProductName;
+      deterministic.notes.push('Product name from alternate crop.');
+    }
 
     // Last resort: concatenate all OCR text and run deterministic extraction on the combined text
     if (!deterministic.orderId || !deterministic.amount) {
@@ -1459,6 +1634,18 @@ export async function extractOrderDetailsWithAi(
         if (!deterministic.amount && combined.amount) {
           deterministic.amount = combined.amount;
           deterministic.notes.push('Amount from combined OCR text.');
+        }
+        if (!deterministic.orderDate && combined.orderDate) {
+          deterministic.orderDate = combined.orderDate;
+          deterministic.notes.push('Order date from combined OCR text.');
+        }
+        if (!deterministic.soldBy && combined.soldBy) {
+          deterministic.soldBy = combined.soldBy;
+          deterministic.notes.push('Seller info from combined OCR text.');
+        }
+        if (!deterministic.productName && combined.productName) {
+          deterministic.productName = combined.productName;
+          deterministic.notes.push('Product name from combined OCR text.');
         }
         if (!ocrText) {
           ocrText = combinedText;
@@ -1563,9 +1750,17 @@ export async function extractOrderDetailsWithAi(
       confidenceScore = 55;
     }
 
+    // Collect all extracted metadata
+    const finalOrderDate = deterministic.orderDate;
+    const finalSoldBy = deterministic.soldBy;
+    const finalProductName = deterministic.productName;
+
     console.log('Order extract final', {
       orderId: finalOrderId,
       amount: finalAmount,
+      orderDate: finalOrderDate,
+      soldBy: finalSoldBy,
+      productName: finalProductName,
       confidence: confidenceScore,
       aiUsed,
     });
@@ -1573,6 +1768,9 @@ export async function extractOrderDetailsWithAi(
     return {
       orderId: finalOrderId,
       amount: finalAmount,
+      orderDate: finalOrderDate,
+      soldBy: finalSoldBy,
+      productName: finalProductName,
       confidenceScore,
       notes: notes.join(' '),
     };
@@ -1581,6 +1779,9 @@ export async function extractOrderDetailsWithAi(
     return {
       orderId: null,
       amount: null,
+      orderDate: null,
+      soldBy: null,
+      productName: null,
       confidenceScore: 0,
       notes: `Extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };

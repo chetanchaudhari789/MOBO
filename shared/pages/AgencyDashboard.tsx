@@ -496,6 +496,9 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Payment Status',
       'Verification Status',
       'Internal Ref',
+      'Sold By',
+      'Order Date',
+      'Extracted Product',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -529,6 +532,9 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
+        `"${((o as any).soldBy || '').replace(/"/g, '""')}"`,
+        (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
+        `"${((o as any).extractedProductName || '').replace(/"/g, '""')}"`,
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
@@ -679,6 +685,9 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                       <div className="text-[10px] text-slate-500 truncate max-w-[180px]">
                         {o.items[0]?.title}
                       </div>
+                      {o.soldBy && (
+                        <div className="text-[9px] text-slate-400 mt-0.5">Seller: {o.soldBy}</div>
+                      )}
                     </td>
                     <td className="p-5">
                       <div className="flex items-center gap-2">

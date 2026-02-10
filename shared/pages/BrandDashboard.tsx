@@ -690,6 +690,9 @@ const OrdersView = ({ user }: any) => {
       'Payment Status',
       'Verification Status',
       'Internal Ref',
+      'Sold By',
+      'Order Date',
+      'Extracted Product',
       'Proof: Order',
       'Proof: Payment',
       'Proof: Rating',
@@ -723,6 +726,9 @@ const OrdersView = ({ user }: any) => {
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
+        `"${(o.soldBy || '').replace(/"/g, '""')}"`,
+        o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+        `"${(o.extractedProductName || '').replace(/"/g, '""')}"`,
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
@@ -941,6 +947,13 @@ const OrdersView = ({ user }: any) => {
                       {viewProofOrder.total}
                     </span>
                   </p>
+                  {(viewProofOrder.soldBy || viewProofOrder.orderDate || viewProofOrder.extractedProductName) && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-zinc-400">
+                      {viewProofOrder.extractedProductName && <span>Product: {viewProofOrder.extractedProductName}</span>}
+                      {viewProofOrder.soldBy && <span>Seller: {viewProofOrder.soldBy}</span>}
+                      {viewProofOrder.orderDate && <span>Ordered: {new Date(viewProofOrder.orderDate).toLocaleDateString()}</span>}
+                    </div>
+                  )}
                 </div>
               </div>
 

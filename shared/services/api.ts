@@ -822,6 +822,17 @@ export const api = {
         headers: { ...authHeaders() },
       });
     },
+    getAuditLogs: async (filters?: { action?: string; entityType?: string; limit?: number; page?: number }) => {
+      const params = new URLSearchParams();
+      if (filters?.action) params.append('action', filters.action);
+      if (filters?.entityType) params.append('entityType', filters.entityType);
+      if (filters?.limit) params.append('limit', String(filters.limit));
+      if (filters?.page) params.append('page', String(filters.page));
+      const qs = params.toString();
+      return fetchJson(`/admin/audit-logs${qs ? '?' + qs : ''}`, {
+        headers: { ...authHeaders() },
+      });
+    },
   },
   /** [FIX] Added missing tickets object used across various dashboards */
   tickets: {
