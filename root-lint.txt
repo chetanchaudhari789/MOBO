@@ -1,0 +1,12 @@
+﻿
+C:\Users\Gaurav\Buzzma\MOBO\shared\pages\AgencyDashboard.tsx
+  3093:8  error  Parsing error: ')' expected
+
+C:\Users\Gaurav\Buzzma\MOBO\shared\pages\Orders.tsx
+   23:3   warning  'Star' is defined but never used. Allowed unused vars must match /^_/u                                @typescript-eslint/no-unused-vars
+   73:10  warning  'ratingScreenshot' is assigned a value but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+  328:9   warning  'handleNewRatingScreenshot' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  356:11  warning  'missingExtras' is assigned a value but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+
+Γ£û 5 problems (1 error, 4 warnings)
+

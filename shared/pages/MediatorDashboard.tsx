@@ -38,6 +38,7 @@ import {
   Loader2,
   Search,
   Download,
+  Package,
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';

@@ -59,7 +59,7 @@ function isPrivateHost(hostname: string): boolean {
   return false;
 }
 
-export function mediaRoutes(env: Env): Router {
+export function mediaRoutes(_env: Env): Router {
   const router = Router();
 
   // Public endpoint — <img src="..."> tags cannot send Authorization headers.

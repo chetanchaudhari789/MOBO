@@ -20,7 +20,6 @@ import {
   ShieldCheck,
   Package,
   Zap,
-  Star,
 } from 'lucide-react';
 
 const getPrimaryOrderId = (order: Order) =>
@@ -70,8 +69,7 @@ export const Orders: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const [formScreenshot, setFormScreenshot] = useState<string | null>(null);
-  const [ratingScreenshot, setRatingScreenshot] = useState<string | null>(null);
-  const [reviewLinkInput, setReviewLinkInput] = useState('');
+  const [reviewLinkInput, setReviewLinkInput] = useState('');  
 
   const [extractedDetails, setExtractedDetails] = useState<{
     orderId: string;
@@ -325,22 +323,6 @@ export const Orders: React.FC = () => {
     }
   };
 
-  const handleNewRatingScreenshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid rating image (PNG/JPG, max 50MB).');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const raw = reader.result as string;
-      setRatingScreenshot(raw);
-    };
-    reader.readAsDataURL(file);
-  };
-
   const submitNewOrder = async () => {
     if (!selectedProduct || !user || isUploading) return;
     if (!formScreenshot) {
@@ -353,7 +335,6 @@ export const Orders: React.FC = () => {
       toast.error('Order proof does not look valid. Please upload a clearer proof.');
       return;
     }
-    const missingExtras: string[] = [];
     // Rating/review proofs are now submitted after mediator verifies order screenshot.
     // No longer required at creation time.
     setIsUploading(true);
@@ -395,7 +376,6 @@ export const Orders: React.FC = () => {
       setIsNewOrderModalOpen(false);
       setSelectedProduct(null);
       setFormScreenshot(null);
-      setRatingScreenshot(null);
       setReviewLinkInput('');
       setExtractedDetails({ orderId: '', amount: '' });
       setMatchStatus({ id: 'none', amount: 'none' });

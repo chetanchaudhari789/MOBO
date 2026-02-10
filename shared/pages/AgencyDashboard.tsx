@@ -3082,13 +3082,12 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 </div>
               )}
             </div>
-              <button
-                onClick={() => setProofOrder(null)}
-                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
-              >
-                Close Viewer
-              </button>
-            </div>
+            <button
+              onClick={() => setProofOrder(null)}
+              className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
+            >
+              Close Viewer
+            </button>
           </div>
         </div>
       )}
