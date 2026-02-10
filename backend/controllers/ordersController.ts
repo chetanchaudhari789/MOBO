@@ -699,10 +699,10 @@ export function makeOrdersController(env: Env) {
 
           order.screenshots = { ...(order.screenshots ?? {}), returnWindow: body.data } as any;
           if (returnWindowResult) {
-            (order as any).returnWindowAiVerification = returnWindowResult;
+            order.returnWindowAiVerification = returnWindowResult;
           }
-          if ((order as any).rejection?.type === 'returnWindow') {
-            (order as any).rejection = undefined;
+          if (order.rejection?.type === 'returnWindow') {
+            order.rejection = undefined;
           }
         } else if (body.type === 'order') {
           assertProofImageSize(body.data, 'Order proof');
