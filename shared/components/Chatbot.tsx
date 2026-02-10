@@ -17,6 +17,31 @@ import { api } from '../services/api';
 import { Ticket, Order, Product } from '../types';
 import { ProductCard } from './ProductCard';
 
+/** Build the API base URL so we can proxy marketplace images through our backend. */
+function getApiBase(): string {
+  const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
+  const fromNext =
+    typeof process !== 'undefined' &&
+    (process as any).env &&
+    (process as any).env.NEXT_PUBLIC_API_URL
+      ? String((process as any).env.NEXT_PUBLIC_API_URL)
+      : undefined;
+  let base = String(fromGlobal || fromNext || '/api').trim();
+  if (base.startsWith('/') && typeof window !== 'undefined') {
+    base = `${window.location.origin}${base}`;
+  }
+  return base.replace(/\/$/, '');
+}
+
+/** Return a proxied image URL for external marketplace images. */
+function proxyImageUrl(rawUrl: string | undefined): string | undefined {
+  if (!rawUrl) return undefined;
+  if (/^https?:\/\//i.test(rawUrl)) {
+    return `${getApiBase()}/media/image?url=${encodeURIComponent(rawUrl)}`;
+  }
+  return rawUrl; // data URIs, relative paths, etc. are returned as-is
+}
+
 interface ChatbotProps {
   isVisible?: boolean;
   onNavigate?: (tab: 'home' | 'explore' | 'orders' | 'profile') => void;
@@ -632,7 +657,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                       <div className="flex gap-4">
                         <div className="w-14 h-14 bg-slate-50 rounded-xl p-1.5 border border-slate-100 flex-shrink-0">
                           <img
-                            src={order.items[0].image}
+                            src={proxyImageUrl(order.items[0].image) || ''}
                             className="w-full h-full object-contain mix-blend-multiply"
                             alt=""
                           />

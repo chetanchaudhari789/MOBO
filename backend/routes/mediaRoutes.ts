@@ -1,9 +1,35 @@
 import { Router } from 'express';
 import type { Env } from '../config/env.js';
-import { requireAuth } from '../middleware/auth.js';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4MB
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/**
+ * Simple per-IP rate limiter for the public image proxy.
+ * Allows `MAX_REQUESTS` requests per `WINDOW_MS` window per IP.
+ */
+const RATE_WINDOW_MS = 60_000; // 1 minute
+const RATE_MAX_REQUESTS = 120; // generous limit for pages with many product cards
+const ipHits = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = ipHits.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    ipHits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_MAX_REQUESTS;
+}
+
+// Periodically clean up stale entries to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of ipHits) {
+    if (now >= entry.resetAt) ipHits.delete(ip);
+  }
+}, RATE_WINDOW_MS * 2).unref();
 
 /** Block requests to private / link-local / loopback addresses (SSRF protection). */
 function isPrivateHost(hostname: string): boolean {
@@ -36,8 +62,14 @@ function isPrivateHost(hostname: string): boolean {
 export function mediaRoutes(env: Env): Router {
   const router = Router();
 
-  // Auth required: prevents unauthenticated SSRF scanning.
-  router.get('/media/image', requireAuth(env), async (req, res) => {
+  // Public endpoint — <img src="..."> tags cannot send Authorization headers.
+  // SSRF protection (isPrivateHost) + per-IP rate limiting keep this safe.
+  router.get('/media/image', async (req, res) => {
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+    if (isRateLimited(clientIp)) {
+      res.status(429).json({ error: { code: 'TOO_MANY_REQUESTS', message: 'rate limit exceeded' } });
+      return;
+    }
     const rawUrl = String(req.query.url || '').trim();
     if (!rawUrl) {
       res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'url required' } });
