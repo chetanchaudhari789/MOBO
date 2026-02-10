@@ -992,7 +992,66 @@ export async function extractOrderDetailsWithAi(
       return null;
     };
 
-    /** Extract order date from OCR text. */
+    /** 
+     * Parse a date string and normalize to ISO format (YYYY-MM-DD).
+     * Handles various formats: "7 February 2026", "Feb 7, 2026", "07/02/2026", etc.
+     * For ambiguous numeric formats (DD/MM/YYYY vs MM/DD/YYYY), assumes DD/MM/YYYY (common in India).
+     */
+    const normalizeDateToISO = (dateStr: string): string | null => {
+      const monthNames: Record<string, number> = {
+        january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+        july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+        jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+      };
+
+      // Pattern 1: "7 February 2026" or "7 Feb 2026"
+      let match = dateStr.match(/(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i);
+      if (match) {
+        const day = parseInt(match[1], 10);
+        const month = monthNames[match[2].toLowerCase()];
+        const year = parseInt(match[3], 10);
+        if (month !== undefined && day >= 1 && day <= 31) {
+          return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+
+      // Pattern 2: "February 7, 2026" or "Feb 7, 2026"
+      match = dateStr.match(/(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
+      if (match) {
+        const month = monthNames[match[1].toLowerCase()];
+        const day = parseInt(match[2], 10);
+        const year = parseInt(match[3], 10);
+        if (month !== undefined && day >= 1 && day <= 31) {
+          return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+
+      // Pattern 3: "2026-02-07" (already ISO)
+      match = dateStr.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+      if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const day = parseInt(match[3], 10);
+        if (year >= 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+
+      // Pattern 4: "07/02/2026" or "07-02-2026" (assume DD/MM/YYYY for Indian e-commerce)
+      match = dateStr.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+      if (match) {
+        const day = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const year = parseInt(match[3], 10);
+        if (year >= 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+
+      return null;
+    };
+
+    /** Extract order date from OCR text and normalize to ISO format. */
     const extractOrderDate = (text: string): string | null => {
       const lines = text.split('\n').map(normalizeLine).filter(Boolean);
 
@@ -1013,14 +1072,20 @@ export async function extractOrderDetailsWithAi(
         if (!dateKeywordRe.test(line)) continue;
         for (const pattern of datePatterns) {
           const match = line.match(pattern);
-          if (match) return match[0].trim();
+          if (match) {
+            const normalized = normalizeDateToISO(match[0].trim());
+            if (normalized) return normalized;
+          }
         }
       }
 
       // Fallback: look for any date-like pattern in the entire text
       for (const pattern of datePatterns) {
         const match = text.match(pattern);
-        if (match) return match[0].trim();
+        if (match) {
+          const normalized = normalizeDateToISO(match[0].trim());
+          if (normalized) return normalized;
+        }
       }
 
       return null;
