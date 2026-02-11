@@ -85,7 +85,8 @@ const urlToBase64 = async (url: string): Promise<string> => {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
-  } catch {
+  } catch (err) {
+    console.warn('urlToBase64 failed:', url, err);
     return '';
   }
 };
@@ -1141,6 +1142,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
 
   const handleSettle = async () => {
     if (!settleId) return;
+    if (!confirm('Confirm settlement? This will move funds to buyer and mediator wallets.')) return;
     try {
       await api.ops.settleOrderPayment(settleId, utr.trim() || undefined, 'external');
       setSettleId(null);
@@ -1746,7 +1748,7 @@ export const MediatorDashboard: React.FC = () => {
                           </button>
                         </div>
                         <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wide mt-1">
-                          {n.read ? 'Read' : 'New'}{n.createdAt ? `${formatRelativeTime(n.createdAt)}` : ''}
+                          {n.read ? 'Read' : 'New'} · {n.createdAt ? `${formatRelativeTime(n.createdAt)}` : ''}
                         </p>
                       </div>
                     </div>

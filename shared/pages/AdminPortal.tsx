@@ -362,8 +362,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const toggleUserStatus = async (target: User) => {
     if (target.role === 'admin') return;
     const newStatus = target.status === 'active' ? 'suspended' : 'active';
-    await api.admin.updateUserStatus(target.id, newStatus);
-    setUsers(users.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u)));
+    try {
+      await api.admin.updateUserStatus(target.id, newStatus);
+      setUsers(users.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update user status');
+    }
   };
 
   const deleteWallet = async (target: User) => {
@@ -504,6 +508,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    // Sanitize user-controlled values: neutralize spreadsheet formula injection
+    const csvSafe = (val: string) => {
+      let s = String(val ?? '');
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return csvEscape(s);
+    };
     const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
 
     const headers = [
@@ -546,10 +556,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.externalOrderId || order.id,
         dateStr,
         timeStr,
-        `"${(order.buyerName || '').replace(/"/g, '""')}"`,
-        `"${(order.buyerMobile || '').replace(/"/g, '""')}"`,
-        `"${(order.brandName ?? item?.brandName ?? '').replace(/"/g, '""')}"`,
-        `"${(item?.title ?? '').replace(/"/g, '""')}"`,
+        csvSafe(order.buyerName || ''),
+        csvSafe(order.buyerMobile || ''),
+        csvSafe(order.brandName ?? item?.brandName ?? ''),
+        csvSafe(item?.title ?? ''),
         item?.platform ?? '',
         item?.dealType ?? 'Discount',
         item?.quantity ?? 1,
@@ -559,11 +569,11 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.paymentStatus,
         order.affiliateStatus,
         order.managerName || 'N/A',
-        `"${(order.agencyName || 'Partner Agency').replace(/"/g, '""')}"`,
+        csvSafe(order.agencyName || 'Partner Agency'),
         order.id,
-        `"${(order.soldBy || '').replace(/"/g, '""')}"`,
+        csvSafe(order.soldBy || ''),
         order.orderDate ? new Date(order.orderDate).toLocaleDateString() : '',
-        `"${(order.extractedProductName || '').replace(/"/g, '""')}"`,
+        csvSafe(order.extractedProductName || ''),
         order.screenshots?.order ? hyperlinkYes(buildProofUrl(order.id, 'order')) : 'No',
         order.screenshots?.payment ? hyperlinkYes(buildProofUrl(order.id, 'payment')) : 'No',
         order.screenshots?.rating ? hyperlinkYes(buildProofUrl(order.id, 'rating')) : 'No',
@@ -575,7 +585,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

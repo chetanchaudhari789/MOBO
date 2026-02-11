@@ -187,6 +187,7 @@ const AgencyProfile = ({ user }: any) => {
   const handleFile = (e: any) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) { toast.error('Avatar must be under 2 MB'); return; }
       if (!isEditing) setIsEditing(true);
       const reader = new FileReader();
       reader.onload = () => setAvatar(reader.result as string);
@@ -475,6 +476,12 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    // Sanitize user-controlled values: neutralize spreadsheet formula injection
+    const csvSafe = (val: string) => {
+      let s = String(val ?? '');
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return csvEscape(s);
+    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -519,24 +526,24 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         getPrimaryOrderId(o),
         date,
         time,
-        `"${(item.title || '').replace(/"/g, '""')}"`,
+        csvSafe(item.title || ''),
         item?.dealType || 'General',
         item?.platform || '',
         item?.dealType || 'Discount',
         item?.priceAtPurchase,
         item?.quantity || 1,
         o.total,
-        `"${(o.agencyName || user?.name || 'Agency').replace(/"/g, '""')}"`,
+        csvSafe(o.agencyName || user?.name || 'Agency'),
         o.managerName,
-        `"${(o.buyerName || '').replace(/"/g, '""')}"`,
-        `"${(o.buyerMobile || '').replace(/"/g, '""')}"`,
+        csvSafe(o.buyerName || ''),
+        csvSafe(o.buyerMobile || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
-        `"${((o as any).soldBy || '').replace(/"/g, '""')}"`,
+        csvSafe((o as any).soldBy || ''),
         (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
-        `"${((o as any).extractedProductName || '').replace(/"/g, '""')}"`,
+        csvSafe((o as any).extractedProductName || ''),
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
@@ -551,7 +558,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
