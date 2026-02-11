@@ -137,7 +137,8 @@ async function createSpreadsheet(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Google Sheets API error (create): ${res.status} — ${text}`);
+    // Sanitize error message to avoid exposing Google API internals
+    throw new Error(`Failed to create spreadsheet (status ${res.status}). Please check your Google Sheets API credentials.`);
   }
 
   const data = (await res.json()) as { spreadsheetId: string; spreadsheetUrl?: string };
@@ -166,7 +167,8 @@ async function appendRows(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Google Sheets API error (append): ${res.status} — ${text}`);
+    // Sanitize error message to avoid exposing Google API internals
+    throw new Error(`Failed to append data to spreadsheet (status ${res.status}). Please check your Google Sheets API credentials.`);
   }
 }
 

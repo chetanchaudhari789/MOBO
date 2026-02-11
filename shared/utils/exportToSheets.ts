@@ -26,7 +26,7 @@ export async function exportToGoogleSheet(opts: SheetsExportOptions): Promise<vo
   onStart?.();
   try {
     const result = await api.sheets.export({ title, headers, rows, sheetName });
-    window.open(result.spreadsheetUrl, '_blank', 'noopener');
+    window.open(result.spreadsheetUrl, '_blank', 'noopener,noreferrer');
     onSuccess?.(result.spreadsheetUrl);
   } catch (err: any) {
     const msg = err?.message || 'Google Sheets export failed';
