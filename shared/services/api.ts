@@ -428,6 +428,12 @@ export const api = {
         body: JSON.stringify({ orderId, ...proof }),
       });
     },
+    /** Get audit trail / activity log for a specific order */
+    getOrderAudit: async (orderId: string) => {
+      return fetchJson(`/orders/${encodeURIComponent(orderId)}/audit`, {
+        headers: { ...authHeaders() },
+      });
+    },
     /** [FIX] Added missing extractDetails for Orders.tsx */
     extractDetails: async (file: File) => {
       const rawBase64 = await readFileAsDataUrl(file);
