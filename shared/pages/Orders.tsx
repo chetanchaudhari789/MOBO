@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -61,6 +61,7 @@ export const Orders: React.FC = () => {
   const [uploadType, setUploadType] = useState<'order' | 'payment' | 'rating' | 'review' | 'returnWindow'>('order');
   const [proofToView, setProofToView] = useState<Order | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const submittingRef = useRef(false);
   const [inputValue, setInputValue] = useState('');
 
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
@@ -357,7 +358,8 @@ export const Orders: React.FC = () => {
   };
 
   const submitNewOrder = async () => {
-    if (!selectedProduct || !user || isUploading) return;
+    if (!selectedProduct || !user || isUploading || submittingRef.current) return;
+    submittingRef.current = true;
     if (!formScreenshot) {
       toast.error('Please upload a valid order image before submitting.');
       return;
@@ -424,6 +426,7 @@ export const Orders: React.FC = () => {
       toast.error(String(e.message || 'Failed to submit order.'));
     } finally {
       setIsUploading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -1340,6 +1343,7 @@ export const Orders: React.FC = () => {
                 <textarea
                   value={ticketDesc}
                   onChange={(e) => setTicketDesc(e.target.value)}
+                  maxLength={2000}
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-red-400 h-24 resize-none"
                   placeholder="Describe the issue..."
                 />

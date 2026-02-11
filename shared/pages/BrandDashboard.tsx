@@ -191,6 +191,7 @@ const BrandProfileView = () => {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) { toast.error('Avatar must be under 2 MB'); return; }
       const reader = new FileReader();
       reader.onload = () => setAvatar(reader.result as string);
       reader.readAsDataURL(file);

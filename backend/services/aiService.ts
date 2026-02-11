@@ -1822,6 +1822,54 @@ export async function extractOrderDetailsWithAi(
       return safeJsonParse<any>(response.text) ?? null;
     };
 
+    /** Direct image-to-structured-data extraction (bypasses OCR text entirely). */
+    const extractDirectFromImage = async (model: string, imageBase64: string) => {
+      if (!ai) return null;
+      const imgMimeType = detectImageMimeType(imageBase64);
+      const response = await withModelTimeout(ai.models.generateContent({
+        model,
+        contents: [
+          { inlineData: { mimeType: imgMimeType, data: imageBase64.split(',')[1] ?? imageBase64 } },
+          { text: [
+            'TASK: EXTRACT E-COMMERCE ORDER DETAILS FROM THIS SCREENSHOT.',
+            'PRIORITY: GOD-LEVEL ACCURACY REQUIRED.',
+            'This screenshot may be from ANY device: mobile, desktop, tablet, laptop.',
+            '',
+            'EXTRACT:',
+            '1. ORDER ID — The unique order identifier. Look for "Order ID", "Order No", "Order #".',
+            '   Platform patterns: Amazon (3-7-7 digits like 404-1234567-1234567), Flipkart (OD+digits), Myntra (MYN/ORD), Meesho (MSH), AJIO (FN), JIO, Nykaa (NYK), Tata (TCL), Snapdeal (SD), BigBasket (BB), etc.',
+            '   IGNORE: Tracking IDs, Shipment numbers, AWB, Invoice numbers, Transaction IDs, UTR, UPI references.',
+            '2. GRAND TOTAL / FINAL AMOUNT PAID — Amount ACTUALLY paid after all discounts.',
+            '   Look for: "Grand Total", "Amount Paid", "You Paid", "Order Total", "Payable", "Net Amount".',
+            '   IGNORE: MRP, List Price, Item Price, Subtotal unless no other total exists.',
+            '3. ORDER DATE — When the order was placed.',
+            '4. SOLD BY / SELLER NAME.',
+            '5. PRODUCT NAME — Full product title/name as shown.',
+            '',
+            'Return JSON. Set confidenceScore 0-100 based on clarity.',
+          ].join('\n') },
+        ],
+        config: {
+          temperature: 0,
+          maxOutputTokens: 512,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              orderId: { type: Type.STRING },
+              amount: { type: Type.NUMBER },
+              orderDate: { type: Type.STRING },
+              soldBy: { type: Type.STRING },
+              productName: { type: Type.STRING },
+              confidenceScore: { type: Type.INTEGER },
+            },
+            required: ['confidenceScore'],
+          },
+        },
+      }));
+      return safeJsonParse<any>(response.text) ?? null;
+    };
+
     const runOcrPass = async (imageBase64: string, label: string) => {
       // Try Gemini OCR first (if available)
       if (ai) {
@@ -1899,6 +1947,7 @@ export async function extractOrderDetailsWithAi(
     let bestScore = 0;
     // Accumulate results across OCR passes — one crop may find the ID, another the amount
     let accumulatedOrderId: string | null = null;
+    let accumulatedOrderIdScore = 0;
     let accumulatedAmount: number | null = null;
     let accumulatedOrderDate: string | null = null;
     let accumulatedSoldBy: string | null = null;
@@ -1919,9 +1968,13 @@ export async function extractOrderDetailsWithAi(
       allOcrTexts.push(candidateText);
       const candidateDeterministic = runDeterministicExtraction(candidateText);
 
-      // Accumulate best-so-far results across all passes
-      if (candidateDeterministic.orderId && !accumulatedOrderId) {
-        accumulatedOrderId = candidateDeterministic.orderId;
+      // Accumulate best-scored order ID across all passes (not just first-found)
+      if (candidateDeterministic.orderId) {
+        const candidateIdScore = scoreOrderId(candidateDeterministic.orderId, { hasKeyword: true, occursInText: true });
+        if (!accumulatedOrderId || candidateIdScore > accumulatedOrderIdScore) {
+          accumulatedOrderId = candidateDeterministic.orderId;
+          accumulatedOrderIdScore = candidateIdScore;
+        }
       }
       if (candidateDeterministic.amount && !accumulatedAmount) {
         accumulatedAmount = candidateDeterministic.amount;
@@ -2036,50 +2089,87 @@ export async function extractOrderDetailsWithAi(
     let confidenceScore = deterministicConfidence;
     const notes: string[] = [...deterministic.notes];
 
+    let finalOrderDate = deterministic.orderDate;
+    let finalSoldBy = deterministic.soldBy;
+    let finalProductName = deterministic.productName;
     let aiUsed = false;
-    if (!(finalOrderId && finalAmount) && ai) {
+
+    // ALWAYS run AI when available — for validation, gap-filling, and cross-checking
+    if (ai) {
+      // Step 1: Text-based refinement (cheap — sends OCR text only)
       for (const model of GEMINI_MODEL_FALLBACKS.slice(0, 3)) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const aiResult = await refineWithAi(model, ocrText, deterministic);
           if (!aiResult) continue;
 
-        const aiSuggestedOrderId = sanitizeOrderId(aiResult.suggestedOrderId);
-        const aiSuggestedAmount =
-          typeof aiResult.suggestedAmount === 'number' && Number.isFinite(aiResult.suggestedAmount)
-            ? aiResult.suggestedAmount
-            : null;
-        const aiConfidence =
-          typeof aiResult.confidenceScore === 'number' && Number.isFinite(aiResult.confidenceScore)
-            ? Math.max(0, Math.min(100, Math.round(aiResult.confidenceScore)))
-            : 0;
+          const aiSuggestedOrderId = sanitizeOrderId(aiResult.suggestedOrderId);
+          const aiSuggestedAmount =
+            typeof aiResult.suggestedAmount === 'number' && Number.isFinite(aiResult.suggestedAmount)
+              ? aiResult.suggestedAmount
+              : null;
+          const aiConfidence =
+            typeof aiResult.confidenceScore === 'number' && Number.isFinite(aiResult.confidenceScore)
+              ? Math.max(0, Math.min(100, Math.round(aiResult.confidenceScore)))
+              : 0;
 
-        const orderIdVisible = aiSuggestedOrderId
-          ? ocrText.toLowerCase().includes(aiSuggestedOrderId.toLowerCase())
-          : false;
-        const amountVisible = aiSuggestedAmount
-          ? ocrText.includes(String(aiSuggestedAmount))
-          : false;
+          // Relaxed validation: accept AI suggestions if visible in OCR text OR confidence >= 75
+          const ocrNorm = ocrText.replace(/[\s\-]/g, '').toLowerCase();
+          const orderIdVisible = aiSuggestedOrderId
+            ? ocrText.toLowerCase().includes(aiSuggestedOrderId.toLowerCase()) ||
+              ocrNorm.includes(aiSuggestedOrderId.replace(/[\s\-]/g, '').toLowerCase())
+            : false;
+          const amountVisible = aiSuggestedAmount
+            ? ocrText.includes(String(aiSuggestedAmount)) ||
+              ocrText.includes(aiSuggestedAmount.toFixed(2))
+            : false;
 
-        if (!finalOrderId && aiSuggestedOrderId && orderIdVisible) {
-          finalOrderId = aiSuggestedOrderId;
-          notes.push('AI suggested order ID validated against OCR text.');
-        }
-        if (!finalAmount && aiSuggestedAmount && amountVisible) {
-          finalAmount = aiSuggestedAmount;
-          notes.push('AI suggested amount validated against OCR text.');
-        }
+          // Fill missing fields from AI
+          if (!finalOrderId && aiSuggestedOrderId && (orderIdVisible || aiConfidence >= 75)) {
+            finalOrderId = aiSuggestedOrderId;
+            notes.push(orderIdVisible ? 'AI order ID confirmed in OCR text.' : 'AI extracted order ID (high confidence).');
+          }
+          if (!finalAmount && aiSuggestedAmount && (amountVisible || aiConfidence >= 75)) {
+            finalAmount = aiSuggestedAmount;
+            notes.push(amountVisible ? 'AI amount confirmed in OCR text.' : 'AI extracted amount (high confidence).');
+          }
 
-        if (finalOrderId && finalAmount && deterministic.orderId && deterministic.amount) {
-          confidenceScore = 90;
-          notes.push('AI agreed with deterministic extraction.');
-        } else if (finalOrderId || finalAmount) {
-          confidenceScore = Math.max(confidenceScore, deterministicConfidence || 55);
-        }
+          // AI can correct deterministic if it disagrees AND AI value IS in OCR but deterministic is NOT
+          if (finalOrderId && aiSuggestedOrderId && finalOrderId !== aiSuggestedOrderId && orderIdVisible && aiConfidence >= 80) {
+            const detInText = ocrNorm.includes(finalOrderId.replace(/[\s\-]/g, '').toLowerCase());
+            if (!detInText) {
+              finalOrderId = aiSuggestedOrderId;
+              notes.push('AI corrected order ID (deterministic not in OCR text).');
+            }
+          }
 
-        if (aiResult.notes) notes.push(aiResult.notes);
+          // Fill metadata from AI: orderDate, soldBy, productName
+          if (!finalOrderDate && aiResult.suggestedOrderDate) {
+            finalOrderDate = aiResult.suggestedOrderDate;
+            notes.push('Order date from AI.');
+          }
+          if (!finalSoldBy && aiResult.suggestedSoldBy) {
+            finalSoldBy = aiResult.suggestedSoldBy;
+            notes.push('Seller from AI.');
+          }
+          if (!finalProductName && aiResult.suggestedProductName) {
+            finalProductName = aiResult.suggestedProductName;
+            notes.push('Product name from AI.');
+          }
+
+          // Update confidence
+          if (finalOrderId && finalAmount && deterministic.orderId && deterministic.amount) {
+            confidenceScore = 92;
+            notes.push('AI validated deterministic extraction.');
+          } else if (finalOrderId && finalAmount) {
+            confidenceScore = Math.max(confidenceScore, 80);
+          } else if (finalOrderId || finalAmount) {
+            confidenceScore = Math.max(confidenceScore, deterministicConfidence || 60);
+          }
+
+          if (aiResult.notes) notes.push(aiResult.notes);
           aiUsed = true;
-          console.log('Order extract AI', {
+          console.log('Order extract AI refine', {
             suggestedOrderId: aiSuggestedOrderId,
             suggestedAmount: aiSuggestedAmount,
             confidence: aiConfidence,
@@ -2090,19 +2180,61 @@ export async function extractOrderDetailsWithAi(
           continue;
         }
       }
+
+      // Step 2: Direct image extraction (fallback — sends image to Gemini vision)
+      if (!finalOrderId || !finalAmount) {
+        for (const model of GEMINI_MODEL_FALLBACKS.slice(0, 2)) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const directResult = await extractDirectFromImage(model, payload.imageBase64);
+            if (!directResult) continue;
+
+            const directOrderId = sanitizeOrderId(directResult.orderId);
+            const directAmount =
+              typeof directResult.amount === 'number' && Number.isFinite(directResult.amount)
+                ? directResult.amount
+                : null;
+            const directConfidence =
+              typeof directResult.confidenceScore === 'number'
+                ? Math.max(0, Math.min(100, directResult.confidenceScore))
+                : 0;
+
+            if (!finalOrderId && directOrderId && directConfidence >= 60) {
+              finalOrderId = directOrderId;
+              notes.push('Order ID from direct image AI.');
+            }
+            if (!finalAmount && directAmount && directAmount >= 10 && directConfidence >= 60) {
+              finalAmount = directAmount;
+              notes.push('Amount from direct image AI.');
+            }
+            if (!finalOrderDate && directResult.orderDate) finalOrderDate = directResult.orderDate;
+            if (!finalSoldBy && directResult.soldBy) finalSoldBy = directResult.soldBy;
+            if (!finalProductName && directResult.productName) finalProductName = directResult.productName;
+
+            if (finalOrderId || finalAmount) {
+              confidenceScore = Math.max(confidenceScore, directConfidence);
+              aiUsed = true;
+              console.log('Order extract direct AI', {
+                orderId: directOrderId,
+                amount: directAmount,
+                confidence: directConfidence,
+              });
+            }
+            break;
+          } catch (innerError) {
+            _lastError = innerError;
+            continue;
+          }
+        }
+      }
     }
 
     if (!finalOrderId && !finalAmount) {
       confidenceScore = 25;
-      notes.push('Unable to extract order details from OCR text.');
+      notes.push('Unable to extract order details.');
     } else if (!confidenceScore) {
       confidenceScore = 55;
     }
-
-    // Collect all extracted metadata
-    const finalOrderDate = deterministic.orderDate;
-    const finalSoldBy = deterministic.soldBy;
-    const finalProductName = deterministic.productName;
 
     console.log('Order extract final', {
       orderId: finalOrderId,

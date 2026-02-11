@@ -175,8 +175,8 @@ function assertOnlineForWrite(init?: RequestInit) {
   }
 }
 
-/** Default request timeout (30s). Keeps the UI from hanging forever. */
-const DEFAULT_TIMEOUT_MS = 30_000;
+/** Default request timeout (60s). Increased for AI endpoints that may take 15-45s. */
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   // If the caller already provides an AbortSignal, respect it.
