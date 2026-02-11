@@ -543,12 +543,8 @@ export function makeOrdersController(env: Env) {
           });
         }
 
-        res
-          .status(201)
-          .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
-
         // Audit trail
-        writeAuditLog({
+        await writeAuditLog({
           req,
           action: 'ORDER_CREATED',
           entityType: 'Order',
@@ -559,6 +555,10 @@ export function makeOrdersController(env: Env) {
             externalOrderId: resolvedExternalOrderId,
           },
         });
+
+        res
+          .status(201)
+          .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
 
         // Notify UIs (buyer/mediator/brand/admin) that order-related views should refresh.
         const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -807,7 +807,7 @@ export function makeOrdersController(env: Env) {
         await order.save();
 
         // Audit trail for proof upload
-        writeAuditLog({
+        await writeAuditLog({
           req,
           action: 'PROOF_UPLOADED',
           entityType: 'Order',

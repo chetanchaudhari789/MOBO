@@ -926,13 +926,27 @@ export const Orders: React.FC = () => {
                         setAuditOrderId(null);
                         return;
                       }
-                      setAuditOrderId(order.id);
+                      const fetchingOrderId = order.id;
+                      setAuditOrderId(fetchingOrderId);
                       setAuditLoading(true);
                       try {
-                        const resp = await api.orders.getOrderAudit(order.id);
-                        setAuditLogs(resp?.logs ?? []);
+                        const resp = await api.orders.getOrderAudit(fetchingOrderId);
+                        // Guard against race condition: only update if this is still the expanded order
+                        setAuditOrderId((currentId) => {
+                          if (currentId === fetchingOrderId) {
+                            setAuditLogs(resp?.logs ?? []);
+                            return currentId;
+                          }
+                          return currentId;
+                        });
                       } catch {
-                        setAuditLogs([]);
+                        setAuditOrderId((currentId) => {
+                          if (currentId === fetchingOrderId) {
+                            setAuditLogs([]);
+                            return currentId;
+                          }
+                          return currentId;
+                        });
                       } finally {
                         setAuditLoading(false);
                       }

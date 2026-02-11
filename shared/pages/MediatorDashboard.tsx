@@ -1769,6 +1769,9 @@ export const MediatorDashboard: React.FC = () => {
             onViewProof={(order: Order) => {
               setProofModal(order);
               setAiAnalysis(null);
+              // Reset audit state when opening a different order's modal
+              setAuditExpanded(false);
+              setOrderAuditLogs([]);
             }}
           />
         )}
@@ -1853,7 +1856,12 @@ export const MediatorDashboard: React.FC = () => {
             <button
               type="button"
               aria-label="Close verification modal"
-              onClick={() => setProofModal(null)}
+              onClick={() => {
+                setProofModal(null);
+                // Reset audit state when closing modal
+                setAuditExpanded(false);
+                setOrderAuditLogs([]);
+              }}
               className="w-9 h-9 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors"
             >
               <X size={18} />
