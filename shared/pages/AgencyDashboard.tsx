@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
@@ -50,6 +51,7 @@ import {
   Gift,
   BookmarkPlus,
   Package,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -397,6 +399,7 @@ const AgencyProfile = ({ user }: any) => {
 
 const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, user }: any) => {
   const { toast } = useToast();
+  const [sheetsExporting, setSheetsExporting] = useState(false);
   // Flatten orders for detailed ledger view
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [newStatus, setNewStatus] = useState<string>('');
@@ -569,6 +572,47 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     window.URL.revokeObjectURL(url);
   };
 
+  const handleExportToSheets = () => {
+    const orderRows = ledger.map((o: Order) => {
+      const dateObj = new Date(o.createdAt);
+      const item = o.items[0];
+      return [
+        getPrimaryOrderId(o),
+        dateObj.toLocaleDateString(),
+        dateObj.toLocaleTimeString(),
+        item?.title || '',
+        item?.dealType || 'General',
+        item?.platform || '',
+        item?.dealType || 'Discount',
+        item?.priceAtPurchase ?? 0,
+        item?.quantity || 1,
+        o.total,
+        o.agencyName || user?.name || 'Agency',
+        o.managerName || '',
+        o.buyerName || '',
+        o.buyerMobile || '',
+        o.status,
+        o.paymentStatus,
+        o.affiliateStatus || '',
+        o.id,
+        (o as any).soldBy || '',
+        (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
+        (o as any).extractedProductName || '',
+      ] as (string | number)[];
+    });
+
+    exportToGoogleSheet({
+      title: `Agency Orders Report - ${new Date().toISOString().slice(0, 10)}`,
+      headers: ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'],
+      rows: orderRows,
+      sheetName: 'Agency Orders',
+      onStart: () => setSheetsExporting(true),
+      onEnd: () => setSheetsExporting(false),
+      onSuccess: () => toast.success('Exported to Google Sheets!'),
+      onError: (msg) => toast.error(msg),
+    });
+  };
+
   return (
     <div className="space-y-6 animate-enter pb-12 h-full flex flex-col">
       {/* Header & Integrated Stats */}
@@ -614,12 +658,21 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
             </div>
           </div>
 
-          <button
-            onClick={handleExport}
-            className="text-xs font-bold text-purple-600 flex items-center gap-2 hover:bg-purple-50 px-4 py-3 rounded-xl transition-colors border border-transparent hover:border-purple-100"
-          >
-            <Download size={16} /> Export Report
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleExport}
+              className="text-xs font-bold text-purple-600 flex items-center gap-2 hover:bg-purple-50 px-4 py-3 rounded-xl transition-colors border border-transparent hover:border-purple-100"
+            >
+              <Download size={16} /> CSV
+            </button>
+            <button
+              onClick={handleExportToSheets}
+              disabled={sheetsExporting}
+              className="text-xs font-bold text-green-600 flex items-center gap-2 hover:bg-green-50 px-4 py-3 rounded-xl transition-colors border border-transparent hover:border-green-100 disabled:opacity-50"
+            >
+              <FileSpreadsheet size={16} /> {sheetsExporting ? 'Exporting...' : 'Google Sheets'}
+            </button>
+          </div>
         </div>
 
         {/* Finance Search + Filter */}
@@ -880,6 +933,7 @@ const BrandsView = () => {
 const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
   const { toast } = useToast();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [sheetsExporting, setSheetsExporting] = useState(false);
 
   const handleDelete = async (payoutId: string) => {
     const ok = window.confirm('Delete this payout record? This cannot be undone.');
@@ -940,6 +994,32 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
     window.URL.revokeObjectURL(url);
   };
 
+  const handleExportPayoutsToSheets = () => {
+    const payoutHeaders = ['Transaction ID','Date','Time','Beneficiary Name','Beneficiary Code','Amount (INR)','Status'];
+    const payoutRows = payouts.map((p: any) => {
+      const dateObj = new Date(p.date);
+      return [
+        p.id,
+        dateObj.toLocaleDateString(),
+        dateObj.toLocaleTimeString(),
+        p.mediatorName || '',
+        p.mediatorCode || '',
+        p.amount,
+        p.status || '',
+      ] as (string | number)[];
+    });
+    exportToGoogleSheet({
+      title: `Agency Payout Ledger - ${new Date().toISOString().slice(0, 10)}`,
+      headers: payoutHeaders,
+      rows: payoutRows,
+      sheetName: 'Payouts',
+      onStart: () => setSheetsExporting(true),
+      onEnd: () => setSheetsExporting(false),
+      onSuccess: () => toast.success('Exported to Google Sheets!'),
+      onError: (msg) => toast.error(msg),
+    });
+  };
+
   return (
     <div className="space-y-6 animate-enter pb-12 h-full flex flex-col">
       <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm flex flex-col flex-1 overflow-hidden">
@@ -967,12 +1047,21 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
             </div>
           </div>
 
-          <button
-            onClick={handleExport}
-            className="text-xs font-bold text-emerald-600 flex items-center gap-2 hover:bg-emerald-50 px-4 py-3 rounded-xl transition-colors border border-transparent hover:border-emerald-100"
-          >
-            <Download size={16} /> Export CSV
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleExport}
+              className="text-xs font-bold text-emerald-600 flex items-center gap-2 hover:bg-emerald-50 px-4 py-3 rounded-xl transition-colors border border-transparent hover:border-emerald-100"
+            >
+              <Download size={16} /> CSV
+            </button>
+            <button
+              onClick={handleExportPayoutsToSheets}
+              disabled={sheetsExporting}
+              className="text-xs font-bold text-green-600 flex items-center gap-2 hover:bg-green-50 px-4 py-3 rounded-xl transition-colors border border-transparent hover:border-green-100 disabled:opacity-50"
+            >
+              <FileSpreadsheet size={16} /> {sheetsExporting ? 'Exporting...' : 'Google Sheets'}
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto p-0 scrollbar-hide">

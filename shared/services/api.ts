@@ -940,4 +940,21 @@ export const api = {
       },
     },
   },
+
+  /** ── Google Sheets Export ─────────────────────────────────── */
+  sheets: {
+    /** Export data to a new Google Spreadsheet. Returns spreadsheet URL. */
+    export: async (data: {
+      title: string;
+      headers: string[];
+      rows: (string | number)[][];
+      sheetName?: string;
+    }): Promise<{ spreadsheetId: string; spreadsheetUrl: string; sheetTitle: string }> => {
+      return fetchJson('/sheets/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(data),
+      });
+    },
+  },
 };

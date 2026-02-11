@@ -1121,7 +1121,9 @@ export async function extractOrderDetailsWithAi(
     // ── Amount patterns (₹, Rs, INR, bare) ──
     const AMOUNT_LABEL_RE = /(grand\s*total|amount\s*paid|paid\s*amount|you\s*paid|order\s*total|final\s*total|total\s*amount|net\s*amount|payable|item\s*total|subtotal|sub\s*total|bag\s*total|cart\s*value|deal\s*price|offer\s*price|sale\s*price|final\s*price|price|your\s*price|estimated\s*total|total)/i;
     // Priority labels that indicate the FINAL price paid (not MRP)
-    const FINAL_AMOUNT_LABEL_RE = /(grand\s*total|amount\s*paid|paid\s*amount|you\s*paid|order\s*total|final\s*total|total\s*amount|net\s*amount|payable|estimated\s*total)/i;
+    const FINAL_AMOUNT_LABEL_RE = /(grand\s*total|amount\s*paid|paid\s*amount|you\s*paid|order\s*total|final\s*total|total\s*amount|net\s*amount|payable|estimated\s*total|amount\s*payable|total\s*payable|bill\s*amount|invoice\s*total|checkout\s*total|payment\s*total|you\s*pay|to\s*pay)/i;
+    // Labels to EXCLUDE — MRP/savings/discount lines should NOT be treated as amounts
+    const EXCLUDED_AMOUNT_LABEL_RE = /(m\.?r\.?p|mrp|maximum\s*retail|retail\s*price|original\s*price|was\s*₹|was\s*rs|savings?|discount|you\s*sav|coupon|cashback|refund|promo|crossed\s*out|list\s*price|compare\s*at)/i;
     const AMOUNT_VALUE_PATTERN = '₹?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
     // Indian currency: ₹, Rs, Rs., INR, plus Tesseract variants (Rs, R5, R$)
     const INR_VALUE_PATTERN = '(?:₹|(?:rs|r[5s$])\\.?|inr)\\s*\\.?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
@@ -1257,15 +1259,22 @@ export async function extractOrderDetailsWithAi(
 
       for (let i = 0; i < lines.length; i += 1) {
         const line = lines[i];
+
+        // Skip MRP / savings / discount lines — unless the line ALSO has a final amount label
+        // e.g. "Total after discount ₹500" should NOT be skipped
+        if (EXCLUDED_AMOUNT_LABEL_RE.test(line) && !FINAL_AMOUNT_LABEL_RE.test(line)) continue;
+
         const isFinalLabel = FINAL_AMOUNT_LABEL_RE.test(line);
         const isAnyLabel = AMOUNT_LABEL_RE.test(line);
         if (!isAnyLabel) continue;
 
+        let foundOnLine = false;
         // Look for amounts on the same line
         const matches = line.matchAll(AMOUNT_VALUE_GLOBAL_RE);
         for (const match of matches) {
           const value = parseAmountString(match[1]);
           if (!value) continue;
+          foundOnLine = true;
           if (isFinalLabel) finalAmounts.push(value);
           else labeledAmounts.push(value);
         }
@@ -1275,24 +1284,38 @@ export async function extractOrderDetailsWithAi(
         for (const match of inrMatches) {
           const value = parseAmountString(match[1]);
           if (!value) continue;
+          foundOnLine = true;
           if (isFinalLabel) finalAmounts.push(value);
           else labeledAmounts.push(value);
         }
 
-        // If no amount on this line, check the next line (label on one line, value on next)
-        if (!finalAmounts.length && !labeledAmounts.length && lines[i + 1]) {
-          const nextLineMatches = lines[i + 1].matchAll(AMOUNT_VALUE_GLOBAL_RE);
-          for (const match of nextLineMatches) {
-            const value = parseAmountString(match[1]);
-            if (!value) continue;
-            if (isFinalLabel) finalAmounts.push(value);
-            else labeledAmounts.push(value);
+        // If no amount on this line, check the next 2 lines (label on one line, value below)
+        if (!foundOnLine) {
+          for (let offset = 1; offset <= 2 && i + offset < lines.length; offset++) {
+            const nextLine = lines[i + offset];
+            // Stop if the next line has its own label
+            if (AMOUNT_LABEL_RE.test(nextLine)) break;
+            const nextMatches = nextLine.matchAll(AMOUNT_VALUE_GLOBAL_RE);
+            for (const match of nextMatches) {
+              const value = parseAmountString(match[1]);
+              if (!value) continue;
+              if (isFinalLabel) finalAmounts.push(value);
+              else labeledAmounts.push(value);
+            }
+            const nextInr = nextLine.matchAll(new RegExp(INR_VALUE_PATTERN, 'gi'));
+            for (const match of nextInr) {
+              const value = parseAmountString(match[1]);
+              if (!value) continue;
+              if (isFinalLabel) finalAmounts.push(value);
+              else labeledAmounts.push(value);
+            }
           }
         }
       }
 
       // Priority: "final" labels (amount paid, grand total) > general labels (total, price)
-      if (finalAmounts.length) return Math.max(...finalAmounts);
+      // Use LAST final amount — Grand Total / Amount Paid appears at bottom of receipts
+      if (finalAmounts.length) return finalAmounts[finalAmounts.length - 1];
       if (labeledAmounts.length) return Math.max(...labeledAmounts);
 
       // Fallback: any INR-prefixed value in the entire text

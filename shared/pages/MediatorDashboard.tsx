@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { User, Campaign, Order, Product, Ticket } from '../types';
@@ -42,6 +43,7 @@ import {
   History,
   ChevronDown,
   ChevronUp,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
@@ -132,6 +134,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   );
 
   const [viewMode, setViewMode] = useState<'todo' | 'cooling'>('todo');
+  const [sheetsExporting, setSheetsExporting] = useState(false);
 
   const todayEarnings = orders
     .filter((o: Order) => {
@@ -285,6 +288,38 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
           className="p-2.5 rounded-xl border border-zinc-100 bg-white hover:bg-zinc-50 transition-colors"
         >
           <Download size={14} className="text-zinc-600" />
+        </button>
+        <button
+          type="button"
+          aria-label="Export to Google Sheets"
+          title="Export to Google Sheets"
+          disabled={sheetsExporting}
+          onClick={() => {
+            const allOrders = orders as Order[];
+            if (!allOrders.length) { toast.error('No orders to export'); return; }
+            exportToGoogleSheet({
+              title: `Mediator Orders - ${new Date().toISOString().slice(0, 10)}`,
+              headers: ['Order ID', 'Product', 'Buyer', 'Amount', 'Commission', 'Status', 'Payment', 'Date'],
+              rows: allOrders.map((o) => [
+                getPrimaryOrderId(o),
+                o.items[0]?.title || '',
+                o.buyerName || '',
+                o.total || 0,
+                o.items[0]?.commission || 0,
+                o.affiliateStatus || o.workflowStatus || '',
+                o.paymentStatus || '',
+                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
+              ]),
+              sheetName: 'Orders',
+              onStart: () => setSheetsExporting(true),
+              onEnd: () => setSheetsExporting(false),
+              onSuccess: () => toast.success('Exported to Google Sheets!'),
+              onError: (msg) => toast.error(msg),
+            });
+          }}
+          className="p-2.5 rounded-xl border border-green-100 bg-white hover:bg-green-50 transition-colors disabled:opacity-50"
+        >
+          <FileSpreadsheet size={14} className="text-green-600" />
         </button>
       </div>
 
