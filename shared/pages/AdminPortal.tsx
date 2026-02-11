@@ -513,8 +513,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     // Sanitize user-controlled values: neutralize spreadsheet formula injection
     const csvSafe = (val: string) => {
       let raw = String(val ?? '');
-      // Strip leading control chars and whitespace before checking for a formula
-      const normalized = raw.replace(/^[\u0000-\u001F\u007F]+/, '').trimStart();
+      // Strip all leading control chars and whitespace before checking for a formula
+      const normalized = raw.replace(/^[\u0000-\u001F\u007F\s]+/, '');
       if (/^[=+\-@]/.test(normalized)) {
         raw = `'${raw}`;
       }
