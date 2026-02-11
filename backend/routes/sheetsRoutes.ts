@@ -58,7 +58,7 @@ export function sheetsRoutes(env: Env): Router {
       
       // Sanitize headers: prevent formula injection
       const sanitizedHeaders = headers.map((h: string) => {
-        if (/^[=+\-@\t\r]/.test(h)) {
+        if (/^[=+\-@\t\r\n]/.test(h)) {
           return `'${h}`;
         }
         return h;
@@ -74,15 +74,15 @@ export function sheetsRoutes(env: Env): Router {
       const sanitizedRows = rows.map((row: unknown[], idx: number) => {
         if (!Array.isArray(row)) return [];
         // Warn if row has different number of cells than headers
-        if (row.length !== headers.length) {
-          console.warn(`Row ${idx} has ${row.length} cells but ${headers.length} headers expected`);
+        if (row.length !== sanitizedHeaders.length) {
+          console.warn(`Row ${idx} has ${row.length} cells but ${sanitizedHeaders.length} headers expected`);
         }
         return row.map((cell: unknown) => {
           if (cell === null || cell === undefined) return null;
           if (typeof cell === 'number') return cell;
           const str = String(cell);
-          // Prevent formula injection: prefix with single quote if starts with =, +, -, @, or tab/return
-          if (/^[=+\-@\t\r]/.test(str)) {
+          // Prevent formula injection: prefix with single quote if starts with =, +, -, @, tab, return, or newline
+          if (/^[=+\-@\t\r\n]/.test(str)) {
             return `'${str}`;
           }
           return str;
