@@ -98,6 +98,7 @@ export const Orders: React.FC = () => {
   const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const auditFetchRef = useRef<string | null>(null); // Track in-flight audit fetch
 
   // Order list search & filter
   const [orderListSearch, setOrderListSearch] = useState('');
@@ -927,15 +928,23 @@ export const Orders: React.FC = () => {
                     onClick={async () => {
                       if (auditOrderId === order.id) {
                         setAuditOrderId(null);
+                        auditFetchRef.current = null;
                         return;
                       }
-                      setAuditOrderId(order.id);
+                      const fetchingOrderId = order.id;
+                      setAuditOrderId(fetchingOrderId);
+                      auditFetchRef.current = fetchingOrderId;
                       setAuditLoading(true);
                       try {
-                        const resp = await api.orders.getOrderAudit(order.id);
-                        setAuditLogs(resp?.logs ?? []);
+                        const resp = await api.orders.getOrderAudit(fetchingOrderId);
+                        // Guard against race condition: only update if this is still the active fetch
+                        if (auditFetchRef.current === fetchingOrderId) {
+                          setAuditLogs(resp?.logs ?? []);
+                        }
                       } catch {
-                        setAuditLogs([]);
+                        if (auditFetchRef.current === fetchingOrderId) {
+                          setAuditLogs([]);
+                        }
                       } finally {
                         setAuditLoading(false);
                       }
