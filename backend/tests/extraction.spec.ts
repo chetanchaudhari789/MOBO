@@ -262,4 +262,77 @@ describe('order extraction (Tesseract fallback)', () => {
     // Should pick "Amount Paid" (29999) as priority over MRP (45999)
     expect(result.amount).toBe(29999);
   });
+
+  it('extracts orderDate, soldBy, and productName from OCR text', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'Order Details',
+      'Order placed   5 February 2026',
+      'Order number   408-9652341-7203568',
+      '',
+      'Arriving Wednesday',
+      'Avimee Herbal Keshpallav Hair Oil for Hair Growth and Hair Fall Control',
+      'Sold by: Avimee_Herbal',
+      'Rs 522.00',
+      '',
+      'Payment method',
+      'Amazon Pay ICICI Bank Credit Card',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Extended extraction result:', JSON.stringify(result, null, 2));
+
+    // Verify order date is extracted and normalized to ISO format
+    expect(result.orderDate).toBe('2026-02-05');
+
+    // Verify soldBy is extracted
+    expect(result.soldBy).toMatch(/Avimee/i);
+
+    // Verify product name is extracted (should pick the descriptive product line)
+    expect(result.productName).toBeTruthy();
+    if (result.productName) {
+      expect(result.productName.toLowerCase()).toContain('hair');
+    }
+
+    // Verify original fields still work
+    expect(result.orderId).toMatch(/\d{3}-\d{7}-\d{7}/);
+    expect(result.amount).toBe(522);
+  });
+
+  it('normalizes various date formats to ISO (YYYY-MM-DD)', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+
+    // Test DD/MM/YYYY format (common in India)
+    const image1 = await renderTextToImage([
+      'Order Details',
+      'Order placed on 07/02/2026',
+      'Order ID: 408-1234567-8901234',
+      'Total: Rs 500.00',
+    ]);
+    const result1 = await extractOrderDetailsWithAi(env, { imageBase64: image1 });
+    console.log('Date format 1 result:', result1.orderDate);
+    expect(result1.orderDate).toBe('2026-02-07');
+
+    // Test "Month DD, YYYY" format
+    const image2 = await renderTextToImage([
+      'Your Orders',
+      'Ordered on February 7, 2026',
+      'Order ID: OD432187654321098',
+      'Total: Rs 500.00',
+    ]);
+    const result2 = await extractOrderDetailsWithAi(env, { imageBase64: image2 });
+    console.log('Date format 2 result:', result2.orderDate);
+    expect(result2.orderDate).toBe('2026-02-07');
+
+    // Test abbreviated month format
+    const image3 = await renderTextToImage([
+      'Order Summary',
+      'Date: 7 Feb 2026',
+      'Order #: MEESHO845123',
+      'Amount: Rs 500.00',
+    ]);
+    const result3 = await extractOrderDetailsWithAi(env, { imageBase64: image3 });
+    console.log('Date format 3 result:', result3.orderDate);
+    expect(result3.orderDate).toBe('2026-02-07');
+  });
 });
