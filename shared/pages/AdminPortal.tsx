@@ -364,7 +364,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     const newStatus = target.status === 'active' ? 'suspended' : 'active';
     try {
       await api.admin.updateUserStatus(target.id, newStatus);
-      setUsers(users.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u)));
+      setUsers((prevUsers) =>
+        prevUsers.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u))
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to update user status');
     }
@@ -510,9 +512,13 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
     // Sanitize user-controlled values: neutralize spreadsheet formula injection
     const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
+      let raw = String(val ?? '');
+      // Strip leading control chars and whitespace before checking for a formula
+      const normalized = raw.replace(/^[\u0000-\u001F\u007F]+/, '').trimStart();
+      if (/^[=+\-@]/.test(normalized)) {
+        raw = `'${raw}`;
+      }
+      return csvEscape(raw);
     };
     const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
 

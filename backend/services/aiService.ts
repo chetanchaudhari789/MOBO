@@ -1970,7 +1970,10 @@ export async function extractOrderDetailsWithAi(
 
       // Accumulate best-scored order ID across all passes (not just first-found)
       if (candidateDeterministic.orderId) {
-        const candidateIdScore = scoreOrderId(candidateDeterministic.orderId, { hasKeyword: true, occursInText: true });
+        // Compute hasKeyword and occursInText from candidate OCR text (not hardcoded)
+        const hasKeyword = candidateText.split('\n').some(line => hasOrderKeyword(line));
+        const occursInText = candidateText.toLowerCase().includes(candidateDeterministic.orderId.toLowerCase());
+        const candidateIdScore = scoreOrderId(candidateDeterministic.orderId, { hasKeyword, occursInText });
         if (!accumulatedOrderId || candidateIdScore > accumulatedOrderIdScore) {
           accumulatedOrderId = candidateDeterministic.orderId;
           accumulatedOrderIdScore = candidateIdScore;
@@ -2135,8 +2138,8 @@ export async function extractOrderDetailsWithAi(
           }
 
           // AI can correct deterministic if it disagrees AND AI value IS in OCR but deterministic is NOT
-          if (finalOrderId && aiSuggestedOrderId && finalOrderId !== aiSuggestedOrderId && orderIdVisible && aiConfidence >= 80) {
-            const detInText = ocrNorm.includes(finalOrderId.replace(/[\s\-]/g, '').toLowerCase());
+          if (deterministic.orderId && aiSuggestedOrderId && deterministic.orderId !== aiSuggestedOrderId && orderIdVisible && aiConfidence >= 80) {
+            const detInText = ocrNorm.includes(deterministic.orderId.replace(/[\s\-]/g, '').toLowerCase());
             if (!detInText) {
               finalOrderId = aiSuggestedOrderId;
               notes.push('AI corrected order ID (deterministic not in OCR text).');

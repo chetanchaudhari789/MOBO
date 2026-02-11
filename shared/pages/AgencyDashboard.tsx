@@ -478,9 +478,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
     // Sanitize user-controlled values: neutralize spreadsheet formula injection
     const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
+      let raw = String(val ?? '');
+      // Strip leading control chars and whitespace before checking for a formula
+      const normalized = raw.replace(/^[\u0000-\u001F\u007F]+/, '').trimStart();
+      if (/^[=+\-@]/.test(normalized)) {
+        raw = `'${raw}`;
+      }
+      return csvEscape(raw);
     };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
