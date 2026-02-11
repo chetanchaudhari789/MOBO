@@ -90,7 +90,7 @@ export function ordersRoutes(env: Env): Router {
       // Query supports both 'Order' and 'order' (lowercase) for entityType
       const logs = await AuditLogModel.find({
         entityType: { $in: ['Order', 'order'] },
-        entityId: String((order as any)._id),
+        entityId: String(order._id),
       })
         .sort({ createdAt: -1 })
         .limit(100)

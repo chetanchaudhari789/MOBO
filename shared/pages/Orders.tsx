@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -97,6 +97,7 @@ export const Orders: React.FC = () => {
   const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const auditFetchRef = useRef<string | null>(null); // Track in-flight audit fetch
 
   // Order list search & filter
   const [orderListSearch, setOrderListSearch] = useState('');
@@ -924,29 +925,23 @@ export const Orders: React.FC = () => {
                     onClick={async () => {
                       if (auditOrderId === order.id) {
                         setAuditOrderId(null);
+                        auditFetchRef.current = null;
                         return;
                       }
                       const fetchingOrderId = order.id;
                       setAuditOrderId(fetchingOrderId);
+                      auditFetchRef.current = fetchingOrderId;
                       setAuditLoading(true);
                       try {
                         const resp = await api.orders.getOrderAudit(fetchingOrderId);
-                        // Guard against race condition: only update if this is still the expanded order
-                        setAuditOrderId((currentId) => {
-                          if (currentId === fetchingOrderId) {
-                            setAuditLogs(resp?.logs ?? []);
-                            return currentId;
-                          }
-                          return currentId;
-                        });
+                        // Guard against race condition: only update if this is still the active fetch
+                        if (auditFetchRef.current === fetchingOrderId) {
+                          setAuditLogs(resp?.logs ?? []);
+                        }
                       } catch {
-                        setAuditOrderId((currentId) => {
-                          if (currentId === fetchingOrderId) {
-                            setAuditLogs([]);
-                            return currentId;
-                          }
-                          return currentId;
-                        });
+                        if (auditFetchRef.current === fetchingOrderId) {
+                          setAuditLogs([]);
+                        }
                       } finally {
                         setAuditLoading(false);
                       }
