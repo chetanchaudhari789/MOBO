@@ -39,6 +39,9 @@ import {
   Search,
   Download,
   Package,
+  History,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
@@ -1465,6 +1468,10 @@ export const MediatorDashboard: React.FC = () => {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectType, setRejectType] = useState<'order' | 'review' | 'rating' | 'returnWindow'>('order');
   const [dealBuilder, setDealBuilder] = useState<Campaign | null>(null);
+  // Audit trail state
+  const [auditExpanded, setAuditExpanded] = useState(false);
+  const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
 
@@ -1959,6 +1966,11 @@ export const MediatorDashboard: React.FC = () => {
                                   <p className="text-xs font-bold text-white">
                                     {aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}
                                   </p>
+                                  {(aiAnalysis as any).detectedOrderId && (
+                                    <p className="text-[9px] text-zinc-400 mt-0.5 font-mono break-all">
+                                      Detected: {(aiAnalysis as any).detectedOrderId}
+                                    </p>
+                                  )}
                                 </div>
                                 <div
                                   className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
@@ -1971,6 +1983,11 @@ export const MediatorDashboard: React.FC = () => {
                                   <p className="text-xs font-bold text-white">
                                     {aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}
                                   </p>
+                                  {(aiAnalysis as any).detectedAmount != null && (
+                                    <p className="text-[9px] text-zinc-400 mt-0.5 font-mono">
+                                      Detected: ₹{(aiAnalysis as any).detectedAmount}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               <div className="bg-black/30 p-2 rounded-lg">
@@ -2011,14 +2028,14 @@ export const MediatorDashboard: React.FC = () => {
             {(proofModal.requirements?.required?.length ?? 0) > 0 && (
               <div className="bg-zinc-800/80 rounded-2xl border border-zinc-700/50 p-4 mt-1">
                 <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-wider mb-3">Verification Progress</h4>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <div className="flex items-center gap-1.5">
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
                       proofModal.verification?.orderVerified ? 'bg-green-500 text-white' : 'bg-zinc-600 text-zinc-300'
                     }`}>
                       {proofModal.verification?.orderVerified ? '✓' : '1'}
                     </div>
-                    <span className={`text-[10px] font-bold ${proofModal.verification?.orderVerified ? 'text-green-400' : 'text-zinc-400'}`}>Purchase</span>
+                    <span className={`text-[9px] font-bold ${proofModal.verification?.orderVerified ? 'text-green-400' : 'text-zinc-400'}`}>Buy</span>
                   </div>
                   <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.orderVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
                   {proofModal.requirements?.required?.includes('review') && (
@@ -2036,7 +2053,7 @@ export const MediatorDashboard: React.FC = () => {
                           proofModal.verification?.reviewVerified ? 'text-green-400'
                             : proofModal.requirements?.missingProofs?.includes('review') ? 'text-amber-400'
                             : 'text-zinc-400'
-                        }`}>Review{proofModal.requirements?.missingProofs?.includes('review') ? ' (missing)' : ''}</span>
+                        }`}>Review{proofModal.requirements?.missingProofs?.includes('review') ? ' !' : ''}</span>
                       </div>
                       <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.reviewVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
                     </>
@@ -2056,7 +2073,7 @@ export const MediatorDashboard: React.FC = () => {
                           proofModal.verification?.ratingVerified ? 'text-green-400'
                             : proofModal.requirements?.missingProofs?.includes('rating') ? 'text-amber-400'
                             : 'text-zinc-400'
-                        }`}>Rating{proofModal.requirements?.missingProofs?.includes('rating') ? ' (missing)' : ''}</span>
+                        }`}>Rate{proofModal.requirements?.missingProofs?.includes('rating') ? ' !' : ''}</span>
                       </div>
                       <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.ratingVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
                     </>
@@ -2078,7 +2095,7 @@ export const MediatorDashboard: React.FC = () => {
                           (proofModal.verification as any)?.returnWindowVerified ? 'text-green-400'
                             : (proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? 'text-amber-400'
                             : 'text-zinc-400'
-                        }`}>Return Window{(proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? ' (missing)' : ''}</span>
+                        }`}>Return{(proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? ' !' : ''}</span>
                       </div>
                       <div className={`flex-1 h-0.5 rounded ${(proofModal.verification as any)?.returnWindowVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
                     </>
@@ -2182,6 +2199,63 @@ export const MediatorDashboard: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {/* AUDIT TRAIL / ACTIVITY LOG */}
+            <div className="bg-zinc-900/50 rounded-2xl border border-zinc-800 p-4">
+              <button
+                onClick={async () => {
+                  if (auditExpanded) {
+                    setAuditExpanded(false);
+                    return;
+                  }
+                  setAuditExpanded(true);
+                  setAuditLoading(true);
+                  try {
+                    const resp = await api.orders.getOrderAudit(proofModal.id);
+                    setOrderAuditLogs(resp?.logs ?? []);
+                  } catch {
+                    setOrderAuditLogs([]);
+                  } finally {
+                    setAuditLoading(false);
+                  }
+                }}
+                className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-200 transition-colors w-full"
+              >
+                <History size={14} />
+                Activity Log
+                <span className="ml-auto">
+                  {auditExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </span>
+              </button>
+              {auditExpanded && (
+                <div className="mt-3 max-h-48 overflow-y-auto space-y-2 scrollbar-hide">
+                  {auditLoading ? (
+                    <div className="flex justify-center py-3">
+                      <Loader2 size={16} className="animate-spin text-zinc-500" />
+                    </div>
+                  ) : orderAuditLogs.length === 0 ? (
+                    <p className="text-[10px] text-zinc-600 italic">No activity recorded yet.</p>
+                  ) : (
+                    orderAuditLogs.map((log: any, i: number) => (
+                      <div key={log._id || i} className="flex items-start gap-2 text-[10px]">
+                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 mt-1.5 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="font-bold text-zinc-300">
+                            {(log.action || '').replace(/_/g, ' ')}
+                          </span>
+                          <span className="text-zinc-500 ml-1.5">
+                            {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}
+                          </span>
+                          {log.metadata?.proofType && (
+                            <span className="ml-1 text-zinc-500">({log.metadata.proofType})</span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ACTION BAR */}

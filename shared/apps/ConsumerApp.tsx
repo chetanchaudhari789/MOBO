@@ -20,7 +20,7 @@ interface ConsumerAppProps {
 
 export const ConsumerApp: React.FC<ConsumerAppProps> = ({ onBack }) => {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'home' | 'explore' | 'orders' | 'profile'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'explore' | 'orders' | 'profile'>('explore');
 
   if (!user) return <AuthScreen onBack={onBack} />;
 
