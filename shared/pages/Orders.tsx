@@ -315,7 +315,7 @@ export const Orders: React.FC = () => {
         let productNameStatus: 'match' | 'mismatch' | 'none' = 'none';
         if (extractedName && expectedName) {
           // Filter out URLs and navigation chrome from extracted product name
-          const isUrl = /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=/i.test(extractedName);
+          const isUrl = /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=|utm_/i.test(extractedName);
           if (isUrl) {
             productNameStatus = 'mismatch';
           } else {
