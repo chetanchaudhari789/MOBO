@@ -16,6 +16,7 @@ import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { isGeminiConfigured, verifyProofWithAi, verifyRatingScreenshotWithAi, verifyReturnWindowWithAi } from '../services/aiService.js';
+import { writeAuditLog } from '../services/audit.js';
 
 export function makeOrdersController(env: Env) {
   const MAX_PROOF_BYTES = 50 * 1024 * 1024;
@@ -419,7 +420,12 @@ export function makeOrdersController(env: Env) {
             (existing as any).buyerMobile = user.mobile;
             (existing as any).brandName = item.brandName ?? campaign.brandName;
             (existing as any).externalOrderId = resolvedExternalOrderId;
-            (existing as any).screenshots = body.screenshots ?? {};
+            // Merge screenshots instead of overwriting — preserves any proofs already
+            // attached to the pre-order (e.g. rating/review uploaded before upgrade).
+            (existing as any).screenshots = {
+              ...((existing as any).screenshots ?? {}),
+              ...(body.screenshots ?? {}),
+            };
             (existing as any).reviewLink = body.reviewLink;
             if (body.orderDate) {
               const d = new Date(body.orderDate);
@@ -557,6 +563,13 @@ export function makeOrdersController(env: Env) {
 
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        // Audit log: order creation
+        await writeAuditLog({
+          req, action: 'ORDER_CREATED', entityType: 'Order',
+          entityId: String((finalOrder as any)._id),
+          metadata: { campaignId: String(body.items?.[0]?.campaignId || ''), mediatorCode: upstreamMediatorCode },
+        }).catch(() => {});
       } catch (err) {
         next(err);
       } finally {
@@ -805,6 +818,13 @@ export function makeOrdersController(env: Env) {
 
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        // Audit log: proof submission
+        await writeAuditLog({
+          req, action: 'PROOF_SUBMITTED', entityType: 'Order',
+          entityId: String(order._id),
+          metadata: { proofType: body.type },
+        }).catch(() => {});
         return;
       } catch (err) {
         next(err);
