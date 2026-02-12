@@ -888,28 +888,14 @@ export const Orders: React.FC = () => {
       {isNewOrderModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => {
-            setIsNewOrderModalOpen(false);
-            setSelectedProduct(null);
-            setFormScreenshot(null);
-            setReviewLinkInput('');
-            setExtractedDetails({ orderId: '', amount: '' });
-            setMatchStatus({ id: 'none', amount: 'none' });
-          }}
+          onClick={() => setIsNewOrderModalOpen(false)}
         >
           <div
             className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl animate-slide-up flex flex-col max-h-[85vh] relative"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => {
-                setIsNewOrderModalOpen(false);
-                setSelectedProduct(null);
-                setFormScreenshot(null);
-                setReviewLinkInput('');
-                setExtractedDetails({ orderId: '', amount: '' });
-                setMatchStatus({ id: 'none', amount: 'none' });
-              }}
+              onClick={() => setIsNewOrderModalOpen(false)}
               aria-label="Close"
               className="absolute top-6 right-6 p-2 bg-gray-50 rounded-full hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             >
@@ -991,13 +977,7 @@ export const Orders: React.FC = () => {
                       </p>
                     </div>
                     <button
-                      onClick={() => {
-                        setSelectedProduct(null);
-                        setFormScreenshot(null);
-                        setReviewLinkInput('');
-                        setExtractedDetails({ orderId: '', amount: '' });
-                        setMatchStatus({ id: 'none', amount: 'none' });
-                      }}
+                      onClick={() => setSelectedProduct(null)}
                       aria-label="Clear selected product"
                       className="absolute -top-2 -right-2 bg-white border border-gray-200 p-1.5 rounded-full shadow-sm text-slate-400 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                     >
