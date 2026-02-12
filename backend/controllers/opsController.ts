@@ -1021,6 +1021,18 @@ export function makeOpsController(env: Env) {
         };
         (order as any).affiliateStatus = 'Rejected';
 
+        // Release campaign slot when order proof (purchase) is rejected,
+        // so the campaign doesn't permanently show "sold out" for rejected orders.
+        if (body.type === 'order') {
+          const campaignId = order.items?.[0]?.campaignId;
+          if (campaignId) {
+            await CampaignModel.updateOne(
+              { _id: campaignId, usedSlots: { $gt: 0 } },
+              { $inc: { usedSlots: -1 } },
+            );
+          }
+        }
+
         order.events = pushOrderEvent(order.events as any, {
           type: 'REJECTED',
           at: new Date(),

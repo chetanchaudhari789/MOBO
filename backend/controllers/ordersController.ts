@@ -325,6 +325,15 @@ export function makeOrdersController(env: Env) {
           .lean();
         const upstreamAgencyCode = String((mediatorUser as any)?.parentCode || '').trim();
 
+        // Resolve actual agency name for the order record
+        let resolvedAgencyName = 'Partner Agency';
+        if (upstreamAgencyCode) {
+          const agencyUser = await UserModel.findOne({ roles: 'agency', mediatorCode: upstreamAgencyCode, deletedAt: null })
+            .select({ name: 1 })
+            .lean();
+          if (agencyUser?.name) resolvedAgencyName = String(agencyUser.name);
+        }
+
         const allowedAgencyCodes = Array.isArray((campaign as any).allowedAgencyCodes)
           ? ((campaign as any).allowedAgencyCodes as string[]).map((c) => String(c))
           : [];
@@ -415,7 +424,7 @@ export function makeOrdersController(env: Env) {
             (existing as any).paymentStatus = 'Pending';
             (existing as any).affiliateStatus = 'Unchecked';
             (existing as any).managerName = upstreamMediatorCode;
-            (existing as any).agencyName = 'Partner Agency';
+            (existing as any).agencyName = resolvedAgencyName;
             (existing as any).buyerName = user.name;
             (existing as any).buyerMobile = user.mobile;
             (existing as any).brandName = item.brandName ?? campaign.brandName;
@@ -481,7 +490,7 @@ export function makeOrdersController(env: Env) {
                 paymentStatus: 'Pending',
                 affiliateStatus: 'Unchecked',
                 managerName: upstreamMediatorCode,
-                agencyName: 'Partner Agency',
+                agencyName: resolvedAgencyName,
                 buyerName: user.name,
                 buyerMobile: user.mobile,
                 brandName: item.brandName ?? campaign.brandName,
