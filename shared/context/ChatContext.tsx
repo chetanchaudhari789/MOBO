@@ -43,17 +43,24 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userId, setUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const initialized = useRef(false);
+  const prevUserId = useRef<string | null>(null);
 
   // Load persisted messages when userId changes
   useEffect(() => {
     const loaded = loadMessages(userId);
     setMessages(loaded);
     initialized.current = true;
+    prevUserId.current = userId;
   }, [userId]);
 
   // Persist messages whenever they change (debounced via effect)
   useEffect(() => {
     if (!initialized.current) return;
+    // Skip persistence if userId just changed to prevent persisting old user's messages to new user's key
+    if (prevUserId.current !== userId) {
+      prevUserId.current = userId;
+      return;
+    }
     persistMessages(userId, messages);
   }, [messages, userId]);
 

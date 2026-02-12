@@ -532,7 +532,7 @@ export function aiRoutes(env: Env): Router {
       const result = await verifyProofWithAi(env, payload);
 
       // Audit trail: record AI proof verification for backtracking
-      writeAuditLog({
+      await writeAuditLog({
         req,
         action: 'ai.verify_proof',
         entityType: 'order_proof',
@@ -567,7 +567,7 @@ export function aiRoutes(env: Env): Router {
       const result = await extractOrderDetailsWithAi(env, { imageBase64: payload.imageBase64 });
 
       // Audit trail: record AI order extraction for backtracking
-      writeAuditLog({
+      await writeAuditLog({
         req,
         action: 'ai.extract_order',
         entityType: 'order_extraction',
