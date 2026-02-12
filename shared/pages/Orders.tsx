@@ -309,17 +309,39 @@ export const Orders: React.FC = () => {
         const amountMatch = hasAmount && Math.abs(safeAmount - selectedProduct.price) < 10;
         const idValid = hasId && safeOrderId.length > 5;
 
-        // Product name similarity check
+        // Product name similarity check — stricter matching to prevent fraud
         const extractedName = (typeof details.productName === 'string' ? details.productName : '').toLowerCase().trim();
         const expectedName = (selectedProduct.title || '').toLowerCase().trim();
         let productNameStatus: 'match' | 'mismatch' | 'none' = 'none';
         if (extractedName && expectedName) {
-          // Split into words and check overlap
-          const extractedWords = extractedName.split(/\s+/).filter((w: string) => w.length > 2);
-          const expectedWords = expectedName.split(/\s+/).filter((w: string) => w.length > 2);
-          const matchingWords = extractedWords.filter((w: string) => expectedWords.some((ew: string) => ew.includes(w) || w.includes(ew)));
-          const overlapRatio = expectedWords.length > 0 ? matchingWords.length / Math.min(extractedWords.length, expectedWords.length) : 0;
-          productNameStatus = overlapRatio >= 0.3 ? 'match' : 'mismatch';
+          // Filter out URLs and navigation chrome from extracted product name
+          const isUrl = /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=/i.test(extractedName);
+          if (isUrl) {
+            productNameStatus = 'mismatch';
+          } else {
+            // Strip common noise words for cleaner matching
+            const noiseWords = new Set(['the', 'and', 'for', 'with', 'from', 'this', 'that', 'not', 'are', 'was', 'has', 'its', 'all', 'can', 'you', 'our', 'new', 'buy', 'get']);
+            const cleanWords = (text: string) => text
+              .replace(/[^a-z0-9\s]/g, ' ')
+              .split(/\s+/)
+              .filter((w: string) => w.length > 2 && !noiseWords.has(w));
+            const extractedWords = cleanWords(extractedName);
+            const expectedWords = cleanWords(expectedName);
+
+            // Match words that are equal or contain each other as substring (min 4 chars for substring)
+            const matchingWords = extractedWords.filter((w: string) =>
+              expectedWords.some((ew: string) =>
+                w === ew || (w.length >= 4 && ew.includes(w)) || (ew.length >= 4 && w.includes(ew))
+              )
+            );
+            const denominator = Math.min(extractedWords.length, expectedWords.length);
+            const overlapRatio = denominator > 0 ? matchingWords.length / denominator : 0;
+            // Require at least 2 matching words AND 40% overlap ratio
+            const hasEnoughOverlap = matchingWords.length >= 2 && overlapRatio >= 0.4;
+            // Special case: if product name is very short (1-2 significant words), require exact word match
+            const shortNameMatch = expectedWords.length <= 2 && matchingWords.length >= 1 && overlapRatio >= 0.5;
+            productNameStatus = (hasEnoughOverlap || shortNameMatch) ? 'match' : 'mismatch';
+          }
         }
 
         setMatchStatus({

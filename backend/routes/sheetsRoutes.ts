@@ -63,7 +63,16 @@ export function sheetsRoutes(env: Env): Router {
       });
 
       return res.json(result);
-    } catch (err) {
+    } catch (err: any) {
+      // Surface a clear error when Service Account auth is not configured
+      if (err?.message?.includes('GOOGLE_SHEETS_AUTH_MISSING')) {
+        return res.status(503).json({
+          error: {
+            code: 'SHEETS_AUTH_NOT_CONFIGURED',
+            message: 'Google Sheets export is not available. The server administrator must configure a Google Cloud Service Account. See server logs for setup instructions.',
+          },
+        });
+      }
       next(err);
     }
   });

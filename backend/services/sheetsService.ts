@@ -215,35 +215,29 @@ export async function exportToGoogleSheet(
   env: Env,
   request: SheetExportRequest,
 ): Promise<SheetExportResult> {
-  // Try service account first (proper write access)
+  // Service Account is REQUIRED for Sheets write operations.
+  // API keys cannot create or write spreadsheets (Google returns 401/403).
   const serviceAccount = parseServiceAccountKey(env);
-  let authHeader: Record<string, string>;
 
-  if (serviceAccount) {
-    const accessToken = await getAccessToken(serviceAccount);
-    authHeader = { Authorization: `Bearer ${accessToken}` };
-  } else {
-    // Fallback to API key — may fail for write operations
-    const apiKey = env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        'Google Sheets export requires either GOOGLE_SERVICE_ACCOUNT_KEY (recommended) or GEMINI_API_KEY. ' +
-        'For write access, create a Google Cloud service account, download the JSON key, base64-encode it, ' +
-        'and set it as GOOGLE_SERVICE_ACCOUNT_KEY.'
-      );
-    }
-    // API key auth uses query parameter, so we need to modify URLs
-    // For simplicity, we'll add it as a custom header marker and handle it differently
-    // NOTE: API keys typically cannot create/write spreadsheets (403 error expected)
-    console.warn('Using API key for Google Sheets — write operations may fail. Use GOOGLE_SERVICE_ACCOUNT_KEY for reliable access.');
-    // For API key auth, we can't use headers — Google expects ?key= query param
-    // The Sheets API functions below accept authHeader, so we pass a special marker
-    // that tells them to skip header-based auth. The key is appended to URLs separately.
-    authHeader = {};
+  if (!serviceAccount) {
+    throw new Error(
+      'GOOGLE_SHEETS_AUTH_MISSING: Google Sheets export requires a Service Account. ' +
+      'API keys cannot create or write spreadsheets. To fix this:\n' +
+      '1. Go to Google Cloud Console → IAM & Admin → Service Accounts\n' +
+      '2. Create a service account (or use an existing one)\n' +
+      '3. Grant it the "Editor" role (or at minimum Google Sheets API + Drive API access)\n' +
+      '4. Create a JSON key for the service account and download it\n' +
+      '5. Base64-encode the JSON file: base64 -w0 service-account-key.json\n' +
+      '6. Set the encoded string as GOOGLE_SERVICE_ACCOUNT_KEY in your .env file\n' +
+      '7. Enable "Google Sheets API" and "Google Drive API" in Google Cloud Console → APIs & Services'
+    );
   }
 
+  const accessToken = await getAccessToken(serviceAccount);
+  const authHeader = { Authorization: `Bearer ${accessToken}` };
+
   const sheetName = request.sheetName || 'Sheet1';
-  const apiKeyParam = !serviceAccount ? `?key=${encodeURIComponent(env.GEMINI_API_KEY!)}` : '';
+  const apiKeyParam = '';
 
   // 1. Create the spreadsheet
   const { spreadsheetId, spreadsheetUrl } = await createSpreadsheet(authHeader, request.title, sheetName, apiKeyParam);

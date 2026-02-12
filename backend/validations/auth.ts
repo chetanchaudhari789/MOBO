@@ -19,7 +19,9 @@ export const registerSchema = z.object({
   name: z.string().min(2).max(120),
   mobile: mobile10Schema,
   email: z.string().email().optional(),
-  password: z.string().min(8).max(200),
+  password: z.string().min(8).max(200)
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
   mediatorCode: z.string().min(1).max(64),
 });
 

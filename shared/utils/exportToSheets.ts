@@ -29,7 +29,13 @@ export async function exportToGoogleSheet(opts: SheetsExportOptions): Promise<vo
     window.open(result.spreadsheetUrl, '_blank', 'noopener');
     onSuccess?.(result.spreadsheetUrl);
   } catch (err: any) {
-    const msg = err?.message || 'Google Sheets export failed';
+    const code = err?.code;
+    let msg: string;
+    if (code === 'SHEETS_AUTH_NOT_CONFIGURED') {
+      msg = 'Google Sheets export is not configured yet. Please contact your administrator to set up Google Cloud Service Account credentials.';
+    } else {
+      msg = err?.message || 'Google Sheets export failed. Please try again later.';
+    }
     onError?.(msg);
   } finally {
     onEnd?.();
