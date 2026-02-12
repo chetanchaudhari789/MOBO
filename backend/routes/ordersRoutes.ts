@@ -29,7 +29,7 @@ export function ordersRoutes(env: Env): Router {
   router.get('/orders/:orderId/proof/:type', requireAuthOrToken(env), orders.getOrderProof);
   router.get('/public/orders/:orderId/proof/:type', publicProofLimiter, orders.getOrderProofPublic);
 
-  // Audit trail for a specific order — restricted to admin/ops roles
+  // Audit trail for a specific order — requires order-specific access (admin/ops have full access, others must own/manage the order)
   router.get('/orders/:orderId/audit', requireAuth(env), async (req, res, next) => {
     try {
       const { orderId } = req.params;
