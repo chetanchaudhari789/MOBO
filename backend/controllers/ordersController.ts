@@ -429,7 +429,12 @@ export function makeOrdersController(env: Env) {
             (existing as any).buyerMobile = user.mobile;
             (existing as any).brandName = item.brandName ?? campaign.brandName;
             (existing as any).externalOrderId = resolvedExternalOrderId;
-            (existing as any).screenshots = body.screenshots ?? {};
+            // Merge screenshots instead of overwriting — preserves any proofs already
+            // attached to the pre-order (e.g. rating/review uploaded before upgrade).
+            (existing as any).screenshots = {
+              ...((existing as any).screenshots ?? {}),
+              ...(body.screenshots ?? {}),
+            };
             (existing as any).reviewLink = body.reviewLink;
             if (body.orderDate) {
               const d = new Date(body.orderDate);
@@ -580,6 +585,13 @@ export function makeOrdersController(env: Env) {
 
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        // Audit log: order creation
+        await writeAuditLog({
+          req, action: 'ORDER_CREATED', entityType: 'Order',
+          entityId: String((finalOrder as any)._id),
+          metadata: { campaignId: String(body.items?.[0]?.campaignId || ''), mediatorCode: upstreamMediatorCode },
+        }).catch(() => {});
       } catch (err) {
         next(err);
       } finally {
@@ -737,28 +749,11 @@ export function makeOrdersController(env: Env) {
           }
 
           order.screenshots = { ...(order.screenshots ?? {}), returnWindow: body.data } as any;
-          if ((order as any).rejection?.type === 'returnWindow') {
-            (order as any).rejection = undefined;
-          }
-          (order as any).__aiReturnWindowVerification = returnWindowResult || undefined;
-
-          // Audit trail: record AI return window verification for backtracking
           if (returnWindowResult) {
-            writeAuditLog({
-              req,
-              action: 'ai.verify_return_window',
-              entityType: 'order',
-              entityId: String(order._id),
-              metadata: {
-                orderIdMatch: returnWindowResult.orderIdMatch,
-                productNameMatch: returnWindowResult.productNameMatch,
-                amountMatch: returnWindowResult.amountMatch,
-                soldByMatch: returnWindowResult.soldByMatch,
-                returnWindowClosed: returnWindowResult.returnWindowClosed,
-                confidenceScore: returnWindowResult.confidenceScore,
-                discrepancyNote: returnWindowResult.discrepancyNote,
-              },
-            });
+            order.returnWindowAiVerification = returnWindowResult;
+          }
+          if (order.rejection?.type === 'returnWindow') {
+            order.rejection = undefined;
           }
         } else if (body.type === 'order') {
           assertProofImageSize(body.data, 'Order proof');
@@ -870,6 +865,13 @@ export function makeOrdersController(env: Env) {
 
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        // Audit log: proof submission
+        await writeAuditLog({
+          req, action: 'PROOF_SUBMITTED', entityType: 'Order',
+          entityId: String(order._id),
+          metadata: { proofType: body.type },
+        }).catch(() => {});
         return;
       } catch (err) {
         next(err);

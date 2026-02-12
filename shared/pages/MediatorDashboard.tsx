@@ -2167,21 +2167,21 @@ export const MediatorDashboard: React.FC = () => {
                   </div>
                 )}
                 {/* AI rating verification results */}
-                {(proofModal as any).ratingAiVerification && (
+                {proofModal.ratingAiVerification && (
                   <div className="mt-3 space-y-1 text-[10px]">
-                    <p className={`font-bold ${(proofModal as any).ratingAiVerification.accountNameMatch ? 'text-green-400' : 'text-red-400'}`}>
-                      Account Name: {(proofModal as any).ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
-                      {(proofModal as any).ratingAiVerification.detectedAccountName && (
-                        <span className="text-zinc-500 ml-1">(detected: {(proofModal as any).ratingAiVerification.detectedAccountName})</span>
+                    <p className={`font-bold ${proofModal.ratingAiVerification.accountNameMatch ? 'text-green-400' : 'text-red-400'}`}>
+                      Account Name: {proofModal.ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
+                      {proofModal.ratingAiVerification.detectedAccountName && (
+                        <span className="text-zinc-500 ml-1">(detected: {proofModal.ratingAiVerification.detectedAccountName})</span>
                       )}
                     </p>
-                    <p className={`font-bold ${(proofModal as any).ratingAiVerification.productNameMatch ? 'text-green-400' : 'text-red-400'}`}>
-                      Product Name: {(proofModal as any).ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                      {(proofModal as any).ratingAiVerification.detectedProductName && (
-                        <span className="text-zinc-500 ml-1">(detected: {(proofModal as any).ratingAiVerification.detectedProductName})</span>
+                    <p className={`font-bold ${proofModal.ratingAiVerification.productNameMatch ? 'text-green-400' : 'text-red-400'}`}>
+                      Product Name: {proofModal.ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                      {proofModal.ratingAiVerification.detectedProductName && (
+                        <span className="text-zinc-500 ml-1">(detected: {proofModal.ratingAiVerification.detectedProductName})</span>
                       )}
                     </p>
-                    <p className="text-zinc-500">Confidence: {(proofModal as any).ratingAiVerification.confidenceScore}%</p>
+                    <p className="text-zinc-500">Confidence: {proofModal.ratingAiVerification.confidenceScore}%</p>
                   </div>
                 )}
               </div>
@@ -2476,7 +2476,7 @@ export const MediatorDashboard: React.FC = () => {
                   <button
                     onClick={async () => {
                       try {
-                        const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'returnWindow' as any);
+                        const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'returnWindow');
 
                         if (resp?.approved) {
                           toast.success('Return window verified ✓ Order fully approved! Cashback in cooling period.');

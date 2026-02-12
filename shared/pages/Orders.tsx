@@ -556,7 +556,7 @@ export const Orders: React.FC = () => {
             const purchaseVerified = !!order.verification?.orderVerified;
             const reviewVerified = !!order.verification?.reviewVerified;
             const ratingVerified = !!order.verification?.ratingVerified;
-            const returnWindowVerified = !!(order.verification as any)?.returnWindowVerified;
+            const returnWindowVerified = !!order.verification?.returnWindowVerified;
             const missingProofs = order.requirements?.missingProofs ?? [];
             const missingVerifications = order.requirements?.missingVerifications ?? [];
             const requiredSteps = order.requirements?.required ?? [];
@@ -797,7 +797,7 @@ export const Orders: React.FC = () => {
                       )}
 
                       {/* Return Window step */}
-                      {requiredSteps.includes('returnWindow' as any) && (
+                      {requiredSteps.includes('returnWindow') && (
                         <>
                           <div className="flex items-center gap-1 min-w-0 shrink-0">
                             <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
@@ -805,7 +805,7 @@ export const Orders: React.FC = () => {
                                 ? 'bg-green-500 text-white'
                                 : rejectionType === 'returnWindow'
                                   ? 'bg-red-500 text-white'
-                                  : !(missingProofs as string[]).includes('returnWindow') && (ratingVerified || !requiredSteps.includes('rating'))
+                                  : !missingProofs.includes('returnWindow') && (ratingVerified || !requiredSteps.includes('rating'))
                                     ? 'bg-purple-500 text-white'
                                     : (ratingVerified || !requiredSteps.includes('rating'))
                                       ? 'bg-yellow-400 text-yellow-900'
@@ -919,10 +919,10 @@ export const Orders: React.FC = () => {
                       </button>
                     )}
                     {/* Return Window upload: ONLY shown after rating/review is verified */}
-                    {requiredSteps.includes('returnWindow' as any) && purchaseVerified
+                    {requiredSteps.includes('returnWindow') && purchaseVerified
                       && (ratingVerified || !requiredSteps.includes('rating'))
                       && (reviewVerified || !requiredSteps.includes('review'))
-                      && (!(order.screenshots as any)?.returnWindow || rejectionType === 'returnWindow') && (
+                      && (!order.screenshots?.returnWindow || rejectionType === 'returnWindow') && (
                       <button
                         onClick={() => {
                           setSelectedOrder(order);

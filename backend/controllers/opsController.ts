@@ -98,6 +98,11 @@ async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env
     return { approved: false, reason: 'PURCHASE_NOT_VERIFIED' };
   }
 
+  // Guard: orders with no items should never auto-approve
+  if (!Array.isArray(order.items) || order.items.length === 0) {
+    return { approved: false, reason: 'NO_ITEMS' };
+  }
+
   const required = getRequiredStepsForOrder(order);
   const missingProofs = required.filter((t) => !hasProofForRequirement(order, t));
   if (missingProofs.length) return { approved: false, reason: 'MISSING_PROOFS', missingProofs };
@@ -108,8 +113,9 @@ async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env
   }
 
   order.affiliateStatus = 'Pending_Cooling';
+  const COOLING_PERIOD_DAYS = 14;
   const settleDate = new Date();
-  settleDate.setDate(settleDate.getDate() + 14);
+  settleDate.setDate(settleDate.getDate() + COOLING_PERIOD_DAYS);
   order.expectedSettlementDate = settleDate;
   order.events = pushOrderEvent(order.events as any, {
     type: 'VERIFIED',
@@ -764,6 +770,17 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot verify in state ${wf}`);
         }
 
+        // Idempotency: skip if already verified
+        if ((order as any).verification?.order?.verifiedAt) {
+          const refreshed = await OrderModel.findById(order._id);
+          return res.json({
+            ok: true,
+            approved: false,
+            reason: 'ALREADY_VERIFIED',
+            order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+          });
+        }
+
         // Step 1: mark purchase proof verified (even if review/rating is still pending).
         (order as any).verification = (order as any).verification ?? {};
         (order as any).verification.order = (order as any).verification.order ?? {};
@@ -871,6 +888,17 @@ export function makeOpsController(env: Env) {
 
         if (!hasProofForRequirement(order, body.type)) {
           throw new AppError(409, 'MISSING_PROOF', `Missing ${body.type} proof`);
+        }
+
+        // Idempotency: skip if already verified
+        if (isRequirementVerified(order, body.type)) {
+          const refreshed = await OrderModel.findById(order._id);
+          return res.json({
+            ok: true,
+            approved: false,
+            reason: 'ALREADY_VERIFIED',
+            order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+          });
         }
 
         (order as any).verification = (order as any).verification ?? {};
@@ -1127,7 +1155,7 @@ export function makeOpsController(env: Env) {
             requestedBy: req.auth?.userId,
           });
           order.events = pushOrderEvent(order.events as any, {
-            type: 'STATUS_CHANGED',
+            type: 'MISSING_PROOF_REQUESTED',
             at: new Date(),
             actorUserId: req.auth?.userId,
             metadata: { requestMissing: body.type, note: body.note },
@@ -1230,6 +1258,12 @@ export function makeOpsController(env: Env) {
         });
         if (hasOpenDispute) {
           order.affiliateStatus = 'Frozen_Disputed';
+          order.events = pushOrderEvent(order.events as any, {
+            type: 'FROZEN_DISPUTED',
+            at: new Date(),
+            actorUserId: req.auth?.userId,
+            metadata: { reason: 'open_ticket' },
+          }) as any;
           await order.save();
           throw new AppError(409, 'FROZEN_DISPUTE', 'This transaction is frozen due to an open ticket.');
         }
@@ -1367,7 +1401,8 @@ export function makeOpsController(env: Env) {
             settlementSession.endSession();
           }
         }
-        order.paymentStatus = 'Paid';
+        // Only mark as 'Paid' when wallet movements actually occurred
+        order.paymentStatus = isOverLimit ? 'Failed' : 'Paid';
         order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
         (order as any).settlementMode = settlementMode;
         if (body.settlementRef) {
@@ -1568,7 +1603,7 @@ export function makeOpsController(env: Env) {
         (order as any).settlementMode = 'wallet';
 
         order.events = pushOrderEvent(order.events as any, {
-          type: 'STATUS_CHANGED',
+          type: 'UNSETTLED',
           at: new Date(),
           actorUserId: req.auth?.userId,
           metadata: {

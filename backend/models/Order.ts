@@ -98,8 +98,8 @@ const orderSchema = new Schema(
     },
     reviewLink: { type: String, trim: true },
 
-    // Return window cooling period in days (default 10)
-    returnWindowDays: { type: Number, default: 10, min: 0, max: 90 },
+    // Return window cooling period in days (default 14)
+    returnWindowDays: { type: Number, default: 14, min: 0, max: 90 },
     // AI verification result for rating screenshot (account name + product match)
     ratingAiVerification: {
       accountNameMatch: { type: Boolean },
@@ -107,6 +107,17 @@ const orderSchema = new Schema(
       detectedAccountName: { type: String, trim: true },
       detectedProductName: { type: String, trim: true },
       confidenceScore: { type: Number },
+    },
+    // AI verification result for return window screenshot
+    returnWindowAiVerification: {
+      orderIdMatch: { type: Boolean },
+      productNameMatch: { type: Boolean },
+      amountMatch: { type: Boolean },
+      soldByMatch: { type: Boolean },
+      returnWindowClosed: { type: Boolean },
+      confidenceScore: { type: Number },
+      detectedReturnWindow: { type: String, trim: true },
+      discrepancyNote: { type: String, trim: true },
     },
 
     rejection: {
