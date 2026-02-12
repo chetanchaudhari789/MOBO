@@ -323,6 +323,14 @@ export const Orders: React.FC = () => {
     }
   };
 
+  const resetModalState = () => {
+    setSelectedProduct(null);
+    setFormScreenshot(null);
+    setReviewLinkInput('');
+    setExtractedDetails({ orderId: '', amount: '' });
+    setMatchStatus({ id: 'none', amount: 'none' });
+  };
+
   const submitNewOrder = async () => {
     if (!selectedProduct || !user || isUploading) return;
     if (!formScreenshot) {
@@ -374,11 +382,7 @@ export const Orders: React.FC = () => {
       );
 
       setIsNewOrderModalOpen(false);
-      setSelectedProduct(null);
-      setFormScreenshot(null);
-      setReviewLinkInput('');
-      setExtractedDetails({ orderId: '', amount: '' });
-      setMatchStatus({ id: 'none', amount: 'none' });
+      resetModalState();
       loadOrders();
       toast.success('Order submitted successfully!');
     } catch (e: any) {
@@ -890,11 +894,7 @@ export const Orders: React.FC = () => {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
           onClick={() => {
             setIsNewOrderModalOpen(false);
-            setSelectedProduct(null);
-            setFormScreenshot(null);
-            setReviewLinkInput('');
-            setExtractedDetails({ orderId: '', amount: '' });
-            setMatchStatus({ id: 'none', amount: 'none' });
+            resetModalState();
           }}
         >
           <div
@@ -904,11 +904,7 @@ export const Orders: React.FC = () => {
             <button
               onClick={() => {
                 setIsNewOrderModalOpen(false);
-                setSelectedProduct(null);
-                setFormScreenshot(null);
-                setReviewLinkInput('');
-                setExtractedDetails({ orderId: '', amount: '' });
-                setMatchStatus({ id: 'none', amount: 'none' });
+                resetModalState();
               }}
               aria-label="Close"
               className="absolute top-6 right-6 p-2 bg-gray-50 rounded-full hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
@@ -991,13 +987,7 @@ export const Orders: React.FC = () => {
                       </p>
                     </div>
                     <button
-                      onClick={() => {
-                        setSelectedProduct(null);
-                        setFormScreenshot(null);
-                        setReviewLinkInput('');
-                        setExtractedDetails({ orderId: '', amount: '' });
-                        setMatchStatus({ id: 'none', amount: 'none' });
-                      }}
+                      onClick={() => resetModalState()}
                       aria-label="Clear selected product"
                       className="absolute -top-2 -right-2 bg-white border border-gray-200 p-1.5 rounded-full shadow-sm text-slate-400 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                     >
