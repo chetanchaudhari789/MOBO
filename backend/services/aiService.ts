@@ -955,8 +955,8 @@ async function verifyReturnWindowWithOcr(
       ? lower.includes(expected.expectedSoldBy.toLowerCase().trim())
       : true;
 
-    // Check for return window closure keywords
-    const returnWindowRe = /return\s*window\s*(closed|expired|ended|over|passed)|no\s*return|non.?returnable|delivered/i;
+    // Check for explicit return window closure keywords (avoid treating mere delivery as closure)
+    const returnWindowRe = /return\s*window\s*(closed|expired|ended|over|passed)|no\s*return|non.?returnable/i;
     const returnWindowClosed = returnWindowRe.test(ocrText);
 
     let confidenceScore = 15;
