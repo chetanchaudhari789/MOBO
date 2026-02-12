@@ -43,8 +43,10 @@ import {
   Mail,
   Camera,
   Package,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
@@ -191,6 +193,7 @@ const BrandProfileView = () => {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) { toast.error('Avatar must be under 2 MB'); return; }
       const reader = new FileReader();
       reader.onload = () => setAvatar(reader.result as string);
       reader.readAsDataURL(file);
@@ -560,11 +563,13 @@ const DashboardView = ({
 };
 
 const OrdersView = ({ user }: any) => {
+  const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [viewProofOrder, setViewProofOrder] = useState<Order | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
+  const [sheetsExporting, setSheetsExporting] = useState(false);
 
   const getOrderStatusBadge = (o: Order) => {
     const wf = String(o.workflowStatus || '').trim();
@@ -756,6 +761,48 @@ const OrdersView = ({ user }: any) => {
     window.URL.revokeObjectURL(url);
   };
 
+  const handleExportToSheets = () => {
+    if (!filtered.length) { toast.info('No orders to export'); return; }
+    const sheetHeaders = ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'];
+    const sheetRows = filtered.map((o) => {
+      const dateObj = new Date(o.createdAt);
+      const item = o.items[0];
+      return [
+        getPrimaryOrderId(o),
+        dateObj.toLocaleDateString(),
+        dateObj.toLocaleTimeString(),
+        item?.title || '',
+        item?.dealType || 'General',
+        item?.platform || '',
+        item?.dealType || 'Discount',
+        item?.priceAtPurchase ?? 0,
+        item?.quantity || 1,
+        o.total,
+        o.agencyName || 'Direct',
+        o.managerName || '',
+        o.buyerName || '',
+        o.buyerMobile || '',
+        o.status,
+        o.paymentStatus,
+        o.affiliateStatus || '',
+        o.id,
+        o.soldBy || '',
+        o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+        o.extractedProductName || '',
+      ] as (string | number)[];
+    });
+    exportToGoogleSheet({
+      title: `Brand Orders Report - ${new Date().toISOString().slice(0, 10)}`,
+      headers: sheetHeaders,
+      rows: sheetRows,
+      sheetName: 'Orders',
+      onStart: () => setSheetsExporting(true),
+      onEnd: () => setSheetsExporting(false),
+      onSuccess: () => toast.success('Exported to Google Sheets!'),
+      onError: (msg) => toast.error(msg),
+    });
+  };
+
   return (
     <>
       <div className="max-w-7xl mx-auto animate-enter pb-12">
@@ -801,7 +848,14 @@ const OrdersView = ({ user }: any) => {
               onClick={handleExport}
               className="flex items-center gap-2 px-5 py-3.5 bg-zinc-900 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-black transition-all active:scale-95 whitespace-nowrap"
             >
-              <Download size={18} /> <span className="hidden md:inline">Export Report</span>
+              <Download size={18} /> <span className="hidden md:inline">CSV</span>
+            </button>
+            <button
+              onClick={handleExportToSheets}
+              disabled={sheetsExporting}
+              className="flex items-center gap-2 px-5 py-3.5 bg-green-600 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-green-700 transition-all active:scale-95 whitespace-nowrap disabled:opacity-50"
+            >
+              <FileSpreadsheet size={18} /> <span className="hidden md:inline">{sheetsExporting ? 'Exporting...' : 'Google Sheets'}</span>
             </button>
           </div>
         </div>
@@ -1715,6 +1769,7 @@ export const BrandDashboard: React.FC = () => {
   const [payoutRef, setPayoutRef] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [sheetsExporting, setSheetsExporting] = useState(false);
 
   const fetchData = async () => {
     if (!user) return;
@@ -1827,6 +1882,33 @@ export const BrandDashboard: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportPayoutsToSheets = () => {
+    if (!transactions.length) { toast.info('No payouts to export'); return; }
+    const payoutHeaders = ['Transaction ID','Date','Time','Agency Name','Amount (INR)','Reference/UTR','Status'];
+    const payoutRows = transactions.map((tx: any) => {
+      const dateObj = new Date(tx.date);
+      return [
+        tx.id,
+        dateObj.toLocaleDateString(),
+        dateObj.toLocaleTimeString(),
+        tx.agencyName || '',
+        tx.amount,
+        tx.ref || '',
+        tx.status || '',
+      ] as (string | number)[];
+    });
+    exportToGoogleSheet({
+      title: `Brand Payout Ledger - ${new Date().toISOString().slice(0, 10)}`,
+      headers: payoutHeaders,
+      rows: payoutRows,
+      sheetName: 'Payouts',
+      onStart: () => setSheetsExporting(true),
+      onEnd: () => setSheetsExporting(false),
+      onSuccess: () => toast.success('Exported to Google Sheets!'),
+      onError: (msg) => toast.error(msg),
+    });
   };
 
   const pendingRequests = user?.pendingConnections?.length || 0;
@@ -2067,12 +2149,21 @@ export const BrandDashboard: React.FC = () => {
                 <h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
                   <History size={24} className="text-zinc-400" /> Payout Ledger
                 </h3>
-                <button
-                  onClick={handleExportPayouts}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-zinc-100 text-zinc-700 rounded-xl font-bold text-xs hover:bg-zinc-200 transition-colors border border-zinc-200"
-                >
-                  <Download size={16} /> Export Report
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportPayouts}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-zinc-100 text-zinc-700 rounded-xl font-bold text-xs hover:bg-zinc-200 transition-colors border border-zinc-200"
+                  >
+                    <Download size={16} /> CSV
+                  </button>
+                  <button
+                    onClick={handleExportPayoutsToSheets}
+                    disabled={sheetsExporting}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-green-50 text-green-700 rounded-xl font-bold text-xs hover:bg-green-100 transition-colors border border-green-200 disabled:opacity-50"
+                  >
+                    <FileSpreadsheet size={16} /> {sheetsExporting ? 'Exporting...' : 'Google Sheets'}
+                  </button>
+                </div>
               </div>
               <div className="bg-white rounded-[2rem] border border-zinc-100 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">

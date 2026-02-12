@@ -35,6 +35,9 @@ const envSchema = z.object({
 
   GEMINI_API_KEY: z.string().optional(),
 
+  // Google Sheets export (service account key JSON, base64-encoded)
+  GOOGLE_SERVICE_ACCOUNT_KEY: z.string().optional(),
+
   // AI safety + cost controls
   AI_ENABLED: z.coerce.boolean().default(true),
   AI_CHAT_RPM_AUTH: z.coerce.number().int().positive().default(30),

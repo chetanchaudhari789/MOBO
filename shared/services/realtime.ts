@@ -1,4 +1,5 @@
 import { fixMojibakeDeep } from '../utils/mojibake';
+import { getApiBaseUrl } from '../utils/apiBaseUrl';
 
 type Listener = (msg: RealtimeMessage) => void;
 
@@ -9,61 +10,6 @@ export type RealtimeMessage = {
 };
 
 const TOKEN_STORAGE_KEY = 'mobo_tokens_v1';
-
-function getApiBaseUrl(): string {
-  const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-  const fromVite =
-    typeof import.meta !== 'undefined' &&
-    (import.meta as any).env &&
-    (import.meta as any).env.VITE_API_URL
-      ? String((import.meta as any).env.VITE_API_URL)
-      : undefined;
-  const fromNext =
-    typeof process !== 'undefined' &&
-    (process as any).env &&
-    (process as any).env.NEXT_PUBLIC_API_URL
-      ? String((process as any).env.NEXT_PUBLIC_API_URL)
-      : undefined;
-
-  const fromNextProxyTarget =
-    typeof process !== 'undefined' &&
-    (process as any).env &&
-    (process as any).env.NEXT_PUBLIC_API_PROXY_TARGET
-      ? String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET)
-      : undefined;
-
-  // In Next.js deployments we rely on same-origin `/api/*` + Next rewrites.
-  // This avoids CORS/preflight problems when env vars point at a different origin.
-  const preferSameOriginProxy =
-    typeof window !== 'undefined' &&
-    typeof process !== 'undefined' &&
-    (process as any).env &&
-    (String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET || '').trim() ||
-      String((process as any).env.NEXT_PUBLIC_API_URL || '').trim());
-
-  const fromProxy = preferSameOriginProxy
-    ? '/api'
-    : fromNextProxyTarget
-      ? (() => {
-          const raw = String(fromNextProxyTarget).trim();
-          if (!raw) return undefined;
-          const trimmed = raw.endsWith('/') ? raw.slice(0, -1) : raw;
-          return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-        })()
-      : undefined;
-
-  let base = (fromGlobal || fromVite || fromNext || fromProxy || '/api').trim();
-
-  // Local dev fallback: if apps run on Next (300x) and backend on 8080,
-  // using a direct absolute URL avoids proxy buffering of SSE.
-  if (base === '/api' && typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    const isLocalhost = host === 'localhost' || host === '127.0.0.1';
-    if (isLocalhost) base = 'http://localhost:8080/api';
-  }
-
-  return base.endsWith('/') ? base.slice(0, -1) : base;
-}
 
 function normalizeApiRoot(raw: string | undefined): string | undefined {
   if (!raw) return undefined;

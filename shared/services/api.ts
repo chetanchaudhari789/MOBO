@@ -1,61 +1,6 @@
 ﻿import { User, Product, Order, Ticket } from '../types';
 import { fixMojibakeDeep, maybeFixMojibake } from '../utils/mojibake';
-
-function getApiBaseUrl(): string {
-  const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-  const fromVite =
-    typeof import.meta !== 'undefined' &&
-    (import.meta as any).env &&
-    (import.meta as any).env.VITE_API_URL
-      ? String((import.meta as any).env.VITE_API_URL)
-      : undefined;
-  const fromNext =
-    typeof process !== 'undefined' &&
-    (process as any).env &&
-    (process as any).env.NEXT_PUBLIC_API_URL
-      ? String((process as any).env.NEXT_PUBLIC_API_URL)
-      : undefined;
-
-  const fromNextProxyTarget =
-    typeof process !== 'undefined' &&
-    (process as any).env &&
-    (process as any).env.NEXT_PUBLIC_API_PROXY_TARGET
-      ? String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET)
-      : undefined;
-
-  // In Next.js deployments we rely on same-origin `/api/*` + Next rewrites.
-  // This avoids CORS problems when NEXT_PUBLIC_API_URL points at a different origin.
-  const hasDirectApiUrl = Boolean(fromGlobal || fromVite || fromNext);
-  const preferSameOriginProxy =
-    !hasDirectApiUrl &&
-    typeof window !== 'undefined' &&
-    typeof process !== 'undefined' &&
-    (process as any).env &&
-    String((process as any).env.NEXT_PUBLIC_API_PROXY_TARGET || '').trim();
-
-  const fromProxy = preferSameOriginProxy
-    ? '/api'
-    : fromNextProxyTarget
-      ? (() => {
-          const raw = String(fromNextProxyTarget).trim();
-          if (!raw) return undefined;
-          const trimmed = raw.endsWith('/') ? raw.slice(0, -1) : raw;
-          return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-        })()
-      : undefined;
-
-  let base = (fromGlobal || fromVite || fromNext || fromProxy || '/api').trim();
-
-  // Local dev fallback: if apps run on Next (300x) and backend on 8080,
-  // talk to the backend directly unless overridden.
-  if (base === '/api' && typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    const isLocalhost = host === 'localhost' || host === '127.0.0.1';
-    if (isLocalhost) base = 'http://localhost:8080/api';
-  }
-
-  return base.endsWith('/') ? base.slice(0, -1) : base;
-}
+import { getApiBaseUrl } from '../utils/apiBaseUrl';
 
 // Real API Base URL
 const API_URL = getApiBaseUrl();
@@ -141,6 +86,25 @@ function isAuthError(res: Response, payload: any): boolean {
   return res.status === 401 || code === 'UNAUTHENTICATED' || code === 'INVALID_TOKEN';
 }
 
+/**
+ * Event listeners for auth session expiry.
+ * When a 401 cannot be recovered (refresh token also expired/invalid),
+ * all registered callbacks fire so the UI can redirect to login.
+ */
+type AuthExpiredListener = () => void;
+const authExpiredListeners = new Set<AuthExpiredListener>();
+
+export function onAuthExpired(listener: AuthExpiredListener): () => void {
+  authExpiredListeners.add(listener);
+  return () => { authExpiredListeners.delete(listener); };
+}
+
+function notifyAuthExpired(): void {
+  for (const fn of authExpiredListeners) {
+    try { fn(); } catch { /* listener should not throw */ }
+  }
+}
+
 async function refreshTokens(): Promise<TokenPair | null> {
   if (!canUseStorage()) return null;
   const current = readTokens();
@@ -171,6 +135,7 @@ async function refreshTokens(): Promise<TokenPair | null> {
         return readTokens();
       } catch {
         clearTokens();
+        notifyAuthExpired();
         return null;
       } finally {
         refreshPromise = null;
@@ -210,8 +175,8 @@ function assertOnlineForWrite(init?: RequestInit) {
   }
 }
 
-/** Default request timeout (30s). Keeps the UI from hanging forever. */
-const DEFAULT_TIMEOUT_MS = 30_000;
+/** Default request timeout (60s). Increased for AI endpoints that may take 15-45s. */
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   // If the caller already provides an AbortSignal, respect it.
@@ -238,6 +203,8 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
       return fixMojibakeDeep(retryPayload);
     }
+    // Refresh failed — session is dead. Notify listeners (AuthContext) for redirect.
+    notifyAuthExpired();
   }
 
   if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
@@ -261,6 +228,8 @@ async function fetchOk(path: string, init?: RequestInit): Promise<void> {
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
       return;
     }
+    // Refresh failed — session is dead. Notify listeners.
+    notifyAuthExpired();
   }
 
   if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
@@ -306,14 +275,51 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * [FIX] Preserve original image quality. No client-side compression.
- * Kept for backward compatibility with existing imports.
+ * Client-side image compression using <canvas>.
+ * Resizes large images down to `maxDimension` (default 1200px) and
+ * re-encodes as JPEG at `quality` (default 0.7).
+ * This reduces upload payload size and AI token consumption.
+ * Falls back to returning the original if compression fails (e.g. SSR).
  */
 export const compressImage = async (
   base64: string,
-  _options: { maxChars?: number } = {}
+  options: { maxDimension?: number; quality?: number } = {}
 ): Promise<string> => {
-  return base64;
+  // Only compress in the browser where we have canvas
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return base64;
+
+  const maxDimension = options.maxDimension ?? 1200;
+  const quality = options.quality ?? 0.7;
+
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Failed to load image for compression'));
+      image.src = base64;
+    });
+
+    const { width, height } = img;
+
+    // Skip compression for images already small enough
+    if (width <= maxDimension && height <= maxDimension) return base64;
+
+    const scale = maxDimension / Math.max(width, height);
+    const newWidth = Math.round(width * scale);
+    const newHeight = Math.round(height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return base64;
+
+    ctx.drawImage(img, 0, 0, newWidth, newHeight);
+    return canvas.toDataURL('image/jpeg', quality);
+  } catch {
+    // Silently fall back to original if anything goes wrong
+    return base64;
+  }
 };
 
 /**
@@ -420,6 +426,12 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ orderId, ...proof }),
+      });
+    },
+    /** Get audit trail / activity log for a specific order */
+    getOrderAudit: async (orderId: string) => {
+      return fetchJson(`/orders/${encodeURIComponent(orderId)}/audit`, {
+        headers: { ...authHeaders() },
       });
     },
     /** [FIX] Added missing extractDetails for Orders.tsx */
@@ -926,6 +938,23 @@ export const api = {
           body: JSON.stringify({ endpoint }),
         });
       },
+    },
+  },
+
+  /** ── Google Sheets Export ─────────────────────────────────── */
+  sheets: {
+    /** Export data to a new Google Spreadsheet. Returns spreadsheet URL. */
+    export: async (data: {
+      title: string;
+      headers: string[];
+      rows: (string | number)[][];
+      sheetName?: string;
+    }): Promise<{ spreadsheetId: string; spreadsheetUrl: string; sheetTitle: string }> => {
+      return fetchJson('/sheets/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(data),
+      });
     },
   },
 };

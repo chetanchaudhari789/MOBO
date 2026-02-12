@@ -154,6 +154,12 @@ export function makeOpsController(env: Env) {
         if (!brand) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
         if (brand.status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
 
+        // Guard against unbounded pendingConnections growth
+        const pendingCount = Array.isArray((brand as any).pendingConnections) ? (brand as any).pendingConnections.length : 0;
+        if (pendingCount >= 100) {
+          throw new AppError(409, 'TOO_MANY_PENDING', 'Brand has too many pending connection requests');
+        }
+
         const agencyName = String((requester as any)?.name || 'Agency');
 
         const updated = await UserModel.updateOne(
@@ -1042,6 +1048,18 @@ export function makeOpsController(env: Env) {
           rejectedBy: req.auth?.userId,
         };
         (order as any).affiliateStatus = 'Rejected';
+
+        // Release campaign slot when order proof (purchase) is rejected,
+        // so the campaign doesn't permanently show "sold out" for rejected orders.
+        if (body.type === 'order') {
+          const campaignId = order.items?.[0]?.campaignId;
+          if (campaignId) {
+            await CampaignModel.updateOne(
+              { _id: campaignId, usedSlots: { $gt: 0 } },
+              { $inc: { usedSlots: -1 } },
+            );
+          }
+        }
 
         order.events = pushOrderEvent(order.events as any, {
           type: 'REJECTED',

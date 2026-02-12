@@ -14,6 +14,7 @@
   },
   "include": [
     "index.ts",
+    "app.ts",
     "types/**/*.d.ts",
     "config/**/*.ts",
     "database/**/*.ts",
@@ -25,6 +26,7 @@
     "middleware/**/*.ts",
     "validations/**/*.ts",
     "seeds/**/*.ts",
+    "utils/**/*.ts",
     "tests/**/*.ts"
   ],
   "exclude": ["dist", "node_modules"]

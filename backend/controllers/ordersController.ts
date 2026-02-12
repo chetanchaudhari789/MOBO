@@ -325,6 +325,15 @@ export function makeOrdersController(env: Env) {
           .lean();
         const upstreamAgencyCode = String((mediatorUser as any)?.parentCode || '').trim();
 
+        // Resolve actual agency name for the order record
+        let resolvedAgencyName = 'Partner Agency';
+        if (upstreamAgencyCode) {
+          const agencyUser = await UserModel.findOne({ roles: 'agency', mediatorCode: upstreamAgencyCode, deletedAt: null })
+            .select({ name: 1 })
+            .lean();
+          if (agencyUser?.name) resolvedAgencyName = String(agencyUser.name);
+        }
+
         const allowedAgencyCodes = Array.isArray((campaign as any).allowedAgencyCodes)
           ? ((campaign as any).allowedAgencyCodes as string[]).map((c) => String(c))
           : [];
@@ -415,7 +424,7 @@ export function makeOrdersController(env: Env) {
             (existing as any).paymentStatus = 'Pending';
             (existing as any).affiliateStatus = 'Unchecked';
             (existing as any).managerName = upstreamMediatorCode;
-            (existing as any).agencyName = 'Partner Agency';
+            (existing as any).agencyName = resolvedAgencyName;
             (existing as any).buyerName = user.name;
             (existing as any).buyerMobile = user.mobile;
             (existing as any).brandName = item.brandName ?? campaign.brandName;
@@ -486,7 +495,7 @@ export function makeOrdersController(env: Env) {
                 paymentStatus: 'Pending',
                 affiliateStatus: 'Unchecked',
                 managerName: upstreamMediatorCode,
-                agencyName: 'Partner Agency',
+                agencyName: resolvedAgencyName,
                 buyerName: user.name,
                 buyerMobile: user.mobile,
                 brandName: item.brandName ?? campaign.brandName,
@@ -551,6 +560,19 @@ export function makeOrdersController(env: Env) {
         res
           .status(201)
           .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
+
+        // Audit trail
+        writeAuditLog({
+          req,
+          action: 'ORDER_CREATED',
+          entityType: 'Order',
+          entityId: String((finalOrder as any)._id),
+          metadata: {
+            campaignId: String((campaign as any)._id),
+            total: body.items.reduce((a: number, it: any) => a + (Number(it.priceAtPurchase) || 0) * (Number(it.quantity) || 1), 0),
+            externalOrderId: resolvedExternalOrderId,
+          },
+        });
 
         // Notify UIs (buyer/mediator/brand/admin) that order-related views should refresh.
         const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -664,9 +686,9 @@ export function makeOrdersController(env: Env) {
                 expectedBuyerName: buyerName,
                 expectedProductName: productName,
               });
-              // Block submission if both name AND product mismatch with high confidence
+              // Block submission if both name AND product mismatch with high confidence (≥70 for anti-fraud strength)
               if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
-                  && ratingAiResult.confidenceScore >= 60) {
+                  && ratingAiResult.confidenceScore >= 70) {
                 throw new AppError(422, 'RATING_VERIFICATION_FAILED',
                   'Rating screenshot does not match: the account name and product must match your order. ' +
                   (ratingAiResult.discrepancyNote || ''));
@@ -683,6 +705,22 @@ export function makeOrdersController(env: Env) {
               detectedProductName: ratingAiResult.detectedProductName,
               confidenceScore: ratingAiResult.confidenceScore,
             };
+
+            // Audit trail: record AI rating verification for backtracking
+            writeAuditLog({
+              req,
+              action: 'ai.verify_rating',
+              entityType: 'order',
+              entityId: String(order._id),
+              metadata: {
+                accountNameMatch: ratingAiResult.accountNameMatch,
+                productNameMatch: ratingAiResult.productNameMatch,
+                confidenceScore: ratingAiResult.confidenceScore,
+                detectedAccountName: ratingAiResult.detectedAccountName,
+                detectedProductName: ratingAiResult.detectedProductName,
+                discrepancyNote: ratingAiResult.discrepancyNote,
+              },
+            });
           }
           if ((order as any).rejection?.type === 'rating') {
             (order as any).rejection = undefined;
@@ -771,6 +809,15 @@ export function makeOrdersController(env: Env) {
         }) as any;
 
         await order.save();
+
+        // Audit trail for proof upload
+        writeAuditLog({
+          req,
+          action: 'PROOF_UPLOADED',
+          entityType: 'Order',
+          entityId: String(order._id),
+          metadata: { proofType: body.type },
+        });
 
         // Strict state machine progression for first proof submission:
         // ORDERED -> PROOF_SUBMITTED -> UNDER_REVIEW

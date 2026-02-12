@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
@@ -31,6 +32,7 @@ import {
   HeadphonesIcon,
   Trash2,
   ClipboardList,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -162,6 +164,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [deletingWalletId, setDeletingWalletId] = useState<string | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [sheetsExporting, setSheetsExporting] = useState(false);
 
   const switchView = (next: ViewMode) => {
     setView(next);
@@ -362,8 +365,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const toggleUserStatus = async (target: User) => {
     if (target.role === 'admin') return;
     const newStatus = target.status === 'active' ? 'suspended' : 'active';
-    await api.admin.updateUserStatus(target.id, newStatus);
-    setUsers(users.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u)));
+    try {
+      await api.admin.updateUserStatus(target.id, newStatus);
+      setUsers(users.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update user status');
+    }
   };
 
   const deleteWallet = async (target: User) => {
@@ -504,6 +511,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    // Sanitize user-controlled values: neutralize spreadsheet formula injection
+    const csvSafe = (val: string) => {
+      let s = String(val ?? '');
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return csvEscape(s);
+    };
     const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
 
     const headers = [
@@ -546,10 +559,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.externalOrderId || order.id,
         dateStr,
         timeStr,
-        `"${(order.buyerName || '').replace(/"/g, '""')}"`,
-        `"${(order.buyerMobile || '').replace(/"/g, '""')}"`,
-        `"${(order.brandName ?? item?.brandName ?? '').replace(/"/g, '""')}"`,
-        `"${(item?.title ?? '').replace(/"/g, '""')}"`,
+        csvSafe(order.buyerName || ''),
+        csvSafe(order.buyerMobile || ''),
+        csvSafe(order.brandName ?? item?.brandName ?? ''),
+        csvSafe(item?.title ?? ''),
         item?.platform ?? '',
         item?.dealType ?? 'Discount',
         item?.quantity ?? 1,
@@ -559,11 +572,11 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         order.paymentStatus,
         order.affiliateStatus,
         order.managerName || 'N/A',
-        `"${(order.agencyName || 'Partner Agency').replace(/"/g, '""')}"`,
+        csvSafe(order.agencyName || 'Partner Agency'),
         order.id,
-        `"${(order.soldBy || '').replace(/"/g, '""')}"`,
+        csvSafe(order.soldBy || ''),
         order.orderDate ? new Date(order.orderDate).toLocaleDateString() : '',
-        `"${(order.extractedProductName || '').replace(/"/g, '""')}"`,
+        csvSafe(order.extractedProductName || ''),
         order.screenshots?.order ? hyperlinkYes(buildProofUrl(order.id, 'order')) : 'No',
         order.screenshots?.payment ? hyperlinkYes(buildProofUrl(order.id, 'payment')) : 'No',
         order.screenshots?.rating ? hyperlinkYes(buildProofUrl(order.id, 'rating')) : 'No',
@@ -575,7 +588,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -584,6 +597,52 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportToSheets = (reportType: 'orders' | 'finance') => {
+    const dataToExport = orders;
+    if (!dataToExport || dataToExport.length === 0) {
+      toast.info('No data available to export.');
+      return;
+    }
+    const sheetHeaders = ['Order ID','Date','Time','Customer Name','Customer Mobile','Brand','Product','Platform','Deal Type','Quantity','Unit Price','Total Amount','Order Status','Payment Status','Verification Status','Mediator Code','Agency Name','Internal Ref','Sold By','Order Date','Extracted Product'];
+    const sheetRows = dataToExport.map((order) => {
+      const dateObj = new Date(order.createdAt);
+      const item = order.items[0];
+      return [
+        order.externalOrderId || order.id,
+        dateObj.toLocaleDateString(),
+        dateObj.toLocaleTimeString(),
+        order.buyerName || '',
+        order.buyerMobile || '',
+        order.brandName ?? item?.brandName ?? '',
+        item?.title ?? '',
+        item?.platform ?? '',
+        item?.dealType ?? 'Discount',
+        item?.quantity ?? 1,
+        item?.priceAtPurchase ?? 0,
+        order.total,
+        order.status,
+        order.paymentStatus,
+        order.affiliateStatus || '',
+        order.managerName || 'N/A',
+        order.agencyName || 'Partner Agency',
+        order.id,
+        order.soldBy || '',
+        order.orderDate ? new Date(order.orderDate).toLocaleDateString() : '',
+        order.extractedProductName || '',
+      ] as (string | number)[];
+    });
+    exportToGoogleSheet({
+      title: `Buzzma Admin ${reportType} Report - ${new Date().toISOString().slice(0, 10)}`,
+      headers: sheetHeaders,
+      rows: sheetRows,
+      sheetName: reportType === 'finance' ? 'Finance' : 'Orders',
+      onStart: () => setSheetsExporting(true),
+      onEnd: () => setSheetsExporting(false),
+      onSuccess: () => toast.success('Exported to Google Sheets!'),
+      onError: (msg) => toast.error(msg),
+    });
   };
 
   const filteredUsers = useMemo(() => {
@@ -1371,13 +1430,23 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                   <h3 className="font-extrabold text-lg text-slate-900">
                     {view === 'finance' ? 'Global Ledger' : 'Order Management'}
                   </h3>
-                  <button
-                    type="button"
-                    onClick={() => handleExport(view === 'finance' ? 'finance' : 'orders')}
-                    className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100 transition-colors"
-                  >
-                    <Download size={14} /> Export Report
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleExport(view === 'finance' ? 'finance' : 'orders')}
+                      className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100 transition-colors"
+                    >
+                      <Download size={14} /> CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportToSheets(view === 'finance' ? 'finance' : 'orders')}
+                      disabled={sheetsExporting}
+                      className="flex items-center gap-2 text-xs font-bold text-green-600 bg-green-50 px-4 py-2 rounded-xl hover:bg-green-100 transition-colors disabled:opacity-50"
+                    >
+                      <FileSpreadsheet size={14} /> {sheetsExporting ? 'Exporting...' : 'Google Sheets'}
+                    </button>
+                  </div>
                 </div>
                 <div className="p-4 border-b border-slate-100 flex gap-3 flex-wrap items-center">
                   <div className="flex-1 min-w-[200px]">

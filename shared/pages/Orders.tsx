@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -20,6 +20,9 @@ import {
   ShieldCheck,
   Package,
   Zap,
+  History,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 const getPrimaryOrderId = (order: Order) =>
@@ -58,6 +61,7 @@ export const Orders: React.FC = () => {
   const [uploadType, setUploadType] = useState<'order' | 'payment' | 'rating' | 'review' | 'returnWindow'>('order');
   const [proofToView, setProofToView] = useState<Order | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const submittingRef = useRef(false);
   const [inputValue, setInputValue] = useState('');
 
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
@@ -83,11 +87,17 @@ export const Orders: React.FC = () => {
   const [matchStatus, setMatchStatus] = useState<{
     id: 'match' | 'mismatch' | 'none';
     amount: 'match' | 'mismatch' | 'none';
-  }>({ id: 'none', amount: 'none' });
+    productName: 'match' | 'mismatch' | 'none';
+  }>({ id: 'none', amount: 'none', productName: 'none' });
+  const [orderIdLocked, setOrderIdLocked] = useState(false);
 
   const [ticketModal, setTicketModal] = useState<Order | null>(null);
   const [ticketIssue, setTicketIssue] = useState('Cashback not received');
   const [ticketDesc, setTicketDesc] = useState('');
+  // Audit trail state: tracks which order's audit log is expanded
+  const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   // Order list search & filter
   const [orderListSearch, setOrderListSearch] = useState('');
@@ -257,7 +267,8 @@ export const Orders: React.FC = () => {
     reader.readAsDataURL(file);
 
     setIsAnalyzing(true);
-    setMatchStatus({ id: 'none', amount: 'none' });
+    setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+    setOrderIdLocked(false);
     try {
       const details = await api.orders.extractDetails(file);
       const normalizedOrderId =
@@ -297,12 +308,56 @@ export const Orders: React.FC = () => {
         const hasAmount = typeof safeAmount === 'number';
         const amountMatch = hasAmount && Math.abs(safeAmount - selectedProduct.price) < 10;
         const idValid = hasId && safeOrderId.length > 5;
+
+        // Product name similarity check — stricter matching to prevent fraud
+        const extractedName = (typeof details.productName === 'string' ? details.productName : '').toLowerCase().trim();
+        const expectedName = (selectedProduct.title || '').toLowerCase().trim();
+        let productNameStatus: 'match' | 'mismatch' | 'none' = 'none';
+        if (extractedName && expectedName) {
+          // Filter out URLs and navigation chrome from extracted product name
+          const isUrl = /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=/i.test(extractedName);
+          if (isUrl) {
+            productNameStatus = 'mismatch';
+          } else {
+            // Strip common noise words for cleaner matching
+            const noiseWords = new Set(['the', 'and', 'for', 'with', 'from', 'this', 'that', 'not', 'are', 'was', 'has', 'its', 'all', 'can', 'you', 'our', 'new', 'buy', 'get']);
+            const cleanWords = (text: string) => text
+              .replace(/[^a-z0-9\s]/g, ' ')
+              .split(/\s+/)
+              .filter((w: string) => w.length > 2 && !noiseWords.has(w));
+            const extractedWords = cleanWords(extractedName);
+            const expectedWords = cleanWords(expectedName);
+
+            // Match words that are equal or contain each other as substring (min 4 chars for substring)
+            const matchingWords = extractedWords.filter((w: string) =>
+              expectedWords.some((ew: string) =>
+                w === ew || (w.length >= 4 && ew.includes(w)) || (ew.length >= 4 && w.includes(ew))
+              )
+            );
+            const denominator = Math.min(extractedWords.length, expectedWords.length);
+            const overlapRatio = denominator > 0 ? matchingWords.length / denominator : 0;
+            // Require at least 2 matching words AND 40% overlap ratio
+            const hasEnoughOverlap = matchingWords.length >= 2 && overlapRatio >= 0.4;
+            // Special case: if product name is very short (1-2 significant words), require exact word match
+            const shortNameMatch = expectedWords.length <= 2 && matchingWords.length >= 1 && overlapRatio >= 0.5;
+            productNameStatus = (hasEnoughOverlap || shortNameMatch) ? 'match' : 'mismatch';
+          }
+        }
+
         setMatchStatus({
           id: !hasId ? 'none' : idValid ? 'match' : 'mismatch',
           amount: !hasAmount ? 'none' : amountMatch ? 'match' : 'mismatch',
+          productName: productNameStatus,
         });
 
-        if (hasId && hasAmount) {
+        // Lock the Order ID field if AI extracted a valid one
+        if (hasId && idValid) {
+          setOrderIdLocked(true);
+        }
+
+        if (productNameStatus === 'mismatch') {
+          toast.error('Product name in screenshot does not match the selected deal. Please upload the correct screenshot.');
+        } else if (hasId && hasAmount) {
           toast.success('Order ID and Amount detected successfully!');
         } else if (hasId) {
           toast.success('Order ID detected! Amount field is ready to edit if needed.');
@@ -316,7 +371,8 @@ export const Orders: React.FC = () => {
       console.error(e);
       // Still allow manual entry by showing empty extraction fields
       setExtractedDetails({ orderId: '', amount: '' });
-      setMatchStatus({ id: 'none', amount: 'none' });
+      setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+      setOrderIdLocked(false);
       toast.info('Screenshot uploaded. Enter Order ID and Amount below.');
     } finally {
       setIsAnalyzing(false);
@@ -324,9 +380,15 @@ export const Orders: React.FC = () => {
   };
 
   const submitNewOrder = async () => {
-    if (!selectedProduct || !user || isUploading) return;
+    if (!selectedProduct || !user || isUploading || submittingRef.current) return;
+    submittingRef.current = true;
     if (!formScreenshot) {
       toast.error('Please upload a valid order image before submitting.');
+      return;
+    }
+    // Block if product name mismatch detected by AI
+    if (matchStatus.productName === 'mismatch') {
+      toast.error('The product in the screenshot does not match the selected deal. Please upload the correct order screenshot.');
       return;
     }
     const hasExtraction = Boolean(extractedDetails.orderId || extractedDetails.amount !== '');
@@ -378,13 +440,15 @@ export const Orders: React.FC = () => {
       setFormScreenshot(null);
       setReviewLinkInput('');
       setExtractedDetails({ orderId: '', amount: '' });
-      setMatchStatus({ id: 'none', amount: 'none' });
+      setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+      setOrderIdLocked(false);
       loadOrders();
       toast.success('Order submitted successfully!');
     } catch (e: any) {
       toast.error(String(e.message || 'Failed to submit order.'));
     } finally {
       setIsUploading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -661,10 +725,10 @@ export const Orders: React.FC = () => {
                 {hasExtraSteps && displayStatus !== 'SETTLED' && displayStatus !== 'FROZEN' && (
                   <div className="mb-3 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-2">Steps to complete</p>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                       {/* Step 1: Purchase */}
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                      <div className="flex items-center gap-1 min-w-0 shrink-0">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
                           purchaseVerified
                             ? 'bg-green-500 text-white'
                             : rejectionType === 'order'
@@ -673,17 +737,17 @@ export const Orders: React.FC = () => {
                         }`}>
                           {purchaseVerified ? <Check size={12} strokeWidth={3} /> : '1'}
                         </div>
-                        <span className={`text-[10px] font-bold ${purchaseVerified ? 'text-green-600' : 'text-slate-500'}`}>
-                          Purchase
+                        <span className={`text-[9px] font-bold truncate ${purchaseVerified ? 'text-green-600' : 'text-slate-500'}`}>
+                          Buy
                         </span>
                       </div>
-                      <div className={`flex-1 h-0.5 mx-1 rounded ${purchaseVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+                      <div className={`flex-1 h-0.5 mx-0.5 rounded min-w-[8px] ${purchaseVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
 
                       {/* Step 2: Review or Rating proof upload */}
                       {requiredSteps.includes('review') && (
                         <>
-                          <div className="flex items-center gap-1.5">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          <div className="flex items-center gap-1 min-w-0 shrink-0">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
                               reviewVerified
                                 ? 'bg-green-500 text-white'
                                 : rejectionType === 'review'
@@ -696,20 +760,20 @@ export const Orders: React.FC = () => {
                             }`}>
                               {reviewVerified ? <Check size={12} strokeWidth={3} /> : '2'}
                             </div>
-                            <span className={`text-[10px] font-bold ${
+                            <span className={`text-[9px] font-bold truncate ${
                               reviewVerified ? 'text-green-600' : purchaseVerified ? 'text-slate-700' : 'text-slate-400'
                             }`}>
                               Review
                             </span>
                           </div>
-                          <div className={`flex-1 h-0.5 mx-1 rounded ${reviewVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+                          <div className={`flex-1 h-0.5 mx-0.5 rounded min-w-[8px] ${reviewVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
                         </>
                       )}
 
                       {requiredSteps.includes('rating') && (
                         <>
-                          <div className="flex items-center gap-1.5">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          <div className="flex items-center gap-1 min-w-0 shrink-0">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
                               ratingVerified
                                 ? 'bg-green-500 text-white'
                                 : rejectionType === 'rating'
@@ -722,21 +786,21 @@ export const Orders: React.FC = () => {
                             }`}>
                               {ratingVerified ? <Check size={12} strokeWidth={3} /> : requiredSteps.includes('review') ? '3' : '2'}
                             </div>
-                            <span className={`text-[10px] font-bold ${
+                            <span className={`text-[9px] font-bold truncate ${
                               ratingVerified ? 'text-green-600' : purchaseVerified ? 'text-slate-700' : 'text-slate-400'
                             }`}>
-                              Rating
+                              Rate
                             </span>
                           </div>
-                          <div className={`flex-1 h-0.5 mx-1 rounded ${ratingVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+                          <div className={`flex-1 h-0.5 mx-0.5 rounded min-w-[8px] ${ratingVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
                         </>
                       )}
 
                       {/* Return Window step */}
                       {requiredSteps.includes('returnWindow') && (
                         <>
-                          <div className="flex items-center gap-1.5">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          <div className="flex items-center gap-1 min-w-0 shrink-0">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
                               returnWindowVerified
                                 ? 'bg-green-500 text-white'
                                 : rejectionType === 'returnWindow'
@@ -752,19 +816,19 @@ export const Orders: React.FC = () => {
                                  requiredSteps.includes('review') || requiredSteps.includes('rating') ? '3' : '2')
                               }
                             </div>
-                            <span className={`text-[10px] font-bold ${
+                            <span className={`text-[9px] font-bold truncate ${
                               returnWindowVerified ? 'text-green-600' : purchaseVerified ? 'text-slate-700' : 'text-slate-400'
                             }`}>
-                              Return Window
+                              Return
                             </span>
                           </div>
-                          <div className={`flex-1 h-0.5 mx-1 rounded ${returnWindowVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
+                          <div className={`flex-1 h-0.5 mx-0.5 rounded min-w-[8px] ${returnWindowVerified ? 'bg-green-400' : 'bg-slate-200'}`} />
                         </>
                       )}
 
                       {/* Final: Cashback */}
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                      <div className="flex items-center gap-1 min-w-0 shrink-0">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
                           order.affiliateStatus === 'Pending_Cooling' || order.paymentStatus === 'Paid'
                             ? 'bg-green-500 text-white'
                             : 'bg-slate-200 text-slate-400'
@@ -773,12 +837,12 @@ export const Orders: React.FC = () => {
                             ? <Check size={12} strokeWidth={3} />
                             : <Zap size={10} />}
                         </div>
-                        <span className={`text-[10px] font-bold ${
+                        <span className={`text-[9px] font-bold truncate ${
                           order.affiliateStatus === 'Pending_Cooling' || order.paymentStatus === 'Paid'
                             ? 'text-green-600'
                             : 'text-slate-400'
                         }`}>
-                          Cashback
+                          Cash
                         </span>
                       </div>
                     </div>
@@ -877,6 +941,61 @@ export const Orders: React.FC = () => {
                       <HelpCircle size={14} />
                     </button>
                   </div>
+                </div>
+
+                {/* AUDIT TRAIL / ACTIVITY LOG */}
+                <div className="mt-3 border-t border-slate-50 pt-2">
+                  <button
+                    onClick={async () => {
+                      if (auditOrderId === order.id) {
+                        setAuditOrderId(null);
+                        return;
+                      }
+                      setAuditOrderId(order.id);
+                      setAuditLoading(true);
+                      try {
+                        const resp = await api.orders.getOrderAudit(order.id);
+                        setAuditLogs(resp?.logs ?? []);
+                      } catch {
+                        setAuditLogs([]);
+                      } finally {
+                        setAuditLoading(false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <History size={12} />
+                    Activity Log
+                    {auditOrderId === order.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+                  {auditOrderId === order.id && (
+                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1.5 scrollbar-hide">
+                      {auditLoading ? (
+                        <div className="flex justify-center py-2">
+                          <Loader2 size={14} className="animate-spin text-slate-300" />
+                        </div>
+                      ) : auditLogs.length === 0 ? (
+                        <p className="text-[10px] text-slate-300 italic">No activity recorded yet.</p>
+                      ) : (
+                        auditLogs.map((log: any, i: number) => (
+                          <div key={log._id || i} className="flex items-start gap-2 text-[10px]">
+                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0" />
+                            <div className="min-w-0">
+                              <span className="font-bold text-slate-600">
+                                {(log.action || '').replace(/_/g, ' ')}
+                              </span>
+                              <span className="text-slate-400 ml-1.5">
+                                {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}
+                              </span>
+                              {log.metadata?.proofType && (
+                                <span className="ml-1 text-slate-400">({log.metadata.proofType})</span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1031,19 +1150,21 @@ export const Orders: React.FC = () => {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                            Order ID
+                            Order ID {orderIdLocked && <span className="text-green-500">(Verified)</span>}
                           </label>
                           <div className="relative">
                             <input
                               type="text"
                               value={extractedDetails.orderId}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                if (orderIdLocked) return;
                                 setExtractedDetails({
                                   ...extractedDetails,
                                   orderId: e.target.value,
-                                })
-                              }
-                              className={`w-full p-3 rounded-xl font-bold text-sm outline-none transition-all ${matchStatus.id === 'match' ? 'bg-green-50 border-green-200 focus:ring-green-100' : matchStatus.id === 'mismatch' ? 'bg-red-50 border-red-200 focus:ring-red-100' : 'bg-gray-50 border-gray-100 focus:ring-lime-100'}`}
+                                });
+                              }}
+                              readOnly={orderIdLocked}
+                              className={`w-full p-3 rounded-xl font-bold text-sm outline-none transition-all ${orderIdLocked ? 'bg-green-50 border-green-200 cursor-not-allowed opacity-80' : matchStatus.id === 'match' ? 'bg-green-50 border-green-200 focus:ring-green-100' : matchStatus.id === 'mismatch' ? 'bg-red-50 border-red-200 focus:ring-red-100' : 'bg-gray-50 border-gray-100 focus:ring-lime-100'}`}
                               placeholder="e.g. 404-..."
                             />
                             {matchStatus.id === 'match' && (
@@ -1088,6 +1209,16 @@ export const Orders: React.FC = () => {
                           <ShieldCheck size={12} /> AI suggests this is a valid proof.
                         </p>
                       )}
+                      {matchStatus.productName === 'mismatch' && (
+                        <p className="text-[10px] text-red-600 font-bold bg-red-50 p-2 rounded-lg flex items-center gap-1.5">
+                          <AlertTriangle size={12} /> Product in screenshot doesn&apos;t match the selected deal. Upload the correct order screenshot.
+                        </p>
+                      )}
+                      {matchStatus.productName === 'match' && (
+                        <p className="text-[10px] text-green-600 font-bold bg-green-50 p-2 rounded-lg flex items-center gap-1.5">
+                          <CheckCircle2 size={12} /> Product name matches the selected deal.
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -1127,7 +1258,8 @@ export const Orders: React.FC = () => {
                 disabled={
                   !selectedProduct ||
                   !formScreenshot ||
-                  isUploading
+                  isUploading ||
+                  matchStatus.productName === 'mismatch'
                 }
                 className="w-full py-4 bg-black text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400 hover:text-black transition-all disabled:opacity-50 active:scale-95 shadow-lg"
               >
@@ -1233,6 +1365,7 @@ export const Orders: React.FC = () => {
                 <textarea
                   value={ticketDesc}
                   onChange={(e) => setTicketDesc(e.target.value)}
+                  maxLength={2000}
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-red-400 h-24 resize-none"
                   placeholder="Describe the issue..."
                 />

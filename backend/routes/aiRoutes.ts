@@ -14,6 +14,7 @@ import { DealModel } from '../models/Deal.js';
 import { toUiDeal } from '../utils/uiMappers.js';
 import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
+import { writeAuditLog } from '../services/audit.js';
 
 export function aiRoutes(env: Env): Router {
   const router = Router();
@@ -112,6 +113,11 @@ export function aiRoutes(env: Env): Router {
 
   const getRequestId = (res: any) =>
     String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+
+  // ⚠ DEPLOYMENT NOTE: These rate-limit Maps live in process memory.
+  // They reset on restart and are per-instance in multi-worker deployments.
+  // For production with multiple instances, replace with Redis-backed
+  // stores (e.g. `rate-limit-redis`) to share counters across workers.
   const dailyUsage = new Map<string, { day: string; count: number }>();
   const lastCallAt = new Map<string, number>();
 
@@ -524,6 +530,24 @@ export function aiRoutes(env: Env): Router {
       if (!enforceMinInterval(req, res)) return;
 
       const result = await verifyProofWithAi(env, payload);
+
+      // Audit trail: record AI proof verification for backtracking
+      writeAuditLog({
+        req,
+        action: 'ai.verify_proof',
+        entityType: 'order_proof',
+        metadata: {
+          expectedOrderId: payload.expectedOrderId,
+          expectedAmount: payload.expectedAmount,
+          orderIdMatch: result.orderIdMatch,
+          amountMatch: result.amountMatch,
+          confidenceScore: result.confidenceScore,
+          detectedOrderId: result.detectedOrderId,
+          detectedAmount: result.detectedAmount,
+          discrepancyNote: result.discrepancyNote,
+        },
+      });
+
       res.json(result);
     } catch (err) {
       if (!sendKnownError(err, res)) next(err);
@@ -541,6 +565,22 @@ export function aiRoutes(env: Env): Router {
       // extractOrderDetailsWithAi now works without Gemini via Tesseract.js
       // fallback, so we no longer need to bypass in E2E or non-Gemini mode.
       const result = await extractOrderDetailsWithAi(env, { imageBase64: payload.imageBase64 });
+
+      // Audit trail: record AI order extraction for backtracking
+      writeAuditLog({
+        req,
+        action: 'ai.extract_order',
+        entityType: 'order_extraction',
+        metadata: {
+          orderId: result.orderId,
+          amount: result.amount,
+          orderDate: result.orderDate,
+          soldBy: result.soldBy,
+          productName: result.productName,
+          confidenceScore: result.confidenceScore,
+        },
+      });
+
       res.json(result);
     } catch (err) {
       if (!sendKnownError(err, res)) next(err);
