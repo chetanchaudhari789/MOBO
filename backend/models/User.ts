@@ -95,6 +95,10 @@ const userSchema = new Schema(
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     deletedAt: { type: Date, index: true },
     deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+
+    // --- Account lockout (brute-force protection) ---
+    failedLoginAttempts: { type: Number, default: 0, min: 0 },
+    lockoutUntil: { type: Date, default: null },
   },
   { timestamps: true }
 );

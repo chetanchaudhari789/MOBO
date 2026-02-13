@@ -537,7 +537,7 @@ export function makeAdminController() {
         } = req.query as Record<string, string | undefined>;
 
         const page = Math.max(1, parseInt(pageStr || '1', 10) || 1);
-        const limit = Math.min(100, Math.max(1, parseInt(limitStr || '50', 10) || 50));
+        const limit = Math.min(500, Math.max(1, parseInt(limitStr || '50', 10) || 50));
         const skip = (page - 1) * limit;
 
         const filter: Record<string, any> = {};

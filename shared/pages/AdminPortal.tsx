@@ -205,6 +205,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditFilter, setAuditFilter] = useState('');
+  const [auditActionFilter, setAuditActionFilter] = useState('');
+  const [auditDateFrom, setAuditDateFrom] = useState('');
+  const [auditDateTo, setAuditDateTo] = useState('');
 
   const fetchSystemConfig = async () => {
     try {
@@ -1650,7 +1653,11 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     onClick={async () => {
                       setAuditLoading(true);
                       try {
-                        const data = await api.admin.getAuditLogs({ limit: 100 });
+                        const params: any = { limit: 200 };
+                        if (auditActionFilter) params.action = auditActionFilter;
+                        if (auditDateFrom) params.from = new Date(auditDateFrom).toISOString();
+                        if (auditDateTo) params.to = new Date(auditDateTo + 'T23:59:59').toISOString();
+                        const data = await api.admin.getAuditLogs(params);
                         setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []);
                       } catch (e) {
                         console.error(e);
@@ -1664,13 +1671,45 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     {auditLoading ? 'Loading...' : 'Refresh'}
                   </button>
                 </div>
-                <div className="mb-4">
+                <div className="mb-4 flex flex-wrap gap-3">
                   <input
                     type="text"
                     value={auditFilter}
                     onChange={(e) => setAuditFilter(e.target.value)}
-                    placeholder="Filter by action, entity, or actor..."
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                    placeholder="Search by action, entity, actor..."
+                    className="flex-1 min-w-[200px] px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                  <select
+                    value={auditActionFilter}
+                    onChange={(e) => setAuditActionFilter(e.target.value)}
+                    className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    <option value="">All Actions</option>
+                    <option value="AUTH_LOGIN_SUCCESS">Login Success</option>
+                    <option value="AUTH_LOGIN_FAILED">Login Failed</option>
+                    <option value="USER_STATUS_UPDATED">User Status</option>
+                    <option value="USER_DELETED">User Deleted</option>
+                    <option value="ORDER_SETTLED">Order Settled</option>
+                    <option value="ORDER_REACTIVATED">Order Reactivated</option>
+                    <option value="DEAL_DELETED">Deal Deleted</option>
+                    <option value="INVITE_USED">Invite Used</option>
+                    <option value="PROFILE_UPDATED">Profile Updated</option>
+                    <option value="SYSTEM_CONFIG_UPDATED">Config Updated</option>
+                    <option value="BRAND_CONNECTION_REQUESTED">Connection Request</option>
+                  </select>
+                  <input
+                    type="date"
+                    value={auditDateFrom}
+                    onChange={(e) => setAuditDateFrom(e.target.value)}
+                    className="px-3 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                    title="From date"
+                  />
+                  <input
+                    type="date"
+                    value={auditDateTo}
+                    onChange={(e) => setAuditDateTo(e.target.value)}
+                    className="px-3 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                    title="To date"
                   />
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
