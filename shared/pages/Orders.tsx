@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
+import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import {
@@ -23,6 +24,8 @@ import {
   History,
   ChevronDown,
   ChevronUp,
+  FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 
 const getPrimaryOrderId = (order: Order) =>
@@ -94,6 +97,7 @@ export const Orders: React.FC = () => {
   const [ticketModal, setTicketModal] = useState<Order | null>(null);
   const [ticketIssue, setTicketIssue] = useState('Cashback not received');
   const [ticketDesc, setTicketDesc] = useState('');
+  const [sheetsExporting, setSheetsExporting] = useState(false);
   // Audit trail state: tracks which order's audit log is expanded
   const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -396,7 +400,6 @@ export const Orders: React.FC = () => {
 
   const submitNewOrder = async () => {
     if (!selectedProduct || !user || isUploading || submittingRef.current) return;
-    submittingRef.current = true;
     if (!formScreenshot) {
       toast.error('Please upload a valid order image before submitting.');
       return;
@@ -406,6 +409,7 @@ export const Orders: React.FC = () => {
       toast.error('The product in the screenshot does not match the selected deal. Please upload the correct order screenshot.');
       return;
     }
+    submittingRef.current = true;
     const hasExtraction = Boolean(extractedDetails.orderId || extractedDetails.amount !== '');
     const isDiscountDeal = selectedProduct.dealType === 'Discount';
     if (isDiscountDeal && hasExtraction && (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch')) {
@@ -499,15 +503,75 @@ export const Orders: React.FC = () => {
             <p className="text-sm text-slate-500 font-medium">Track purchases & cashback.</p>
           </div>
         </div>
-        <Button
-          type="button"
-          size="icon"
-          onClick={() => setIsNewOrderModalOpen(true)}
-          aria-label="New order"
-          className="bg-black text-lime-400 hover:bg-zinc-800 focus-visible:ring-lime-400"
-        >
-          <Plus size={20} strokeWidth={3} />
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Export to Google Sheets"
+            title="Export to Google Sheets"
+            disabled={sheetsExporting}
+            onClick={() => {
+              if (!orders.length) { toast.error('No orders to export'); return; }
+              exportToGoogleSheet({
+                title: `My Orders - ${new Date().toISOString().slice(0, 10)}`,
+                headers: ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Created'],
+                rows: orders.map((o) => [
+                  getPrimaryOrderId(o),
+                  o.items[0]?.title || '',
+                  o.total || 0,
+                  o.items[0]?.dealType || '',
+                  o.affiliateStatus || o.workflowStatus || '',
+                  o.paymentStatus || '',
+                  o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
+                ]),
+                sheetName: 'Orders',
+                onStart: () => setSheetsExporting(true),
+                onEnd: () => setSheetsExporting(false),
+                onSuccess: () => toast.success('Exported to Google Sheets!'),
+                onError: (msg) => toast.error(msg),
+              });
+            }}
+            className="p-2.5 rounded-xl border border-green-100 bg-white hover:bg-green-50 transition-colors disabled:opacity-50"
+          >
+            <FileSpreadsheet size={18} className="text-green-600" />
+          </button>
+          <button
+            type="button"
+            aria-label="Download CSV"
+            title="Download as CSV"
+            onClick={() => {
+              if (!orders.length) { toast.error('No orders to export'); return; }
+              const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Created'];
+              const csvRows = orders.map(o => [
+                getPrimaryOrderId(o),
+                o.items[0]?.title || '',
+                String(o.total || 0),
+                o.items[0]?.dealType || '',
+                o.affiliateStatus || o.workflowStatus || '',
+                o.paymentStatus || '',
+                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
+              ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+              const csv = [h.join(','), ...csvRows].join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click(); URL.revokeObjectURL(url);
+              toast.success('CSV downloaded!');
+            }}
+            className="p-2.5 rounded-xl border border-zinc-100 bg-white hover:bg-zinc-50 transition-colors"
+          >
+            <Download size={18} className="text-zinc-600" />
+          </button>
+          <Button
+            type="button"
+            size="icon"
+            onClick={() => setIsNewOrderModalOpen(true)}
+            aria-label="New order"
+            className="bg-black text-lime-400 hover:bg-zinc-800 focus-visible:ring-lime-400"
+          >
+            <Plus size={20} strokeWidth={3} />
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24 scrollbar-hide">

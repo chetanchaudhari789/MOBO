@@ -88,6 +88,18 @@ function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
   ]);
 }
 
+/** Per-OCR-call timeout (20s). Prevents Tesseract from blocking indefinitely on complex images. */
+const OCR_CALL_TIMEOUT_MS = 20_000;
+
+function withOcrTimeout<T>(promise: Promise<T>): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('OCR recognition timed out')), OCR_CALL_TIMEOUT_MS)
+    ),
+  ]);
+}
+
 function _createInputError(message: string, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
 }
@@ -560,7 +572,7 @@ async function verifyProofWithOcr(
     }
 
     const worker = await createWorker('eng');
-    const { data } = await worker.recognize(processedBuffer);
+    const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
     await worker.terminate();
 
     let ocrText = (data.text || '').trim();
@@ -574,7 +586,7 @@ async function verifyProofWithOcr(
           .sharpen({ sigma: 2 })
           .toBuffer();
         const hcWorker = await createWorker('eng');
-        const hcResult = await hcWorker.recognize(hcBuffer);
+        const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
         await hcWorker.terminate();
         const hcText = (hcResult.data.text || '').trim();
         if (hcText.length > ocrText.length) ocrText = hcText;
@@ -653,10 +665,22 @@ async function verifyProofWithOcr(
 
     // Also try extracting all ₹/Rs amounts from the OCR text and compare numerically
     if (!amountMatch) {
-      const amountRegex = /(?:₹|rs\.?|inr)\s*\.?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi;
+      // Extended regex handles: ₹, Rs, INR, R5 (Tesseract confusion), and trailing /-
+      const amountRegex = /(?:₹|rs\.?|inr|r[s5$]\.?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
       for (const m of ocrText.matchAll(amountRegex)) {
-        const val = Number(m[1].replace(/,/g, ''));
+        const val = Number(m[1].replace(/[,\s]/g, ''));
         if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= 2) {
+          amountMatch = true;
+          break;
+        }
+      }
+    }
+    // Final attempt: look for bare numbers within ±2 of expected amount (handles ₹ read as 2/%)
+    if (!amountMatch) {
+      const bareNumbers = ocrText.match(/\b\d[\d,\s]*(?:\.\d{1,2})?\b/g) || [];
+      for (const raw of bareNumbers) {
+        const val = Number(raw.replace(/[,\s]/g, ''));
+        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmount) <= 2) {
           amountMatch = true;
           break;
         }
@@ -846,7 +870,7 @@ async function verifyRatingWithOcr(
     } catch { processedBuffer = imgBuffer; }
 
     const worker = await createWorker('eng');
-    const { data } = await worker.recognize(processedBuffer);
+    const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
     await worker.terminate();
     let ocrText = (data.text || '').trim();
 
@@ -859,7 +883,7 @@ async function verifyRatingWithOcr(
           .sharpen({ sigma: 2 })
           .toBuffer();
         const hcWorker = await createWorker('eng');
-        const hcResult = await hcWorker.recognize(hcBuffer);
+        const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
         await hcWorker.terminate();
         const hcText = (hcResult.data.text || '').trim();
         if (hcText.length > ocrText.length) ocrText = hcText;
@@ -1020,7 +1044,7 @@ async function verifyReturnWindowWithOcr(
     catch { processedBuffer = imgBuffer; }
 
     const worker = await createWorker('eng');
-    const { data } = await worker.recognize(processedBuffer);
+    const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
     await worker.terminate();
     let ocrText = (data.text || '').trim();
 
@@ -1033,7 +1057,7 @@ async function verifyReturnWindowWithOcr(
           .sharpen({ sigma: 2 })
           .toBuffer();
         const hcWorker = await createWorker('eng');
-        const hcResult = await hcWorker.recognize(hcBuffer);
+        const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
         await hcWorker.terminate();
         const hcText = (hcResult.data.text || '').trim();
         if (hcText.length > ocrText.length) ocrText = hcText;
@@ -1055,8 +1079,53 @@ async function verifyReturnWindowWithOcr(
     const matchedProd = productTokens.filter(t => lower.includes(t));
     const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
 
-    const amountStr = String(expected.expectedAmount);
-    const amountMatch = ocrText.includes(amountStr) || ocrText.includes(expected.expectedAmount.toFixed(2));
+    const expectedAmt = expected.expectedAmount;
+    const amountStr = String(expectedAmt);
+    // Format with Indian commas for OCR matching (e.g. 1,499 or 12,499)
+    const indianFormatted = expectedAmt >= 1000
+      ? expectedAmt.toLocaleString('en-IN')
+      : amountStr;
+
+    let amountMatch = ocrText.includes(amountStr)
+      || ocrText.includes(expectedAmt.toFixed(2))
+      || ocrText.includes(indianFormatted);
+
+    // ±2 tolerance (OCR may misread digits)
+    if (!amountMatch) {
+      for (let delta = -2; delta <= 2; delta++) {
+        if (delta === 0) continue;
+        const nearby = expectedAmt + delta;
+        if (nearby <= 0) continue;
+        if (ocrText.includes(String(nearby)) || ocrText.includes(nearby.toFixed(2))) {
+          amountMatch = true;
+          break;
+        }
+      }
+    }
+
+    // Extract ₹/Rs/INR amounts from OCR text and compare numerically
+    if (!amountMatch) {
+      const amtRegex = /(?:₹|rs\.?|inr|r[s5$]\.?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
+      for (const m of ocrText.matchAll(amtRegex)) {
+        const val = Number(m[1].replace(/[,\s]/g, ''));
+        if (Number.isFinite(val) && Math.abs(val - expectedAmt) <= 2) {
+          amountMatch = true;
+          break;
+        }
+      }
+    }
+
+    // Bare-number fallback (₹ may be OCR-ed as 2/%)
+    if (!amountMatch) {
+      const bareNums = ocrText.match(/\b\d[\d,\s]*(?:\.\d{1,2})?\b/g) || [];
+      for (const raw of bareNums) {
+        const val = Number(raw.replace(/[,\s]/g, ''));
+        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmt) <= 2) {
+          amountMatch = true;
+          break;
+        }
+      }
+    }
 
     const soldByMatch = expected.expectedSoldBy
       ? lower.includes(expected.expectedSoldBy.toLowerCase().trim())
@@ -1222,6 +1291,12 @@ export async function extractOrderDetailsWithAi(
     const ONMG_ORDER_PATTERN       = '\\b(?:1MG)[\\-\\s]?\\d{6,}\\b';
     const CROMA_ORDER_PATTERN      = '\\b(?:CRM|CROMA)[\\-\\s]?\\d{6,}\\b';
     const PURPLLE_ORDER_PATTERN    = '\\b(?:PUR|PURP)[\\-\\s]?\\d{6,}\\b';
+    const SHOPSY_ORDER_PATTERN     = '\\b(?:SHOPSY|SP)[\\-\\s]?\\d{6,}\\b';
+    const BLINKIT_ORDER_PATTERN    = '\\b(?:BLK|BLINKIT)[\\-\\s]?\\d{6,}\\b';
+    const ZEPTO_ORDER_PATTERN      = '\\b(?:ZPT|ZEPTO)[\\-\\s]?\\d{6,}\\b';
+    const LENSKART_ORDER_PATTERN   = '\\b(?:LK|LENSKART)[\\-\\s]?\\d{6,}\\b';
+    const PHARMEASY_ORDER_PATTERN  = '\\b(?:PE|PHARM|PHR)[\\-\\s]?\\d{6,}\\b';
+    const SWIGGY_ORDER_PATTERN     = '\\b(?:SWG|SWIGGY)[\\-\\s]?\\d{6,}\\b';
     const AMAZON_SPACED_PATTERN    = '(?:\\d[\\s\\-\\.]{0,2}){17}';
     const GENERIC_ID_PATTERN       = '\\b[A-Z][A-Z0-9\\-]{7,}\\b';
 
@@ -1256,6 +1331,12 @@ export async function extractOrderDetailsWithAi(
     const ONMG_ORDER_RE              = new RegExp(ONMG_ORDER_PATTERN, 'i');
     const CROMA_ORDER_RE             = new RegExp(CROMA_ORDER_PATTERN, 'i');
     const PURPLLE_ORDER_RE           = new RegExp(PURPLLE_ORDER_PATTERN, 'i');
+    const SHOPSY_ORDER_RE            = new RegExp(SHOPSY_ORDER_PATTERN, 'i');
+    const BLINKIT_ORDER_RE           = new RegExp(BLINKIT_ORDER_PATTERN, 'i');
+    const ZEPTO_ORDER_RE             = new RegExp(ZEPTO_ORDER_PATTERN, 'i');
+    const LENSKART_ORDER_RE          = new RegExp(LENSKART_ORDER_PATTERN, 'i');
+    const PHARMEASY_ORDER_RE         = new RegExp(PHARMEASY_ORDER_PATTERN, 'i');
+    const SWIGGY_ORDER_RE            = new RegExp(SWIGGY_ORDER_PATTERN, 'i');
     const AMAZON_SPACED_GLOBAL_RE    = new RegExp(AMAZON_SPACED_PATTERN, 'g');
     const GENERIC_ID_RE              = new RegExp(GENERIC_ID_PATTERN, 'i');
     const AMOUNT_VALUE_GLOBAL_RE     = new RegExp(AMOUNT_VALUE_PATTERN, 'g');
@@ -1732,6 +1813,12 @@ export async function extractOrderDetailsWithAi(
           [ONMG_ORDER_RE, false],
           [CROMA_ORDER_RE, false],
           [PURPLLE_ORDER_RE, false],
+          [SHOPSY_ORDER_RE, false],
+          [BLINKIT_ORDER_RE, false],
+          [ZEPTO_ORDER_RE, false],
+          [LENSKART_ORDER_RE, false],
+          [PHARMEASY_ORDER_RE, false],
+          [SWIGGY_ORDER_RE, false],
         ];
         for (const [re] of platformRegexes) {
           const m = line.match(re);
@@ -1937,8 +2024,10 @@ export async function extractOrderDetailsWithAi(
     };
 
     /** Tesseract.js fallback: local OCR that works without any external API. */
+    const TESSERACT_TIMEOUT_MS = 30_000; // 30 seconds max for all Tesseract attempts
     const runTesseractOcr = async (imageBase64: string): Promise<string> => {
       let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
+      const deadline = Date.now() + TESSERACT_TIMEOUT_MS;
       try {
         const buf = getImageBuffer(imageBase64);
         if (!isRecognizedImageBuffer(buf)) {
@@ -1960,15 +2049,15 @@ export async function extractOrderDetailsWithAi(
         let text = normalizeOcrText(data.text || '');
 
         // If default PSM yielded poor results, try PSM 6 (assumes a uniform block of text)
-        if (!text || text.length < 20) {
+        if (Date.now() < deadline && (!text || text.length < 20)) {
           await worker.setParameters({ tessedit_pageseg_mode: '6' as any });
           const { data: data6 } = await worker.recognize(enhanced);
           const text6 = normalizeOcrText(data6.text || '');
           if (text6.length > text.length) text = text6;
         }
 
-        // If still poor, try a high-contrast version of the image
-        if (!text || text.length < 30) {
+        // If still poor and within budget, try a high-contrast version
+        if (Date.now() < deadline && (!text || text.length < 30)) {
           const highContrast = await sharp(buf)
             .resize({ width: 2400, withoutEnlargement: false })
             .grayscale()
@@ -1981,6 +2070,10 @@ export async function extractOrderDetailsWithAi(
           const { data: dataHc } = await worker.recognize(highContrast);
           const textHc = normalizeOcrText(dataHc.text || '');
           if (textHc.length > text.length) text = textHc;
+        }
+
+        if (Date.now() >= deadline) {
+          console.warn('Tesseract OCR hit timeout — returning best result so far.');
         }
 
         return text;
@@ -2570,15 +2663,13 @@ export async function extractOrderDetailsWithAi(
     }
 
     // 4. If amount is unreasonably large (order ID-sized numbers), reject
-    if (finalAmount && finalAmount > 500000) {
-      // Very few Indian e-commerce items cost > ₹5,00,000
-      // Check if it could be an order ID fragment
-      const amountStr = String(Math.round(finalAmount));
-      if (amountStr.length >= 7) {
-        notes.push(`Amount ₹${finalAmount} seems unreasonably large — rejected.`);
-        finalAmount = null;
-        confidenceScore = Math.max(30, confidenceScore - 15);
-      }
+    // Very few Indian e-commerce items cost > ₹2,00,000 — threshold raised to
+    // avoid catching high-value electronics (phones, laptops) while still
+    // rejecting order-ID fragments that parse as 6-7 digit numbers.
+    if (finalAmount && finalAmount > 200000) {
+      notes.push(`Amount ₹${finalAmount} seems unreasonably large — rejected.`);
+      finalAmount = null;
+      confidenceScore = Math.max(30, confidenceScore - 15);
     }
 
     // 5. Reject product name if it's a delivery status line

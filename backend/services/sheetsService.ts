@@ -107,6 +107,47 @@ async function getAccessToken(serviceAccount: ServiceAccountKey): Promise<string
   return data.access_token;
 }
 
+// ─── User OAuth Token Refresh ───
+
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+
+/**
+ * Refresh a user's Google access token using their stored refresh token.
+ * Returns a fresh access token or null if the refresh fails (token revoked, etc.).
+ */
+export async function refreshUserGoogleToken(
+  refreshToken: string,
+  env: Env,
+): Promise<string | null> {
+  const clientId = (env as any).GOOGLE_CLIENT_ID;
+  const clientSecret = (env as any).GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret || !refreshToken) return null;
+
+  try {
+    const res = await fetch(GOOGLE_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }).toString(),
+    });
+
+    if (!res.ok) {
+      console.warn('Google token refresh failed:', await res.text());
+      return null;
+    }
+
+    const data = (await res.json()) as { access_token: string };
+    return data.access_token;
+  } catch (err) {
+    console.warn('Google token refresh error:', err);
+    return null;
+  }
+}
+
 // ─── Google Sheets REST helpers ───
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -214,27 +255,26 @@ async function formatHeaderRow(
 export async function exportToGoogleSheet(
   env: Env,
   request: SheetExportRequest,
+  userAccessToken?: string | null,
 ): Promise<SheetExportResult> {
-  // Service Account is REQUIRED for Sheets write operations.
-  // API keys cannot create or write spreadsheets (Google returns 401/403).
-  const serviceAccount = parseServiceAccountKey(env);
+  let authHeader: Record<string, string>;
 
-  if (!serviceAccount) {
-    throw new Error(
-      'GOOGLE_SHEETS_AUTH_MISSING: Google Sheets export requires a Service Account. ' +
-      'API keys cannot create or write spreadsheets. To fix this:\n' +
-      '1. Go to Google Cloud Console → IAM & Admin → Service Accounts\n' +
-      '2. Create a service account (or use an existing one)\n' +
-      '3. Grant it the "Editor" role (or at minimum Google Sheets API + Drive API access)\n' +
-      '4. Create a JSON key for the service account and download it\n' +
-      '5. Base64-encode the JSON file: base64 -w0 service-account-key.json\n' +
-      '6. Set the encoded string as GOOGLE_SERVICE_ACCOUNT_KEY in your .env file\n' +
-      '7. Enable "Google Sheets API" and "Google Drive API" in Google Cloud Console → APIs & Services'
-    );
+  if (userAccessToken) {
+    // Prefer user's own OAuth token — sheet will be created in THEIR Google Drive
+    authHeader = { Authorization: `Bearer ${userAccessToken}` };
+  } else {
+    // Fallback to service account
+    const serviceAccount = parseServiceAccountKey(env);
+    if (!serviceAccount) {
+      throw new Error(
+        'GOOGLE_SHEETS_AUTH_MISSING: Google Sheets export requires either a connected Google account ' +
+        'or a server-configured Service Account. Please connect your Google account first, ' +
+        'or ask your administrator to configure a Google Cloud Service Account.'
+      );
+    }
+    const accessToken = await getAccessToken(serviceAccount);
+    authHeader = { Authorization: `Bearer ${accessToken}` };
   }
-
-  const accessToken = await getAccessToken(serviceAccount);
-  const authHeader = { Authorization: `Bearer ${accessToken}` };
 
   const sheetName = request.sheetName || 'Sheet1';
   const apiKeyParam = '';

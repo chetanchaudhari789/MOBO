@@ -13,6 +13,7 @@ import { opsRoutes } from './routes/opsRoutes.js';
 import { productsRoutes } from './routes/productsRoutes.js';
 import { aiRoutes } from './routes/aiRoutes.js';
 import { sheetsRoutes } from './routes/sheetsRoutes.js';
+import { googleRoutes } from './routes/googleRoutes.js';
 import { ordersRoutes } from './routes/ordersRoutes.js';
 import { ticketsRoutes } from './routes/ticketsRoutes.js';
 import { brandRoutes } from './routes/brandRoutes.js';
@@ -173,6 +174,7 @@ export function createApp(env: Env) {
   app.use('/api', mediaRoutes(env));
   app.use('/api/ai', aiRoutes(env));
   app.use('/api/sheets', sheetsRoutes(env));
+  app.use('/api/google', googleRoutes(env));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
