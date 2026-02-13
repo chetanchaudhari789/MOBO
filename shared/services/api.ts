@@ -957,4 +957,27 @@ export const api = {
       });
     },
   },
+
+  /** ── Google OAuth (for user-level Sheets export to their own Drive) ── */
+  google: {
+    /** Get the Google OAuth consent URL. Frontend opens this in a popup. */
+    getAuthUrl: async (): Promise<{ url: string }> => {
+      return fetchJson('/google/auth', {
+        headers: authHeaders(),
+      });
+    },
+    /** Check if the current user has a Google account connected. */
+    getStatus: async (): Promise<{ connected: boolean; googleEmail: string | null }> => {
+      return fetchJson('/google/status', {
+        headers: authHeaders(),
+      });
+    },
+    /** Disconnect the user's Google account. */
+    disconnect: async (): Promise<{ ok: boolean }> => {
+      return fetchJson('/google/disconnect', {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    },
+  },
 };

@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
-import { exportToGoogleSheet, type SheetExportRequest } from '../services/sheetsService.js';
+import { exportToGoogleSheet, refreshUserGoogleToken, type SheetExportRequest } from '../services/sheetsService.js';
 import { writeAuditLog } from '../services/audit.js';
+import { UserModel } from '../models/User.js';
 
 export function sheetsRoutes(env: Env): Router {
   const router = Router();
@@ -13,6 +14,8 @@ export function sheetsRoutes(env: Env): Router {
   /**
    * POST /api/sheets/export
    * Creates a new Google Spreadsheet from provided headers + rows.
+   * If the user has a connected Google account, the sheet is created in THEIR Drive.
+   * Otherwise falls back to the service account.
    * Body: { title, sheetName?, headers: string[], rows: (string|number|null)[][] }
    * Returns: { spreadsheetId, spreadsheetUrl, sheetTitle }
    */
@@ -47,7 +50,28 @@ export function sheetsRoutes(env: Env): Router {
         });
       });
 
-      const result = await exportToGoogleSheet(env, { title, sheetName, headers, rows: sanitizedRows });
+      // Try user's own Google OAuth token first (sheet goes to THEIR Drive)
+      let userAccessToken: string | null = null;
+      try {
+        const userId = (req as any).user?.id || (req as any).user?._id;
+        if (userId) {
+          const userDoc = await UserModel.findById(userId).select('+googleRefreshToken').lean();
+          const refreshToken = (userDoc as any)?.googleRefreshToken;
+          if (refreshToken) {
+            userAccessToken = await refreshUserGoogleToken(refreshToken, env);
+            if (!userAccessToken) {
+              // Token refresh failed — clear invalid tokens
+              await UserModel.findByIdAndUpdate(userId, {
+                $unset: { googleRefreshToken: 1 },
+              });
+            }
+          }
+        }
+      } catch {
+        // Fall back to service account silently
+      }
+
+      const result = await exportToGoogleSheet(env, { title, sheetName, headers, rows: sanitizedRows }, userAccessToken);
 
       // Audit trail
       writeAuditLog({

@@ -1,0 +1,289 @@
+/**
+ * Google OAuth Routes
+ *
+ * Implements the OAuth 2.0 Authorization Code flow so users can
+ * authenticate with their Google account and export data to their
+ * own Google Sheets / Drive.
+ *
+ * Flow:
+ *  1. Frontend calls GET /api/google/auth → redirect URL returned
+ *  2. User signs in with Google in a popup
+ *  3. Google redirects to GET /api/google/callback with auth code
+ *  4. Backend exchanges code for tokens, stores refresh token on User
+ *  5. Callback page sends postMessage to opener and closes popup
+ */
+
+import { Router } from 'express';
+import * as crypto from 'crypto';
+import type { Env } from '../config/env.js';
+import { requireAuth } from '../middleware/auth.js';
+import { UserModel } from '../models/User.js';
+import { writeAuditLog } from '../services/audit.js';
+
+// ─── Helpers ───────────────────────────────────────────────────
+
+const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
+
+const SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/userinfo.email',
+].join(' ');
+
+function isGoogleOAuthConfigured(env: Env): boolean {
+  return !!(
+    (env as any).GOOGLE_CLIENT_ID &&
+    (env as any).GOOGLE_CLIENT_SECRET &&
+    (env as any).GOOGLE_REDIRECT_URI
+  );
+}
+
+// In-memory CSRF state store (short-lived, keyed by state string → userId)
+const pendingStates = new Map<string, { userId: string; createdAt: number }>();
+
+// Clean up stale states older than 10 minutes (runs lazily)
+function cleanupStaleStates() {
+  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+  for (const [key, val] of pendingStates) {
+    if (val.createdAt < tenMinutesAgo) pendingStates.delete(key);
+  }
+}
+
+// ─── Routes ────────────────────────────────────────────────────
+
+export function googleRoutes(env: Env): Router {
+  const router = Router();
+
+  /**
+   * GET /api/google/auth
+   * Returns the Google OAuth consent URL.
+   * Requires authentication (we need userId to store tokens later).
+   */
+  router.get('/auth', requireAuth(env), (req, res) => {
+    if (!isGoogleOAuthConfigured(env)) {
+      return res.status(503).json({
+        error: {
+          code: 'GOOGLE_OAUTH_NOT_CONFIGURED',
+          message: 'Google OAuth is not configured on this server.',
+        },
+      });
+    }
+
+    cleanupStaleStates();
+
+    const state = crypto.randomBytes(24).toString('hex');
+    const userId = (req as any).user?.id || (req as any).user?._id;
+    pendingStates.set(state, { userId: String(userId), createdAt: Date.now() });
+
+    const params = new URLSearchParams({
+      client_id: (env as any).GOOGLE_CLIENT_ID,
+      redirect_uri: (env as any).GOOGLE_REDIRECT_URI,
+      response_type: 'code',
+      scope: SCOPES,
+      access_type: 'offline',
+      prompt: 'consent',
+      state,
+    });
+
+    return res.json({ url: `${GOOGLE_AUTH_URL}?${params.toString()}` });
+  });
+
+  /**
+   * GET /api/google/callback
+   * Handles the OAuth callback from Google. Exchanges the authorization
+   * code for tokens and stores the refresh token on the user's record.
+   * Returns an HTML page that sends a postMessage to the opener window
+   * and closes itself.
+   */
+  router.get('/callback', async (req, res) => {
+    const { code, state, error } = req.query as Record<string, string>;
+
+    if (error) {
+      return res.send(makeCallbackHtml(false, `Google login was denied: ${error}`));
+    }
+
+    if (!code || !state) {
+      return res.send(makeCallbackHtml(false, 'Missing authorization code or state parameter.'));
+    }
+
+    const pending = pendingStates.get(state);
+    if (!pending) {
+      return res.send(makeCallbackHtml(false, 'Invalid or expired state. Please try again.'));
+    }
+    pendingStates.delete(state);
+
+    // The state could be stale (> 10 min old)
+    if (Date.now() - pending.createdAt > 10 * 60 * 1000) {
+      return res.send(makeCallbackHtml(false, 'Authorization expired. Please try again.'));
+    }
+
+    if (!isGoogleOAuthConfigured(env)) {
+      return res.send(makeCallbackHtml(false, 'Google OAuth is not configured on this server.'));
+    }
+
+    try {
+      // Exchange authorization code for tokens
+      const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: (env as any).GOOGLE_CLIENT_ID,
+          client_secret: (env as any).GOOGLE_CLIENT_SECRET,
+          redirect_uri: (env as any).GOOGLE_REDIRECT_URI,
+          grant_type: 'authorization_code',
+        }).toString(),
+      });
+
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text();
+        console.error('Google token exchange failed:', errText);
+        return res.send(makeCallbackHtml(false, 'Failed to exchange authorization code.'));
+      }
+
+      const tokenData = (await tokenRes.json()) as {
+        access_token: string;
+        refresh_token?: string;
+        expires_in?: number;
+        token_type: string;
+      };
+
+      if (!tokenData.refresh_token) {
+        // This can happen if the user previously authorized and Google doesn't send a new refresh token.
+        // We asked for prompt=consent so this should be rare.
+        console.warn('Google OAuth: no refresh_token returned. The user may need to revoke access and re-authorize.');
+      }
+
+      // Get the user's Google email
+      let googleEmail: string | null = null;
+      try {
+        const infoRes = await fetch(GOOGLE_USERINFO_URL, {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        if (infoRes.ok) {
+          const info = (await infoRes.json()) as { email?: string };
+          googleEmail = info.email || null;
+        }
+      } catch {
+        // Non-critical — we can still create sheets without the email
+      }
+
+      // Store tokens on the user record
+      const update: Record<string, any> = {};
+      if (tokenData.refresh_token) {
+        update.googleRefreshToken = tokenData.refresh_token;
+      }
+      if (googleEmail) {
+        update.googleEmail = googleEmail;
+      }
+
+      if (Object.keys(update).length > 0) {
+        await UserModel.findByIdAndUpdate(pending.userId, { $set: update });
+      }
+
+      // Audit log
+      writeAuditLog({
+        req,
+        action: 'GOOGLE_OAUTH_CONNECTED',
+        entityType: 'User',
+        entityId: pending.userId,
+        metadata: { googleEmail, hasRefreshToken: !!tokenData.refresh_token },
+      });
+
+      return res.send(makeCallbackHtml(true, 'Google account connected successfully!'));
+    } catch (err: any) {
+      console.error('Google OAuth callback error:', err);
+      return res.send(makeCallbackHtml(false, 'An unexpected error occurred. Please try again.'));
+    }
+  });
+
+  /**
+   * GET /api/google/status
+   * Returns whether the current user has a Google account connected.
+   */
+  router.get('/status', requireAuth(env), async (req, res) => {
+    const userId = (req as any).user?.id || (req as any).user?._id;
+    const user = await UserModel.findById(userId).select('+googleRefreshToken googleEmail').lean();
+    return res.json({
+      connected: !!(user as any)?.googleRefreshToken,
+      googleEmail: (user as any)?.googleEmail || null,
+    });
+  });
+
+  /**
+   * POST /api/google/disconnect
+   * Removes the user's Google tokens.
+   */
+  router.post('/disconnect', requireAuth(env), async (req, res) => {
+    const userId = (req as any).user?.id || (req as any).user?._id;
+    await UserModel.findByIdAndUpdate(userId, {
+      $unset: { googleRefreshToken: 1, googleEmail: 1 },
+    });
+
+    writeAuditLog({
+      req,
+      action: 'GOOGLE_OAUTH_DISCONNECTED',
+      entityType: 'User',
+      entityId: String(userId),
+    });
+
+    return res.json({ ok: true });
+  });
+
+  return router;
+}
+
+// ─── HTML template for OAuth popup callback ────────────────────
+
+function makeCallbackHtml(success: boolean, message: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Account</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+      height: 100vh; margin: 0; background: #f8f9fa;
+    }
+    .card {
+      background: white; border-radius: 12px; padding: 32px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08); text-align: center;
+      max-width: 400px;
+    }
+    .icon { font-size: 48px; margin-bottom: 16px; }
+    h2 { margin: 0 0 8px; color: #1a1a1a; }
+    p { color: #666; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${success ? '✅' : '❌'}</div>
+    <h2>${success ? 'Connected!' : 'Connection Failed'}</h2>
+    <p>${escapeHtml(message)}</p>
+    <p style="margin-top: 12px; font-size: 13px; color: #999;">This window will close automatically.</p>
+  </div>
+  <script>
+    try {
+      if (window.opener) {
+        window.opener.postMessage({ type: 'GOOGLE_OAUTH_RESULT', success: ${success} }, '*');
+      }
+    } catch(e) {}
+    setTimeout(function() { window.close(); }, ${success ? 1500 : 4000});
+  </script>
+</body>
+</html>`;
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

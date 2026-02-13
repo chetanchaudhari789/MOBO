@@ -99,6 +99,10 @@ const userSchema = new Schema(
     // --- Account lockout (brute-force protection) ---
     failedLoginAttempts: { type: Number, default: 0, min: 0 },
     lockoutUntil: { type: Date, default: null },
+
+    // --- Google OAuth (user-level Sheets export to their own Drive) ---
+    googleRefreshToken: { type: String, trim: true, select: false },
+    googleEmail: { type: String, trim: true, lowercase: true },
   },
   { timestamps: true }
 );
