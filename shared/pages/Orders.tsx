@@ -315,7 +315,7 @@ export const Orders: React.FC = () => {
         let productNameStatus: 'match' | 'mismatch' | 'none' = 'none';
         if (extractedName && expectedName) {
           // Filter out URLs and navigation chrome from extracted product name
-          const isUrl = /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=/i.test(extractedName);
+          const isUrl = /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=|utm_/i.test(extractedName);
           // Filter out delivery status text
           const isDeliveryStatus = /^(arriving|shipped|delivered|dispatched|out\s*for\s*delivery|in\s*transit|order\s*(placed|confirmed))/i.test(extractedName);
           if (isUrl || isDeliveryStatus) {
