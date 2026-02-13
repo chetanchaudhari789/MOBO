@@ -30,7 +30,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
       return;
     }
 
-    if (!password || password.length < 8) {
+    if (!password) {
+      setError('Password is required.');
+      return;
+    }
+
+    if (view === 'register' && password.length < 8) {
       setError('Password must be at least 8 characters.');
       return;
     }
