@@ -563,7 +563,24 @@ async function verifyProofWithOcr(
     const { data } = await worker.recognize(processedBuffer);
     await worker.terminate();
 
-    const ocrText = (data.text || '').trim();
+    let ocrText = (data.text || '').trim();
+
+    // High-contrast fallback for faded/dark screenshots
+    if (ocrText.length < 30) {
+      try {
+        const hcBuffer = await sharp(imgBuffer)
+          .greyscale()
+          .linear(1.6, -40)
+          .sharpen({ sigma: 2 })
+          .toBuffer();
+        const hcWorker = await createWorker('eng');
+        const hcResult = await hcWorker.recognize(hcBuffer);
+        await hcWorker.terminate();
+        const hcText = (hcResult.data.text || '').trim();
+        if (hcText.length > ocrText.length) ocrText = hcText;
+      } catch { /* ignore high-contrast failure */ }
+    }
+
     if (!ocrText || ocrText.length < 5) {
       return {
         orderIdMatch: false,
@@ -831,7 +848,24 @@ async function verifyRatingWithOcr(
     const worker = await createWorker('eng');
     const { data } = await worker.recognize(processedBuffer);
     await worker.terminate();
-    const ocrText = (data.text || '').trim();
+    let ocrText = (data.text || '').trim();
+
+    // If initial OCR yields poor results, try a high-contrast pass
+    if (ocrText.length < 30) {
+      try {
+        const hcBuffer = await sharp(imgBuffer)
+          .greyscale()
+          .linear(1.6, -40)
+          .sharpen({ sigma: 2 })
+          .toBuffer();
+        const hcWorker = await createWorker('eng');
+        const hcResult = await hcWorker.recognize(hcBuffer);
+        await hcWorker.terminate();
+        const hcText = (hcResult.data.text || '').trim();
+        if (hcText.length > ocrText.length) ocrText = hcText;
+      } catch { /* ignore high-contrast failure */ }
+    }
+
     if (!ocrText || ocrText.length < 5) {
       return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
         discrepancyNote: 'OCR could not read text from the rating screenshot.' };
@@ -988,7 +1022,24 @@ async function verifyReturnWindowWithOcr(
     const worker = await createWorker('eng');
     const { data } = await worker.recognize(processedBuffer);
     await worker.terminate();
-    const ocrText = (data.text || '').trim();
+    let ocrText = (data.text || '').trim();
+
+    // High-contrast fallback for faded/dark screenshots
+    if (ocrText.length < 30) {
+      try {
+        const hcBuffer = await sharp(imgBuffer)
+          .greyscale()
+          .linear(1.6, -40)
+          .sharpen({ sigma: 2 })
+          .toBuffer();
+        const hcWorker = await createWorker('eng');
+        const hcResult = await hcWorker.recognize(hcBuffer);
+        await hcWorker.terminate();
+        const hcText = (hcResult.data.text || '').trim();
+        if (hcText.length > ocrText.length) ocrText = hcText;
+      } catch { /* ignore high-contrast failure */ }
+    }
+
     if (!ocrText || ocrText.length < 5) {
       return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
         returnWindowClosed: false, confidenceScore: 10,

@@ -56,6 +56,10 @@ export const MediatorAuthScreen: React.FC<MediatorAuthProps> = ({ onBack }) => {
       setError('All fields required.');
       return;
     }
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      setError('Password needs 8+ chars with uppercase, lowercase, number, and special character.');
+      return;
+    }
     setIsLoading(true);
     setError('');
     try {

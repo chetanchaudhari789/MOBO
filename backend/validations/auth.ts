@@ -15,13 +15,18 @@ function optionalNonEmptyString(max: number) {
   return z.preprocess(emptyStringToUndefined, z.string().min(1).max(max).optional());
 }
 
+// Reusable strong password schema — enforced on all registration endpoints.
+const strongPasswordSchema = z.string().min(8).max(200)
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
+
 export const registerSchema = z.object({
   name: z.string().min(2).max(120),
   mobile: mobile10Schema,
   email: z.string().email().optional(),
-  password: z.string().min(8).max(200)
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+  password: strongPasswordSchema,
   mediatorCode: z.string().min(1).max(64),
 });
 
@@ -39,7 +44,7 @@ export const loginSchema = z.union([
 export const registerOpsSchema = z.object({
   name: z.string().min(2).max(120),
   mobile: mobile10Schema,
-  password: z.string().min(8).max(200),
+  password: strongPasswordSchema,
   role: z.enum(['agency', 'mediator']),
   code: z.string().min(1).max(128),
 });
@@ -47,7 +52,7 @@ export const registerOpsSchema = z.object({
 export const registerBrandSchema = z.object({
   name: z.string().min(2).max(120),
   mobile: mobile10Schema,
-  password: z.string().min(8).max(200),
+  password: strongPasswordSchema,
   brandCode: z.string().min(2).max(64),
 });
 
