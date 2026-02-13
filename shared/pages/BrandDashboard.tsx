@@ -570,6 +570,10 @@ const OrdersView = ({ user }: any) => {
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
   const [sheetsExporting, setSheetsExporting] = useState(false);
+  // Audit trail state for proof modal
+  const [auditExpanded, setAuditExpanded] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
 
   const getOrderStatusBadge = (o: Order) => {
     const wf = String(o.workflowStatus || '').trim();
@@ -1124,9 +1128,55 @@ const OrdersView = ({ user }: any) => {
                 )}
             </div>
 
+            {/* AUDIT TRAIL */}
+            <div className="bg-zinc-50 rounded-2xl border border-zinc-100 p-4">
+              <button
+                onClick={async () => {
+                  if (auditExpanded) {
+                    setAuditExpanded(false);
+                    return;
+                  }
+                  setAuditExpanded(true);
+                  setAuditLoading(true);
+                  try {
+                    const resp = await api.orders.getOrderAudit(viewProofOrder.id);
+                    setOrderAuditLogs(resp?.logs ?? []);
+                  } catch {
+                    setOrderAuditLogs([]);
+                  } finally {
+                    setAuditLoading(false);
+                  }
+                }}
+                className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-700 transition-colors w-full"
+              >
+                <History size={14} />
+                <span>Order Activity Log</span>
+                <span className="ml-auto">{auditExpanded ? '▲' : '▼'}</span>
+              </button>
+              {auditExpanded && (
+                <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+                  {auditLoading ? (
+                    <p className="text-xs text-zinc-400 text-center py-2">Loading...</p>
+                  ) : orderAuditLogs.length === 0 ? (
+                    <p className="text-xs text-zinc-400 text-center py-2">No activity yet</p>
+                  ) : (
+                    orderAuditLogs.map((log: any, i: number) => (
+                      <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
+                        <span className="font-bold text-zinc-600 shrink-0">{log.type}</span>
+                        <span className="flex-1">{new Date(log.at).toLocaleString()}</span>
+                        {log.metadata?.proofType && (
+                          <span className="bg-zinc-100 px-1.5 py-0.5 rounded text-[9px] font-bold">{log.metadata.proofType}</span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="pt-4 mt-2 border-t border-zinc-100">
               <button
-                onClick={() => setViewProofOrder(null)}
+                onClick={() => { setViewProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); }}
                 className="w-full py-3 bg-zinc-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
               >
                 Close Viewer
