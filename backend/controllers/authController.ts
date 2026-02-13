@@ -280,8 +280,6 @@ export function makeAuthController(env: Env) {
               $unset: { lockoutUntil: '' },
             },
           );
-          (user as any).failedLoginAttempts = 0;
-          (user as any).lockoutUntil = undefined;
         }
 
         const ok = await verifyPassword(password, user.passwordHash);
