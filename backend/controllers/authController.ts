@@ -256,8 +256,32 @@ export function makeAuthController(env: Env) {
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
         }
 
+        // --- Account lockout enforcement ---
+        const MAX_FAILED_ATTEMPTS = 7;
+        const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+        const lockoutUntil = (user as any).lockoutUntil ? new Date((user as any).lockoutUntil) : null;
+        if (lockoutUntil && lockoutUntil.getTime() > Date.now()) {
+          const minutesLeft = Math.ceil((lockoutUntil.getTime() - Date.now()) / 60_000);
+          await writeAuditLog({
+            req,
+            action: 'AUTH_LOGIN_FAILED',
+            actorUserId: String(user._id),
+            metadata: { reason: 'account_locked', lockoutUntil: lockoutUntil.toISOString() },
+          });
+          throw new AppError(429, 'ACCOUNT_LOCKED', `Account locked. Try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`);
+        }
+
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
+          // Increment failed attempts; lock if threshold exceeded.
+          const newCount = ((user as any).failedLoginAttempts ?? 0) + 1;
+          const lockout = newCount >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
+          await UserModel.updateOne({ _id: user._id }, {
+            $set: {
+              failedLoginAttempts: newCount,
+              ...(lockout ? { lockoutUntil: lockout } : {}),
+            },
+          });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
@@ -265,6 +289,13 @@ export function makeAuthController(env: Env) {
             metadata: { reason: 'invalid_password' },
           });
           throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
+        }
+
+        // Reset failed attempts on successful login
+        if ((user as any).failedLoginAttempts > 0 || (user as any).lockoutUntil) {
+          await UserModel.updateOne({ _id: user._id }, {
+            $set: { failedLoginAttempts: 0, lockoutUntil: null },
+          });
         }
 
         const accessToken = signAccessToken(env, String(user._id), user.roles as any);
@@ -654,6 +685,18 @@ export function makeAuthController(env: Env) {
 
         // Keep role-specific collections consistent with the canonical User record.
         await ensureRoleDocumentsForUser({ user });
+
+        // Audit trail for profile changes (important for backtracking data modifications)
+        await writeAuditLog({
+          req,
+          action: 'PROFILE_UPDATED',
+          entityType: 'User',
+          entityId: String(user._id),
+          metadata: {
+            updatedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
+            updatedBy: isSelf ? 'self' : 'admin',
+          },
+        });
 
         // Realtime: reflect profile changes on other devices/sessions.
         publishRealtime({
