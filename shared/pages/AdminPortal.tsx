@@ -1655,8 +1655,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       try {
                         const params: any = { limit: 200 };
                         if (auditActionFilter) params.action = auditActionFilter;
-                        if (auditDateFrom) params.from = new Date(auditDateFrom).toISOString();
-                        if (auditDateTo) params.to = new Date(auditDateTo + 'T23:59:59').toISOString();
+                        if (auditDateFrom) params.from = new Date(auditDateFrom + 'T00:00:00.000').toISOString();
+                        if (auditDateTo) params.to = new Date(auditDateTo + 'T23:59:59.999').toISOString();
                         const data = await api.admin.getAuditLogs(params);
                         setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []);
                       } catch (e) {

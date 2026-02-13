@@ -271,17 +271,55 @@ export function makeAuthController(env: Env) {
           throw new AppError(429, 'ACCOUNT_LOCKED', `Account locked. Try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`);
         }
 
+        // If a previous lockout has expired, clear lockout state before checking the password.
+        if (lockoutUntil && lockoutUntil.getTime() <= Date.now()) {
+          await UserModel.updateOne(
+            { _id: user._id },
+            {
+              $set: { failedLoginAttempts: 0 },
+              $unset: { lockoutUntil: '' },
+            },
+          );
+          (user as any).failedLoginAttempts = 0;
+          (user as any).lockoutUntil = undefined;
+        }
+
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
-          // Increment failed attempts; lock if threshold exceeded.
-          const newCount = ((user as any).failedLoginAttempts ?? 0) + 1;
-          const lockout = newCount >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
-          await UserModel.updateOne({ _id: user._id }, {
-            $set: {
-              failedLoginAttempts: newCount,
-              ...(lockout ? { lockoutUntil: lockout } : {}),
-            },
-          });
+          // Atomically increment failed attempts; lock if threshold exceeded.
+          const lockoutExpiresAt = new Date(Date.now() + LOCKOUT_DURATION_MS);
+          await UserModel.updateOne(
+            { _id: user._id },
+            [
+              {
+                $set: {
+                  failedLoginAttempts: {
+                    $add: [
+                      { $ifNull: ['$failedLoginAttempts', 0] },
+                      1,
+                    ],
+                  },
+                  lockoutUntil: {
+                    $cond: [
+                      {
+                        $gte: [
+                          {
+                            $add: [
+                              { $ifNull: ['$failedLoginAttempts', 0] },
+                              1,
+                            ],
+                          },
+                          MAX_FAILED_ATTEMPTS,
+                        ],
+                      },
+                      lockoutExpiresAt,
+                      '$lockoutUntil',
+                    ],
+                  },
+                },
+              },
+            ],
+          );
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',

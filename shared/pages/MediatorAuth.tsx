@@ -4,6 +4,7 @@ import { Users, ArrowRight, Lock, User, Phone, CheckCircle, ChevronLeft, Clock }
 import { Button, Input, Spinner } from '../components/ui';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { formatErrorMessage } from '../utils/errors';
+import { validateStrongPassword } from '../utils/passwordValidation';
 
 interface MediatorAuthProps {
   onBack?: () => void;
@@ -56,8 +57,9 @@ export const MediatorAuthScreen: React.FC<MediatorAuthProps> = ({ onBack }) => {
       setError('All fields required.');
       return;
     }
-    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-      setError('Password needs 8+ chars with uppercase, lowercase, number, and special character.');
+    const pwError = validateStrongPassword(password);
+    if (pwError) {
+      setError(pwError);
       return;
     }
     setIsLoading(true);

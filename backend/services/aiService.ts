@@ -560,125 +560,125 @@ async function verifyProofWithOcr(
     }
 
     const worker = await createWorker('eng');
-    const { data } = await worker.recognize(processedBuffer);
-    await worker.terminate();
+    try {
+      const { data } = await worker.recognize(processedBuffer);
+      let ocrText = (data.text || '').trim();
 
-    let ocrText = (data.text || '').trim();
+      // High-contrast fallback for faded/dark screenshots
+      if (ocrText.length < 30) {
+        try {
+          const hcBuffer = await sharp(imgBuffer)
+            .greyscale()
+            .linear(1.6, -40)
+            .sharpen({ sigma: 2 })
+            .toBuffer();
+          const hcResult = await worker.recognize(hcBuffer);
+          const hcText = (hcResult.data.text || '').trim();
+          if (hcText.length > ocrText.length) ocrText = hcText;
+        } catch { /* ignore high-contrast failure */ }
+      }
 
-    // High-contrast fallback for faded/dark screenshots
-    if (ocrText.length < 30) {
-      try {
-        const hcBuffer = await sharp(imgBuffer)
-          .greyscale()
-          .linear(1.6, -40)
-          .sharpen({ sigma: 2 })
-          .toBuffer();
-        const hcWorker = await createWorker('eng');
-        const hcResult = await hcWorker.recognize(hcBuffer);
-        await hcWorker.terminate();
-        const hcText = (hcResult.data.text || '').trim();
-        if (hcText.length > ocrText.length) ocrText = hcText;
-      } catch { /* ignore high-contrast failure */ }
-    }
+      if (!ocrText || ocrText.length < 5) {
+        return {
+          orderIdMatch: false,
+          amountMatch: false,
+          confidenceScore: 15,
+          discrepancyNote: 'OCR could not read text from the image. Please verify manually.',
+        };
+      }
 
-    if (!ocrText || ocrText.length < 5) {
-      return {
-        orderIdMatch: false,
-        amountMatch: false,
-        confidenceScore: 15,
-        discrepancyNote: 'OCR could not read text from the image. Please verify manually.',
-      };
-    }
-
-    // Normalize OCR digit confusion
-    const normalized = ocrText
-      .replace(/[Oo]/g, (m) => (/[A-Za-z]/.test(m) ? m : '0'))
-      .replace(/[Il|]/g, '1')
-      .replace(/[Ss]/g, (m) => (/[A-Za-z]/.test(m) ? m : '5'));
-
-    // Check if expected order ID appears in OCR text
-    const orderIdNormalized = expectedOrderId.replace(/[\s\-]/g, '');
-    const ocrNormalized = normalized.replace(/[\s\-]/g, '');
-    let orderIdMatch = ocrNormalized.toUpperCase().includes(orderIdNormalized.toUpperCase());
-
-    // If exact match failed, try matching with OCR digit normalization on both sides
-    if (!orderIdMatch) {
-      const digitNormalize = (s: string) => s
-        .replace(/[Oo]/g, '0')
+      // Normalize OCR digit confusion
+      const normalized = ocrText
+        .replace(/[Oo]/g, (m) => (/[A-Za-z]/.test(m) ? m : '0'))
         .replace(/[Il|]/g, '1')
-        .replace(/S/g, '5')
-        .replace(/B/g, '8')
-        .replace(/Z/g, '2')
-        .replace(/[\s\-\.]/g, '')
-        .toUpperCase();
-      const expectedNorm = digitNormalize(expectedOrderId);
-      const ocrDigitNorm = digitNormalize(ocrText);
-      orderIdMatch = ocrDigitNorm.includes(expectedNorm);
-    }
+        .replace(/[Ss]/g, (m) => (/[A-Za-z]/.test(m) ? m : '5'));
 
-    // Last resort: check if the numeric part of the order ID appears in OCR text
-    if (!orderIdMatch) {
-      const expectedDigits = expectedOrderId.replace(/[^0-9]/g, '');
-      if (expectedDigits.length >= 8) {
-        const ocrDigits = ocrText.replace(/[^0-9]/g, '');
-        orderIdMatch = ocrDigits.includes(expectedDigits);
+      // Check if expected order ID appears in OCR text
+      const orderIdNormalized = expectedOrderId.replace(/[\s\-]/g, '');
+      const ocrNormalized = normalized.replace(/[\s\-]/g, '');
+      let orderIdMatch = ocrNormalized.toUpperCase().includes(orderIdNormalized.toUpperCase());
+
+      // If exact match failed, try matching with OCR digit normalization on both sides
+      if (!orderIdMatch) {
+        const digitNormalize = (s: string) => s
+          .replace(/[Oo]/g, '0')
+          .replace(/[Il|]/g, '1')
+          .replace(/S/g, '5')
+          .replace(/B/g, '8')
+          .replace(/Z/g, '2')
+          .replace(/[\s\-\.]/g, '')
+          .toUpperCase();
+        const expectedNorm = digitNormalize(expectedOrderId);
+        const ocrDigitNorm = digitNormalize(ocrText);
+        orderIdMatch = ocrDigitNorm.includes(expectedNorm);
       }
-    }
 
-    // Check if expected amount appears in OCR text (allow ±2 tolerance for OCR errors)
-    const amountPatterns = [
-      String(expectedAmount),
-      expectedAmount.toFixed(2),
-      // Indian comma format: 1,23,456
-      expectedAmount.toLocaleString('en-IN'),
-      // Without decimals if integer
-      ...(expectedAmount === Math.floor(expectedAmount) ? [String(Math.floor(expectedAmount))] : []),
-      // With .00 suffix
-      String(expectedAmount) + '.00',
-    ];
-    let amountMatch = amountPatterns.some((p) => ocrText.includes(p));
-
-    // If exact match failed, try ±2 tolerance (OCR may misread 499 as 497, etc.)
-    if (!amountMatch) {
-      for (let delta = -2; delta <= 2; delta++) {
-        if (delta === 0) continue;
-        const nearby = expectedAmount + delta;
-        if (nearby <= 0) continue;
-        if (ocrText.includes(String(nearby)) || ocrText.includes(nearby.toFixed(2))) {
-          amountMatch = true;
-          break;
+      // Last resort: check if the numeric part of the order ID appears in OCR text
+      if (!orderIdMatch) {
+        const expectedDigits = expectedOrderId.replace(/[^0-9]/g, '');
+        if (expectedDigits.length >= 8) {
+          const ocrDigits = ocrText.replace(/[^0-9]/g, '');
+          orderIdMatch = ocrDigits.includes(expectedDigits);
         }
       }
-    }
 
-    // Also try extracting all ₹/Rs amounts from the OCR text and compare numerically
-    if (!amountMatch) {
-      const amountRegex = /(?:₹|rs\.?|inr)\s*\.?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi;
-      for (const m of ocrText.matchAll(amountRegex)) {
-        const val = Number(m[1].replace(/,/g, ''));
-        if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= 2) {
-          amountMatch = true;
-          break;
+      // Check if expected amount appears in OCR text (allow ±2 tolerance for OCR errors)
+      const amountPatterns = [
+        String(expectedAmount),
+        expectedAmount.toFixed(2),
+        // Indian comma format: 1,23,456
+        expectedAmount.toLocaleString('en-IN'),
+        // Without decimals if integer
+        ...(expectedAmount === Math.floor(expectedAmount) ? [String(Math.floor(expectedAmount))] : []),
+        // With .00 suffix
+        String(expectedAmount) + '.00',
+      ];
+      let amountMatch = amountPatterns.some((p) => ocrText.includes(p));
+
+      // If exact match failed, try ±2 tolerance (OCR may misread 499 as 497, etc.)
+      if (!amountMatch) {
+        for (let delta = -2; delta <= 2; delta++) {
+          if (delta === 0) continue;
+          const nearby = expectedAmount + delta;
+          if (nearby <= 0) continue;
+          if (ocrText.includes(String(nearby)) || ocrText.includes(nearby.toFixed(2))) {
+            amountMatch = true;
+            break;
+          }
         }
       }
+
+      // Also try extracting all ₹/Rs amounts from the OCR text and compare numerically
+      if (!amountMatch) {
+        const amountRegex = /(?:₹|rs\.?|inr)\s*\.?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi;
+        for (const m of ocrText.matchAll(amountRegex)) {
+          const val = Number(m[1].replace(/,/g, ''));
+          if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= 2) {
+            amountMatch = true;
+            break;
+          }
+        }
+      }
+
+      let confidenceScore = 30; // base OCR confidence
+      if (orderIdMatch) confidenceScore += 30;
+      if (amountMatch) confidenceScore += 25;
+      if (orderIdMatch && amountMatch) confidenceScore = Math.min(confidenceScore + 10, 85);
+
+      const detectedNotes: string[] = [];
+      if (!orderIdMatch) detectedNotes.push(`Order ID "${expectedOrderId}" not found in screenshot.`);
+      if (!amountMatch) detectedNotes.push(`Amount ₹${expectedAmount} not found in screenshot.`);
+      if (orderIdMatch && amountMatch) detectedNotes.push('Both order ID and amount matched via OCR.');
+
+      return {
+        orderIdMatch,
+        amountMatch,
+        confidenceScore,
+        discrepancyNote: detectedNotes.join(' ') || 'OCR fallback verification complete.',
+      };
+    } finally {
+      await worker.terminate();
     }
-
-    let confidenceScore = 30; // base OCR confidence
-    if (orderIdMatch) confidenceScore += 30;
-    if (amountMatch) confidenceScore += 25;
-    if (orderIdMatch && amountMatch) confidenceScore = Math.min(confidenceScore + 10, 85);
-
-    const detectedNotes: string[] = [];
-    if (!orderIdMatch) detectedNotes.push(`Order ID "${expectedOrderId}" not found in screenshot.`);
-    if (!amountMatch) detectedNotes.push(`Amount ₹${expectedAmount} not found in screenshot.`);
-    if (orderIdMatch && amountMatch) detectedNotes.push('Both order ID and amount matched via OCR.');
-
-    return {
-      orderIdMatch,
-      amountMatch,
-      confidenceScore,
-      discrepancyNote: detectedNotes.join(' ') || 'OCR fallback verification complete.',
-    };
   } catch (err) {
     console.error('OCR proof verification error:', err);
     return {
@@ -846,64 +846,65 @@ async function verifyRatingWithOcr(
     } catch { processedBuffer = imgBuffer; }
 
     const worker = await createWorker('eng');
-    const { data } = await worker.recognize(processedBuffer);
-    await worker.terminate();
-    let ocrText = (data.text || '').trim();
+    try {
+      const { data } = await worker.recognize(processedBuffer);
+      let ocrText = (data.text || '').trim();
 
-    // If initial OCR yields poor results, try a high-contrast pass
-    if (ocrText.length < 30) {
-      try {
-        const hcBuffer = await sharp(imgBuffer)
-          .greyscale()
-          .linear(1.6, -40)
-          .sharpen({ sigma: 2 })
-          .toBuffer();
-        const hcWorker = await createWorker('eng');
-        const hcResult = await hcWorker.recognize(hcBuffer);
-        await hcWorker.terminate();
-        const hcText = (hcResult.data.text || '').trim();
-        if (hcText.length > ocrText.length) ocrText = hcText;
-      } catch { /* ignore high-contrast failure */ }
+      // If initial OCR yields poor results, try a high-contrast pass
+      if (ocrText.length < 30) {
+        try {
+          const hcBuffer = await sharp(imgBuffer)
+            .greyscale()
+            .linear(1.6, -40)
+            .sharpen({ sigma: 2 })
+            .toBuffer();
+          const hcResult = await worker.recognize(hcBuffer);
+          const hcText = (hcResult.data.text || '').trim();
+          if (hcText.length > ocrText.length) ocrText = hcText;
+        } catch { /* ignore high-contrast failure */ }
+      }
+
+      if (!ocrText || ocrText.length < 5) {
+        return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
+          discrepancyNote: 'OCR could not read text from the rating screenshot.' };
+      }
+
+      const lower = ocrText.toLowerCase();
+      // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
+      const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+      const nameMatches = buyerParts.filter(p => lower.includes(p));
+      const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+
+      // Product name matching: check if significant keywords from product name appear
+      const productTokens = expectedProductName.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(t => t.length >= 3);
+      const matchedTokens = productTokens.filter(t => lower.includes(t));
+      const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+
+      let confidenceScore = 20;
+      if (accountNameMatch) confidenceScore += 35;
+      if (productNameMatch) confidenceScore += 35;
+
+      // Try to detect the actual account name shown
+      const nameLineRe = /(?:public\s*name|profile|account|by|reviewer|reviewed|written\s*by|posted\s*by)\s*[:\-]?\s*(.{2,40})/i;
+      const nameMatch = ocrText.match(nameLineRe);
+      const detectedAccountName = nameMatch?.[1]?.trim() || undefined;
+
+      return {
+        accountNameMatch, productNameMatch, confidenceScore,
+        detectedAccountName,
+        detectedProductName: matchedTokens.length > 0 ? matchedTokens.join(' ') : undefined,
+        discrepancyNote: [
+          !accountNameMatch ? `Buyer name "${expectedBuyerName}" not found in screenshot.` : '',
+          !productNameMatch ? `Product name not matching in screenshot.` : '',
+          accountNameMatch && productNameMatch ? 'Account name and product matched via OCR.' : '',
+        ].filter(Boolean).join(' '),
+      };
+    } finally {
+      await worker.terminate();
     }
-
-    if (!ocrText || ocrText.length < 5) {
-      return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
-        discrepancyNote: 'OCR could not read text from the rating screenshot.' };
-    }
-
-    const lower = ocrText.toLowerCase();
-    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
-    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
-    const nameMatches = buyerParts.filter(p => lower.includes(p));
-    const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
-
-    // Product name matching: check if significant keywords from product name appear
-    const productTokens = expectedProductName.toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(t => t.length >= 3);
-    const matchedTokens = productTokens.filter(t => lower.includes(t));
-    const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
-
-    let confidenceScore = 20;
-    if (accountNameMatch) confidenceScore += 35;
-    if (productNameMatch) confidenceScore += 35;
-
-    // Try to detect the actual account name shown
-    const nameLineRe = /(?:public\s*name|profile|account|by|reviewer|reviewed|written\s*by|posted\s*by)\s*[:\-]?\s*(.{2,40})/i;
-    const nameMatch = ocrText.match(nameLineRe);
-    const detectedAccountName = nameMatch?.[1]?.trim() || undefined;
-
-    return {
-      accountNameMatch, productNameMatch, confidenceScore,
-      detectedAccountName,
-      detectedProductName: matchedTokens.length > 0 ? matchedTokens.join(' ') : undefined,
-      discrepancyNote: [
-        !accountNameMatch ? `Buyer name "${expectedBuyerName}" not found in screenshot.` : '',
-        !productNameMatch ? `Product name not matching in screenshot.` : '',
-        accountNameMatch && productNameMatch ? 'Account name and product matched via OCR.' : '',
-      ].filter(Boolean).join(' '),
-    };
   } catch (err) {
     console.error('OCR rating verification error:', err);
     return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
@@ -1020,69 +1021,70 @@ async function verifyReturnWindowWithOcr(
     catch { processedBuffer = imgBuffer; }
 
     const worker = await createWorker('eng');
-    const { data } = await worker.recognize(processedBuffer);
-    await worker.terminate();
-    let ocrText = (data.text || '').trim();
+    try {
+      const { data } = await worker.recognize(processedBuffer);
+      let ocrText = (data.text || '').trim();
 
-    // High-contrast fallback for faded/dark screenshots
-    if (ocrText.length < 30) {
-      try {
-        const hcBuffer = await sharp(imgBuffer)
-          .greyscale()
-          .linear(1.6, -40)
-          .sharpen({ sigma: 2 })
-          .toBuffer();
-        const hcWorker = await createWorker('eng');
-        const hcResult = await hcWorker.recognize(hcBuffer);
-        await hcWorker.terminate();
-        const hcText = (hcResult.data.text || '').trim();
-        if (hcText.length > ocrText.length) ocrText = hcText;
-      } catch { /* ignore high-contrast failure */ }
+      // High-contrast fallback for faded/dark screenshots
+      if (ocrText.length < 30) {
+        try {
+          const hcBuffer = await sharp(imgBuffer)
+            .greyscale()
+            .linear(1.6, -40)
+            .sharpen({ sigma: 2 })
+            .toBuffer();
+          const hcResult = await worker.recognize(hcBuffer);
+          const hcText = (hcResult.data.text || '').trim();
+          if (hcText.length > ocrText.length) ocrText = hcText;
+        } catch { /* ignore high-contrast failure */ }
+      }
+
+      if (!ocrText || ocrText.length < 5) {
+        return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
+          returnWindowClosed: false, confidenceScore: 10,
+          discrepancyNote: 'OCR could not read text from the delivery screenshot.' };
+      }
+
+      const lower = ocrText.toLowerCase();
+      const orderIdNorm = expected.expectedOrderId.replace(/[\s\-]/g, '').toLowerCase();
+      const ocrNorm = ocrText.replace(/[\s\-]/g, '').toLowerCase();
+      const orderIdMatch = ocrNorm.includes(orderIdNorm);
+
+      const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3);
+      const matchedProd = productTokens.filter(t => lower.includes(t));
+      const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+
+      const amountStr = String(expected.expectedAmount);
+      const amountMatch = ocrText.includes(amountStr) || ocrText.includes(expected.expectedAmount.toFixed(2));
+
+      const soldByMatch = expected.expectedSoldBy
+        ? lower.includes(expected.expectedSoldBy.toLowerCase().trim())
+        : true;
+
+      // Check for explicit return window closure keywords (avoid treating mere delivery as closure)
+      const returnWindowRe = /return\s*window\s*(closed|expired|ended|over|passed)|no\s*return|non.?returnable/i;
+      const returnWindowClosed = returnWindowRe.test(ocrText);
+
+      let confidenceScore = 15;
+      if (orderIdMatch) confidenceScore += 20;
+      if (productNameMatch) confidenceScore += 20;
+      if (amountMatch) confidenceScore += 15;
+      if (soldByMatch) confidenceScore += 10;
+      if (returnWindowClosed) confidenceScore += 10;
+
+      return {
+        orderIdMatch, productNameMatch, amountMatch, soldByMatch, returnWindowClosed, confidenceScore,
+        discrepancyNote: [
+          !orderIdMatch ? `Order ID "${expected.expectedOrderId}" not found.` : '',
+          !productNameMatch ? 'Product name mismatch.' : '',
+          !amountMatch ? `Amount ₹${expected.expectedAmount} not found.` : '',
+          !soldByMatch && expected.expectedSoldBy ? `Seller "${expected.expectedSoldBy}" not found.` : '',
+          !returnWindowClosed ? 'Return window status not confirmed.' : '',
+        ].filter(Boolean).join(' ') || 'OCR verification complete.',
+      };
+    } finally {
+      await worker.terminate();
     }
-
-    if (!ocrText || ocrText.length < 5) {
-      return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
-        returnWindowClosed: false, confidenceScore: 10,
-        discrepancyNote: 'OCR could not read text from the delivery screenshot.' };
-    }
-
-    const lower = ocrText.toLowerCase();
-    const orderIdNorm = expected.expectedOrderId.replace(/[\s\-]/g, '').toLowerCase();
-    const ocrNorm = ocrText.replace(/[\s\-]/g, '').toLowerCase();
-    const orderIdMatch = ocrNorm.includes(orderIdNorm);
-
-    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3);
-    const matchedProd = productTokens.filter(t => lower.includes(t));
-    const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
-
-    const amountStr = String(expected.expectedAmount);
-    const amountMatch = ocrText.includes(amountStr) || ocrText.includes(expected.expectedAmount.toFixed(2));
-
-    const soldByMatch = expected.expectedSoldBy
-      ? lower.includes(expected.expectedSoldBy.toLowerCase().trim())
-      : true;
-
-    // Check for explicit return window closure keywords (avoid treating mere delivery as closure)
-    const returnWindowRe = /return\s*window\s*(closed|expired|ended|over|passed)|no\s*return|non.?returnable/i;
-    const returnWindowClosed = returnWindowRe.test(ocrText);
-
-    let confidenceScore = 15;
-    if (orderIdMatch) confidenceScore += 20;
-    if (productNameMatch) confidenceScore += 20;
-    if (amountMatch) confidenceScore += 15;
-    if (soldByMatch) confidenceScore += 10;
-    if (returnWindowClosed) confidenceScore += 10;
-
-    return {
-      orderIdMatch, productNameMatch, amountMatch, soldByMatch, returnWindowClosed, confidenceScore,
-      discrepancyNote: [
-        !orderIdMatch ? `Order ID "${expected.expectedOrderId}" not found.` : '',
-        !productNameMatch ? 'Product name mismatch.' : '',
-        !amountMatch ? `Amount ₹${expected.expectedAmount} not found.` : '',
-        !soldByMatch && expected.expectedSoldBy ? `Seller "${expected.expectedSoldBy}" not found.` : '',
-        !returnWindowClosed ? 'Return window status not confirmed.' : '',
-      ].filter(Boolean).join(' ') || 'OCR verification complete.',
-    };
   } catch (err) {
     console.error('OCR return window verification error:', err);
     return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,

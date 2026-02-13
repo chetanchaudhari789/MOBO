@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { formatErrorMessage } from '../utils/errors';
+import { validateStrongPassword } from '../utils/passwordValidation';
 
 interface BrandAuthProps {
   onBack?: () => void;
@@ -57,8 +58,9 @@ export const BrandAuthScreen: React.FC<BrandAuthProps> = ({ onBack }) => {
       setError('All fields are required');
       return;
     }
-    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-      setError('Password needs 8+ chars with uppercase, lowercase, number, and special character.');
+    const pwError = validateStrongPassword(password);
+    if (pwError) {
+      setError(pwError);
       return;
     }
     setError('');
