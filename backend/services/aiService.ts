@@ -2362,7 +2362,7 @@ export async function extractOrderDetailsWithAi(
 
           // Guard: reject AI product name if it looks like a URL
           const isProductNameUrl = aiResult.suggestedProductName
-            && /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=/i.test(aiResult.suggestedProductName);
+            && /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=|utm_/i.test(aiResult.suggestedProductName);
 
           if (!finalOrderId && aiSuggestedOrderId && (orderIdVisible || aiConfidence >= 75)) {
             finalOrderId = aiSuggestedOrderId;
@@ -2461,7 +2461,7 @@ export async function extractOrderDetailsWithAi(
             if (!finalSoldBy && directResult.soldBy) finalSoldBy = directResult.soldBy;
             // Guard: reject direct AI product name if it looks like a URL
             const directProductIsUrl = directResult.productName
-              && /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=/i.test(directResult.productName);
+              && /https?:\/\/|www\.|\.com\/|\.in\/|orderID=|order-details|ref=|utm_/i.test(directResult.productName);
             if (!finalProductName && directResult.productName && !directProductIsUrl) {
               finalProductName = directResult.productName;
             }
