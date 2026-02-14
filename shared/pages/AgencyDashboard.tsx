@@ -2,7 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
-import { getApiBaseUrl, getApiBaseAbsolute } from '../utils/apiBaseUrl';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
@@ -10,6 +10,10 @@ import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
+import { urlToBase64 } from '../utils/imageHelpers';
 import {
   LayoutDashboard,
   Users,
@@ -70,41 +74,7 @@ import {
   Bar,
 } from 'recharts';
 
-// --- HELPERS ---
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(val);
-
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || order.id || '').trim();
-
-const urlToBase64 = async (url: string): Promise<string> => {
-  if (typeof window === 'undefined') return '';
-  try {
-    if (url.startsWith('data:')) return url;
-    const apiBase = getApiBaseUrl();
-    const allowed = apiBase.startsWith('http') ? new URL(apiBase).origin : window.location.origin;
-    const target = new URL(url, window.location.origin);
-    if (target.origin !== allowed && target.origin !== window.location.origin) {
-      console.warn('urlToBase64: blocked non-API origin', target.origin);
-      return '';
-    }
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (err) {
-    console.warn('urlToBase64 failed:', url, err);
-    return '';
-  }
-};
+// formatCurrency, getPrimaryOrderId, urlToBase64, csvSafe, downloadCsv imported from shared/utils
 
 // --- COMPONENTS ---
 
@@ -209,7 +179,8 @@ const AgencyProfile = ({ user }: any) => {
       });
       setIsEditing(false);
       toast.success('Profile updated');
-    } catch {
+    } catch (err) {
+      console.error('Failed to update profile:', err);
       toast.error('Failed to update profile.');
     } finally {
       setLoading(false);
@@ -480,7 +451,8 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       toast.success('Ledger updated');
       setEditingOrder(null);
       onRefresh();
-    } catch {
+    } catch (err) {
+      console.error('Ledger update failed:', err);
       toast.error('Update failed');
     } finally {
       setIsUpdating(false);
@@ -493,13 +465,8 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -578,15 +545,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `agency_orders_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`agency_orders_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = () => {
@@ -3394,7 +3353,8 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                     const resp = await api.orders.getOrderAudit(proofOrder.id);
                     setOrderAuditLogs(resp?.logs ?? []);
                     setOrderAuditEvents(resp?.events ?? []);
-                  } catch {
+                  } catch (err) {
+                    console.error('Failed to load activity log:', err);
                     toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
                     setOrderAuditEvents([]);
@@ -3461,6 +3421,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
 
 export const AgencyDashboard: React.FC = () => {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   useRealtimeConnection();
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'team' | 'inventory' | 'finance' | 'payouts' | 'brands' | 'profile'

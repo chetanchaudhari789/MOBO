@@ -4,6 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
@@ -26,9 +29,7 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Download,
-  Eye,
   Info,
-  ZoomIn,
 } from 'lucide-react';
 
 /* ─── Sample Screenshot Guide ───────────────────────────────────────── */
@@ -131,11 +132,7 @@ const SampleScreenshotGuide: React.FC<{
   );
 };
 
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || '').trim() || 'Pending';
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+// formatCurrency, getPrimaryOrderId, csvSafe/downloadCsv imported from shared/utils
 
 const MAX_PROOF_SIZE_BYTES = 50 * 1024 * 1024;
 
@@ -696,7 +693,8 @@ export const Orders: React.FC = () => {
       setTicketModal(null);
       setTicketDesc('');
       await loadTickets();
-    } catch {
+    } catch (err) {
+      console.error('submitTicket error:', err);
       toast.error('Failed to raise ticket.');
     } finally {
       setIsUploading(false);
@@ -751,21 +749,17 @@ export const Orders: React.FC = () => {
               if (!orders.length) { toast.error('No orders to export'); return; }
               const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];
               const csvRows = orders.map(o => [
-                getPrimaryOrderId(o),
-                o.items[0]?.title || '',
-                String(o.total || 0),
-                o.items[0]?.dealType || '',
-                o.affiliateStatus || o.workflowStatus || '',
-                o.paymentStatus || '',
-                o.reviewerName || '',
-                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ].map(v => { let s = String(v); if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; return `"${s.replace(/"/g, '""')}"`; }).join(','));
+                csvSafe(getPrimaryOrderId(o)),
+                csvSafe(o.items[0]?.title || ''),
+                csvSafe(String(o.total || 0)),
+                csvSafe(o.items[0]?.dealType || ''),
+                csvSafe(o.affiliateStatus || o.workflowStatus || ''),
+                csvSafe(o.paymentStatus || ''),
+                csvSafe(o.reviewerName || ''),
+                csvSafe(o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''),
+              ].join(','));
               const csv = [h.join(','), ...csvRows].join('\n');
-              const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url; a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
-              a.click(); URL.revokeObjectURL(url);
+              downloadCsv(`orders-${new Date().toISOString().slice(0, 10)}.csv`, csv);
               toast.success('CSV downloaded!');
             }}
             className="p-2.5 rounded-xl border border-zinc-100 bg-white hover:bg-zinc-50 transition-colors"
@@ -1266,7 +1260,8 @@ export const Orders: React.FC = () => {
                         const resp = await api.orders.getOrderAudit(order.id);
                         setAuditLogs(resp?.logs ?? []);
                         setAuditEvents(resp?.events ?? []);
-                      } catch {
+                      } catch (err) {
+                        console.error('Failed to load activity log:', err);
                         toast.error('Failed to load activity log');
                         setAuditLogs([]);
                         setAuditEvents([]);

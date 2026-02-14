@@ -55,6 +55,9 @@ import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   AreaChart,
@@ -71,11 +74,7 @@ import {
 // --- TYPES ---
 type Tab = 'dashboard' | 'agencies' | 'campaigns' | 'requests' | 'orders' | 'profile';
 
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || order.id || '').trim();
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+// formatCurrency, getPrimaryOrderId, csvSafe, downloadCsv imported from shared/utils
 
 // --- COMPONENTS ---
 
@@ -697,13 +696,8 @@ const OrdersView = ({ user }: any) => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -782,15 +776,7 @@ const OrdersView = ({ user }: any) => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `brand_orders_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`brand_orders_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = () => {
@@ -1313,7 +1299,8 @@ const OrdersView = ({ user }: any) => {
                     const resp = await api.orders.getOrderAudit(viewProofOrder.id);
                     setOrderAuditLogs(resp?.logs ?? []);
                     setOrderAuditEvents(resp?.events ?? []);
-                  } catch {
+                  } catch (err) {
+                    console.error('Failed to load activity log:', err);
                     toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
                     setOrderAuditEvents([]);
@@ -1455,7 +1442,8 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       setEditingId(null);
       setForm(initialForm);
       onRefresh();
-    } catch {
+    } catch (err) {
+      console.error('Failed to save campaign:', err);
       toast.error('Failed to save campaign');
     }
   };
@@ -1491,7 +1479,8 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       await api.brand.updateCampaign(campaign.id, { status: next });
       toast.success(next === 'paused' ? 'Campaign paused' : 'Campaign resumed');
       onRefresh();
-    } catch {
+    } catch (err) {
+      console.error('Failed to update campaign status:', err);
       toast.error('Failed to update campaign status');
     } finally {
       setStatusUpdatingId(null);
@@ -2092,12 +2081,6 @@ export const BrandDashboard: React.FC = () => {
   };
 
   const handleExportPayouts = () => {
-    // CSV formula injection guard: prefix dangerous chars with a single-quote
-    const csvSafe = (v: unknown): string => {
-      const s = String(v ?? '').replace(/"/g, '""');
-      if (/^[=+\-@\t\r]/.test(s)) return `"'${s}"`;
-      return `"${s}"`;
-    };
 
     const headers = [
       'Transaction ID',
@@ -2129,15 +2112,7 @@ export const BrandDashboard: React.FC = () => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `payout_ledger_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`payout_ledger_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportPayoutsToSheets = () => {

@@ -84,10 +84,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const clearChat = useCallback(() => {
     setMessages([]);
-    try {
-      sessionStorage.removeItem(getStorageKey(userId));
-    } catch {
-      // ignore
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(getStorageKey(userId));
+      } catch {
+        // ignore
+      }
     }
   }, [userId]);
 

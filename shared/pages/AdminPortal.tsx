@@ -55,6 +55,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { User, Order, Product, Invite, Ticket } from '../types';
+import { formatCurrency as formatCurrencyBase } from '../utils/formatCurrency';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 
 // --- TYPES & CONSTANTS ---
 type ViewMode =
@@ -216,9 +218,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [adminAiAnalysis, setAdminAiAnalysis] = useState<any>(null);
   const [adminIsAnalyzing, setAdminIsAnalyzing] = useState(false);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount);
-  };
+  // Admin-specific: show up to 2 decimal places
+  const formatCurrency = (amount: number) => formatCurrencyBase(amount, { maximumFractionDigits: 2 });
 
   const fetchOrderAudit = async (orderId: string) => {
     setOrderAuditLoading(true);
@@ -587,13 +588,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
 
     const headers = [
@@ -671,15 +667,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `buzzma_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`buzzma_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = (reportType: 'orders' | 'finance') => {
