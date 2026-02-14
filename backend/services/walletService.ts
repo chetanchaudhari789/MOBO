@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { WalletModel } from '../models/Wallet.js';
 import { TransactionModel, type TransactionType } from '../models/Transaction.js';
 import { AppError } from '../middleware/errors.js';
+import { writeAuditLog } from './audit.js';
 
 export type WalletMutationInput = {
   idempotencyKey: string;
@@ -49,6 +50,7 @@ export async function ensureWallet(ownerUserId: string) {
 
 export async function applyWalletCredit(input: WalletMutationInput) {
   if (input.amountPaise <= 0) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be positive');
+  if (!Number.isInteger(input.amountPaise)) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be an integer (paise)');
 
   const externalSession = input.session;
 
@@ -106,12 +108,16 @@ export async function applyWalletCredit(input: WalletMutationInput) {
 
   // If the caller provides an external session, run within it (no new session/transaction).
   if (externalSession) {
-    return execute(externalSession);
+    const result = await execute(externalSession);
+    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    return result;
   }
 
   const session = await mongoose.startSession();
   try {
-    return await session.withTransaction(() => execute(session));
+    const result = await session.withTransaction(() => execute(session));
+    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    return result;
   } finally {
     session.endSession();
   }
@@ -119,6 +125,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
 
 export async function applyWalletDebit(input: WalletMutationInput) {
   if (input.amountPaise <= 0) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be positive');
+  if (!Number.isInteger(input.amountPaise)) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be an integer (paise)');
 
   const externalSession = input.session;
 

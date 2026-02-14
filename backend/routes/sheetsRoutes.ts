@@ -53,7 +53,7 @@ export function sheetsRoutes(env: Env): Router {
       // Try user's own Google OAuth token first (sheet goes to THEIR Drive)
       let userAccessToken: string | null = null;
       try {
-        const userId = (req as any).user?.id || (req as any).user?._id;
+        const userId = (req as any).auth?.userId;
         if (userId) {
           const userDoc = await UserModel.findById(userId).select('+googleRefreshToken').lean();
           const refreshToken = (userDoc as any)?.googleRefreshToken;

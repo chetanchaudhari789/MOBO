@@ -146,6 +146,8 @@ export const Orders: React.FC = () => {
         setAvailableProducts([]);
       });
       loadTickets();
+    } else {
+      setIsLoading(false);
     }
   }, [user]);
   const loadOrders = async () => {
@@ -161,6 +163,7 @@ export const Orders: React.FC = () => {
       });
     } catch (e) {
       console.error(e);
+      toast.error('Failed to load orders. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -414,6 +417,7 @@ export const Orders: React.FC = () => {
     const isDiscountDeal = selectedProduct.dealType === 'Discount';
     if (isDiscountDeal && hasExtraction && (matchStatus.id === 'mismatch' || matchStatus.amount === 'mismatch')) {
       toast.error('Order proof does not look valid. Please upload a clearer proof.');
+      submittingRef.current = false;
       return;
     }
     // Rating/review proofs are now submitted after mediator verifies order screenshot.

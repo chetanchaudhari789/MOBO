@@ -96,6 +96,7 @@ async function getAccessToken(serviceAccount: ServiceAccountKey): Promise<string
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${encodeURIComponent(jwt)}`,
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {
@@ -133,6 +134,7 @@ export async function refreshUserGoogleToken(
         refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }).toString(),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) {
@@ -174,6 +176,7 @@ async function createSpreadsheet(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {
@@ -203,6 +206,7 @@ async function appendRows(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader },
     body: JSON.stringify({ values }),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok) {
@@ -243,6 +247,7 @@ async function formatHeaderRow(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader },
     body: JSON.stringify({ requests }),
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {
