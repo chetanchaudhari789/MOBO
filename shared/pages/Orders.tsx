@@ -647,8 +647,8 @@ export const Orders: React.FC = () => {
               if (!orders.length) { toast.error('No orders to export'); return; }
               const csvSafe = (v: unknown): string => {
                 const s = String(v ?? '');
-                // Prevent CSV formula injection: prefix with ' if starts with (whitespace +) dangerous char
-                if (/^\s*[=+\-@\t\r]/.test(s)) return `"'${s.replace(/"/g, '""')}"`;
+                // Prevent CSV formula injection: prefix with ' if starts with dangerous char
+                if (/^[=+\-@\t\r]/.test(s)) return `"'${s.replace(/"/g, '""')}"`;
                 return `"${s.replace(/"/g, '""')}"`;
               };
               const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];

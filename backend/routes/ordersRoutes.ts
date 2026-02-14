@@ -7,6 +7,15 @@ import { makeOrdersController } from '../controllers/ordersController.js';
 import { AuditLogModel } from '../models/AuditLog.js';
 import { OrderModel } from '../models/Order.js';
 
+// Helper: sanitize order events for API response (remove actorUserId, keep only type/at/metadata)
+function sanitizeOrderEvents(events: any[]): any[] {
+  return events.map((event: any) => ({
+    type: event?.type,
+    at: event?.at,
+    metadata: event?.metadata,
+  }));
+}
+
 export function ordersRoutes(env: Env): Router {
   const router = Router();
   const orders = makeOrdersController(env);
@@ -83,11 +92,7 @@ export function ordersRoutes(env: Env): Router {
 
         // Reuse the order document fetched above for events
         const rawEvents = Array.isArray((order as any)?.events) ? (order as any).events : [];
-        const events = rawEvents.map((event: any) => ({
-          type: event?.type,
-          at: event?.at,
-          metadata: event?.metadata,
-        }));
+        const events = sanitizeOrderEvents(rawEvents);
 
         return res.json({ logs, events, page, limit });
       }
@@ -109,11 +114,7 @@ export function ordersRoutes(env: Env): Router {
       // Also return inline order.events for a combined timeline
       const orderDoc = await OrderModel.findById(orderId).select('events').lean();
       const rawEvents = Array.isArray((orderDoc as any)?.events) ? (orderDoc as any).events : [];
-      const events = rawEvents.map((event: any) => ({
-        type: event?.type,
-        at: event?.at,
-        metadata: event?.metadata,
-      }));
+      const events = sanitizeOrderEvents(rawEvents);
 
       res.json({ logs, events, page, limit });
     } catch (err) {
