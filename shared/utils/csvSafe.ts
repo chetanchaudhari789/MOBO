@@ -8,12 +8,12 @@
  * @returns A sanitized string safe for CSV export (without outer quotes)
  */
 export function csvSafe(val: unknown): string {
-  let s = String(val ?? '');
+  let stringValue = String(val ?? '');
   // Check for dangerous characters that could trigger formula execution
-  if (/^\s*[=+\-@\t\r]/.test(s)) {
-    s = `'${s}`;
+  if (/^\s*[=+\-@\t\r]/.test(stringValue)) {
+    stringValue = `'${stringValue}`;
   }
-  return s.replace(/"/g, '""');
+  return stringValue.replace(/"/g, '""');
 }
 
 /**

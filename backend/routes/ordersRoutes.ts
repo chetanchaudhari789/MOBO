@@ -100,11 +100,13 @@ export function ordersRoutes(env: Env): Router {
 
       // Use the already-fetched order.events
       const rawEvents = Array.isArray(order.events) ? order.events : [];
-      const events = rawEvents.map((event) => ({
-        type: event?.type,
-        at: event?.at,
-        metadata: event?.metadata,
-      }));
+      const events = rawEvents
+        .filter((event): event is OrderEvent => event != null)
+        .map((event) => ({
+          type: event.type,
+          at: event.at,
+          metadata: event.metadata,
+        }));
 
       res.json({ logs, events, page, limit });
     } catch (err) {

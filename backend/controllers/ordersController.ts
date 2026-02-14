@@ -429,8 +429,8 @@ export function makeOrdersController(env: Env) {
             (existing as any).buyerMobile = user.mobile;
             (existing as any).brandName = item.brandName ?? campaign.brandName;
             (existing as any).externalOrderId = resolvedExternalOrderId;
-            const trimmedReviewerName = body.reviewerName?.trim();
-            if (trimmedReviewerName) (existing as any).reviewerName = trimmedReviewerName;
+            // reviewerName is already trimmed by Zod validation, but we still check for truthiness
+            if (body.reviewerName) (existing as any).reviewerName = body.reviewerName;
             // Merge screenshots instead of overwriting — preserves any proofs already
             // attached to the pre-order (e.g. rating/review uploaded before upgrade).
             (existing as any).screenshots = {
@@ -502,7 +502,8 @@ export function makeOrdersController(env: Env) {
                 buyerMobile: user.mobile,
                 brandName: item.brandName ?? campaign.brandName,
                 externalOrderId: resolvedExternalOrderId,
-                ...(body.reviewerName?.trim() ? { reviewerName: body.reviewerName.trim() } : {}),
+                // reviewerName is already trimmed by Zod validation
+                ...(body.reviewerName ? { reviewerName: body.reviewerName } : {}),
                 screenshots: body.screenshots ?? {},
                 reviewLink: body.reviewLink,
                 ...(body.orderDate && !isNaN(new Date(body.orderDate).getTime()) ? { orderDate: new Date(body.orderDate) } : {}),
@@ -821,9 +822,9 @@ export function makeOrdersController(env: Env) {
         }
 
         // Persist marketplace reviewer/profile name if provided alongside any proof upload
-        const trimmedReviewerName = body.reviewerName?.trim();
-        if (trimmedReviewerName) {
-          (order as any).reviewerName = trimmedReviewerName;
+        // reviewerName is already trimmed by Zod validation
+        if (body.reviewerName) {
+          (order as any).reviewerName = body.reviewerName;
         }
 
         const affiliateStatus = String(order.affiliateStatus || '');
