@@ -881,49 +881,109 @@ async function verifyRatingWithOcr(
       processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer();
     } catch { processedBuffer = imgBuffer; }
 
-    let worker: any = await createWorker('eng');
+    // Detect orientation for multi-crop
+    let isLandscape = false;
+    let isTablet = false;
     try {
-      const { data }: any = await withOcrTimeout(worker.recognize(processedBuffer));
-      await worker.terminate();
-      worker = null;
-      let ocrText = (data.text || '').trim();
+      const meta = await sharp(imgBuffer).metadata();
+      const w = meta.width ?? 0;
+      const h = meta.height ?? 0;
+      const ratio = w / Math.max(h, 1);
+      isLandscape = ratio > 1;
+      isTablet = ratio > 0.65 && ratio < 1.55; // tablet-like aspect ratio
+    } catch { /* ignore */ }
 
-      // If initial OCR yields poor results, try a high-contrast pass
-      if (ocrText.length < 30) {
-        let hcWorker: any = null;
-        try {
-          const hcBuffer = await sharp(imgBuffer)
-            .greyscale()
-            .linear(1.6, -40)
-            .sharpen({ sigma: 2 })
-            .toBuffer();
-          hcWorker = await createWorker('eng');
-          const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-          await hcWorker.terminate();
-          hcWorker = null;
-          const hcText = (hcResult.data.text || '').trim();
-          if (hcText.length > ocrText.length) ocrText = hcText;
-        } catch {
-          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
-        }
+    const allTexts: string[] = [];
+
+    // Helper to run OCR on a buffer
+    const ocrOnBuffer = async (buf: Buffer, label: string): Promise<string> => {
+      let worker: any = null;
+      try {
+        worker = await createWorker('eng');
+        const { data }: any = await withOcrTimeout(worker.recognize(buf));
+        await worker.terminate();
+        worker = null;
+        return (data.text || '').trim();
+      } catch {
+        if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+        return '';
       }
+    };
 
-      if (!ocrText || ocrText.length < 5) {
-        return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
-          discrepancyNote: 'OCR could not read text from the rating screenshot.' };
-      }
+    // Pass 1: standard enhanced
+    const text1 = await ocrOnBuffer(processedBuffer, 'standard');
+    if (text1) allTexts.push(text1);
 
-      const lower = ocrText.toLowerCase();
-      // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
-      const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
-      const nameMatches = buyerParts.filter(p => lower.includes(p));
-      const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+    // Pass 2: high-contrast
+    if (!text1 || text1.length < 50) {
+      try {
+        const hcBuffer = await sharp(imgBuffer)
+          .greyscale()
+          .linear(1.6, -40)
+          .sharpen({ sigma: 2 })
+          .toBuffer();
+        const text2 = await ocrOnBuffer(hcBuffer, 'high-contrast');
+        if (text2 && text2.length > (text1?.length ?? 0)) allTexts.push(text2);
+      } catch { /* ignore */ }
+    }
 
-      // Product name matching: check if significant keywords from product name appear
-      const productTokens = expectedProductName.toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .filter(t => t.length >= 3);
+    // Pass 3: crop variants for multi-device screenshots
+    const cropVariants: Array<{ label: string; left?: number; top?: number; width?: number; height?: number }> = [];
+    if (isLandscape) {
+      // Desktop: rating/review area is often center or right
+      cropVariants.push({ label: 'center-60', left: 0.2, width: 0.6 });
+      cropVariants.push({ label: 'right-50', left: 0.45, width: 0.55, top: 0.1, height: 0.7 });
+    } else if (isTablet) {
+      // Tablet: wider than phone, narrower than desktop
+      cropVariants.push({ label: 'center-70', left: 0.15, width: 0.7, top: 0.1, height: 0.6 });
+      cropVariants.push({ label: 'top-60', top: 0, height: 0.6 });
+    } else {
+      // Phone portrait: vertically distributed
+      cropVariants.push({ label: 'top-50', top: 0, height: 0.5 });
+      cropVariants.push({ label: 'middle-50', top: 0.25, height: 0.5 });
+    }
+
+    for (const crop of cropVariants) {
+      try {
+        const meta = await sharp(imgBuffer).metadata();
+        const w = meta.width ?? 0;
+        const h = meta.height ?? 0;
+        if (w < 50 || h < 50) continue;
+        const cropBuf = await sharp(imgBuffer)
+          .extract({
+            left: Math.round((crop.left ?? 0) * w),
+            top: Math.round((crop.top ?? 0) * h),
+            width: Math.min(Math.round((crop.width ?? 1) * w), w - Math.round((crop.left ?? 0) * w)),
+            height: Math.min(Math.round((crop.height ?? 1) * h), h - Math.round((crop.top ?? 0) * h)),
+          })
+          .greyscale()
+          .normalize()
+          .sharpen()
+          .toBuffer();
+        const cropText = await ocrOnBuffer(cropBuf, crop.label);
+        if (cropText && cropText.length > 20) allTexts.push(cropText);
+      } catch { /* ignore crop errors */ }
+    }
+
+    // Combine all OCR texts
+    const ocrText = allTexts.sort((a, b) => b.length - a.length).join('\n');
+
+    if (!ocrText || ocrText.length < 5) {
+      return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
+        discrepancyNote: 'OCR could not read text from the rating screenshot.' };
+    }
+
+    const lower = ocrText.toLowerCase();
+    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
+    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+    const nameMatches = buyerParts.filter(p => lower.includes(p));
+    const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+
+    // Product name matching: check if significant keywords from product name appear
+    const productTokens = expectedProductName.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(t => t.length >= 3);
     const matchedTokens = productTokens.filter(t => lower.includes(t));
     const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
 
@@ -946,10 +1006,6 @@ async function verifyRatingWithOcr(
         accountNameMatch && productNameMatch ? 'Account name and product matched via OCR.' : '',
       ].filter(Boolean).join(' '),
     };
-    } catch (workerErr) {
-      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
-      throw workerErr;
-    }
   } catch (err) {
     console.error('OCR rating verification error:', err);
     return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
@@ -2303,14 +2359,20 @@ export async function extractOrderDetailsWithAi(
       return tesseractText;
     };
 
-    // ── Build OCR variants: phone (vertical) + desktop (horizontal) crops ──
-    // Detect if image is landscape (desktop/laptop) or portrait (phone)
+    // ── Build OCR variants: phone (vertical) + desktop (horizontal) + tablet crops ──
+    // Detect if image is landscape (desktop/laptop), portrait (phone), or tablet-like
     let isLandscape = false;
+    let isTablet = false;
     try {
       const orientBuf = getImageBuffer(payload.imageBase64);
       if (isRecognizedImageBuffer(orientBuf)) {
         const meta = await sharp(orientBuf).metadata();
-        isLandscape = (meta.width ?? 0) > (meta.height ?? 0);
+        const w = meta.width ?? 0;
+        const h = meta.height ?? 0;
+        const ratio = w / Math.max(h, 1);
+        isLandscape = ratio > 1;
+        // Tablet: aspect ratio between 0.65 and 1.55 (covers both portrait and landscape tablet)
+        isTablet = ratio > 0.65 && ratio < 1.55;
       }
     } catch { /* ignore — default to portrait */ }
 
@@ -2323,7 +2385,25 @@ export async function extractOrderDetailsWithAi(
       { label: 'inverted', image: await preprocessForOcr(payload.imageBase64, undefined, 'inverted') },
     ];
 
-    if (isLandscape) {
+    if (isTablet && !isLandscape) {
+      // Tablet portrait (3:4 ish) — wider than phone but taller than desktop
+      allOcrVariants.push(
+        { label: 'tab-center-70', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.05, height: 0.5 }) },
+        { label: 'tab-top-45', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.45 }) },
+        { label: 'tab-middle-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }) },
+        { label: 'tab-bottom-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }) },
+        { label: 'tab-hc-center', image: await preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.45 }, 'highContrast') },
+        { label: 'tab-right-60', image: await preprocessForOcr(payload.imageBase64, { left: 0.35, width: 0.6, top: 0.05, height: 0.6 }) },
+      );
+    } else if (isTablet && isLandscape) {
+      // Tablet landscape (4:3 ish) — shorter/wider than desktop monitor
+      allOcrVariants.push(
+        { label: 'tab-land-center', image: await preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6, top: 0.1, height: 0.7 }) },
+        { label: 'tab-land-right', image: await preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.05, height: 0.65 }) },
+        { label: 'tab-land-left', image: await preprocessForOcr(payload.imageBase64, { left: 0.05, width: 0.5, top: 0.1, height: 0.6 }) },
+        { label: 'tab-land-hc-mid', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.2, height: 0.5 }, 'highContrast') },
+      );
+    } else if (isLandscape) {
       // Desktop/laptop: order info is often in the center or right portion
       // Amazon desktop: order details occupy the center-right area
       allOcrVariants.push(

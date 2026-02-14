@@ -1068,6 +1068,33 @@ const OrdersView = ({ user }: any) => {
                       </p>
                     </div>
                   )}
+                  {/* AI Rating Verification Results */}
+                  {viewProofOrder.ratingAiVerification && (
+                    <div className="mt-2 bg-orange-50 rounded-xl border border-orange-100 p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">AI Rating Verification</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className={`p-2 rounded-lg text-center ${viewProofOrder.ratingAiVerification.accountNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Account Name</p>
+                          <p className={`text-xs font-bold ${viewProofOrder.ratingAiVerification.accountNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                            {viewProofOrder.ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
+                          </p>
+                          {viewProofOrder.ratingAiVerification.detectedAccountName && (
+                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {viewProofOrder.ratingAiVerification.detectedAccountName}</p>
+                          )}
+                        </div>
+                        <div className={`p-2 rounded-lg text-center ${viewProofOrder.ratingAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
+                          <p className={`text-xs font-bold ${viewProofOrder.ratingAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                            {viewProofOrder.ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                          </p>
+                          {viewProofOrder.ratingAiVerification.detectedProductName && (
+                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {viewProofOrder.ratingAiVerification.detectedProductName}</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-slate-500">Confidence: {viewProofOrder.ratingAiVerification.confidenceScore}%</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1110,6 +1137,53 @@ const OrdersView = ({ user }: any) => {
                       alt="Return Window proof"
                     />
                   </div>
+                  {/* AI Return Window Verification */}
+                  {viewProofOrder.returnWindowAiVerification && (
+                    <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">AI Return Window Verification</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {viewProofOrder.returnWindowAiVerification.orderIdMatch !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.orderIdMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
+                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
+                              {viewProofOrder.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
+                            </p>
+                          </div>
+                        )}
+                        {viewProofOrder.returnWindowAiVerification.productNameMatch !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
+                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                              {viewProofOrder.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                            </p>
+                          </div>
+                        )}
+                        {viewProofOrder.returnWindowAiVerification.amountMatch !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.amountMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
+                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
+                              {viewProofOrder.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
+                            </p>
+                          </div>
+                        )}
+                        {viewProofOrder.returnWindowAiVerification.returnWindowClosed !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.returnWindowClosed ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Window Closed</p>
+                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.returnWindowClosed ? 'text-green-600' : 'text-yellow-600'}`}>
+                              {viewProofOrder.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      {viewProofOrder.returnWindowAiVerification.detectedReturnWindow && (
+                        <p className="text-[9px] text-slate-500">Detected Window: {viewProofOrder.returnWindowAiVerification.detectedReturnWindow}</p>
+                      )}
+                      {viewProofOrder.returnWindowAiVerification.discrepancyNote && (
+                        <p className="text-[9px] text-red-500 font-semibold">Note: {viewProofOrder.returnWindowAiVerification.discrepancyNote}</p>
+                      )}
+                      <p className="text-[9px] text-slate-500">Confidence: {viewProofOrder.returnWindowAiVerification.confidenceScore}%</p>
+                    </div>
+                  )}
                 </div>
               )}
 
