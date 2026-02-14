@@ -4,6 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
@@ -26,12 +29,16 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Download,
-  Eye,
   Info,
-  ZoomIn,
 } from 'lucide-react';
 
 /* ─── Sample Screenshot Guide ───────────────────────────────────────── */
+const SAMPLE_IMAGES: Record<string, string> = {
+  order: '/screenshots/sample-order.png',
+  rating: '/screenshots/sample-rating.png',
+  returnWindow: '/screenshots/sample-return-window.png',
+};
+
 const SampleScreenshotGuide: React.FC<{
   type: 'order' | 'rating' | 'returnWindow';
 }> = ({ type }) => {
@@ -52,12 +59,12 @@ const SampleScreenshotGuide: React.FC<{
       title: 'Rating / Review Screenshot',
       bullets: [
         'Open the "Write a product review" or "Rate this product" page',
-        'Your marketplace profile name / account name must be visible at the top',
+        'Your reviewer name / account name must be visible at the top',
         'The product name should appear clearly on the page',
         'Star rating should be filled (e.g. 5 stars)',
         'Take the screenshot BEFORE submitting if "Submit" button is visible',
       ],
-      highlights: ['Profile Name / Account', 'Product Name', 'Star Rating'],
+      highlights: ['Reviewer Name', 'Product Name', 'Star Rating'],
     },
     returnWindow: {
       title: 'Return Window Screenshot',
@@ -73,6 +80,7 @@ const SampleScreenshotGuide: React.FC<{
   };
   const g = guides[type];
   if (!g) return null;
+  const sampleImg = SAMPLE_IMAGES[type];
   return (
     <div className="rounded-xl border border-blue-100 bg-blue-50/50 overflow-hidden animate-enter">
       <button
@@ -88,6 +96,18 @@ const SampleScreenshotGuide: React.FC<{
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
+          {/* Sample annotated image */}
+          {sampleImg && (
+            <div className="mt-2 rounded-lg border border-blue-200 overflow-hidden bg-white">
+              <p className="text-[9px] font-bold text-blue-500 px-2 pt-1.5 pb-0.5">📸 Example — key fields highlighted</p>
+              <img
+                src={sampleImg}
+                alt={`Sample ${g.title}`}
+                className="w-full h-auto"
+                loading="lazy"
+              />
+            </div>
+          )}
           <ul className="space-y-1.5 mt-2">
             {g.bullets.map((b, i) => (
               <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-600">
@@ -112,11 +132,7 @@ const SampleScreenshotGuide: React.FC<{
   );
 };
 
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || '').trim() || 'Pending';
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+// formatCurrency, getPrimaryOrderId, csvSafe/downloadCsv imported from shared/utils
 
 const MAX_PROOF_SIZE_BYTES = 50 * 1024 * 1024;
 
@@ -677,7 +693,8 @@ export const Orders: React.FC = () => {
       setTicketModal(null);
       setTicketDesc('');
       await loadTickets();
-    } catch {
+    } catch (err) {
+      console.error('submitTicket error:', err);
       toast.error('Failed to raise ticket.');
     } finally {
       setIsUploading(false);
@@ -732,21 +749,17 @@ export const Orders: React.FC = () => {
               if (!orders.length) { toast.error('No orders to export'); return; }
               const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];
               const csvRows = orders.map(o => [
-                getPrimaryOrderId(o),
-                o.items[0]?.title || '',
-                String(o.total || 0),
-                o.items[0]?.dealType || '',
-                o.affiliateStatus || o.workflowStatus || '',
-                o.paymentStatus || '',
-                o.reviewerName || '',
-                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+                csvSafe(getPrimaryOrderId(o)),
+                csvSafe(o.items[0]?.title || ''),
+                csvSafe(String(o.total || 0)),
+                csvSafe(o.items[0]?.dealType || ''),
+                csvSafe(o.affiliateStatus || o.workflowStatus || ''),
+                csvSafe(o.paymentStatus || ''),
+                csvSafe(o.reviewerName || ''),
+                csvSafe(o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''),
+              ].join(','));
               const csv = [h.join(','), ...csvRows].join('\n');
-              const blob = new Blob([csv], { type: 'text/csv' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url; a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
-              a.click(); URL.revokeObjectURL(url);
+              downloadCsv(`orders-${new Date().toISOString().slice(0, 10)}.csv`, csv);
               toast.success('CSV downloaded!');
             }}
             className="p-2.5 rounded-xl border border-zinc-100 bg-white hover:bg-zinc-50 transition-colors"
@@ -1247,7 +1260,9 @@ export const Orders: React.FC = () => {
                         const resp = await api.orders.getOrderAudit(order.id);
                         setAuditLogs(resp?.logs ?? []);
                         setAuditEvents(resp?.events ?? []);
-                      } catch {
+                      } catch (err) {
+                        console.error('Failed to load activity log:', err);
+                        toast.error('Failed to load activity log');
                         setAuditLogs([]);
                         setAuditEvents([]);
                       } finally {
@@ -1586,11 +1601,11 @@ export const Orders: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Reviewer / Marketplace profile name */}
+                  {/* Reviewer name */}
                   {formScreenshot && (selectedProduct?.dealType === 'Rating' || selectedProduct?.dealType === 'Review') && (
                     <div className="space-y-1 animate-enter">
                       <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                        Your Marketplace Profile Name <span className="text-zinc-300">(optional)</span>
+                        Your Reviewer Name <span className="text-zinc-300">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -1601,7 +1616,7 @@ export const Orders: React.FC = () => {
                         maxLength={200}
                       />
                       <p className="text-[9px] text-zinc-400 ml-1">
-                        Your profile name on the marketplace — helps verify your review/rating screenshots.
+                        Your reviewer name on the marketplace — helps verify your review/rating screenshots.
                       </p>
                     </div>
                   )}
@@ -1625,7 +1640,9 @@ export const Orders: React.FC = () => {
                   !selectedProduct ||
                   !formScreenshot ||
                   isUploading ||
-                  matchStatus.productName === 'mismatch'
+                  matchStatus.productName === 'mismatch' ||
+                  !extractedDetails.orderId ||
+                  !extractedDetails.amount
                 }
                 className="w-full py-4 bg-black text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400 hover:text-black transition-all disabled:opacity-50 active:scale-95 shadow-lg"
               >
@@ -1775,7 +1792,7 @@ export const Orders: React.FC = () => {
               </p>
               {proofToView.reviewerName && (
                 <p className="text-[10px] mt-1 text-indigo-600 font-bold flex items-center gap-1">
-                  Marketplace Profile: {proofToView.reviewerName}
+                  Reviewer Name: {proofToView.reviewerName}
                 </p>
               )}
             </div>
@@ -2054,7 +2071,7 @@ export const Orders: React.FC = () => {
                         {!ratingVerification.accountNameMatch && !ratingVerification.productNameMatch
                           ? 'Account name & product do not match. Upload the correct rating screenshot.'
                           : !ratingVerification.accountNameMatch
-                            ? 'Account name does not match your profile name.'
+                            ? 'Account name does not match your reviewer name.'
                             : 'Product does not match this order\'s product.'}
                       </p>
                     )}

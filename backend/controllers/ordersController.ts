@@ -587,13 +587,6 @@ export function makeOrdersController(env: Env) {
 
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
-
-        // Audit log: order creation
-        await writeAuditLog({
-          req, action: 'ORDER_CREATED', entityType: 'Order',
-          entityId: String((finalOrder as any)._id),
-          metadata: { campaignId: String(body.items?.[0]?.campaignId || ''), mediatorCode: upstreamMediatorCode },
-        }).catch(() => {});
       } catch (err) {
         next(err);
       } finally {

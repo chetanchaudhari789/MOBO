@@ -20,6 +20,7 @@ function getStorageKey(userId: string | null): string {
 }
 
 function loadMessages(userId: string | null): ChatMessage[] {
+  if (typeof window === 'undefined') return [];
   try {
     const raw = sessionStorage.getItem(getStorageKey(userId));
     if (!raw) return [];
@@ -36,6 +37,7 @@ function loadMessages(userId: string | null): ChatMessage[] {
 }
 
 function persistMessages(userId: string | null, messages: ChatMessage[]): void {
+  if (typeof window === 'undefined') return;
   try {
     const trimmed = messages.slice(-MAX_PERSISTED_MESSAGES);
     sessionStorage.setItem(getStorageKey(userId), JSON.stringify(trimmed));
@@ -82,10 +84,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const clearChat = useCallback(() => {
     setMessages([]);
-    try {
-      sessionStorage.removeItem(getStorageKey(userId));
-    } catch {
-      // ignore
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(getStorageKey(userId));
+      } catch {
+        // ignore
+      }
     }
   }, [userId]);
 

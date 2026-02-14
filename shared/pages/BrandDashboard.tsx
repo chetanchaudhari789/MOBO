@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -54,6 +55,9 @@ import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   AreaChart,
@@ -70,11 +74,7 @@ import {
 // --- TYPES ---
 type Tab = 'dashboard' | 'agencies' | 'campaigns' | 'requests' | 'orders' | 'profile';
 
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || order.id || '').trim();
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+// formatCurrency, getPrimaryOrderId, csvSafe, downloadCsv imported from shared/utils
 
 // --- COMPONENTS ---
 
@@ -623,7 +623,9 @@ const OrdersView = ({ user }: any) => {
         const updated = (data as Order[]).find((o: Order) => o.id === prev.id);
         return updated || null;
       });
-    } catch {
+    } catch (err) {
+      console.error('Failed to fetch orders', err);
+      toast.error('Failed to load orders');
       setOrders([]);
     } finally {
       setIsLoading(false);
@@ -689,33 +691,13 @@ const OrdersView = ({ user }: any) => {
   });
 
   const handleExport = () => {
-    const getApiBase = () => {
-      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-      const fromNext =
-        typeof process !== 'undefined' &&
-        (process as any).env &&
-        (process as any).env.NEXT_PUBLIC_API_URL
-          ? String((process as any).env.NEXT_PUBLIC_API_URL)
-          : undefined;
-      let base = String(fromGlobal || fromNext || '/api').trim();
-      if (base.startsWith('/')) {
-        base = `${window.location.origin}${base}`;
-      }
-      return base.endsWith('/') ? base.slice(0, -1) : base;
-    };
-
-    const apiBase = getApiBase();
+    const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -794,15 +776,7 @@ const OrdersView = ({ user }: any) => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `brand_orders_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`brand_orders_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = () => {
@@ -1006,6 +980,7 @@ const OrdersView = ({ user }: any) => {
             onClick={(e) => e.stopPropagation()}
           >
             <button
+              aria-label="Close proof modal"
               onClick={() => { setViewProofOrder(null); setBrandAiAnalysis(null); }}
               className="absolute top-4 right-4 p-2 bg-zinc-50 rounded-full hover:bg-zinc-100 transition-colors"
             >
@@ -1324,7 +1299,9 @@ const OrdersView = ({ user }: any) => {
                     const resp = await api.orders.getOrderAudit(viewProofOrder.id);
                     setOrderAuditLogs(resp?.logs ?? []);
                     setOrderAuditEvents(resp?.events ?? []);
-                  } catch {
+                  } catch (err) {
+                    console.error('Failed to load activity log:', err);
+                    toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
                     setOrderAuditEvents([]);
                   } finally {
@@ -1465,7 +1442,8 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       setEditingId(null);
       setForm(initialForm);
       onRefresh();
-    } catch {
+    } catch (err) {
+      console.error('Failed to save campaign:', err);
       toast.error('Failed to save campaign');
     }
   };
@@ -1501,7 +1479,8 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       await api.brand.updateCampaign(campaign.id, { status: next });
       toast.success(next === 'paused' ? 'Campaign paused' : 'Campaign resumed');
       onRefresh();
-    } catch {
+    } catch (err) {
+      console.error('Failed to update campaign status:', err);
       toast.error('Failed to update campaign status');
     } finally {
       setStatusUpdatingId(null);
@@ -2035,7 +2014,8 @@ export const BrandDashboard: React.FC = () => {
       setOrders(ords);
       setTransactions(txns);
     } catch (e) {
-      console.error(e);
+      console.error('Dashboard data fetch failed', e);
+      toast.error('Failed to load dashboard data');
     } finally {
       setIsDataLoading(false);
     }
@@ -2101,12 +2081,6 @@ export const BrandDashboard: React.FC = () => {
   };
 
   const handleExportPayouts = () => {
-    // CSV formula injection guard: prefix dangerous chars with a single-quote
-    const csvSafe = (v: unknown): string => {
-      const s = String(v ?? '').replace(/"/g, '""');
-      if (/^[=+\-@\t\r]/.test(s)) return `"'${s}"`;
-      return `"${s}"`;
-    };
 
     const headers = [
       'Transaction ID',
@@ -2138,15 +2112,7 @@ export const BrandDashboard: React.FC = () => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `payout_ledger_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`payout_ledger_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportPayoutsToSheets = () => {
@@ -2557,6 +2523,7 @@ export const BrandDashboard: React.FC = () => {
                             fetchData();
                           } catch (e) {
                             console.error('Failed to decline', e);
+                            toast.error('Failed to decline connection');
                           }
                         }}
                         className="flex-1 sm:flex-none px-6 py-2.5 bg-white text-zinc-600 rounded-xl font-bold text-xs border border-zinc-200 hover:bg-zinc-50 transition-colors"
@@ -2586,6 +2553,7 @@ export const BrandDashboard: React.FC = () => {
                             fetchData();
                           } catch (e) {
                             console.error('Failed to approve', e);
+                            toast.error('Failed to approve connection');
                           }
                         }}
                         className="flex-1 sm:flex-none px-8 py-2.5 bg-zinc-900 text-white rounded-xl font-bold text-xs hover:bg-black shadow-lg transition-all active:scale-95"
@@ -2610,6 +2578,7 @@ export const BrandDashboard: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <button
+              aria-label="Close agency details"
               onClick={() => setSelectedAgency(null)}
               className="absolute top-6 right-6 p-2 bg-zinc-50 rounded-full hover:bg-zinc-100 transition-colors"
             >

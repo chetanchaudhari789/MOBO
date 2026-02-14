@@ -1,7 +1,74 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Env } from '../config/env.js';
+
+// ── Tesseract Worker Pool ──
+// Reuse workers across OCR calls instead of creating/terminating per request.
+// This avoids repeated WASM init + eng.traineddata download on every OCR call.
+
+const __ocrDirname = path.dirname(fileURLToPath(import.meta.url));
+// In dist/ the compiled JS lives at dist/services/aiService.js → go up 2 levels to backend/
+// In source (tsx watch) it lives at services/aiService.ts → go up 1 level to backend/
+const __backendRoot = path.basename(path.resolve(__ocrDirname, '..')) === 'dist'
+  ? path.resolve(__ocrDirname, '..', '..')
+  : path.resolve(__ocrDirname, '..');
+
+// Use local eng.traineddata to avoid CDN downloads in production
+const LOCAL_LANG_PATH = path.join(__backendRoot, '/');
+
+const OCR_POOL_SIZE = 2;
+const _ocrPool: Array<Awaited<ReturnType<typeof createWorker>>> = [];
+let _ocrPoolReady: Promise<void> | null = null;
+
+async function _initOcrPool(): Promise<void> {
+  if (_ocrPool.length >= OCR_POOL_SIZE) return;
+  const promises: Promise<void>[] = [];
+  for (let i = _ocrPool.length; i < OCR_POOL_SIZE; i++) {
+    promises.push(
+      createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH })
+        .then((w) => { _ocrPool.push(w); })
+        .catch((err) => {
+          console.warn('Failed to init Tesseract worker (will create on-demand):', err);
+        })
+    );
+  }
+  await Promise.allSettled(promises);
+}
+
+/** Get a worker from the pool or create a fresh one on demand. */
+async function acquireOcrWorker(): Promise<Awaited<ReturnType<typeof createWorker>>> {
+  // Lazy-init pool on first call
+  if (!_ocrPoolReady) _ocrPoolReady = _initOcrPool();
+  await _ocrPoolReady;
+
+  const w = _ocrPool.pop();
+  if (w) return w;
+  // Pool exhausted — create a temporary worker
+  return createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH });
+}
+
+/** Return a worker to the pool (or terminate if pool is full). */
+async function releaseOcrWorker(worker: Awaited<ReturnType<typeof createWorker>> | null): Promise<void> {
+  if (!worker) return;
+  if (_ocrPool.length < OCR_POOL_SIZE) {
+    _ocrPool.push(worker);
+  } else {
+    try { await worker.terminate(); } catch { /* ignore */ }
+  }
+}
+
+/** Graceful shutdown: terminate all pooled OCR workers. */
+async function _shutdownOcrPool(): Promise<void> {
+  const workers = _ocrPool.splice(0);
+  await Promise.allSettled(workers.map((w) => w.terminate().catch(() => {})));
+}
+// Register cleanup handlers for graceful shutdown
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(sig, () => { _shutdownOcrPool().finally(() => process.exit(0)); });
+}
 
 type ChatPayload = {
   message: string;
@@ -574,10 +641,10 @@ async function verifyProofWithOcr(
       processedBuffer = imgBuffer;
     }
 
-    let worker = await createWorker('eng');
+    let worker = await acquireOcrWorker();
     try {
       const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
-      await worker.terminate();
+      await releaseOcrWorker(worker);
       worker = null as any;
 
       let ocrText = (data.text || '').trim();
@@ -591,14 +658,14 @@ async function verifyProofWithOcr(
             .linear(1.6, -40)
             .sharpen({ sigma: 2 })
             .toBuffer();
-          hcWorker = await createWorker('eng');
+          hcWorker = await acquireOcrWorker();
           const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-          await hcWorker.terminate();
+          await releaseOcrWorker(hcWorker);
           hcWorker = null;
           const hcText = (hcResult.data.text || '').trim();
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
-          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
+          if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
         }
       }
 
@@ -715,7 +782,7 @@ async function verifyProofWithOcr(
       discrepancyNote: detectedNotes.join(' ') || 'OCR fallback verification complete.',
     };
     } catch (workerErr) {
-      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+      if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
       throw workerErr;
     }
   } catch (err) {
@@ -907,13 +974,13 @@ async function verifyRatingWithOcr(
     const ocrOnBuffer = async (buf: Buffer, _label: string): Promise<string> => {
       let worker: any = null;
       try {
-        worker = await createWorker('eng');
+        worker = await acquireOcrWorker();
         const { data }: any = await withOcrTimeout(worker.recognize(buf));
-        await worker.terminate();
+        await releaseOcrWorker(worker);
         worker = null;
         return (data.text || '').trim();
       } catch {
-        if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+        if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
         return '';
       }
     };
@@ -982,28 +1049,38 @@ async function verifyRatingWithOcr(
     }
 
     const lower = ocrText.toLowerCase();
+    // Common stop words that cause false positives when matching names/products in OCR text
+    const STOP_WORDS = new Set(['the','for','and','with','from','that','this','you','your','was','are','has','have','been','not','but','all','can','had','her','his','one','our','out','use','how','its','may','new','now','old','see','way','who','boy','did','get','him','let','say','she','too','any','per','set','top','end','off','big','own','put','run','two','via','pro','free','pack','item','best','good','great','nice','mini','max','size','pair','home','made','full','high','low','day','set','box','buy','kit']);
+
     // Account name matching: fuzzy — check if any 2+ word segment of the buyer name or reviewer name appears
-    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2 && !STOP_WORDS.has(p));
     const nameMatches = buyerParts.filter(p => lower.includes(p));
-    let accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+    let accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.6));
     // Also check reviewer / marketplace profile name if provided
     if (!accountNameMatch && expectedReviewerName) {
-      const reviewerParts = expectedReviewerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+      const reviewerParts = expectedReviewerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2 && !STOP_WORDS.has(p));
       const reviewerMatches = reviewerParts.filter(p => lower.includes(p));
-      accountNameMatch = reviewerMatches.length >= Math.max(1, Math.ceil(reviewerParts.length * 0.5));
+      accountNameMatch = reviewerMatches.length >= Math.max(1, Math.ceil(reviewerParts.length * 0.6));
     }
 
     // Product name matching: check if significant keywords from product name appear
     const productTokens = expectedProductName.toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
-      .filter(t => t.length >= 3);
+      .filter(t => t.length >= 3 && !STOP_WORDS.has(t));
     const matchedTokens = productTokens.filter(t => lower.includes(t));
-    const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+    const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.4));
 
+    // Graduated confidence scoring — partial matches contribute proportionally
     let confidenceScore = 20;
-    if (accountNameMatch) confidenceScore += 35;
-    if (productNameMatch) confidenceScore += 35;
+    if (accountNameMatch) {
+      const nameRatio = buyerParts.length > 0 ? nameMatches.length / buyerParts.length : 0;
+      confidenceScore += Math.round(35 * nameRatio);
+    }
+    if (productNameMatch) {
+      const productRatio = productTokens.length > 0 ? matchedTokens.length / productTokens.length : 0;
+      confidenceScore += Math.round(35 * productRatio);
+    }
 
     // Try to detect the actual account name shown
     const nameLineRe = /(?:public\s*name|profile|account|by|reviewer|reviewed|written\s*by|posted\s*by)\s*[:\-]?\s*(.{2,40})/i;
@@ -1136,10 +1213,10 @@ async function verifyReturnWindowWithOcr(
     try { processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer(); }
     catch { processedBuffer = imgBuffer; }
 
-    let worker: any = await createWorker('eng');
+    let worker: any = await acquireOcrWorker();
     try {
       const { data }: any = await withOcrTimeout(worker.recognize(processedBuffer));
-      await worker.terminate();
+      await releaseOcrWorker(worker);
       worker = null;
       let ocrText = (data.text || '').trim();
 
@@ -1152,14 +1229,14 @@ async function verifyReturnWindowWithOcr(
             .linear(1.6, -40)
             .sharpen({ sigma: 2 })
             .toBuffer();
-          hcWorker = await createWorker('eng');
+          hcWorker = await acquireOcrWorker();
           const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-          await hcWorker.terminate();
+          await releaseOcrWorker(hcWorker);
           hcWorker = null;
           const hcText = (hcResult.data.text || '').trim();
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
-          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
+          if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
         }
       }
 
@@ -1174,9 +1251,10 @@ async function verifyReturnWindowWithOcr(
     const ocrNorm = ocrText.replace(/[\s\-]/g, '').toLowerCase();
     const orderIdMatch = ocrNorm.includes(orderIdNorm);
 
-    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3);
+    const PROOF_STOP_WORDS = new Set(['the','for','and','with','from','that','this','you','your','was','are','has','have','been','not','but','all','can','had','her','his','one','our','out','use','how','its','may','new','now','old','see','way','who','did','get','him','let','say','she','too','any','per','set','top','end','off','big','own','put','run','two','via','pro','free','pack','item','best','good','great','nice','mini','max','size','pair','home','made','full','high','low','day','box','buy','kit']);
+    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3 && !PROOF_STOP_WORDS.has(t));
     const matchedProd = productTokens.filter(t => lower.includes(t));
-    const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+    const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.4));
 
     const expectedAmt = expected.expectedAmount;
     const amountStr = String(expectedAmt);
@@ -1189,9 +1267,10 @@ async function verifyReturnWindowWithOcr(
       || ocrText.includes(expectedAmt.toFixed(2))
       || ocrText.includes(indianFormatted);
 
-    // ±2 tolerance (OCR may misread digits)
+    // Smart tolerance (OCR may misread digits)
+    const rwAmountTolerance = Math.max(2, expectedAmt >= 1000 ? Math.ceil(expectedAmt * 0.005) : 2);
     if (!amountMatch) {
-      for (let delta = -2; delta <= 2; delta++) {
+      for (let delta = -rwAmountTolerance; delta <= rwAmountTolerance; delta++) {
         if (delta === 0) continue;
         const nearby = expectedAmt + delta;
         if (nearby <= 0) continue;
@@ -1207,7 +1286,7 @@ async function verifyReturnWindowWithOcr(
       const amtRegex = /(?:₹|rs\.?|inr|r[s5$]\.?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
       for (const m of ocrText.matchAll(amtRegex)) {
         const val = Number(m[1].replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && Math.abs(val - expectedAmt) <= 2) {
+        if (Number.isFinite(val) && Math.abs(val - expectedAmt) <= rwAmountTolerance) {
           amountMatch = true;
           break;
         }
@@ -1219,7 +1298,7 @@ async function verifyReturnWindowWithOcr(
       const bareNums = ocrText.match(/\b\d[\d,\s]*(?:\.\d{1,2})?\b/g) || [];
       for (const raw of bareNums) {
         const val = Number(raw.replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmt) <= 2) {
+        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmt) <= rwAmountTolerance) {
           amountMatch = true;
           break;
         }
@@ -1236,7 +1315,11 @@ async function verifyReturnWindowWithOcr(
 
     let confidenceScore = 15;
     if (orderIdMatch) confidenceScore += 20;
-    if (productNameMatch) confidenceScore += 20;
+    // Graduated product confidence based on token match ratio
+    if (productNameMatch && productTokens.length > 0) {
+      const ratio = matchedProd.length / productTokens.length;
+      confidenceScore += Math.round(20 * ratio);
+    }
     if (amountMatch) confidenceScore += 15;
     if (soldByMatch) confidenceScore += 10;
     if (returnWindowClosed) confidenceScore += 10;
@@ -1252,7 +1335,7 @@ async function verifyReturnWindowWithOcr(
       ].filter(Boolean).join(' ') || 'OCR verification complete.',
     };
     } catch (workerErr) {
-      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+      if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
       throw workerErr;
     }
   } catch (err) {
@@ -2187,7 +2270,7 @@ export async function extractOrderDetailsWithAi(
           .jpeg({ quality: 95 })
           .toBuffer();
 
-        worker = await createWorker('eng');
+        worker = await acquireOcrWorker();
         // Try default PSM first (automatic), then PSM 6 (uniform block of text)
         const { data } = await worker.recognize(enhanced);
         let text = normalizeOcrText(data.text || '');
@@ -2225,8 +2308,8 @@ export async function extractOrderDetailsWithAi(
         console.warn('Tesseract OCR failed:', err);
         return '';
       } finally {
-        // Always terminate the worker to prevent resource leaks.
-        try { await worker?.terminate(); } catch { /* ignore cleanup errors */ }
+        // Return the worker to the pool instead of terminating.
+        try { await releaseOcrWorker(worker as any); } catch { /* ignore cleanup errors */ }
       }
     };
 

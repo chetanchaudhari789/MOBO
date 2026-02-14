@@ -21,6 +21,7 @@ const MAX_ITEM_QUANTITY = 10;
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 const loadPersistedCart = (): CartItem[] => {
+  if (typeof window === 'undefined') return [];
   try {
     const stored = localStorage.getItem(CART_STORAGE_KEY);
     if (!stored) return [];
@@ -32,6 +33,7 @@ const loadPersistedCart = (): CartItem[] => {
 };
 
 const persistCart = (items: CartItem[]) => {
+  if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
   } catch { /* storage full or restricted */ }

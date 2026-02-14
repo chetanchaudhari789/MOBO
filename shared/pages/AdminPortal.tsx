@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
@@ -54,6 +55,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { User, Order, Product, Invite, Ticket } from '../types';
+import { formatCurrency as formatCurrencyBase } from '../utils/formatCurrency';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 
 // --- TYPES & CONSTANTS ---
 type ViewMode =
@@ -215,9 +218,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [adminAiAnalysis, setAdminAiAnalysis] = useState<any>(null);
   const [adminIsAnalyzing, setAdminIsAnalyzing] = useState(false);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount);
-  };
+  // Admin-specific: show up to 2 decimal places
+  const formatCurrency = (amount: number) => formatCurrencyBase(amount, { maximumFractionDigits: 2 });
 
   const fetchOrderAudit = async (orderId: string) => {
     setOrderAuditLoading(true);
@@ -227,6 +229,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       setOrderAuditEvents(Array.isArray(resp?.events) ? resp.events : []);
     } catch (e) {
       console.error('Order audit fetch error:', e);
+      toast.error('Failed to load audit trail for this order.');
       setOrderAuditLogs([]);
       setOrderAuditEvents([]);
     } finally {
@@ -273,6 +276,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       if (cfg?.adminContactEmail) setConfigEmail(String(cfg.adminContactEmail));
     } catch (e) {
       console.error('Admin Config Fetch Error:', e);
+      toast.error('Failed to load system configuration.');
     }
   };
 
@@ -325,7 +329,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     api.admin
       .getAuditLogs(params)
       .then((data) => setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []))
-      .catch((e) => console.error('Audit Logs Fetch Error:', e))
+      .catch((e) => { console.error('Audit Logs Fetch Error:', e); toast.error('Failed to load audit logs.'); })
       .finally(() => setAuditLoading(false));
   }, [user, view, auditActionFilter, auditDateFrom, auditDateTo]);
 
@@ -335,7 +339,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     api.admin
       .getUsers('all')
       .then((u) => setUsers(u))
-      .catch((e) => console.error('Admin Users Fetch Error:', e));
+      .catch((e) => { console.error('Admin Users Fetch Error:', e); toast.error('Failed to refresh users list.'); });
   }, [user, view]);
 
   useEffect(() => {
@@ -344,7 +348,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     api.admin
       .getInvites()
       .then((i) => setInvites(i))
-      .catch((e) => console.error('Admin Invites Fetch Error:', e));
+      .catch((e) => { console.error('Admin Invites Fetch Error:', e); toast.error('Failed to refresh invites.'); });
   }, [user, view]);
 
   useEffect(() => {
@@ -368,8 +372,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
       const [u, o, p, s, g, i, t] = results;
 
+      const failures: string[] = [];
+
       if (u.status === 'fulfilled') setUsers(u.value);
-      else console.error('Admin Users Fetch Error:', u.reason);
+      else { console.error('Admin Users Fetch Error:', u.reason); failures.push('users'); }
 
       if (o.status === 'fulfilled') {
         setOrders(o.value);
@@ -379,24 +385,29 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
           const updated = (o.value as Order[]).find((ord: Order) => ord.id === prev.id);
           return updated || null;
         });
-      } else console.error('Admin Financials Fetch Error:', o.reason);
+      } else { console.error('Admin Financials Fetch Error:', o.reason); failures.push('financials'); }
 
       if (p.status === 'fulfilled') setProducts(p.value);
-      else console.error('Admin Products Fetch Error:', p.reason);
+      else { console.error('Admin Products Fetch Error:', p.reason); failures.push('products'); }
 
       if (s.status === 'fulfilled') setStats(s.value);
-      else console.error('Admin Stats Fetch Error:', s.reason);
+      else { console.error('Admin Stats Fetch Error:', s.reason); failures.push('stats'); }
 
       if (g.status === 'fulfilled') setChartData(g.value);
-      else console.error('Admin Growth Fetch Error:', g.reason);
+      else { console.error('Admin Growth Fetch Error:', g.reason); failures.push('analytics'); }
 
       if (i.status === 'fulfilled') setInvites(i.value);
-      else console.error('Admin Invites Fetch Error:', i.reason);
+      else { console.error('Admin Invites Fetch Error:', i.reason); failures.push('invites'); }
 
       if (t.status === 'fulfilled') setTickets(t.value);
-      else console.error('Admin Tickets Fetch Error:', t.reason);
+      else { console.error('Admin Tickets Fetch Error:', t.reason); failures.push('tickets'); }
+
+      if (failures.length > 0) {
+        toast.error(`Failed to load: ${failures.join(', ')}. Some data may be stale.`);
+      }
     } catch (e) {
       console.error('Admin Data Fetch Error:', e);
+      toast.error('Failed to load admin data. Please refresh the page.');
     } finally {
       setIsLoading(false);
     }
@@ -572,33 +583,13 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       return;
     }
 
-    const getApiBase = () => {
-      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-      const fromNext =
-        typeof process !== 'undefined' &&
-        (process as any).env &&
-        (process as any).env.NEXT_PUBLIC_API_URL
-          ? String((process as any).env.NEXT_PUBLIC_API_URL)
-          : undefined;
-      let base = String(fromGlobal || fromNext || '/api').trim();
-      if (base.startsWith('/')) {
-        base = `${window.location.origin}${base}`;
-      }
-      return base.endsWith('/') ? base.slice(0, -1) : base;
-    };
-
-    const apiBase = getApiBase();
+    const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
 
     const headers = [
@@ -676,15 +667,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `buzzma_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`buzzma_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = (reportType: 'orders' | 'finance') => {
@@ -1872,7 +1855,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 <h3 className="font-extrabold text-lg text-slate-900">Order Proofs &amp; Audit</h3>
                 <p className="text-xs text-slate-500 font-mono mt-1">{proofModal.externalOrderId || proofModal.id}</p>
               </div>
-              <button type="button" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAdminAiAnalysis(null); }} className="p-2 rounded-lg hover:bg-slate-100">
+              <button type="button" aria-label="Close proof modal" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAdminAiAnalysis(null); }} className="p-2 rounded-lg hover:bg-slate-100">
                 <span className="text-slate-400 text-xl font-bold">&times;</span>
               </button>
             </div>

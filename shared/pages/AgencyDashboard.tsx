@@ -2,7 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
-import { getApiBaseUrl } from '../utils/apiBaseUrl';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
@@ -10,6 +10,10 @@ import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
+import { urlToBase64 } from '../utils/imageHelpers';
 import {
   LayoutDashboard,
   Users,
@@ -70,40 +74,7 @@ import {
   Bar,
 } from 'recharts';
 
-// --- HELPERS ---
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(val);
-
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || order.id || '').trim();
-
-const urlToBase64 = async (url: string): Promise<string> => {
-  try {
-    if (url.startsWith('data:')) return url;
-    const apiBase = getApiBaseUrl();
-    const allowed = apiBase.startsWith('http') ? new URL(apiBase).origin : window.location.origin;
-    const target = new URL(url, window.location.origin);
-    if (target.origin !== allowed && target.origin !== window.location.origin) {
-      console.warn('urlToBase64: blocked non-API origin', target.origin);
-      return '';
-    }
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (err) {
-    console.warn('urlToBase64 failed:', url, err);
-    return '';
-  }
-};
+// formatCurrency, getPrimaryOrderId, urlToBase64, csvSafe, downloadCsv imported from shared/utils
 
 // --- COMPONENTS ---
 
@@ -208,7 +179,8 @@ const AgencyProfile = ({ user }: any) => {
       });
       setIsEditing(false);
       toast.success('Profile updated');
-    } catch {
+    } catch (err) {
+      console.error('Failed to update profile:', err);
       toast.error('Failed to update profile.');
     } finally {
       setLoading(false);
@@ -479,7 +451,8 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       toast.success('Ledger updated');
       setEditingOrder(null);
       onRefresh();
-    } catch {
+    } catch (err) {
+      console.error('Ledger update failed:', err);
       toast.error('Update failed');
     } finally {
       setIsUpdating(false);
@@ -487,33 +460,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   };
 
   const handleExport = () => {
-    const getApiBase = () => {
-      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-      const fromNext =
-        typeof process !== 'undefined' &&
-        (process as any).env &&
-        (process as any).env.NEXT_PUBLIC_API_URL
-          ? String((process as any).env.NEXT_PUBLIC_API_URL)
-          : undefined;
-      let base = String(fromGlobal || fromNext || '/api').trim();
-      if (base.startsWith('/')) {
-        base = `${window.location.origin}${base}`;
-      }
-      return base.endsWith('/') ? base.slice(0, -1) : base;
-    };
-
-    const apiBase = getApiBase();
+    const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -592,15 +545,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `agency_orders_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`agency_orders_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = () => {
@@ -1014,7 +959,7 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2043,6 +1988,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-black text-slate-900">New Campaign</h3>
               <button
+                aria-label="Close new campaign modal"
                 onClick={() => setCreateModal(false)}
                 className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
               >
@@ -2206,6 +2152,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 </p>
               </div>
               <button
+                aria-label="Close distribution modal"
                 onClick={() => setAssignModal(null)}
                 className="p-2.5 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors shrink-0"
               >
@@ -2901,6 +2848,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 </div>
               </div>
               <button
+                aria-label="Close mediator details"
                 onClick={() => setSelectedMediator(null)}
                 className="p-2 hover:bg-white/10 rounded-full transition-colors"
               >
@@ -3111,6 +3059,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
           >
             <button
               type="button"
+              aria-label="Close proof modal"
               onClick={() => setProofOrder(null)}
               className="absolute top-4 right-4 p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
             >
@@ -3404,7 +3353,9 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                     const resp = await api.orders.getOrderAudit(proofOrder.id);
                     setOrderAuditLogs(resp?.logs ?? []);
                     setOrderAuditEvents(resp?.events ?? []);
-                  } catch {
+                  } catch (err) {
+                    console.error('Failed to load activity log:', err);
+                    toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
                     setOrderAuditEvents([]);
                   } finally {
@@ -3470,6 +3421,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
 
 export const AgencyDashboard: React.FC = () => {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   useRealtimeConnection();
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'team' | 'inventory' | 'finance' | 'payouts' | 'brands' | 'profile'
@@ -3518,7 +3470,8 @@ export const AgencyDashboard: React.FC = () => {
         activeCampaigns: activeCount,
       });
     } catch (e) {
-      console.error(e);
+      console.error('Dashboard data fetch failed', e);
+      toast.error('Failed to load dashboard data');
     } finally {
       setIsDataLoading(false);
     }
