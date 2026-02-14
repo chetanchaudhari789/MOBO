@@ -11,9 +11,30 @@ export const ZoomableImage: React.FC<{
   className?: string;
 }> = ({ src, alt, className }) => {
   const [zoomed, setZoomed] = useState(false);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setZoomed(true);
+    }
+  };
+
+  const handleZoomedKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setZoomed(false);
+    }
+  };
+
   return (
     <>
-      <div className="relative group cursor-pointer" onClick={() => setZoomed(true)}>
+      <div
+        className="relative group cursor-pointer"
+        onClick={() => setZoomed(true)}
+        onKeyDown={handleKeyDown}
+        tabIndex={0}
+        role="button"
+        aria-label="Click to zoom image"
+      >
         <img
           src={src}
           alt={alt}
@@ -32,11 +53,19 @@ export const ZoomableImage: React.FC<{
         <div
           className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in"
           onClick={() => setZoomed(false)}
+          onKeyDown={handleZoomedKeyDown}
+          tabIndex={0}
+          role="dialog"
+          aria-label="Zoomed image view"
         >
           <img src={src} alt={alt} className="max-w-full max-h-full object-contain" />
           <button
-            onClick={() => setZoomed(false)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomed(false);
+            }}
             className="absolute top-4 right-4 p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"
+            aria-label="Close zoomed view"
           >
             <X size={20} className="text-white" />
           </button>

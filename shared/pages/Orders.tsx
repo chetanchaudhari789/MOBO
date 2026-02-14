@@ -26,9 +26,7 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Download,
-  Eye,
   Info,
-  ZoomIn,
 } from 'lucide-react';
 
 /* ─── Sample Screenshot Guide ───────────────────────────────────────── */
