@@ -9,6 +9,7 @@ import {
   generateChatUiResponse,
   isGeminiConfigured,
   verifyProofWithAi,
+  verifyRatingScreenshotWithAi,
 } from '../services/aiService.js';
 import { DealModel } from '../models/Deal.js';
 import { toUiDeal } from '../utils/uiMappers.js';
@@ -51,6 +52,12 @@ export function aiRoutes(env: Env): Router {
 
   const extractOrderSchema = z.object({
     imageBase64: z.string().min(1).max(env.AI_MAX_IMAGE_CHARS),
+  });
+
+  const verifyRatingSchema = z.object({
+    imageBase64: z.string().min(1).max(env.AI_MAX_IMAGE_CHARS),
+    expectedBuyerName: z.string().min(1).max(200),
+    expectedProductName: z.string().min(1).max(500),
   });
 
   // Optional auth so the UI can call AI routes without sending a token,
@@ -545,6 +552,53 @@ export function aiRoutes(env: Env): Router {
           detectedOrderId: result.detectedOrderId,
           detectedAmount: result.detectedAmount,
           discrepancyNote: result.discrepancyNote,
+        },
+      });
+
+      res.json(result);
+    } catch (err) {
+      if (!sendKnownError(err, res)) next(err);
+    }
+  });
+
+  // Client-side rating screenshot pre-validation: buyer sees match/mismatch before submitting
+  router.post('/verify-rating', requireAuth(env), limiterVerifyProof, async (req, res, next) => {
+    try {
+      if (!ensureAiEnabled(res)) return;
+      const payload = verifyRatingSchema.parse(req.body);
+
+      if (!enforceDailyLimit(req, res)) return;
+      if (!enforceMinInterval(req, res)) return;
+
+      // E2E deterministic bypass
+      if (env.SEED_E2E) {
+        res.json({
+          accountNameMatch: true,
+          productNameMatch: true,
+          confidenceScore: 95,
+          detectedAccountName: payload.expectedBuyerName,
+          detectedProductName: payload.expectedProductName,
+          discrepancyNote: 'E2E mode: AI verification bypassed.',
+        });
+        return;
+      }
+
+      const result = await verifyRatingScreenshotWithAi(env, {
+        imageBase64: payload.imageBase64,
+        expectedBuyerName: payload.expectedBuyerName,
+        expectedProductName: payload.expectedProductName,
+      });
+
+      writeAuditLog({
+        req,
+        action: 'ai.verify_rating_preview',
+        entityType: 'rating_verification',
+        metadata: {
+          accountNameMatch: result.accountNameMatch,
+          productNameMatch: result.productNameMatch,
+          confidenceScore: result.confidenceScore,
+          detectedAccountName: result.detectedAccountName,
+          detectedProductName: result.detectedProductName,
         },
       });
 

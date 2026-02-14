@@ -443,6 +443,15 @@ export const api = {
         body: JSON.stringify({ imageBase64: rawBase64 }),
       });
     },
+    /** Pre-validate rating screenshot: checks account name + product name match */
+    verifyRating: async (file: File, expectedBuyerName: string, expectedProductName: string) => {
+      const rawBase64 = await readFileAsDataUrl(file);
+      return fetchJson('/ai/verify-rating', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ imageBase64: rawBase64, expectedBuyerName, expectedProductName }),
+      });
+    },
   },
   chat: {
     /** [FIX] Updated signature to 7 arguments to match call in Chatbot.tsx */
