@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
+import { csvSafe } from '../utils/csvSafe';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
 import { DesktopShell } from '../components/DesktopShell';
@@ -592,12 +593,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
 
     const headers = [

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
+import { csvSafe } from '../utils/csvSafe';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
@@ -480,12 +481,6 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-     const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
