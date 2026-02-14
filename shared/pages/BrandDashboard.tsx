@@ -684,7 +684,8 @@ const OrdersView = ({ user }: any) => {
     // Sanitize user-controlled values: neutralize spreadsheet formula injection
     const csvSafe = (val: string) => {
       let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      // Guard against leading whitespace followed by formula-introducing characters
+      if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
       return csvEscape(s);
     };
     const hyperlinkYes = (url?: string) =>

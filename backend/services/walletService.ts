@@ -63,7 +63,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     })
       .read('primary')
       .session(session);
-    if (existingTx) return existingTx;
+    if (existingTx) return { transaction: existingTx, isNew: false };
 
     const wallet = await WalletModel.findOneAndUpdate(
       { ownerUserId: input.ownerUserId, deletedAt: null },
@@ -79,9 +79,13 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       { upsert: true, new: true, session }
     );
 
+    if (!wallet) {
+      throw new AppError(500, 'WALLET_UPSERT_FAILED', 'Failed to create or update wallet');
+    }
+
     // Safety: prevent runaway balances (configurable; default 1 crore paise = ₹1,00,000).
     const MAX_BALANCE_PAISE = Number(process.env.WALLET_MAX_BALANCE_PAISE) || 1_00_00_000;
-    if (wallet && wallet.availablePaise > MAX_BALANCE_PAISE) {
+    if (wallet.availablePaise > MAX_BALANCE_PAISE) {
       throw new AppError(409, 'BALANCE_LIMIT_EXCEEDED', 'Wallet balance limit exceeded');
     }
 
@@ -93,7 +97,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
           status: 'completed',
           amountPaise: input.amountPaise,
           currency: 'INR',
-          walletId: wallet?._id,
+          walletId: wallet._id,
           fromUserId: input.fromUserId,
           toUserId: input.toUserId,
           orderId: input.orderId,
@@ -105,21 +109,49 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       { session }
     );
 
-    return tx[0];
+    return { transaction: tx[0], isNew: true, walletId: wallet._id };
   };
 
   // If the caller provides an external session, run within it (no new session/transaction).
   if (externalSession) {
     const result = await execute(externalSession);
-    writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    return result;
+    // Only log on new transaction creation, not idempotent replays
+    if (result.isNew) {
+      await writeAuditLog({
+        action: 'WALLET_CREDIT',
+        entityType: 'Wallet',
+        entityId: String(result.walletId),
+        metadata: {
+          amountPaise: input.amountPaise,
+          type: input.type,
+          idempotencyKey: input.idempotencyKey,
+          walletId: String(result.walletId),
+          transactionId: String(result.transaction._id),
+        },
+      });
+    }
+    return result.transaction;
   }
 
   const session = await mongoose.startSession();
   try {
     const result = await session.withTransaction(() => execute(session));
-    writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    return result;
+    // Only log on new transaction creation, not idempotent replays
+    if (result.isNew) {
+      await writeAuditLog({
+        action: 'WALLET_CREDIT',
+        entityType: 'Wallet',
+        entityId: String(result.walletId),
+        metadata: {
+          amountPaise: input.amountPaise,
+          type: input.type,
+          idempotencyKey: input.idempotencyKey,
+          walletId: String(result.walletId),
+          transactionId: String(result.transaction._id),
+        },
+      });
+    }
+    return result.transaction;
   } finally {
     session.endSession();
   }
@@ -140,7 +172,7 @@ export async function applyWalletDebit(input: WalletMutationInput) {
     })
       .read('primary')
       .session(session);
-    if (existingTx) return existingTx;
+    if (existingTx) return { transaction: existingTx, isNew: false };
 
     // Use findOneAndUpdate with optimistic locking (version check)
     const wallet = await WalletModel.findOneAndUpdate(
@@ -187,21 +219,49 @@ export async function applyWalletDebit(input: WalletMutationInput) {
       { session }
     );
 
-    return tx[0];
+    return { transaction: tx[0], isNew: true, walletId: wallet._id };
   };
 
   // If the caller provides an external session, run within it (no new session/transaction).
   if (externalSession) {
     const result = await execute(externalSession);
-    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    return result;
+    // Only log on new transaction creation, not idempotent replays
+    if (result.isNew) {
+      await writeAuditLog({
+        action: 'WALLET_DEBIT',
+        entityType: 'Wallet',
+        entityId: String(result.walletId),
+        metadata: {
+          amountPaise: input.amountPaise,
+          type: input.type,
+          idempotencyKey: input.idempotencyKey,
+          walletId: String(result.walletId),
+          transactionId: String(result.transaction._id),
+        },
+      });
+    }
+    return result.transaction;
   }
 
   const session = await mongoose.startSession();
   try {
     const result = await session.withTransaction(() => execute(session));
-    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    return result;
+    // Only log on new transaction creation, not idempotent replays
+    if (result.isNew) {
+      await writeAuditLog({
+        action: 'WALLET_DEBIT',
+        entityType: 'Wallet',
+        entityId: String(result.walletId),
+        metadata: {
+          amountPaise: input.amountPaise,
+          type: input.type,
+          idempotencyKey: input.idempotencyKey,
+          walletId: String(result.walletId),
+          transactionId: String(result.transaction._id),
+        },
+      });
+    }
+    return result.transaction;
   } finally {
     session.endSession();
   }

@@ -130,8 +130,18 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     orders: Order[];
     tickets: Ticket[];
     fetchedAt: number;
+    userId: string | null;
+    mediatorCode: string | undefined;
   } | null>(null);
   const CONTEXT_CACHE_TTL = 60_000; // 1 minute
+
+  // Invalidate context cache when user/mediator changes to prevent data leaks
+  useEffect(() => {
+    const cache = contextCacheRef.current;
+    if (cache && (cache.userId !== (user?.id ?? null) || cache.mediatorCode !== user?.mediatorCode)) {
+      contextCacheRef.current = null;
+    }
+  }, [user?.id, user?.mediatorCode]);
 
   // Track navigation timer for cleanup on unmount
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -387,6 +397,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           orders: userOrders,
           tickets: allTickets,
           fetchedAt: now,
+          userId: user?.id ?? null,
+          mediatorCode: user?.mediatorCode,
         };
       }
       const userTickets = user?.id
@@ -450,6 +462,10 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         response.intent === 'navigation' &&
         VALID_NAV_TARGETS.includes(response.navigateTo as AiNavigateTo)
       ) {
+        // Clear any previously scheduled navigation to prevent stale navigations
+        if (navTimerRef.current) {
+          clearTimeout(navTimerRef.current);
+        }
         // Use ref-tracked timeout so it's cancelled if component unmounts
         const navTimer = setTimeout(() => {
           onNavigate?.(response.navigateTo as AiNavigateTo);
