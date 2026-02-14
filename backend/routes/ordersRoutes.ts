@@ -62,10 +62,34 @@ export function ordersRoutes(env: Env): Router {
 
       // Non-privileged users (buyers) may only view audit for their own orders
       if (!privileged) {
-        const order = await OrderModel.findById(orderId).select('userId').lean();
+        const order = await OrderModel.findById(orderId).select('userId events').lean();
         if (!order || String(order.userId) !== userId) {
           return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Insufficient role for audit access' } });
         }
+
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+        const skip = (page - 1) * limit;
+
+        // Fetch AuditLog entries for this order
+        const logs = await AuditLogModel.find({
+          entityType: 'Order',
+          entityId: orderId,
+        })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
+
+        // Sanitize order.events for buyer: strip actorUserId and return only safe fields
+        const rawEvents = Array.isArray((order as any)?.events) ? (order as any).events : [];
+        const events = rawEvents.map((event: any) => ({
+          type: event?.type,
+          at: event?.at,
+          metadata: event?.metadata,
+        }));
+
+        return res.json({ logs, events, page, limit });
       }
 
       const page = Math.max(1, Number(req.query.page) || 1);
@@ -82,7 +106,7 @@ export function ordersRoutes(env: Env): Router {
         .limit(limit)
         .lean();
 
-      // Also return inline order.events for a combined timeline
+      // Also return inline order.events for a combined timeline (privileged access gets full events)
       const orderDoc = await OrderModel.findById(orderId).select('events').lean();
       const events = Array.isArray((orderDoc as any)?.events) ? (orderDoc as any).events : [];
 

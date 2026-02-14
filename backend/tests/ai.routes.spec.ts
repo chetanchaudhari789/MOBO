@@ -130,4 +130,59 @@ describe('ai routes', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('confidenceScore');
   });
+
+  it('validates verify-rating payload including expectedReviewerName', async () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
+      GEMINI_API_KEY: '',
+    });
+
+    await connectMongo(env);
+    await seedE2E();
+    const app = createApp(env);
+    const token = await loginShopper(app);
+
+    const TINY_PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ' +
+      'AAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
+    // Valid request with expectedReviewerName
+    const validReq = await request(app)
+      .post('/api/ai/verify-rating')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'John Doe',
+        expectedProductName: 'Test Product',
+        expectedReviewerName: 'JohnD123',
+      });
+    // Will succeed (200) or fail due to AI not configured (503), but should not be 400
+    expect([200, 503]).toContain(validReq.status);
+
+    // Reject expectedReviewerName > 200 chars
+    const tooLongName = 'x'.repeat(201);
+    const tooLongReq = await request(app)
+      .post('/api/ai/verify-rating')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'John Doe',
+        expectedProductName: 'Test Product',
+        expectedReviewerName: tooLongName,
+      });
+    expect(tooLongReq.status).toBe(400);
+    expect(tooLongReq.body?.error?.code).toBe('BAD_REQUEST');
+
+    // Accept request without expectedReviewerName (backward compatibility)
+    const noReviewerNameReq = await request(app)
+      .post('/api/ai/verify-rating')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'John Doe',
+        expectedProductName: 'Test Product',
+      });
+    expect([200, 503]).toContain(noReviewerNameReq.status);
+  });
 });

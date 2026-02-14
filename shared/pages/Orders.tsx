@@ -438,7 +438,7 @@ export const Orders: React.FC = () => {
       const buyerName = user.name || '';
       const productName = selectedOrder.items?.[0]?.title || '';
       // Use marketplace profile name if available for better matching
-      const reviewerName = reviewerNameInput.trim() || (selectedOrder as any).reviewerName || '';
+      const reviewerName = reviewerNameInput.trim() || selectedOrder.reviewerName || '';
 
       if (buyerName && productName) {
         const result = await api.orders.verifyRating(file, buyerName, productName, reviewerName || undefined);
@@ -645,17 +645,24 @@ export const Orders: React.FC = () => {
             title="Download as CSV"
             onClick={() => {
               if (!orders.length) { toast.error('No orders to export'); return; }
+              // Sanitize user-controlled values: neutralize spreadsheet formula injection
+              const csvSafe = (val: string) => {
+                let s = String(val ?? '');
+                if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
+                return `"${s.replace(/"/g, '""')}"`;
+              };
+              const csvEscape = (val: string) => `"${String(val).replace(/"/g, '""')}"`;
               const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];
               const csvRows = orders.map(o => [
-                getPrimaryOrderId(o),
-                o.items[0]?.title || '',
-                String(o.total || 0),
-                o.items[0]?.dealType || '',
-                o.affiliateStatus || o.workflowStatus || '',
-                o.paymentStatus || '',
-                o.reviewerName || '',
-                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+                csvEscape(getPrimaryOrderId(o)),
+                csvSafe(o.items[0]?.title || ''),
+                csvEscape(String(o.total || 0)),
+                csvEscape(o.items[0]?.dealType || ''),
+                csvEscape(o.affiliateStatus || o.workflowStatus || ''),
+                csvEscape(o.paymentStatus || ''),
+                csvSafe(o.reviewerName || ''),
+                csvEscape(o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''),
+              ].join(','));
               const csv = [h.join(','), ...csvRows].join('\n');
               const blob = new Blob([csv], { type: 'text/csv' });
               const url = URL.createObjectURL(blob);
