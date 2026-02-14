@@ -232,7 +232,7 @@ export function googleRoutes(env: Env): Router {
         $unset: { googleRefreshToken: 1, googleEmail: 1 },
       });
 
-      writeAuditLog({
+      await writeAuditLog({
         req,
         action: 'GOOGLE_OAUTH_DISCONNECTED',
         entityType: 'User',

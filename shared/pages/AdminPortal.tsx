@@ -434,7 +434,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const resolveTicket = async (id: string, status: 'Resolved' | 'Rejected') => {
     try {
       await api.tickets.update(id, status);
-      setTickets(tickets.map((t) => (t.id === id ? { ...t, status } : t)));
+      setTickets(prev => prev.map((t) => (t.id === id ? { ...t, status } : t)));
       toast.success(`Ticket ${status.toLowerCase()} successfully`);
     } catch (e: any) {
       toast.error(String(e?.message || `Failed to ${status.toLowerCase()} ticket`));
@@ -1494,7 +1494,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     </thead>
                     <tbody className="divide-y divide-slate-50 text-sm font-medium">
                       {filteredOrders.length > 200 && (
-                        <tr><td colSpan={5} className="p-3 text-center text-xs text-amber-600 bg-amber-50 font-semibold">
+                        <tr><td colSpan={6} className="p-3 text-center text-xs text-amber-600 bg-amber-50 font-semibold">
                           Showing 200 of {filteredOrders.length} orders. Use filters to narrow results.
                         </td></tr>
                       )}
