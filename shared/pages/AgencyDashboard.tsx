@@ -2,11 +2,13 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { getApiBaseUrl } from '../utils/apiBaseUrl';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutDashboard,
@@ -53,6 +55,8 @@ import {
   Package,
   FileSpreadsheet,
   History,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -76,6 +80,30 @@ const formatCurrency = (val: number) =>
 
 const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || order.id || '').trim();
+
+const urlToBase64 = async (url: string): Promise<string> => {
+  try {
+    if (url.startsWith('data:')) return url;
+    const apiBase = getApiBaseUrl();
+    const allowed = apiBase.startsWith('http') ? new URL(apiBase).origin : window.location.origin;
+    const target = new URL(url, window.location.origin);
+    if (target.origin !== allowed && target.origin !== window.location.origin) {
+      console.warn('urlToBase64: blocked non-API origin', target.origin);
+      return '';
+    }
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.warn('urlToBase64 failed:', url, err);
+    return '';
+  }
+};
 
 // --- COMPONENTS ---
 
@@ -2532,6 +2560,39 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
   const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
+  // AI Analysis state
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const lastAnalyzedOrderRef = useRef<string | null>(null);
+
+  const runAgencyAnalysis = async (order: Order) => {
+    if (!order.screenshots?.order) return;
+    setIsAnalyzing(true);
+    setAiAnalysis(null);
+    try {
+      const imageBase64 = await urlToBase64(order.screenshots.order);
+      const result = await api.ops.analyzeProof(
+        order.id,
+        imageBase64,
+        order.externalOrderId || '',
+        order.total
+      );
+      setAiAnalysis(result);
+    } catch (e) {
+      console.error(e);
+      toast.error('Analysis failed. Try again.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Auto-trigger AI analysis when proof modal opens
+  useEffect(() => {
+    if (proofOrder && proofOrder.screenshots?.order && proofOrder.id !== lastAnalyzedOrderRef.current) {
+      lastAnalyzedOrderRef.current = proofOrder.id;
+      runAgencyAnalysis(proofOrder);
+    }
+  }, [proofOrder]);
 
   // Keep proof modal in sync when allOrders updates from real-time
   useEffect(() => {
@@ -3102,13 +3163,81 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   <FileText size={14} /> Purchase Proof
                 </div>
                 {proofOrder.screenshots?.order ? (
-                  <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
-                    <img
-                      src={proofOrder.screenshots.order}
-                      alt="Order Proof"
-                      className="w-full h-auto block"
-                    />
-                  </div>
+                  <>
+                    <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
+                      <ZoomableImage
+                        src={proofOrder.screenshots.order}
+                        alt="Order Proof"
+                        className="w-full h-auto block"
+                      />
+                    </div>
+                    {/* AI Analysis Section */}
+                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mt-3 relative overflow-hidden">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="font-bold text-indigo-600 flex items-center gap-2 text-xs uppercase tracking-widest">
+                          <Sparkles size={14} className="text-indigo-500" /> AI Assistant
+                        </h4>
+                        {!aiAnalysis && !isAnalyzing && (
+                          <button
+                            type="button"
+                            onClick={() => runAgencyAnalysis(proofOrder)}
+                            className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow active:scale-95"
+                          >
+                            Re-Analyze
+                          </button>
+                        )}
+                      </div>
+                      {isAnalyzing && (
+                        <div className="flex flex-col items-center justify-center py-4">
+                          <Loader2 className="animate-spin text-indigo-500 mb-2" size={24} />
+                          <p className="text-xs font-bold text-indigo-400 animate-pulse">Analyzing Screenshot...</p>
+                        </div>
+                      )}
+                      {aiAnalysis && (
+                        <div className="space-y-3 animate-fade-in">
+                          {(() => {
+                            const n = Number(aiAnalysis.confidenceScore);
+                            const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
+                            return (
+                              <>
+                                <div className="flex gap-2">
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>Order ID</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {(aiAnalysis as any).detectedOrderId && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono break-all">Detected: {(aiAnalysis as any).detectedOrderId}</p>
+                                    )}
+                                  </div>
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>Amount</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {(aiAnalysis as any).detectedAmount != null && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono">Detected: ₹{(aiAnalysis as any).detectedAmount}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="bg-slate-100 p-2 rounded-lg">
+                                  <p className="text-[10px] text-slate-600 leading-relaxed">{aiAnalysis.discrepancyNote || 'Verified. Details match expected values.'}</p>
+                                </div>
+                                <div className="flex justify-between items-center pt-1">
+                                  <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence Score</span>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                        style={{ width: `${score}%` }}
+                                      ></div>
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-900">{score}%</span>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
                     <AlertCircle size={24} className="mx-auto text-red-400 mb-2" />
@@ -3128,7 +3257,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       <div className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-2 py-1 rounded-lg">
                         5 Stars
                       </div>
-                      <img
+                      <ZoomableImage
                         src={proofOrder.screenshots.rating}
                         alt="Rating Proof"
                         className="w-full h-auto block"
@@ -3204,7 +3333,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
-                    <img
+                    <ZoomableImage
                       src={(proofOrder.screenshots as any).returnWindow}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
@@ -3325,7 +3454,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             </div>
 
             <button
-              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); }}
+              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAiAnalysis(null); lastAnalyzedOrderRef.current = null; }}
               className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
             >
               Close Viewer
