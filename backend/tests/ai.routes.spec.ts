@@ -130,4 +130,60 @@ describe('ai routes', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('confidenceScore');
   });
+
+  it('validates verify-rating payload including expectedReviewerName', async () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
+      GEMINI_API_KEY: '',
+    });
+
+    await connectMongo(env);
+    await seedE2E();
+    const app = createApp(env);
+    const token = await loginShopper(app);
+
+    const TINY_PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ' +
+      'AAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
+    // Valid request with expectedReviewerName
+    const validRes = await request(app)
+      .post('/api/ai/verify-rating')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'Test Buyer',
+        expectedProductName: 'Test Product',
+        expectedReviewerName: 'Test Reviewer',
+      });
+    expect(validRes.status).toBe(200);
+    expect(validRes.body).toHaveProperty('buyerNameMatch');
+
+    // Valid request without expectedReviewerName (optional, backward compatible)
+    const noReviewerRes = await request(app)
+      .post('/api/ai/verify-rating')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'Test Buyer',
+        expectedProductName: 'Test Product',
+      });
+    expect(noReviewerRes.status).toBe(200);
+    expect(noReviewerRes.body).toHaveProperty('buyerNameMatch');
+
+    // Invalid: expectedReviewerName exceeds 200 chars
+    const tooLongReviewer = 'x'.repeat(201);
+    const tooLongRes = await request(app)
+      .post('/api/ai/verify-rating')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'Test Buyer',
+        expectedProductName: 'Test Product',
+        expectedReviewerName: tooLongReviewer,
+      });
+    expect(tooLongRes.status).toBe(400);
+    expect(tooLongRes.body?.error?.code).toBe('BAD_REQUEST');
+  });
 });
