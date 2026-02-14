@@ -72,6 +72,8 @@ export async function connectGoogleAccount(): Promise<boolean> {
 
       const handleMessage = (event: MessageEvent) => {
         // Validate message origin and source to prevent spoofing
+        // The OAuth callback redirects to our backend, which serves a page at our origin
+        // that posts this message, so we validate against our own origin
         if (event.source !== popup) return;
         if (event.origin !== window.location.origin) return;
 

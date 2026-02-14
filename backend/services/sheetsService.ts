@@ -377,9 +377,9 @@ export async function exportToGoogleSheet(
   if (isServiceAccount) {
     if (!sharingEmail) {
       throw new Error(
-        'GOOGLE_SHEETS_SHARING_EMAIL_REQUIRED: When exporting via the service account, ' +
-        'a sharingEmail must be provided so the spreadsheet can be shared with a specific user. ' +
-        'Please supply a sharingEmail or connect a Google account to export directly to the user\'s Drive.'
+        'GOOGLE_SHEETS_SHARING_EMAIL_REQUIRED: The user account does not have an email address on file. ' +
+        'When using the service account fallback, a user email is required to share the spreadsheet securely. ' +
+        'The user should either connect their Google account for direct export, or ensure their profile has a valid email address.'
       );
     }
 
