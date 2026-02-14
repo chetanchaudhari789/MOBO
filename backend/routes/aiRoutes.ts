@@ -589,7 +589,7 @@ export function aiRoutes(env: Env): Router {
         expectedProductName: payload.expectedProductName,
       });
 
-      writeAuditLog({
+      await writeAuditLog({
         req,
         action: 'ai.verify_rating_preview',
         entityType: 'rating_verification',
