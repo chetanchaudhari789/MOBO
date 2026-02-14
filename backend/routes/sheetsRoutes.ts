@@ -100,6 +100,15 @@ export function sheetsRoutes(env: Env): Router {
           },
         });
       }
+      // Handle missing email for service account sharing
+      if (err?.message?.includes('GOOGLE_SHEETS_SHARING_EMAIL_REQUIRED')) {
+        return res.status(400).json({
+          error: {
+            code: 'SHARING_EMAIL_REQUIRED',
+            message: 'Your account does not have an email address on file. Please add an email to your profile or connect your Google account to export spreadsheets.',
+          },
+        });
+      }
       next(err);
     }
   });
