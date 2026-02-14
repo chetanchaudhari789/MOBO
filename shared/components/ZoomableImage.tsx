@@ -33,7 +33,7 @@ export const ZoomableImage: React.FC<{
         onKeyDown={handleKeyDown}
         tabIndex={0}
         role="button"
-        aria-label="Click to zoom image"
+        aria-label="View full size image"
       >
         <img
           src={src}
@@ -54,7 +54,6 @@ export const ZoomableImage: React.FC<{
           className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in"
           onClick={() => setZoomed(false)}
           onKeyDown={handleZoomedKeyDown}
-          tabIndex={0}
           role="dialog"
           aria-label="Zoomed image view"
         >
