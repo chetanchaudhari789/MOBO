@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { csvSafe } from '../utils/csvSafe';
 import {
   LogOut,
   Building2,
@@ -709,12 +710,6 @@ const OrdersView = ({ user }: any) => {
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -771,7 +766,7 @@ const OrdersView = ({ user }: any) => {
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
@@ -825,7 +820,7 @@ const OrdersView = ({ user }: any) => {
         o.managerName || '',
         o.buyerName || '',
         o.buyerMobile || '',
-        (o as any).reviewerName || '',
+        o.reviewerName ?? '',
         o.status,
         o.paymentStatus,
         o.affiliateStatus || '',
@@ -2096,13 +2091,6 @@ export const BrandDashboard: React.FC = () => {
   };
 
   const handleExportPayouts = () => {
-    // CSV formula injection guard: prefix dangerous chars with a single-quote
-    const csvSafe = (v: unknown): string => {
-      const s = String(v ?? '').replace(/"/g, '""');
-      if (/^[=+\-@\t\r]/.test(s)) return `"'${s}"`;
-      return `"${s}"`;
-    };
-
     const headers = [
       'Transaction ID',
       'Date',
@@ -2121,13 +2109,13 @@ export const BrandDashboard: React.FC = () => {
       const time = dateObj.toLocaleTimeString();
 
       const row = [
-        csvSafe(tx.id),
-        csvSafe(date),
-        csvSafe(time),
-        csvSafe(tx.agencyName || ''),
-        tx.amount,
-        csvSafe(tx.ref || ''),
-        csvSafe(tx.status),
+        `"${csvSafe(tx.id)}"`,
+        `"${csvSafe(date)}"`,
+        `"${csvSafe(time)}"`,
+        `"${csvSafe(tx.agencyName || '')}"`,
+        `"${csvSafe(tx.amount)}"`,
+        `"${csvSafe(tx.ref || '')}"`,
+        `"${csvSafe(tx.status)}"`,
       ];
       csvRows.push(row.join(','));
     });

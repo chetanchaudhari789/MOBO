@@ -130,4 +130,63 @@ describe('ai routes', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('confidenceScore');
   });
+
+  it('validates verify-rating payload and accepts optional expectedReviewerName', async () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
+      GEMINI_API_KEY: '',
+    });
+
+    await connectMongo(env);
+    await seedE2E();
+    const app = createApp(env);
+
+    const TINY_PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ' +
+      'AAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
+    // Test 1: Missing required fields should return 400
+    const missingFields = await request(app)
+      .post('/api/ai/verify-rating')
+      .send({ imageBase64: TINY_PNG });
+    expect(missingFields.status).toBe(400);
+    expect(missingFields.body?.error?.code).toBe('BAD_REQUEST');
+
+    // Test 2: Valid payload without expectedReviewerName (backward compatibility)
+    const withoutReviewerName = await request(app)
+      .post('/api/ai/verify-rating')
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'John Doe',
+        expectedProductName: 'Test Product',
+      });
+    // Should accept the request (may return 503 if Gemini not configured, but not 400)
+    expect(withoutReviewerName.status).not.toBe(400);
+
+    // Test 3: Valid payload with expectedReviewerName
+    const withReviewerName = await request(app)
+      .post('/api/ai/verify-rating')
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'John Doe',
+        expectedProductName: 'Test Product',
+        expectedReviewerName: 'JohnDoe123',
+      });
+    // Should accept the request
+    expect(withReviewerName.status).not.toBe(400);
+
+    // Test 4: expectedReviewerName exceeding max length (>200 chars)
+    const tooLongReviewerName = 'x'.repeat(201);
+    const exceedsMaxLength = await request(app)
+      .post('/api/ai/verify-rating')
+      .send({
+        imageBase64: TINY_PNG,
+        expectedBuyerName: 'John Doe',
+        expectedProductName: 'Test Product',
+        expectedReviewerName: tooLongReviewerName,
+      });
+    expect(exceedsMaxLength.status).toBe(400);
+    expect(exceedsMaxLength.body?.error?.code).toBe('BAD_REQUEST');
+  });
 });

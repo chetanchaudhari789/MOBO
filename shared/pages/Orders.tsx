@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
+import { csvSafeQuoted } from '../utils/csvSafe';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import {
@@ -438,7 +439,7 @@ export const Orders: React.FC = () => {
       const buyerName = user.name || '';
       const productName = selectedOrder.items?.[0]?.title || '';
       // Use marketplace profile name if available for better matching
-      const reviewerName = reviewerNameInput.trim() || (selectedOrder as any).reviewerName || '';
+      const reviewerName = reviewerNameInput.trim() || selectedOrder?.reviewerName || '';
 
       if (buyerName && productName) {
         const result = await api.orders.verifyRating(file, buyerName, productName, reviewerName || undefined);
@@ -647,15 +648,15 @@ export const Orders: React.FC = () => {
               if (!orders.length) { toast.error('No orders to export'); return; }
               const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];
               const csvRows = orders.map(o => [
-                getPrimaryOrderId(o),
-                o.items[0]?.title || '',
-                String(o.total || 0),
-                o.items[0]?.dealType || '',
-                o.affiliateStatus || o.workflowStatus || '',
-                o.paymentStatus || '',
-                o.reviewerName || '',
-                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+                csvSafeQuoted(getPrimaryOrderId(o)),
+                csvSafeQuoted(o.items[0]?.title || ''),
+                csvSafeQuoted(String(o.total || 0)),
+                csvSafeQuoted(o.items[0]?.dealType || ''),
+                csvSafeQuoted(o.affiliateStatus || o.workflowStatus || ''),
+                csvSafeQuoted(o.paymentStatus || ''),
+                csvSafeQuoted(o.reviewerName || ''),
+                csvSafeQuoted(o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''),
+              ].join(','));
               const csv = [h.join(','), ...csvRows].join('\n');
               const blob = new Blob([csv], { type: 'text/csv' });
               const url = URL.createObjectURL(blob);
