@@ -270,7 +270,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       .then((data) => setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []))
       .catch((e) => console.error('Audit Logs Fetch Error:', e))
       .finally(() => setAuditLoading(false));
-  }, [user, view, auditActionFilter, auditDateFrom, auditDateTo, auditLogs, setAuditLogs, setAuditLoading]);
+  }, [user, view, auditActionFilter, auditDateFrom, auditDateTo]);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
