@@ -1712,7 +1712,7 @@ export async function extractOrderDetailsWithAi(
         // ── Payment / transaction labels ──
         /^(payment\s*(method|mode|type|via)|paid\s*(via|using|by|with)|upi|credit\s*card|debit\s*card|net\s*banking|wallet|emi)/i,
         // ── Comma-separated category lists (not product names) ──
-        /^[A-Z][a-z]+(\s*,\s*[A-Z][a-z]+){3,}/,  // "Tablets, Earbuds, Watch, Blue" pattern
+        /^[A-Z][a-z]+(\s*,\s*[A-Z][a-z]+){3,}/,  // 4+ comma-separated capitalized words, e.g. "Tablets, Earbuds, Watch, Blue"
         // ── Indian address patterns ──
         /\b(maharashtra|karnataka|tamil\s*nadu|delhi|mumbai|bangalore|chennai|hyderabad|kolkata|pune|jaipur|lucknow|ahmedabad|india)\b/i,
         /\b\d{6}\b.*\b(india|in)\b/i,   // pincode followed by "India"
@@ -1786,7 +1786,7 @@ export async function extractOrderDetailsWithAi(
       candidates.sort((a, b) => b.score - a.score);
       // If top candidate looks like a generic category list, skip it
       const top = candidates[0].name;
-      if (/^[A-Z][a-z]+(,\s*[A-Z][a-z]+)+$/.test(top)) return candidates[1]?.name || null;
+      if (/^[A-Z][a-z]+(,\s*[A-Z][a-z]+){2,}$/.test(top)) return candidates[1]?.name || null;
       return top;
     };
 
@@ -2433,8 +2433,13 @@ export async function extractOrderDetailsWithAi(
         const newHasProductWord = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|gel|powder|serum|shampoo|charger|cable|cover|case|book|pack|ml|gm|kg)\b/i.test(candidateDeterministic.productName);
         const oldHasProductWord = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|gel|powder|serum|shampoo|charger|cable|cover|case|book|pack|ml|gm|kg)\b/i.test(accumulatedProductName);
         if (newHasProductWord && !oldHasProductWord) {
+          // Strongly prefer a name that clearly mentions a product type
+          accumulatedProductName = candidateDeterministic.productName;
+        } else if (newHasProductWord && oldHasProductWord && newLen > oldLen) {
+          // When both look like product titles, prefer the longer (usually more descriptive) one
           accumulatedProductName = candidateDeterministic.productName;
         } else if (newLen > oldLen * 1.5 && newLen >= 20) {
+          // As a fallback, if the new name is significantly longer, treat it as more descriptive
           accumulatedProductName = candidateDeterministic.productName;
         }
       }
@@ -2780,7 +2785,7 @@ export async function extractOrderDetailsWithAi(
       finalProductName = null;
     }
     if (finalProductName && /\b(maharashtra|karnataka|tamil\s*nadu|delhi|mumbai|bangalore|chennai|hyderabad|kolkata|pune|jaipur|lucknow|ahmedabad|india)\b/i.test(finalProductName)) {
-      const hasProductKeyword = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|powder|book)\b/i.test(finalProductName);
+      const hasProductKeyword = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|powder|gel|serum|shampoo|charger|cable|cover|case|pack|book|ml|gm|kg)\b/i.test(finalProductName);
       if (!hasProductKeyword) {
         notes.push('Product name looked like an address — rejected.');
         finalProductName = null;

@@ -106,6 +106,17 @@ export const Orders: React.FC = () => {
   const [orderListSearch, setOrderListSearch] = useState('');
   const [orderListStatus, setOrderListStatus] = useState<string>('All');
 
+  // Helper function to reset all form state to prevent screenshot/data leaking between orders
+  const resetFormState = () => {
+    setFormScreenshot(null);
+    setExtractedDetails({ orderId: '', amount: '' });
+    setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+    setOrderIdLocked(false);
+    setSelectedProduct(null);
+    setReviewLinkInput('');
+    setFormSearch('');
+  };
+
   const displayOrders = useMemo(() => {
     let result = orders;
     if (orderListStatus !== 'All') {
@@ -569,14 +580,7 @@ export const Orders: React.FC = () => {
             type="button"
             size="icon"
             onClick={() => {
-              // Reset all form state to prevent screenshot/data leaking between orders
-              setFormScreenshot(null);
-              setExtractedDetails({ orderId: '', amount: '' });
-              setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
-              setOrderIdLocked(false);
-              setSelectedProduct(null);
-              setReviewLinkInput('');
-              setFormSearch('');
+              resetFormState();
               setIsNewOrderModalOpen(true);
             }}
             aria-label="New order"
@@ -624,14 +628,7 @@ export const Orders: React.FC = () => {
             icon={<Package size={40} className="text-zinc-300" />}
             action={
               <Button type="button" variant="secondary" onClick={() => {
-                // Reset all form state to prevent screenshot/data leaking between orders
-                setFormScreenshot(null);
-                setExtractedDetails({ orderId: '', amount: '' });
-                setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
-                setOrderIdLocked(false);
-                setSelectedProduct(null);
-                setReviewLinkInput('');
-                setFormSearch('');
+                resetFormState();
                 setIsNewOrderModalOpen(true);
               }}>
                 Create Order
@@ -1111,13 +1108,7 @@ export const Orders: React.FC = () => {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
           onClick={() => {
             setIsNewOrderModalOpen(false);
-            setFormScreenshot(null);
-            setExtractedDetails({ orderId: '', amount: '' });
-            setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
-            setOrderIdLocked(false);
-            setSelectedProduct(null);
-            setReviewLinkInput('');
-            setFormSearch('');
+            resetFormState();
           }}
         >
           <div
@@ -1127,13 +1118,7 @@ export const Orders: React.FC = () => {
             <button
               onClick={() => {
                 setIsNewOrderModalOpen(false);
-                setFormScreenshot(null);
-                setExtractedDetails({ orderId: '', amount: '' });
-                setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
-                setOrderIdLocked(false);
-                setSelectedProduct(null);
-                setReviewLinkInput('');
-                setFormSearch('');
+                resetFormState();
               }}
               aria-label="Close"
               className="absolute top-6 right-6 p-2 bg-gray-50 rounded-full hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
