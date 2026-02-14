@@ -873,6 +873,7 @@ async function verifyRatingWithOcr(
   expectedBuyerName: string,
   expectedProductName: string,
 ): Promise<RatingVerificationResult> {
+  let worker: any = null;
   try {
     const rawData = imageBase64.includes(',') ? imageBase64.split(',')[1]! : imageBase64;
     const imgBuffer = Buffer.from(rawData, 'base64');
@@ -881,31 +882,25 @@ async function verifyRatingWithOcr(
       processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer();
     } catch { processedBuffer = imgBuffer; }
 
-    // Detect orientation for multi-crop
-    let isLandscape = false;
-    let isTablet = false;
-    try {
-      const meta = await sharp(imgBuffer).metadata();
-      const w = meta.width ?? 0;
-      const h = meta.height ?? 0;
-      const ratio = w / Math.max(h, 1);
-      isLandscape = ratio > 1;
-      isTablet = ratio > 0.65 && ratio < 1.55; // tablet-like aspect ratio
-    } catch { /* ignore */ }
+    // Compute image dimensions once for reuse
+    const meta = await sharp(imgBuffer).metadata();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+    const ratio = w / Math.max(h, 1);
+    const isLandscape = ratio > 1;
+    const isTablet = ratio > 0.65 && ratio < 1.55; // tablet-like aspect ratio
 
     const allTexts: string[] = [];
 
-    // Helper to run OCR on a buffer
+    // Create worker once and reuse for all OCR passes
+    worker = await createWorker('eng');
+
+    // Helper to run OCR on a buffer using the shared worker
     const ocrOnBuffer = async (buf: Buffer, label: string): Promise<string> => {
-      let worker: any = null;
       try {
-        worker = await createWorker('eng');
         const { data }: any = await withOcrTimeout(worker.recognize(buf));
-        await worker.terminate();
-        worker = null;
         return (data.text || '').trim();
       } catch {
-        if (worker) try { await worker.terminate(); } catch { /* ignore */ }
         return '';
       }
     };
@@ -929,41 +924,43 @@ async function verifyRatingWithOcr(
 
     // Pass 3: crop variants for multi-device screenshots
     const cropVariants: Array<{ label: string; left?: number; top?: number; width?: number; height?: number }> = [];
-    if (isLandscape) {
-      // Desktop: rating/review area is often center or right
-      cropVariants.push({ label: 'center-60', left: 0.2, width: 0.6 });
-      cropVariants.push({ label: 'right-50', left: 0.45, width: 0.55, top: 0.1, height: 0.7 });
-    } else if (isTablet) {
+    if (isTablet) {
       // Tablet: wider than phone, narrower than desktop
       cropVariants.push({ label: 'center-70', left: 0.15, width: 0.7, top: 0.1, height: 0.6 });
       cropVariants.push({ label: 'top-60', top: 0, height: 0.6 });
+    } else if (isLandscape) {
+      // Desktop: rating/review area is often center or right
+      cropVariants.push({ label: 'center-60', left: 0.2, width: 0.6 });
+      cropVariants.push({ label: 'right-50', left: 0.45, width: 0.55, top: 0.1, height: 0.7 });
     } else {
       // Phone portrait: vertically distributed
       cropVariants.push({ label: 'top-50', top: 0, height: 0.5 });
       cropVariants.push({ label: 'middle-50', top: 0.25, height: 0.5 });
     }
 
-    for (const crop of cropVariants) {
-      try {
-        const meta = await sharp(imgBuffer).metadata();
-        const w = meta.width ?? 0;
-        const h = meta.height ?? 0;
-        if (w < 50 || h < 50) continue;
-        const cropBuf = await sharp(imgBuffer)
-          .extract({
-            left: Math.round((crop.left ?? 0) * w),
-            top: Math.round((crop.top ?? 0) * h),
-            width: Math.min(Math.round((crop.width ?? 1) * w), w - Math.round((crop.left ?? 0) * w)),
-            height: Math.min(Math.round((crop.height ?? 1) * h), h - Math.round((crop.top ?? 0) * h)),
-          })
-          .greyscale()
-          .normalize()
-          .sharpen()
-          .toBuffer();
-        const cropText = await ocrOnBuffer(cropBuf, crop.label);
-        if (cropText && cropText.length > 20) allTexts.push(cropText);
-      } catch { /* ignore crop errors */ }
+    if (w >= 50 && h >= 50) {
+      for (const crop of cropVariants) {
+        try {
+          const cropBuf = await sharp(imgBuffer)
+            .extract({
+              left: Math.round((crop.left ?? 0) * w),
+              top: Math.round((crop.top ?? 0) * h),
+              width: Math.min(Math.round((crop.width ?? 1) * w), w - Math.round((crop.left ?? 0) * w)),
+              height: Math.min(Math.round((crop.height ?? 1) * h), h - Math.round((crop.top ?? 0) * h)),
+            })
+            .greyscale()
+            .normalize()
+            .sharpen()
+            .toBuffer();
+          const cropText = await ocrOnBuffer(cropBuf, crop.label);
+          if (cropText && cropText.length > 20) allTexts.push(cropText);
+        } catch { /* ignore crop errors */ }
+      }
     }
+
+    // Terminate worker once after all OCR passes
+    await worker.terminate();
+    worker = null;
 
     // Combine all OCR texts
     const ocrText = allTexts.sort((a, b) => b.length - a.length).join('\n');
@@ -1007,6 +1004,7 @@ async function verifyRatingWithOcr(
       ].filter(Boolean).join(' '),
     };
   } catch (err) {
+    if (worker) try { await worker.terminate(); } catch { /* ignore */ }
     console.error('OCR rating verification error:', err);
     return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
       discrepancyNote: 'Rating verification unavailable. Please verify manually.' };
