@@ -61,11 +61,14 @@ export function ordersRoutes(env: Env): Router {
       }
 
       // Non-privileged users (buyers) may only view audit for their own orders
-      if (!privileged) {
-        const order = await OrderModel.findById(orderId).select('userId').lean();
-        if (!order || String(order.userId) !== userId) {
-          return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Insufficient role for audit access' } });
-        }
+      // Fetch order with both userId (for ownership check) and events (for timeline)
+      const order = await OrderModel.findById(orderId).select('userId events').lean();
+      if (!order) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
+      }
+
+      if (!privileged && String(order.userId) !== userId) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Insufficient role for audit access' } });
       }
 
       const page = Math.max(1, Number(req.query.page) || 1);
@@ -82,9 +85,13 @@ export function ordersRoutes(env: Env): Router {
         .limit(limit)
         .lean();
 
-      // Also return inline order.events for a combined timeline
-      const orderDoc = await OrderModel.findById(orderId).select('events').lean();
-      const events = Array.isArray((orderDoc as any)?.events) ? (orderDoc as any).events : [];
+      // Use the already-fetched order.events
+      const rawEvents = Array.isArray((order as any)?.events) ? (order as any).events : [];
+      const events = rawEvents.map((event: any) => ({
+        type: event?.type,
+        at: event?.at,
+        metadata: event?.metadata,
+      }));
 
       res.json({ logs, events, page, limit });
     } catch (err) {

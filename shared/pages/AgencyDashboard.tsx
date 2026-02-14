@@ -481,9 +481,9 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
     // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
+     const csvSafe = (val: string) => {
       let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
       return csvEscape(s);
     };
     const hyperlinkYes = (url?: string) =>
@@ -542,7 +542,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.managerName,
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,

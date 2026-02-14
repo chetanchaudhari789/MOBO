@@ -712,7 +712,7 @@ const OrdersView = ({ user }: any) => {
     // Sanitize user-controlled values: neutralize spreadsheet formula injection
     const csvSafe = (val: string) => {
       let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
       return csvEscape(s);
     };
     const hyperlinkYes = (url?: string) =>
@@ -771,7 +771,7 @@ const OrdersView = ({ user }: any) => {
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
@@ -825,7 +825,7 @@ const OrdersView = ({ user }: any) => {
         o.managerName || '',
         o.buyerName || '',
         o.buyerMobile || '',
-        (o as any).reviewerName || '',
+        o.reviewerName ?? '',
         o.status,
         o.paymentStatus,
         o.affiliateStatus || '',
@@ -2097,9 +2097,9 @@ export const BrandDashboard: React.FC = () => {
 
   const handleExportPayouts = () => {
     // CSV formula injection guard: prefix dangerous chars with a single-quote
-    const csvSafe = (v: unknown): string => {
+     const csvSafe = (v: unknown): string => {
       const s = String(v ?? '').replace(/"/g, '""');
-      if (/^[=+\-@\t\r]/.test(s)) return `"'${s}"`;
+      if (/^\s*[=+\-@\t\r]/.test(s)) return `"'${s}"`;
       return `"${s}"`;
     };
 

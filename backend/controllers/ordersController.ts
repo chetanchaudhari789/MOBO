@@ -429,7 +429,8 @@ export function makeOrdersController(env: Env) {
             (existing as any).buyerMobile = user.mobile;
             (existing as any).brandName = item.brandName ?? campaign.brandName;
             (existing as any).externalOrderId = resolvedExternalOrderId;
-            if (body.reviewerName) (existing as any).reviewerName = body.reviewerName;
+            const trimmedReviewerName = body.reviewerName?.trim();
+            if (trimmedReviewerName) (existing as any).reviewerName = trimmedReviewerName;
             // Merge screenshots instead of overwriting — preserves any proofs already
             // attached to the pre-order (e.g. rating/review uploaded before upgrade).
             (existing as any).screenshots = {
@@ -501,7 +502,7 @@ export function makeOrdersController(env: Env) {
                 buyerMobile: user.mobile,
                 brandName: item.brandName ?? campaign.brandName,
                 externalOrderId: resolvedExternalOrderId,
-                ...(body.reviewerName ? { reviewerName: body.reviewerName } : {}),
+                ...(body.reviewerName?.trim() ? { reviewerName: body.reviewerName.trim() } : {}),
                 screenshots: body.screenshots ?? {},
                 reviewLink: body.reviewLink,
                 ...(body.orderDate && !isNaN(new Date(body.orderDate).getTime()) ? { orderDate: new Date(body.orderDate) } : {}),
@@ -820,8 +821,9 @@ export function makeOrdersController(env: Env) {
         }
 
         // Persist marketplace reviewer/profile name if provided alongside any proof upload
-        if (body.reviewerName) {
-          (order as any).reviewerName = body.reviewerName;
+        const trimmedReviewerName = body.reviewerName?.trim();
+        if (trimmedReviewerName) {
+          (order as any).reviewerName = trimmedReviewerName;
         }
 
         const affiliateStatus = String(order.affiliateStatus || '');
