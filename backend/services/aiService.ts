@@ -80,9 +80,9 @@ function sanitizeAiError(err: unknown): string {
 const PER_MODEL_TIMEOUT_MS = 15_000;
 
 function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
+    promise.finally(() => timer && clearTimeout(timer)),
     new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('Model response timed out')), PER_MODEL_TIMEOUT_MS);
     }),
@@ -93,9 +93,9 @@ function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
 const OCR_CALL_TIMEOUT_MS = 20_000;
 
 function withOcrTimeout<T>(promise: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
+    promise.finally(() => timer && clearTimeout(timer)),
     new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('OCR recognition timed out')), OCR_CALL_TIMEOUT_MS);
     }),

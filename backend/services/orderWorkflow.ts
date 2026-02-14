@@ -95,7 +95,7 @@ export async function transitionOrderWorkflow(params: {
     }).catch(() => undefined);
   }
 
-  writeAuditLog({
+  await writeAuditLog({
     action: 'ORDER_WORKFLOW_TRANSITION',
     entityType: 'Order',
     entityId: params.orderId,
@@ -137,7 +137,7 @@ export async function freezeOrders(params: {
     { session: params.session }
   );
 
-  writeAuditLog({
+  await writeAuditLog({
     action: 'ORDERS_FROZEN',
     entityType: 'Order',
     entityId: 'bulk',
@@ -177,7 +177,7 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
 
   if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found or not frozen');
 
-  writeAuditLog({
+  await writeAuditLog({
     action: 'ORDER_REACTIVATED',
     entityType: 'Order',
     entityId: params.orderId,

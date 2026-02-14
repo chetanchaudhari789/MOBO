@@ -990,6 +990,7 @@ const MediatorProfileView = () => {
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         toast.error('Image must be under 2 MB');
+        e.target.value = '';
         return;
       }
       const reader = new FileReader();
