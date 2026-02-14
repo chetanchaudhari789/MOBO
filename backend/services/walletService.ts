@@ -79,9 +79,13 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       { upsert: true, new: true, session }
     );
 
+    if (!wallet) {
+      throw new AppError(500, 'WALLET_UPSERT_FAILED', 'Failed to create or update wallet');
+    }
+
     // Safety: prevent runaway balances (configurable; default 1 crore paise = ₹1,00,000).
     const MAX_BALANCE_PAISE = Number(process.env.WALLET_MAX_BALANCE_PAISE) || 1_00_00_000;
-    if (wallet && wallet.availablePaise > MAX_BALANCE_PAISE) {
+    if (wallet.availablePaise > MAX_BALANCE_PAISE) {
       throw new AppError(409, 'BALANCE_LIMIT_EXCEEDED', 'Wallet balance limit exceeded');
     }
 
@@ -93,7 +97,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
           status: 'completed',
           amountPaise: input.amountPaise,
           currency: 'INR',
-          walletId: wallet?._id,
+          walletId: wallet._id,
           fromUserId: input.fromUserId,
           toUserId: input.toUserId,
           orderId: input.orderId,
@@ -105,7 +109,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       { session }
     );
 
-    return { transaction: tx[0], isNew: true, walletId: wallet?._id };
+    return { transaction: tx[0], isNew: true, walletId: wallet._id };
   };
 
   // If the caller provides an external session, run within it (no new session/transaction).
