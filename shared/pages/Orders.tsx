@@ -18,7 +18,6 @@ import {
   CalendarClock,
   HelpCircle,
   AlertTriangle,
-  ShieldCheck,
   Package,
   Zap,
   History,
@@ -569,7 +568,17 @@ export const Orders: React.FC = () => {
           <Button
             type="button"
             size="icon"
-            onClick={() => setIsNewOrderModalOpen(true)}
+            onClick={() => {
+              // Reset all form state to prevent screenshot/data leaking between orders
+              setFormScreenshot(null);
+              setExtractedDetails({ orderId: '', amount: '' });
+              setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+              setOrderIdLocked(false);
+              setSelectedProduct(null);
+              setReviewLinkInput('');
+              setFormSearch('');
+              setIsNewOrderModalOpen(true);
+            }}
             aria-label="New order"
             className="bg-black text-lime-400 hover:bg-zinc-800 focus-visible:ring-lime-400"
           >
@@ -614,7 +623,17 @@ export const Orders: React.FC = () => {
             description="Create your first order from Explore."
             icon={<Package size={40} className="text-zinc-300" />}
             action={
-              <Button type="button" variant="secondary" onClick={() => setIsNewOrderModalOpen(true)}>
+              <Button type="button" variant="secondary" onClick={() => {
+                // Reset all form state to prevent screenshot/data leaking between orders
+                setFormScreenshot(null);
+                setExtractedDetails({ orderId: '', amount: '' });
+                setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+                setOrderIdLocked(false);
+                setSelectedProduct(null);
+                setReviewLinkInput('');
+                setFormSearch('');
+                setIsNewOrderModalOpen(true);
+              }}>
                 Create Order
               </Button>
             }
@@ -1090,14 +1109,32 @@ export const Orders: React.FC = () => {
       {isNewOrderModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => setIsNewOrderModalOpen(false)}
+          onClick={() => {
+            setIsNewOrderModalOpen(false);
+            setFormScreenshot(null);
+            setExtractedDetails({ orderId: '', amount: '' });
+            setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+            setOrderIdLocked(false);
+            setSelectedProduct(null);
+            setReviewLinkInput('');
+            setFormSearch('');
+          }}
         >
           <div
             className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl animate-slide-up flex flex-col max-h-[85vh] relative"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => setIsNewOrderModalOpen(false)}
+              onClick={() => {
+                setIsNewOrderModalOpen(false);
+                setFormScreenshot(null);
+                setExtractedDetails({ orderId: '', amount: '' });
+                setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+                setOrderIdLocked(false);
+                setSelectedProduct(null);
+                setReviewLinkInput('');
+                setFormSearch('');
+              }}
               aria-label="Close"
               className="absolute top-6 right-6 p-2 bg-gray-50 rounded-full hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             >
@@ -1233,7 +1270,7 @@ export const Orders: React.FC = () => {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                            Order ID {orderIdLocked && <span className="text-green-500">(Verified)</span>}
+                            Order ID
                           </label>
                           <div className="relative">
                             <input
@@ -1247,15 +1284,9 @@ export const Orders: React.FC = () => {
                                 });
                               }}
                               readOnly={orderIdLocked}
-                              className={`w-full p-3 rounded-xl font-bold text-sm outline-none transition-all ${orderIdLocked ? 'bg-green-50 border-green-200 cursor-not-allowed opacity-80' : matchStatus.id === 'match' ? 'bg-green-50 border-green-200 focus:ring-green-100' : matchStatus.id === 'mismatch' ? 'bg-red-50 border-red-200 focus:ring-red-100' : 'bg-gray-50 border-gray-100 focus:ring-lime-100'}`}
+                              className={`w-full p-3 rounded-xl font-bold text-sm outline-none transition-all ${orderIdLocked ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-80' : matchStatus.id === 'mismatch' ? 'bg-red-50 border-red-200 focus:ring-red-100' : 'bg-gray-50 border-gray-100 focus:ring-lime-100'}`}
                               placeholder="e.g. 404-..."
                             />
-                            {matchStatus.id === 'match' && (
-                              <ShieldCheck
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500"
-                                size={16}
-                              />
-                            )}
                             {matchStatus.id === 'mismatch' && (
                               <AlertTriangle
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500"
@@ -1289,7 +1320,7 @@ export const Orders: React.FC = () => {
                       </div>
                       {matchStatus.id === 'match' && matchStatus.amount === 'match' && (
                         <p className="text-[10px] text-green-600 font-bold bg-green-50 p-2 rounded-lg flex items-center gap-1.5">
-                          <ShieldCheck size={12} /> AI suggests this is a valid proof.
+                          <CheckCircle2 size={12} /> AI suggests this is a valid proof.
                         </p>
                       )}
                       {matchStatus.productName === 'mismatch' && (
