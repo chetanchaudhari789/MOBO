@@ -373,14 +373,18 @@ export async function exportToGoogleSheet(
   }
 
   // 4. When using service account, auto-share with the user so they get direct access
-  //    (no "Request access" screen). If user email is known, share directly;
-  //    otherwise make the sheet accessible to anyone with the link.
+  //    (no "Request access" screen). Require a sharingEmail and keep the sheet private
+  //    to the service account until permissions are explicitly configured.
   if (isServiceAccount) {
-    if (sharingEmail) {
-      await shareWithUser(authHeader, spreadsheetId, sharingEmail);
-    } else {
-      await makePublicReadable(authHeader, spreadsheetId);
+    if (!sharingEmail) {
+      throw new Error(
+        'GOOGLE_SHEETS_SHARING_EMAIL_REQUIRED: When exporting via the service account, ' +
+        'a sharingEmail must be provided so the spreadsheet can be shared with a specific user. ' +
+        'Please supply a sharingEmail or connect a Google account to export directly to the user\'s Drive.'
+      );
     }
+
+    await shareWithUser(authHeader, spreadsheetId, sharingEmail);
   }
 
   return { spreadsheetId, spreadsheetUrl, sheetTitle: request.title };

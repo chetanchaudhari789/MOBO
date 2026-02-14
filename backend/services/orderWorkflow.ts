@@ -155,6 +155,11 @@ export async function freezeOrders(params: {
 export async function reactivateOrder(params: { orderId: string; actorUserId: string; reason?: string; session?: ClientSession }) {
   const now = new Date();
 
+  // Validate actorUserId is a valid ObjectId
+  if (!mongoose.Types.ObjectId.isValid(params.actorUserId)) {
+    throw new AppError(400, 'INVALID_ACTOR_USER_ID', 'Invalid actorUserId format');
+  }
+
   const order = await OrderModel.findOneAndUpdate(
     {
       _id: params.orderId,
@@ -166,7 +171,7 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
       $set: {
         frozen: false,
         reactivatedAt: now,
-        reactivatedBy: params.actorUserId as any,
+        reactivatedBy: new mongoose.Types.ObjectId(params.actorUserId),
         frozenReason: null,
         frozenAt: null,
       },
