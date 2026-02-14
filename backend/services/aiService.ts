@@ -5,6 +5,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../config/env.js';
 
+// ── Common Stop Words for OCR Verification ──
+// Stop words that cause false positives when matching names/products in OCR text
+const STOP_WORDS = new Set([
+  'the','for','and','with','from','that','this','you','your','was','are','has',
+  'have','been','not','but','all','can','had','her','his','one','our','out','use',
+  'how','its','may','new','now','old','see','way','who','boy','did','get','him',
+  'let','say','she','too','any','per','set','top','end','off','big','own','put',
+  'run','two','via','pro','free','pack','item','best','good','great','nice','mini',
+  'max','size','pair','home','made','full','high','low','day','set','box','buy','kit'
+]);
+
 // ── Tesseract Worker Pool ──
 // Reuse workers across OCR calls instead of creating/terminating per request.
 // This avoids repeated WASM init + eng.traineddata download on every OCR call.
@@ -36,6 +47,11 @@ async function _initOcrPool(): Promise<void> {
     );
   }
   await Promise.allSettled(promises);
+  if (_ocrPool.length === 0) {
+    console.warn(
+      'Tesseract OCR worker pool failed to initialize; OCR will run using on-demand workers only.'
+    );
+  }
 }
 
 /** Get a worker from the pool or create a fresh one on demand. */
@@ -60,14 +76,16 @@ async function releaseOcrWorker(worker: Awaited<ReturnType<typeof createWorker>>
   }
 }
 
-/** Graceful shutdown: terminate all pooled OCR workers. */
-async function _shutdownOcrPool(): Promise<void> {
+/**
+ * Public OCR pool shutdown hook.
+ * 
+ * This is intended to be called from the central graceful shutdown logic
+ * (for example, in backend/index.ts) instead of registering independent
+ * process signal handlers here.
+ */
+export async function shutdownOcrPool(): Promise<void> {
   const workers = _ocrPool.splice(0);
   await Promise.allSettled(workers.map((w) => w.terminate().catch(() => {})));
-}
-// Register cleanup handlers for graceful shutdown
-for (const sig of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(sig, () => { _shutdownOcrPool().finally(() => process.exit(0)); });
 }
 
 type ChatPayload = {
@@ -1049,8 +1067,6 @@ async function verifyRatingWithOcr(
     }
 
     const lower = ocrText.toLowerCase();
-    // Common stop words that cause false positives when matching names/products in OCR text
-    const STOP_WORDS = new Set(['the','for','and','with','from','that','this','you','your','was','are','has','have','been','not','but','all','can','had','her','his','one','our','out','use','how','its','may','new','now','old','see','way','who','boy','did','get','him','let','say','she','too','any','per','set','top','end','off','big','own','put','run','two','via','pro','free','pack','item','best','good','great','nice','mini','max','size','pair','home','made','full','high','low','day','set','box','buy','kit']);
 
     // Account name matching: fuzzy — check if any 2+ word segment of the buyer name or reviewer name appears
     const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2 && !STOP_WORDS.has(p));
@@ -1251,8 +1267,7 @@ async function verifyReturnWindowWithOcr(
     const ocrNorm = ocrText.replace(/[\s\-]/g, '').toLowerCase();
     const orderIdMatch = ocrNorm.includes(orderIdNorm);
 
-    const PROOF_STOP_WORDS = new Set(['the','for','and','with','from','that','this','you','your','was','are','has','have','been','not','but','all','can','had','her','his','one','our','out','use','how','its','may','new','now','old','see','way','who','did','get','him','let','say','she','too','any','per','set','top','end','off','big','own','put','run','two','via','pro','free','pack','item','best','good','great','nice','mini','max','size','pair','home','made','full','high','low','day','box','buy','kit']);
-    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3 && !PROOF_STOP_WORDS.has(t));
+    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3 && !STOP_WORDS.has(t));
     const matchedProd = productTokens.filter(t => lower.includes(t));
     const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.4));
 

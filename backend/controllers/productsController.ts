@@ -117,7 +117,7 @@ export function makeProductsController() {
           entityType: 'Order',
           entityId: String((preOrder as any)._id),
           metadata: { dealId, campaignId: String((deal as any).campaignId), mediatorCode },
-        });
+        }).catch(() => {});
 
         res.status(201).json({
           preOrderId: String((preOrder as any)._id),

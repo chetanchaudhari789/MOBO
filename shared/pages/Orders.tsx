@@ -1641,8 +1641,8 @@ export const Orders: React.FC = () => {
                   !formScreenshot ||
                   isUploading ||
                   matchStatus.productName === 'mismatch' ||
-                  !extractedDetails.orderId ||
-                  !extractedDetails.amount
+                  (selectedProduct?.dealType === 'Discount' &&
+                    (!extractedDetails.orderId || !extractedDetails.amount))
                 }
                 className="w-full py-4 bg-black text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400 hover:text-black transition-all disabled:opacity-50 active:scale-95 shadow-lg"
               >

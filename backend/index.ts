@@ -4,6 +4,7 @@ loadDotenv();
 import { loadEnv, type Env } from './config/env.js';
 import { connectMongo, disconnectMongo } from './database/mongo.js';
 import { createApp } from './app.js';
+import { shutdownOcrPool } from './services/aiService.js';
 import type { Server } from 'node:http';
 
 let server: Server | null = null;
@@ -39,6 +40,13 @@ async function shutdown(signal: string) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('Error while disconnecting Mongo:', err);
+  }
+
+  try {
+    await shutdownOcrPool();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Error while shutting down OCR pool:', err);
   } finally {
     clearTimeout(forceTimer);
   }
