@@ -60,9 +60,9 @@ const formatCurrency = (amount: number) =>
   }).format(amount);
 
 const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
-  const escape = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const escape = (v: string) => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; return `"${s.replace(/"/g, '""')}"`; };
   const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -80,6 +80,7 @@ const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || order.id || '').trim();
 
 const urlToBase64 = async (url: string): Promise<string> => {
+  if (typeof window === 'undefined') return '';
   try {
     // If already a data-URI (base64), return directly — no fetch needed
     if (url.startsWith('data:')) return url;
@@ -1474,6 +1475,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
           >
             <button
               type="button"
+              aria-label="Close QR modal"
               onClick={() => setShowQr(false)}
               className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-900"
             >
@@ -1750,6 +1752,7 @@ export const MediatorDashboard: React.FC = () => {
                       Mark all read
                     </button>
                     <button
+                      aria-label="Close notifications"
                       onClick={() => setShowNotifications(false)}
                       className="p-1 bg-zinc-50 rounded-full hover:bg-zinc-100"
                       type="button"
@@ -2325,6 +2328,7 @@ export const MediatorDashboard: React.FC = () => {
                     setOrderAuditLogs(resp?.logs ?? []);
                     setOrderAuditEvents(resp?.events ?? []);
                   } catch {
+                    toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
                     setOrderAuditEvents([]);
                   } finally {
@@ -2632,6 +2636,7 @@ export const MediatorDashboard: React.FC = () => {
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-bold text-base">Reject Proof</h4>
               <button
+                aria-label="Close reject modal"
                 onClick={() => setRejectModalOpen(false)}
                 className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20"
               >

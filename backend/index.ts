@@ -1,13 +1,10 @@
 import { loadDotenv } from './config/dotenvLoader.js';
 
 loadDotenv();
-import { loadEnv } from './config/env.js';
+import { loadEnv, type Env } from './config/env.js';
 import { connectMongo, disconnectMongo } from './database/mongo.js';
 import { createApp } from './app.js';
-import { createRequire } from 'node:module';
 import type { Server } from 'node:http';
-
-const require = createRequire(import.meta.url);
 
 let server: Server | null = null;
 let shuttingDown = false;
@@ -59,15 +56,15 @@ async function tryRunE2ESeed() {
   }
 }
 
-async function tryRunAdminSeed() {
+async function tryRunAdminSeed(env: Env) {
   try {
     const mod = await import('./seeds/admin.js');
     if (typeof (mod as any).seedAdminOnly === 'function') {
       await (mod as any).seedAdminOnly({
-        mobile: process.env.ADMIN_SEED_MOBILE,
-        username: process.env.ADMIN_SEED_USERNAME,
-        password: process.env.ADMIN_SEED_PASSWORD,
-        name: process.env.ADMIN_SEED_NAME,
+        mobile: env.ADMIN_SEED_MOBILE,
+        username: env.ADMIN_SEED_USERNAME,
+        password: env.ADMIN_SEED_PASSWORD,
+        name: env.ADMIN_SEED_NAME,
       });
     }
   } catch {
@@ -88,26 +85,14 @@ async function tryRunDevSeed() {
   }
 }
 
-async function tryRunLargeSeed(wipe: boolean) {
-  try {
-    // Optional module; do not require it at build-time.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('./seeds/seed.js');
-    if (typeof (mod as any)?.runLargeSeed === 'function') await (mod as any).runLargeSeed({ wipe });
-  } catch {
-    // eslint-disable-next-line no-console
-    console.warn('SEED_LARGE requested but seed module is missing (./seeds/seed.js); skipping');
-  }
-}
-
 async function main() {
   const env = loadEnv();
 
   await connectMongo(env);
 
-  const seedAdminRequested = env.SEED_ADMIN || process.env.SEED_ADMIN === 'true';
-  const seedE2ERequested = env.SEED_E2E || process.env.SEED_E2E === 'true';
-  const seedDevRequested = env.SEED_DEV || process.env.SEED_DEV === 'true';
+  const seedAdminRequested = env.SEED_ADMIN;
+  const seedE2ERequested = env.SEED_E2E;
+  const seedDevRequested = env.SEED_DEV;
   const isProd = env.NODE_ENV === 'production';
 
   // E2E/admin seeding is idempotent and explicitly opt-in.
@@ -120,11 +105,8 @@ async function main() {
       }
       await tryRunDevSeed();
     }
-    if (seedAdminRequested) await tryRunAdminSeed();
+    if (seedAdminRequested) await tryRunAdminSeed(env);
     if (seedE2ERequested) await tryRunE2ESeed();
-    if (!isProd && process.env.SEED_LARGE === 'true') {
-      await tryRunLargeSeed(process.env.SEED_WIPE === 'true');
-    }
   }
 
   const app = createApp(env);

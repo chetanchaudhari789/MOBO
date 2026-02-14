@@ -2,7 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
-import { getApiBaseUrl } from '../utils/apiBaseUrl';
+import { getApiBaseUrl, getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
@@ -82,6 +82,7 @@ const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || order.id || '').trim();
 
 const urlToBase64 = async (url: string): Promise<string> => {
+  if (typeof window === 'undefined') return '';
   try {
     if (url.startsWith('data:')) return url;
     const apiBase = getApiBaseUrl();
@@ -487,22 +488,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   };
 
   const handleExport = () => {
-    const getApiBase = () => {
-      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-      const fromNext =
-        typeof process !== 'undefined' &&
-        (process as any).env &&
-        (process as any).env.NEXT_PUBLIC_API_URL
-          ? String((process as any).env.NEXT_PUBLIC_API_URL)
-          : undefined;
-      let base = String(fromGlobal || fromNext || '/api').trim();
-      if (base.startsWith('/')) {
-        base = `${window.location.origin}${base}`;
-      }
-      return base.endsWith('/') ? base.slice(0, -1) : base;
-    };
-
-    const apiBase = getApiBase();
+    const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
@@ -1014,7 +1000,7 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2043,6 +2029,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-black text-slate-900">New Campaign</h3>
               <button
+                aria-label="Close new campaign modal"
                 onClick={() => setCreateModal(false)}
                 className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
               >
@@ -2206,6 +2193,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 </p>
               </div>
               <button
+                aria-label="Close distribution modal"
                 onClick={() => setAssignModal(null)}
                 className="p-2.5 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors shrink-0"
               >
@@ -2901,6 +2889,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 </div>
               </div>
               <button
+                aria-label="Close mediator details"
                 onClick={() => setSelectedMediator(null)}
                 className="p-2 hover:bg-white/10 rounded-full transition-colors"
               >
@@ -3111,6 +3100,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
           >
             <button
               type="button"
+              aria-label="Close proof modal"
               onClick={() => setProofOrder(null)}
               className="absolute top-4 right-4 p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
             >
@@ -3405,6 +3395,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                     setOrderAuditLogs(resp?.logs ?? []);
                     setOrderAuditEvents(resp?.events ?? []);
                   } catch {
+                    toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
                     setOrderAuditEvents([]);
                   } finally {
@@ -3518,7 +3509,8 @@ export const AgencyDashboard: React.FC = () => {
         activeCampaigns: activeCount,
       });
     } catch (e) {
-      console.error(e);
+      console.error('Dashboard data fetch failed', e);
+      toast.error('Failed to load dashboard data');
     } finally {
       setIsDataLoading(false);
     }

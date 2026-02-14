@@ -170,8 +170,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem('mobo_session');
-    localStorage.removeItem('mobo_tokens_v1');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('mobo_session');
+      localStorage.removeItem('mobo_tokens_v1');
+    }
     stopRealtime();
     emitAuthChange();
   }, []);

@@ -12,7 +12,10 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const STORAGE_KEY_PREFIX = 'mobo_v7_';
 
+const canUseStorage = typeof window !== 'undefined' && !!window.localStorage;
+
 const getItem = <T>(key: string, seed: T): T => {
+  if (!canUseStorage) return seed;
   try {
     const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${key}`);
     if (!stored) {
@@ -27,6 +30,7 @@ const getItem = <T>(key: string, seed: T): T => {
 };
 
 const setItem = (key: string, data: any) => {
+  if (!canUseStorage) return;
   try {
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${key}`, JSON.stringify(data));
   } catch {}

@@ -10,7 +10,17 @@ function tryLoad(filePath: string) {
 }
 
 export function loadDotenv() {
-  const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  // When running from dist/ (e.g. `node dist/index.js`), import.meta.url points
+  // to dist/config/dotenvLoader.js → `..` resolves to dist/ rather than backend/.
+  // Detect this and adjust so .env files are always found at the real backend root.
+  const thisDir = path.dirname(fileURLToPath(import.meta.url));
+  const parentDir = path.resolve(thisDir, '..');
+  const isRunningFromDist =
+    path.basename(parentDir) === 'dist' ||
+    path.basename(thisDir) === 'dist';
+  const backendDir = isRunningFromDist
+    ? path.resolve(parentDir, '..')  // dist/config/.. → dist → dist/.. → backend/
+    : parentDir;                      // config/.. → backend/
   const repoRoot = path.resolve(backendDir, '..');
 
   // Respect explicit override if provided.

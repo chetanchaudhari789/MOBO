@@ -32,6 +32,12 @@ import {
 } from 'lucide-react';
 
 /* ─── Sample Screenshot Guide ───────────────────────────────────────── */
+const SAMPLE_IMAGES: Record<string, string> = {
+  order: '/screenshots/sample-order.svg',
+  rating: '/screenshots/sample-rating.svg',
+  returnWindow: '/screenshots/sample-return-window.svg',
+};
+
 const SampleScreenshotGuide: React.FC<{
   type: 'order' | 'rating' | 'returnWindow';
 }> = ({ type }) => {
@@ -52,12 +58,12 @@ const SampleScreenshotGuide: React.FC<{
       title: 'Rating / Review Screenshot',
       bullets: [
         'Open the "Write a product review" or "Rate this product" page',
-        'Your marketplace profile name / account name must be visible at the top',
+        'Your reviewer name / account name must be visible at the top',
         'The product name should appear clearly on the page',
         'Star rating should be filled (e.g. 5 stars)',
         'Take the screenshot BEFORE submitting if "Submit" button is visible',
       ],
-      highlights: ['Profile Name / Account', 'Product Name', 'Star Rating'],
+      highlights: ['Reviewer Name', 'Product Name', 'Star Rating'],
     },
     returnWindow: {
       title: 'Return Window Screenshot',
@@ -73,6 +79,7 @@ const SampleScreenshotGuide: React.FC<{
   };
   const g = guides[type];
   if (!g) return null;
+  const sampleImg = SAMPLE_IMAGES[type];
   return (
     <div className="rounded-xl border border-blue-100 bg-blue-50/50 overflow-hidden animate-enter">
       <button
@@ -88,6 +95,18 @@ const SampleScreenshotGuide: React.FC<{
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
+          {/* Sample annotated image */}
+          {sampleImg && (
+            <div className="mt-2 rounded-lg border border-blue-200 overflow-hidden bg-white">
+              <p className="text-[9px] font-bold text-blue-500 px-2 pt-1.5 pb-0.5">📸 Example — key fields highlighted</p>
+              <img
+                src={sampleImg}
+                alt={`Sample ${g.title}`}
+                className="w-full h-auto"
+                loading="lazy"
+              />
+            </div>
+          )}
           <ul className="space-y-1.5 mt-2">
             {g.bullets.map((b, i) => (
               <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-600">
@@ -740,9 +759,9 @@ export const Orders: React.FC = () => {
                 o.paymentStatus || '',
                 o.reviewerName || '',
                 o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+              ].map(v => { let s = String(v); if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; return `"${s.replace(/"/g, '""')}"`; }).join(','));
               const csv = [h.join(','), ...csvRows].join('\n');
-              const blob = new Blob([csv], { type: 'text/csv' });
+              const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url; a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -1248,6 +1267,7 @@ export const Orders: React.FC = () => {
                         setAuditLogs(resp?.logs ?? []);
                         setAuditEvents(resp?.events ?? []);
                       } catch {
+                        toast.error('Failed to load activity log');
                         setAuditLogs([]);
                         setAuditEvents([]);
                       } finally {
@@ -1586,11 +1606,11 @@ export const Orders: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Reviewer / Marketplace profile name */}
+                  {/* Reviewer name */}
                   {formScreenshot && (selectedProduct?.dealType === 'Rating' || selectedProduct?.dealType === 'Review') && (
                     <div className="space-y-1 animate-enter">
                       <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                        Your Marketplace Profile Name <span className="text-zinc-300">(optional)</span>
+                        Your Reviewer Name <span className="text-zinc-300">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -1601,7 +1621,7 @@ export const Orders: React.FC = () => {
                         maxLength={200}
                       />
                       <p className="text-[9px] text-zinc-400 ml-1">
-                        Your profile name on the marketplace — helps verify your review/rating screenshots.
+                        Your reviewer name on the marketplace — helps verify your review/rating screenshots.
                       </p>
                     </div>
                   )}
@@ -1625,7 +1645,9 @@ export const Orders: React.FC = () => {
                   !selectedProduct ||
                   !formScreenshot ||
                   isUploading ||
-                  matchStatus.productName === 'mismatch'
+                  matchStatus.productName === 'mismatch' ||
+                  !extractedDetails.orderId ||
+                  !extractedDetails.amount
                 }
                 className="w-full py-4 bg-black text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400 hover:text-black transition-all disabled:opacity-50 active:scale-95 shadow-lg"
               >
@@ -1775,7 +1797,7 @@ export const Orders: React.FC = () => {
               </p>
               {proofToView.reviewerName && (
                 <p className="text-[10px] mt-1 text-indigo-600 font-bold flex items-center gap-1">
-                  Marketplace Profile: {proofToView.reviewerName}
+                  Reviewer Name: {proofToView.reviewerName}
                 </p>
               )}
             </div>
@@ -2054,7 +2076,7 @@ export const Orders: React.FC = () => {
                         {!ratingVerification.accountNameMatch && !ratingVerification.productNameMatch
                           ? 'Account name & product do not match. Upload the correct rating screenshot.'
                           : !ratingVerification.accountNameMatch
-                            ? 'Account name does not match your profile name.'
+                            ? 'Account name does not match your reviewer name.'
                             : 'Product does not match this order\'s product.'}
                       </p>
                     )}

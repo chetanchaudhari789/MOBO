@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import { ExternalLink, Star } from 'lucide-react';
 import { Product } from '../types';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 
 interface ProductCardProps {
   product: Product;
@@ -11,20 +12,7 @@ type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
 export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) => {
   const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
-  const getApiBase = () => {
-    const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-    const fromNext =
-      typeof process !== 'undefined' &&
-      (process as any).env &&
-      (process as any).env.NEXT_PUBLIC_API_URL
-        ? String((process as any).env.NEXT_PUBLIC_API_URL)
-        : undefined;
-    let base = String(fromGlobal || fromNext || '/api').trim();
-    if (base.startsWith('/')) {
-      base = `${window.location.origin}${base}`;
-    }
-    return base.replace(/\/$/, '');
-  };
+  const getApiBase = getApiBaseAbsolute;
   const placeholderImage =
     'data:image/svg+xml;utf8,' +
     encodeURIComponent(

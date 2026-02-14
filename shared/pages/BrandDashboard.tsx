@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -623,7 +624,9 @@ const OrdersView = ({ user }: any) => {
         const updated = (data as Order[]).find((o: Order) => o.id === prev.id);
         return updated || null;
       });
-    } catch {
+    } catch (err) {
+      console.error('Failed to fetch orders', err);
+      toast.error('Failed to load orders');
       setOrders([]);
     } finally {
       setIsLoading(false);
@@ -689,22 +692,7 @@ const OrdersView = ({ user }: any) => {
   });
 
   const handleExport = () => {
-    const getApiBase = () => {
-      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-      const fromNext =
-        typeof process !== 'undefined' &&
-        (process as any).env &&
-        (process as any).env.NEXT_PUBLIC_API_URL
-          ? String((process as any).env.NEXT_PUBLIC_API_URL)
-          : undefined;
-      let base = String(fromGlobal || fromNext || '/api').trim();
-      if (base.startsWith('/')) {
-        base = `${window.location.origin}${base}`;
-      }
-      return base.endsWith('/') ? base.slice(0, -1) : base;
-    };
-
-    const apiBase = getApiBase();
+    const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
@@ -794,7 +782,7 @@ const OrdersView = ({ user }: any) => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1006,6 +994,7 @@ const OrdersView = ({ user }: any) => {
             onClick={(e) => e.stopPropagation()}
           >
             <button
+              aria-label="Close proof modal"
               onClick={() => { setViewProofOrder(null); setBrandAiAnalysis(null); }}
               className="absolute top-4 right-4 p-2 bg-zinc-50 rounded-full hover:bg-zinc-100 transition-colors"
             >
@@ -1325,6 +1314,7 @@ const OrdersView = ({ user }: any) => {
                     setOrderAuditLogs(resp?.logs ?? []);
                     setOrderAuditEvents(resp?.events ?? []);
                   } catch {
+                    toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
                     setOrderAuditEvents([]);
                   } finally {
@@ -2035,7 +2025,8 @@ export const BrandDashboard: React.FC = () => {
       setOrders(ords);
       setTransactions(txns);
     } catch (e) {
-      console.error(e);
+      console.error('Dashboard data fetch failed', e);
+      toast.error('Failed to load dashboard data');
     } finally {
       setIsDataLoading(false);
     }
@@ -2138,7 +2129,7 @@ export const BrandDashboard: React.FC = () => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2557,6 +2548,7 @@ export const BrandDashboard: React.FC = () => {
                             fetchData();
                           } catch (e) {
                             console.error('Failed to decline', e);
+                            toast.error('Failed to decline connection');
                           }
                         }}
                         className="flex-1 sm:flex-none px-6 py-2.5 bg-white text-zinc-600 rounded-xl font-bold text-xs border border-zinc-200 hover:bg-zinc-50 transition-colors"
@@ -2586,6 +2578,7 @@ export const BrandDashboard: React.FC = () => {
                             fetchData();
                           } catch (e) {
                             console.error('Failed to approve', e);
+                            toast.error('Failed to approve connection');
                           }
                         }}
                         className="flex-1 sm:flex-none px-8 py-2.5 bg-zinc-900 text-white rounded-xl font-bold text-xs hover:bg-black shadow-lg transition-all active:scale-95"
@@ -2610,6 +2603,7 @@ export const BrandDashboard: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <button
+              aria-label="Close agency details"
               onClick={() => setSelectedAgency(null)}
               className="absolute top-6 right-6 p-2 bg-zinc-50 rounded-full hover:bg-zinc-100 transition-colors"
             >
