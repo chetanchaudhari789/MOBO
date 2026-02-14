@@ -4,6 +4,7 @@ import type { Env } from '../config/env.js';
 import { OrderModel, type OrderWorkflowStatus } from '../models/Order.js';
 import { pushOrderEvent } from './orderEvents.js';
 import { notifyOrderWorkflowPush } from './pushNotifications.js';
+import { writeAuditLog } from './audit.js';
 
 const TERMINAL: ReadonlySet<OrderWorkflowStatus> = new Set(['COMPLETED', 'FAILED']);
 
@@ -94,6 +95,13 @@ export async function transitionOrderWorkflow(params: {
     }).catch(() => undefined);
   }
 
+  writeAuditLog({
+    action: 'ORDER_WORKFLOW_TRANSITION',
+    entityType: 'Order',
+    entityId: params.orderId,
+    metadata: { from: params.from, to: params.to, actorUserId: params.actorUserId },
+  });
+
   return order;
 }
 
@@ -128,6 +136,14 @@ export async function freezeOrders(params: {
     },
     { session: params.session }
   );
+
+  writeAuditLog({
+    action: 'ORDERS_FROZEN',
+    entityType: 'Order',
+    entityId: 'bulk',
+    metadata: { reason: params.reason, actorUserId: params.actorUserId, matchedCount: res.matchedCount, modifiedCount: res.modifiedCount },
+  });
+
   return res;
 }
 
@@ -160,5 +176,13 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
   );
 
   if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found or not frozen');
+
+  writeAuditLog({
+    action: 'ORDER_REACTIVATED',
+    entityType: 'Order',
+    entityId: params.orderId,
+    metadata: { actorUserId: params.actorUserId, reason: params.reason },
+  });
+
   return order;
 }

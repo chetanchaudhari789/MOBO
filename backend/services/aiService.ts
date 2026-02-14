@@ -80,11 +80,12 @@ function sanitizeAiError(err: unknown): string {
 const PER_MODEL_TIMEOUT_MS = 15_000;
 
 function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Model response timed out')), PER_MODEL_TIMEOUT_MS)
-    ),
+    promise.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Model response timed out')), PER_MODEL_TIMEOUT_MS);
+    }),
   ]);
 }
 
@@ -92,11 +93,12 @@ function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
 const OCR_CALL_TIMEOUT_MS = 20_000;
 
 function withOcrTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('OCR recognition timed out')), OCR_CALL_TIMEOUT_MS)
-    ),
+    promise.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('OCR recognition timed out')), OCR_CALL_TIMEOUT_MS);
+    }),
   ]);
 }
 
@@ -571,36 +573,42 @@ async function verifyProofWithOcr(
       processedBuffer = imgBuffer;
     }
 
-    const worker = await createWorker('eng');
-    const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
-    await worker.terminate();
+    let worker = await createWorker('eng');
+    try {
+      const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
+      await worker.terminate();
+      worker = null as any;
 
-    let ocrText = (data.text || '').trim();
+      let ocrText = (data.text || '').trim();
 
-    // High-contrast fallback for faded/dark screenshots
-    if (ocrText.length < 30) {
-      try {
-        const hcBuffer = await sharp(imgBuffer)
-          .greyscale()
-          .linear(1.6, -40)
-          .sharpen({ sigma: 2 })
-          .toBuffer();
-        const hcWorker = await createWorker('eng');
-        const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-        await hcWorker.terminate();
-        const hcText = (hcResult.data.text || '').trim();
-        if (hcText.length > ocrText.length) ocrText = hcText;
-      } catch { /* ignore high-contrast failure */ }
-    }
+      // High-contrast fallback for faded/dark screenshots
+      if (ocrText.length < 30) {
+        let hcWorker: any = null;
+        try {
+          const hcBuffer = await sharp(imgBuffer)
+            .greyscale()
+            .linear(1.6, -40)
+            .sharpen({ sigma: 2 })
+            .toBuffer();
+          hcWorker = await createWorker('eng');
+          const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
+          await hcWorker.terminate();
+          hcWorker = null;
+          const hcText = (hcResult.data.text || '').trim();
+          if (hcText.length > ocrText.length) ocrText = hcText;
+        } catch {
+          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
+        }
+      }
 
-    if (!ocrText || ocrText.length < 5) {
-      return {
-        orderIdMatch: false,
-        amountMatch: false,
-        confidenceScore: 15,
-        discrepancyNote: 'OCR could not read text from the image. Please verify manually.',
-      };
-    }
+      if (!ocrText || ocrText.length < 5) {
+        return {
+          orderIdMatch: false,
+          amountMatch: false,
+          confidenceScore: 15,
+          discrepancyNote: 'OCR could not read text from the image. Please verify manually.',
+        };
+      }
 
     // Normalize OCR digit confusion
     const normalized = ocrText
@@ -703,6 +711,10 @@ async function verifyProofWithOcr(
       confidenceScore,
       discrepancyNote: detectedNotes.join(' ') || 'OCR fallback verification complete.',
     };
+    } catch (workerErr) {
+      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+      throw workerErr;
+    }
   } catch (err) {
     console.error('OCR proof verification error:', err);
     return {
@@ -869,43 +881,49 @@ async function verifyRatingWithOcr(
       processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer();
     } catch { processedBuffer = imgBuffer; }
 
-    const worker = await createWorker('eng');
-    const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
-    await worker.terminate();
-    let ocrText = (data.text || '').trim();
+    let worker: any = await createWorker('eng');
+    try {
+      const { data }: any = await withOcrTimeout(worker.recognize(processedBuffer));
+      await worker.terminate();
+      worker = null;
+      let ocrText = (data.text || '').trim();
 
-    // If initial OCR yields poor results, try a high-contrast pass
-    if (ocrText.length < 30) {
-      try {
-        const hcBuffer = await sharp(imgBuffer)
-          .greyscale()
-          .linear(1.6, -40)
-          .sharpen({ sigma: 2 })
-          .toBuffer();
-        const hcWorker = await createWorker('eng');
-        const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-        await hcWorker.terminate();
-        const hcText = (hcResult.data.text || '').trim();
-        if (hcText.length > ocrText.length) ocrText = hcText;
-      } catch { /* ignore high-contrast failure */ }
-    }
+      // If initial OCR yields poor results, try a high-contrast pass
+      if (ocrText.length < 30) {
+        let hcWorker: any = null;
+        try {
+          const hcBuffer = await sharp(imgBuffer)
+            .greyscale()
+            .linear(1.6, -40)
+            .sharpen({ sigma: 2 })
+            .toBuffer();
+          hcWorker = await createWorker('eng');
+          const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
+          await hcWorker.terminate();
+          hcWorker = null;
+          const hcText = (hcResult.data.text || '').trim();
+          if (hcText.length > ocrText.length) ocrText = hcText;
+        } catch {
+          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
+        }
+      }
 
-    if (!ocrText || ocrText.length < 5) {
-      return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
-        discrepancyNote: 'OCR could not read text from the rating screenshot.' };
-    }
+      if (!ocrText || ocrText.length < 5) {
+        return { accountNameMatch: false, productNameMatch: false, confidenceScore: 10,
+          discrepancyNote: 'OCR could not read text from the rating screenshot.' };
+      }
 
-    const lower = ocrText.toLowerCase();
-    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
-    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
-    const nameMatches = buyerParts.filter(p => lower.includes(p));
-    const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+      const lower = ocrText.toLowerCase();
+      // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
+      const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+      const nameMatches = buyerParts.filter(p => lower.includes(p));
+      const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
 
-    // Product name matching: check if significant keywords from product name appear
-    const productTokens = expectedProductName.toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(t => t.length >= 3);
+      // Product name matching: check if significant keywords from product name appear
+      const productTokens = expectedProductName.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(t => t.length >= 3);
     const matchedTokens = productTokens.filter(t => lower.includes(t));
     const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
 
@@ -928,6 +946,10 @@ async function verifyRatingWithOcr(
         accountNameMatch && productNameMatch ? 'Account name and product matched via OCR.' : '',
       ].filter(Boolean).join(' '),
     };
+    } catch (workerErr) {
+      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+      throw workerErr;
+    }
   } catch (err) {
     console.error('OCR rating verification error:', err);
     return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
@@ -1043,26 +1065,32 @@ async function verifyReturnWindowWithOcr(
     try { processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer(); }
     catch { processedBuffer = imgBuffer; }
 
-    const worker = await createWorker('eng');
-    const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
-    await worker.terminate();
-    let ocrText = (data.text || '').trim();
+    let worker: any = await createWorker('eng');
+    try {
+      const { data }: any = await withOcrTimeout(worker.recognize(processedBuffer));
+      await worker.terminate();
+      worker = null;
+      let ocrText = (data.text || '').trim();
 
-    // High-contrast fallback for faded/dark screenshots
-    if (ocrText.length < 30) {
-      try {
-        const hcBuffer = await sharp(imgBuffer)
-          .greyscale()
-          .linear(1.6, -40)
-          .sharpen({ sigma: 2 })
-          .toBuffer();
-        const hcWorker = await createWorker('eng');
-        const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-        await hcWorker.terminate();
-        const hcText = (hcResult.data.text || '').trim();
-        if (hcText.length > ocrText.length) ocrText = hcText;
-      } catch { /* ignore high-contrast failure */ }
-    }
+      // High-contrast fallback for faded/dark screenshots
+      if (ocrText.length < 30) {
+        let hcWorker: any = null;
+        try {
+          const hcBuffer = await sharp(imgBuffer)
+            .greyscale()
+            .linear(1.6, -40)
+            .sharpen({ sigma: 2 })
+            .toBuffer();
+          hcWorker = await createWorker('eng');
+          const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
+          await hcWorker.terminate();
+          hcWorker = null;
+          const hcText = (hcResult.data.text || '').trim();
+          if (hcText.length > ocrText.length) ocrText = hcText;
+        } catch {
+          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
+        }
+      }
 
     if (!ocrText || ocrText.length < 5) {
       return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
@@ -1152,6 +1180,10 @@ async function verifyReturnWindowWithOcr(
         !returnWindowClosed ? 'Return window status not confirmed.' : '',
       ].filter(Boolean).join(' ') || 'OCR verification complete.',
     };
+    } catch (workerErr) {
+      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+      throw workerErr;
+    }
   } catch (err) {
     console.error('OCR return window verification error:', err);
     return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
@@ -1279,7 +1311,7 @@ export async function extractOrderDetailsWithAi(
 
     // ── Platform-specific order ID patterns ──
     const AMAZON_ORDER_PATTERN     = '\\b\\d{3}[\\-\\s]?\\d{7}[\\-\\s]?\\d{7}\\b';
-    const FLIPKART_ORDER_PATTERN   = '\\b[O0][Dd]\\d{10,}\\b';
+    const FLIPKART_ORDER_PATTERN   = '\\b[Oo0][Dd]\\d{10,}\\b';
     const MYNTRA_ORDER_PATTERN     = '\\b(?:MYN|MNT|ORD|PP)[\\-\\s]?\\d{6,}\\b';
     const MEESHO_ORDER_PATTERN     = '\\b(?:MSH|MEESH[O0])[\\-\\s]?\\d{6,}\\b';
     const AJIO_ORDER_PATTERN       = '\\bFN[\\-\\s]?\\d{6,}\\b';

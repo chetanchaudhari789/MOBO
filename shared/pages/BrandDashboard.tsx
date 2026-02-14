@@ -1893,6 +1893,13 @@ export const BrandDashboard: React.FC = () => {
   };
 
   const handleExportPayouts = () => {
+    // CSV formula injection guard: prefix dangerous chars with a single-quote
+    const csvSafe = (v: unknown): string => {
+      const s = String(v ?? '').replace(/"/g, '""');
+      if (/^[=+\-@\t\r]/.test(s)) return `"'${s}"`;
+      return `"${s}"`;
+    };
+
     const headers = [
       'Transaction ID',
       'Date',
@@ -1911,13 +1918,13 @@ export const BrandDashboard: React.FC = () => {
       const time = dateObj.toLocaleTimeString();
 
       const row = [
-        tx.id,
-        date,
-        time,
-        `"${(tx.agencyName || '').replace(/"/g, '""')}"`,
+        csvSafe(tx.id),
+        csvSafe(date),
+        csvSafe(time),
+        csvSafe(tx.agencyName || ''),
         tx.amount,
-        `"${(tx.ref || '').replace(/"/g, '""')}"`,
-        tx.status,
+        csvSafe(tx.ref || ''),
+        csvSafe(tx.status),
       ];
       csvRows.push(row.join(','));
     });
