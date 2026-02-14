@@ -58,6 +58,8 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     // Use majority readConcern for idempotency to avoid stale reads after failover.
     const existingTx = await TransactionModel.findOne({
       idempotencyKey: input.idempotencyKey,
+      // Scope to this user to prevent cross-user idempotency collisions
+      $or: [{ fromUserId: input.ownerUserId }, { toUserId: input.ownerUserId }],
     })
       .read('primary')
       .session(session);
@@ -109,14 +111,14 @@ export async function applyWalletCredit(input: WalletMutationInput) {
   // If the caller provides an external session, run within it (no new session/transaction).
   if (externalSession) {
     const result = await execute(externalSession);
-    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     return result;
   }
 
   const session = await mongoose.startSession();
   try {
     const result = await session.withTransaction(() => execute(session));
-    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     return result;
   } finally {
     session.endSession();
@@ -133,6 +135,8 @@ export async function applyWalletDebit(input: WalletMutationInput) {
     // Use majority readConcern for idempotency to avoid stale reads after failover.
     const existingTx = await TransactionModel.findOne({
       idempotencyKey: input.idempotencyKey,
+      // Scope to this user to prevent cross-user idempotency collisions
+      $or: [{ fromUserId: input.ownerUserId }, { toUserId: input.ownerUserId }],
     })
       .read('primary')
       .session(session);
@@ -188,12 +192,16 @@ export async function applyWalletDebit(input: WalletMutationInput) {
 
   // If the caller provides an external session, run within it (no new session/transaction).
   if (externalSession) {
-    return execute(externalSession);
+    const result = await execute(externalSession);
+    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    return result;
   }
 
   const session = await mongoose.startSession();
   try {
-    return await session.withTransaction(() => execute(session));
+    const result = await session.withTransaction(() => execute(session));
+    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    return result;
   } finally {
     session.endSession();
   }

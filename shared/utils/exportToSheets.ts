@@ -11,9 +11,33 @@ export interface SheetsExportOptions {
   onEnd?: () => void;
 }
 
+// Cache connection status to avoid redundant API calls within the same session.
+let _googleConnectedCache: { connected: boolean; checkedAt: number } | null = null;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCachedStatus(): boolean | null {
+  if (!_googleConnectedCache) return null;
+  if (Date.now() - _googleConnectedCache.checkedAt > CACHE_TTL_MS) {
+    _googleConnectedCache = null;
+    return null;
+  }
+  return _googleConnectedCache.connected;
+}
+
+function setCachedStatus(connected: boolean) {
+  _googleConnectedCache = { connected, checkedAt: Date.now() };
+}
+
+/** Invalidate the cached Google connection status (e.g. after disconnect). */
+export function invalidateGoogleStatusCache() {
+  _googleConnectedCache = null;
+}
+
 /**
  * Initiate Google OAuth in a popup window.
  * Returns a promise that resolves when the popup completes (success or failure).
+ * The user only needs to do this ONCE — after that, the refresh token is stored
+ * server-side and all subsequent exports work seamlessly.
  */
 export async function connectGoogleAccount(): Promise<boolean> {
   try {
@@ -30,15 +54,25 @@ export async function connectGoogleAccount(): Promise<boolean> {
       );
 
       if (!popup) {
+        // Popup blocked — resolve false so caller can proceed with service account fallback
         resolve(false);
         return;
       }
 
+      let resolved = false;
+      const cleanup = () => {
+        window.removeEventListener('message', handleMessage);
+        clearInterval(pollTimer);
+        clearTimeout(safetyTimer);
+      };
+
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'GOOGLE_OAUTH_RESULT') {
-          window.removeEventListener('message', handleMessage);
-          clearInterval(pollTimer);
-          resolve(!!event.data.success);
+          resolved = true;
+          cleanup();
+          const success = !!event.data.success;
+          if (success) setCachedStatus(true);
+          resolve(success);
         }
       };
 
@@ -46,20 +80,27 @@ export async function connectGoogleAccount(): Promise<boolean> {
 
       // Fallback: poll for popup closure
       const pollTimer = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(pollTimer);
-          window.removeEventListener('message', handleMessage);
-          // If popup closed without a message, check connection status
-          api.google.getStatus().then(s => resolve(s.connected)).catch(() => resolve(false));
+        if (popup.closed && !resolved) {
+          resolved = true;
+          cleanup();
+          // If popup closed without a message, check connection status from server
+          api.google.getStatus()
+            .then(s => {
+              setCachedStatus(s.connected);
+              resolve(s.connected);
+            })
+            .catch(() => resolve(false));
         }
       }, 500);
 
       // Safety timeout: 5 minutes
-      setTimeout(() => {
-        clearInterval(pollTimer);
-        window.removeEventListener('message', handleMessage);
-        if (!popup.closed) popup.close();
-        resolve(false);
+      const safetyTimer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          if (!popup.closed) popup.close();
+          resolve(false);
+        }
       }, 5 * 60 * 1000);
     });
   } catch {
@@ -69,8 +110,15 @@ export async function connectGoogleAccount(): Promise<boolean> {
 
 /**
  * Export data to Google Sheets via backend API.
- * If the user hasn't connected their Google account, prompts them to do so first.
- * Opens the spreadsheet in a new tab on success.
+ *
+ * Flow:
+ * 1. Check if user has Google connected (cached for 5 min).
+ * 2. If not connected, show a one-time Google sign-in popup.
+ * 3. After sign-in (or if already connected), export via backend.
+ * 4. Backend uses user's OAuth token → sheet goes to THEIR Drive.
+ * 5. If user OAuth unavailable, backend falls back to service account
+ *    and auto-shares the sheet with the user's email.
+ * 6. Opens the spreadsheet in a new tab.
  */
 export async function exportToGoogleSheet(opts: SheetsExportOptions): Promise<void> {
   const { title, headers, rows, sheetName, onSuccess, onError, onStart, onEnd } = opts;
@@ -82,20 +130,26 @@ export async function exportToGoogleSheet(opts: SheetsExportOptions): Promise<vo
 
   onStart?.();
   try {
-    // Check if user has Google connected — if not, initiate OAuth first
-    let status: { connected: boolean } | null = null;
-    try {
-      status = await api.google.getStatus();
-    } catch {
-      // Google OAuth may not be configured — proceed anyway (will use service account)
+    // Check if user has Google connected — use cache to avoid redundant calls
+    let connected = getCachedStatus();
+    if (connected === null) {
+      try {
+        const status = await api.google.getStatus();
+        connected = status.connected;
+        setCachedStatus(connected);
+      } catch {
+        // Google OAuth may not be configured — proceed anyway (will use service account)
+        connected = null;
+      }
     }
 
-    if (status && !status.connected) {
-      // Try to connect Google account first
-      const connected = await connectGoogleAccount();
-      if (!connected) {
-        // User cancelled or failed — still proceed with service account fallback
-        console.info('Google OAuth not completed — using service account fallback if available.');
+    if (connected === false) {
+      // Try to connect Google account first (one-time sign-in)
+      const didConnect = await connectGoogleAccount();
+      if (!didConnect) {
+        // User cancelled or popup blocked — still proceed with service account fallback.
+        // Service account will auto-share the sheet with the user's email.
+        console.info('Google OAuth not completed — backend will use service account with auto-sharing.');
       }
     }
 
@@ -109,6 +163,8 @@ export async function exportToGoogleSheet(opts: SheetsExportOptions): Promise<vo
       msg = 'Google Sheets export is not configured yet. Please contact your administrator to set up Google Cloud credentials.';
     } else if (code === 'GOOGLE_OAUTH_NOT_CONFIGURED') {
       msg = 'Google account connection is not available on this server.';
+    } else if (code === 'RATE_LIMITED') {
+      msg = 'Too many export requests. Please wait a moment and try again.';
     } else {
       msg = err?.message || 'Google Sheets export failed. Please try again later.';
     }

@@ -681,6 +681,12 @@ const OrdersView = ({ user }: any) => {
     };
 
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    // Sanitize user-controlled values: neutralize spreadsheet formula injection
+    const csvSafe = (val: string) => {
+      let s = String(val ?? '');
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return csvEscape(s);
+    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -725,24 +731,24 @@ const OrdersView = ({ user }: any) => {
         getPrimaryOrderId(o),
         date,
         time,
-        `"${(item?.title || '').replace(/"/g, '""')}"`,
+        csvSafe(item?.title || ''),
         item?.dealType || 'General',
         item?.platform || '',
         item?.dealType || 'Discount',
         item?.priceAtPurchase,
         item?.quantity || 1,
         o.total,
-        `"${(o.agencyName || 'Direct').replace(/"/g, '""')}"`,
-        o.managerName,
-        `"${(o.buyerName || '').replace(/"/g, '""')}"`,
-        `"${(o.buyerMobile || '').replace(/"/g, '""')}"`,
+        csvSafe(o.agencyName || 'Direct'),
+        csvSafe(o.managerName || ''),
+        csvSafe(o.buyerName || ''),
+        csvSafe(o.buyerMobile || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
         o.id,
-        `"${(o.soldBy || '').replace(/"/g, '""')}"`,
+        csvSafe(o.soldBy || ''),
         o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
-        `"${(o.extractedProductName || '').replace(/"/g, '""')}"`,
+        csvSafe(o.extractedProductName || ''),
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
@@ -1954,9 +1960,14 @@ export const BrandDashboard: React.FC = () => {
 
   const handlePayout = async () => {
     if (!selectedAgency || !payoutAmount || !payoutRef || !user) return;
+    const amount = Number(payoutAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Enter a valid positive amount');
+      return;
+    }
     setIsProcessing(true);
     try {
-      await api.brand.payoutAgency(user.id, selectedAgency.id, Number(payoutAmount), payoutRef);
+      await api.brand.payoutAgency(user.id, selectedAgency.id, amount, payoutRef);
       toast.success('Payment recorded');
       setPayoutAmount('');
       setPayoutRef('');
@@ -2601,7 +2612,7 @@ export const BrandDashboard: React.FC = () => {
                   />
                   <button
                     onClick={handlePayout}
-                    disabled={!payoutAmount || !payoutRef || isProcessing}
+                    disabled={!payoutAmount || Number(payoutAmount) <= 0 || !payoutRef || isProcessing}
                     className="w-full py-4 bg-black text-white font-bold rounded-2xl shadow-xl hover:bg-lime-400 hover:text-black transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:scale-100"
                   >
                     {isProcessing ? (

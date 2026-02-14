@@ -896,7 +896,7 @@ async function verifyRatingWithOcr(
     const allTexts: string[] = [];
 
     // Helper to run OCR on a buffer
-    const ocrOnBuffer = async (buf: Buffer, label: string): Promise<string> => {
+    const ocrOnBuffer = async (buf: Buffer, _label: string): Promise<string> => {
       let worker: any = null;
       try {
         worker = await createWorker('eng');
@@ -1584,8 +1584,9 @@ export async function extractOrderDetailsWithAi(
           else labeledAmounts.push(value);
         }
 
-        // Also try INR-prefixed patterns on the same line
-        const inrMatches = line.matchAll(new RegExp(INR_VALUE_PATTERN, 'gi'));
+        // Also try INR-prefixed patterns on the same line (reuse pre-compiled regex)
+        INR_VALUE_GLOBAL_RE.lastIndex = 0;
+        const inrMatches = line.matchAll(INR_VALUE_GLOBAL_RE);
         for (const match of inrMatches) {
           const value = parseAmountString(match[1]);
           if (!value) continue;
@@ -1609,7 +1610,8 @@ export async function extractOrderDetailsWithAi(
               if (isFinalLabel) finalAmounts.push(value);
               else labeledAmounts.push(value);
             }
-            const nextInr = nextLine.matchAll(new RegExp(INR_VALUE_PATTERN, 'gi'));
+            INR_VALUE_GLOBAL_RE.lastIndex = 0;
+            const nextInr = nextLine.matchAll(INR_VALUE_GLOBAL_RE);
             for (const match of nextInr) {
               const value = parseAmountString(match[1]);
               if (!value) continue;
@@ -2054,7 +2056,11 @@ export async function extractOrderDetailsWithAi(
       crop?: { top?: number; left?: number; height?: number; width?: number },
       mode: 'default' | 'highContrast' | 'inverted' = 'default',
     ) => {
+      // Wrap in a timeout to prevent hangs on maliciously-crafted images
+      const PREPROCESS_TIMEOUT = 15_000; // 15 seconds max per image
       try {
+        const result = await Promise.race([
+          (async () => {
         const rawBuf = getImageBuffer(base64);
         if (!isRecognizedImageBuffer(rawBuf)) {
           return base64; // Not a valid image — skip Sharp processing
@@ -2073,8 +2079,8 @@ export async function extractOrderDetailsWithAi(
           pipeline = pipeline.extract({ left, top, width: cw, height: ch });
         }
 
-        // Upscale to help OCR with small fonts; avoid stripping info by keeping aspect ratio.
-        pipeline = pipeline.resize({ width: 2400, withoutEnlargement: false });
+        // Upscale to help OCR with small fonts; keep aspect ratio. Don't enlarge small images unnecessarily.
+        pipeline = pipeline.resize({ width: 2400, withoutEnlargement: true });
 
         if (mode === 'inverted') {
           // Dark mode screenshots: invert BEFORE greyscale so dark backgrounds become white
@@ -2095,6 +2101,12 @@ export async function extractOrderDetailsWithAi(
           .toBuffer();
 
         return `data:image/jpeg;base64,${processed.toString('base64')}`;
+          })(),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Preprocessing timeout')), PREPROCESS_TIMEOUT)
+          ),
+        ]);
+        return result;
       } catch (err) {
         console.warn('OCR preprocessing failed, using original image.', err);
         return base64;
@@ -2376,62 +2388,96 @@ export async function extractOrderDetailsWithAi(
       }
     } catch { /* ignore — default to portrait */ }
 
-    const allOcrVariants: Array<{ label: string; image: string }> = [
+    const allOcrVariants: Array<{ label: string; image: string }> = [];
+
+    // Parallelize independence preprocessing calls for all base variants
+    const [enhancedImg, highContrastImg, invertedImg] = await Promise.all([
+      preprocessForOcr(payload.imageBase64),
+      preprocessForOcr(payload.imageBase64, undefined, 'highContrast'),
+      preprocessForOcr(payload.imageBase64, undefined, 'inverted'),
+    ]);
+
+    allOcrVariants.push(
       { label: 'original', image: payload.imageBase64 },
-      { label: 'enhanced', image: await preprocessForOcr(payload.imageBase64) },
-      // High-contrast variant for faded / low-contrast screenshots
-      { label: 'high-contrast', image: await preprocessForOcr(payload.imageBase64, undefined, 'highContrast') },
-      // Inverted variant for dark mode screenshots
-      { label: 'inverted', image: await preprocessForOcr(payload.imageBase64, undefined, 'inverted') },
-    ];
+      { label: 'enhanced', image: enhancedImg },
+      { label: 'high-contrast', image: highContrastImg },
+      { label: 'inverted', image: invertedImg },
+    );
 
     if (isTablet && !isLandscape) {
       // Tablet portrait (3:4 ish) — wider than phone but taller than desktop
+      const tabVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.05, height: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { top: 0, height: 0.45 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.45 }, 'highContrast'),
+        preprocessForOcr(payload.imageBase64, { left: 0.35, width: 0.6, top: 0.05, height: 0.6 }),
+      ]);
       allOcrVariants.push(
-        { label: 'tab-center-70', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.05, height: 0.5 }) },
-        { label: 'tab-top-45', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.45 }) },
-        { label: 'tab-middle-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }) },
-        { label: 'tab-bottom-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }) },
-        { label: 'tab-hc-center', image: await preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.45 }, 'highContrast') },
-        { label: 'tab-right-60', image: await preprocessForOcr(payload.imageBase64, { left: 0.35, width: 0.6, top: 0.05, height: 0.6 }) },
+        { label: 'tab-center-70', image: tabVariants[0] },
+        { label: 'tab-top-45', image: tabVariants[1] },
+        { label: 'tab-middle-50', image: tabVariants[2] },
+        { label: 'tab-bottom-50', image: tabVariants[3] },
+        { label: 'tab-hc-center', image: tabVariants[4] },
+        { label: 'tab-right-60', image: tabVariants[5] },
       );
     } else if (isTablet && isLandscape) {
       // Tablet landscape (4:3 ish) — shorter/wider than desktop monitor
+      const tabLandVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6, top: 0.1, height: 0.7 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.05, height: 0.65 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.05, width: 0.5, top: 0.1, height: 0.6 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.2, height: 0.5 }, 'highContrast'),
+      ]);
       allOcrVariants.push(
-        { label: 'tab-land-center', image: await preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6, top: 0.1, height: 0.7 }) },
-        { label: 'tab-land-right', image: await preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.05, height: 0.65 }) },
-        { label: 'tab-land-left', image: await preprocessForOcr(payload.imageBase64, { left: 0.05, width: 0.5, top: 0.1, height: 0.6 }) },
-        { label: 'tab-land-hc-mid', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.2, height: 0.5 }, 'highContrast') },
+        { label: 'tab-land-center', image: tabLandVariants[0] },
+        { label: 'tab-land-right', image: tabLandVariants[1] },
+        { label: 'tab-land-left', image: tabLandVariants[2] },
+        { label: 'tab-land-hc-mid', image: tabLandVariants[3] },
       );
     } else if (isLandscape) {
       // Desktop/laptop: order info is often in the center or right portion
       // Amazon desktop: order details occupy the center-right area
+      const desktopVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.5, width: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { left: 0, width: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.4, height: 0.6 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.25, width: 0.55, top: 0.05, height: 0.45 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.35 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.1, height: 0.5 }, 'highContrast'),
+      ]);
       allOcrVariants.push(
-        { label: 'center-60', image: await preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6 }) },
-        { label: 'right-50', image: await preprocessForOcr(payload.imageBase64, { left: 0.5, width: 0.5 }) },
-        { label: 'left-50', image: await preprocessForOcr(payload.imageBase64, { left: 0, width: 0.5 }) },
-        { label: 'center-top-half', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0, height: 0.55 }) },
-        { label: 'center-bottom-half', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.4, height: 0.6 }) },
-        // Amazon Order Details page: order info block at center-right, top 40%
-        { label: 'order-details-block', image: await preprocessForOcr(payload.imageBase64, { left: 0.25, width: 0.55, top: 0.05, height: 0.45 }) },
-        // Wide center strip — for when order ID / price are on same horizontal line
-        { label: 'wide-center-strip', image: await preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.35 }) },
-        // High-contrast center-right (desktop order summary area)
-        { label: 'hc-center-right', image: await preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.1, height: 0.5 }, 'highContrast') },
+        { label: 'center-60', image: desktopVariants[0] },
+        { label: 'right-50', image: desktopVariants[1] },
+        { label: 'left-50', image: desktopVariants[2] },
+        { label: 'center-top-half', image: desktopVariants[3] },
+        { label: 'center-bottom-half', image: desktopVariants[4] },
+        { label: 'order-details-block', image: desktopVariants[5] },
+        { label: 'wide-center-strip', image: desktopVariants[6] },
+        { label: 'hc-center-right', image: desktopVariants[7] },
       );
     } else {
       // Phone/portrait: order info is vertically distributed
+      const phoneVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { top: 0, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { top: 0, height: 0.35 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.1, height: 0.4 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.3, height: 0.4 }, 'highContrast'),
+        preprocessForOcr(payload.imageBase64, { top: 0.55, height: 0.45 }, 'highContrast'),
+      ]);
       allOcrVariants.push(
-        { label: 'top-55', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.55 }) },
-        { label: 'top-35', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.35 }) },
-        { label: 'middle-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }) },
-        { label: 'bottom-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }) },
-        // Phone: product name + price area is typically in the middle
-        { label: 'product-area', image: await preprocessForOcr(payload.imageBase64, { top: 0.1, height: 0.4 }) },
-        // High-contrast version of middle section (where price/total usually lives)
-        { label: 'hc-middle', image: await preprocessForOcr(payload.imageBase64, { top: 0.3, height: 0.4 }, 'highContrast') },
-        // Bottom section with high contrast (order summary / grand total area)
-        { label: 'hc-bottom', image: await preprocessForOcr(payload.imageBase64, { top: 0.55, height: 0.45 }, 'highContrast') },
+        { label: 'top-55', image: phoneVariants[0] },
+        { label: 'top-35', image: phoneVariants[1] },
+        { label: 'middle-50', image: phoneVariants[2] },
+        { label: 'bottom-50', image: phoneVariants[3] },
+        { label: 'product-area', image: phoneVariants[4] },
+        { label: 'hc-middle', image: phoneVariants[5] },
+        { label: 'hc-bottom', image: phoneVariants[6] },
       );
     }
 
@@ -2823,14 +2869,16 @@ export async function extractOrderDetailsWithAi(
       }
     }
 
-    // 4. If amount is unreasonably large (order ID-sized numbers), reject
-    // Very few Indian e-commerce items cost > ₹2,00,000 — threshold raised to
-    // avoid catching high-value electronics (phones, laptops) while still
-    // rejecting order-ID fragments that parse as 6-7 digit numbers.
-    if (finalAmount && finalAmount > 200000) {
+    // 4. If amount is unreasonably large (order ID-sized numbers), flag or reject
+    // Raised threshold to ₹5,00,000 to accommodate premium electronics, jewelry, appliances.
+    // Amounts above this are almost certainly OCR misreads of order ID fragments.
+    if (finalAmount && finalAmount > 500000) {
       notes.push(`Amount ₹${finalAmount} seems unreasonably large — rejected.`);
       finalAmount = null;
       confidenceScore = Math.max(30, confidenceScore - 15);
+    } else if (finalAmount && finalAmount > 200000) {
+      notes.push(`Amount ₹${finalAmount} is high — flagged for manual review.`);
+      confidenceScore = Math.max(50, confidenceScore - 10);
     }
 
     // 5. Reject product name if it's a delivery status line
