@@ -686,11 +686,11 @@ export function makeOrdersController(env: Env) {
                 expectedBuyerName: buyerName,
                 expectedProductName: productName,
               });
-              // Block submission if both name AND product mismatch with high confidence (≥70 for anti-fraud strength)
-              if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
-                  && ratingAiResult.confidenceScore >= 70) {
+              // Block submission if EITHER account name OR product mismatch with high confidence (≥70)
+              if (ratingAiResult && ratingAiResult.confidenceScore >= 70
+                  && (!ratingAiResult.accountNameMatch || !ratingAiResult.productNameMatch)) {
                 throw new AppError(422, 'RATING_VERIFICATION_FAILED',
-                  'Rating screenshot does not match: the account name and product must match your order. ' +
+                  'Rating screenshot does not match: both account name and product must match your order. ' +
                   (ratingAiResult.discrepancyNote || ''));
               }
             }

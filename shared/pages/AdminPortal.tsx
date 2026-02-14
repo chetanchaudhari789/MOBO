@@ -161,6 +161,15 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+// Helper to sanitize URLs to prevent XSS
+const sanitizeUrl = (url: string): string | null => {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  // Only allow http and https URLs
+  if (trimmed.match(/^https?:\/\//i)) return trimmed;
+  return null;
+};
+
 // --- MAIN PAGE ---
 
 export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack }) => {
@@ -215,14 +224,27 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
   const fetchOrderAudit = async (orderId: string) => {
     setOrderAuditLoading(true);
+    const currentOrderId = orderId;
     try {
-      const logs = await api.orders.getOrderAudit(orderId);
-      setOrderAuditLogs(Array.isArray(logs) ? logs : []);
+      const resp = await api.orders.getOrderAudit(orderId);
+      const logs = Array.isArray(resp)
+        ? resp
+        : (Array.isArray((resp as any)?.logs) ? (resp as any).logs : []);
+      // Only update state if this is still the current modal
+      if (proofModal?.id === currentOrderId) {
+        setOrderAuditLogs(logs);
+      }
     } catch (e) {
       console.error('Order audit fetch error:', e);
-      setOrderAuditLogs([]);
+      // Only update state if this is still the current modal
+      if (proofModal?.id === currentOrderId) {
+        setOrderAuditLogs([]);
+      }
     } finally {
-      setOrderAuditLoading(false);
+      // Only update loading state if this is still the current modal
+      if (proofModal?.id === currentOrderId) {
+        setOrderAuditLoading(false);
+      }
     }
   };
 
@@ -1833,14 +1855,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
       {/* Proof Viewer Modal */}
       {proofModal && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); }}>
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditLoading(false); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900">Order Proofs &amp; Audit</h3>
                 <p className="text-xs text-slate-500 font-mono mt-1">{proofModal.externalOrderId || proofModal.id}</p>
               </div>
-              <button type="button" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); }} className="p-2 rounded-lg hover:bg-slate-100">
+              <button type="button" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditLoading(false); }} className="p-2 rounded-lg hover:bg-slate-100">
                 <span className="text-slate-400 text-xl font-bold">&times;</span>
               </button>
             </div>
@@ -1912,15 +1934,22 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 <div>
                   <h4 className="flex items-center gap-2 text-xs font-extrabold text-purple-400 uppercase tracking-wider mb-2"><MessageCircle size={14} /> Live Review</h4>
                   {proofModal.reviewLink ? (
-                    <a
-                      href={proofModal.reviewLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center justify-between p-4 bg-purple-50 text-purple-700 rounded-xl font-bold text-xs border border-purple-100 hover:bg-purple-100 transition-colors group"
-                    >
-                      <span className="truncate flex-1 mr-2">{proofModal.reviewLink}</span>
-                      <ExternalLink size={16} className="group-hover:scale-110 transition-transform" />
-                    </a>
+                    sanitizeUrl(proofModal.reviewLink) ? (
+                      <a
+                        href={sanitizeUrl(proofModal.reviewLink)!}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between p-4 bg-purple-50 text-purple-700 rounded-xl font-bold text-xs border border-purple-100 hover:bg-purple-100 transition-colors group"
+                      >
+                        <span className="truncate flex-1 mr-2">{proofModal.reviewLink}</span>
+                        <ExternalLink size={16} className="group-hover:scale-110 transition-transform" />
+                      </a>
+                    ) : (
+                      <div className="p-4 bg-amber-50 text-amber-700 rounded-xl text-xs border border-amber-200">
+                        <p className="font-bold">⚠️ Invalid or unsafe URL</p>
+                        <p className="text-[10px] mt-1 font-mono break-all">{proofModal.reviewLink}</p>
+                      </div>
+                    )
                   ) : proofModal.screenshots?.review ? (
                     <img src={proofModal.screenshots.review} alt="Review Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-purple-200 bg-purple-50" />
                   ) : (
@@ -1930,59 +1959,63 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               )}
 
               {/* 4. Return Window Proof */}
-              {(proofModal.screenshots as any)?.returnWindow && (
-                <div>
-                  <h4 className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-wider mb-2"><Package size={14} /> Return Window Proof</h4>
-                  <img src={(proofModal.screenshots as any).returnWindow} alt="Return Window Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-teal-200 bg-teal-50" />
-                  {/* AI Return Window Verification */}
-                  {proofModal.returnWindowAiVerification && (
-                    <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
-                      <p className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">AI Return Window Verification</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {proofModal.returnWindowAiVerification.orderIdMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.orderIdMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {proofModal.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
+              <div>
+                <h4 className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-wider mb-2"><Package size={14} /> Return Window Proof</h4>
+                {(proofModal.screenshots as any)?.returnWindow ? (
+                  <>
+                    <img src={(proofModal.screenshots as any).returnWindow} alt="Return Window Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-teal-200 bg-teal-50" />
+                    {/* AI Return Window Verification */}
+                    {proofModal.returnWindowAiVerification && (
+                      <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
+                        <p className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">AI Return Window Verification</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {proofModal.returnWindowAiVerification.orderIdMatch !== undefined && (
+                            <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.orderIdMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
+                              <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                {proofModal.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
+                              </p>
+                            </div>
+                          )}
+                          {proofModal.returnWindowAiVerification.productNameMatch !== undefined && (
+                            <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
+                              <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                {proofModal.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                              </p>
+                            </div>
+                          )}
+                          {proofModal.returnWindowAiVerification.amountMatch !== undefined && (
+                            <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.amountMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
+                              <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                {proofModal.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
+                              </p>
+                            </div>
+                          )}
+                          {proofModal.returnWindowAiVerification.returnWindowClosed !== undefined && (
+                            <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Window Closed</p>
+                              <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'text-green-600' : 'text-yellow-600'}`}>
+                                {proofModal.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {proofModal.returnWindowAiVerification.detectedReturnWindow && (
+                          <p className="text-[9px] text-slate-500">Detected Window: {proofModal.returnWindowAiVerification.detectedReturnWindow}</p>
                         )}
-                        {proofModal.returnWindowAiVerification.productNameMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {proofModal.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
+                        {proofModal.returnWindowAiVerification.discrepancyNote && (
+                          <p className="text-[9px] text-red-500 font-semibold">Note: {proofModal.returnWindowAiVerification.discrepancyNote}</p>
                         )}
-                        {proofModal.returnWindowAiVerification.amountMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.amountMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {proofModal.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
-                        )}
-                        {proofModal.returnWindowAiVerification.returnWindowClosed !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Window Closed</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'text-green-600' : 'text-yellow-600'}`}>
-                              {proofModal.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
-                            </p>
-                          </div>
-                        )}
+                        <p className="text-[9px] text-slate-500">Confidence: {proofModal.returnWindowAiVerification.confidenceScore}%</p>
                       </div>
-                      {proofModal.returnWindowAiVerification.detectedReturnWindow && (
-                        <p className="text-[9px] text-slate-500">Detected Window: {proofModal.returnWindowAiVerification.detectedReturnWindow}</p>
-                      )}
-                      {proofModal.returnWindowAiVerification.discrepancyNote && (
-                        <p className="text-[9px] text-red-500 font-semibold">Note: {proofModal.returnWindowAiVerification.discrepancyNote}</p>
-                      )}
-                      <p className="text-[9px] text-slate-500">Confidence: {proofModal.returnWindowAiVerification.confidenceScore}%</p>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </>
+                ) : (
+                  <div className="py-4 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-200">Waiting for upload...</div>
+                )}
+              </div>
 
               {/* 5. Payment Screenshot */}
               <div>
