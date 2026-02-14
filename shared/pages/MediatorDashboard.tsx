@@ -988,6 +988,10 @@ const MediatorProfileView = () => {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'qr') => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Image must be under 2 MB');
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         if (type === 'avatar') setAvatar(reader.result as string);
@@ -1661,9 +1665,11 @@ export const MediatorDashboard: React.FC = () => {
     }
   };
 
-  // Recommendation 2: Auto-trigger extraction when modal opens
+  // Auto-trigger extraction when modal opens (skip if already analyzed for same order)
+  const lastAnalyzedOrderRef = useRef<string | null>(null);
   useEffect(() => {
-    if (proofModal && proofModal.screenshots?.order) {
+    if (proofModal && proofModal.screenshots?.order && proofModal.id !== lastAnalyzedOrderRef.current) {
+      lastAnalyzedOrderRef.current = proofModal.id;
       runAnalysis();
     }
   }, [proofModal]);

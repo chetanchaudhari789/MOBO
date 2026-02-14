@@ -74,7 +74,10 @@ export function googleRoutes(env: Env): Router {
     cleanupStaleStates();
 
     const state = crypto.randomBytes(24).toString('hex');
-    const userId = (req as any).user?.id || (req as any).user?._id;
+    const userId = (req as any).auth?.userId || (req as any).auth?.user?._id;
+    if (!userId) {
+      return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
+    }
     pendingStates.set(state, { userId: String(userId), createdAt: Date.now() });
 
     const params = new URLSearchParams({
@@ -203,33 +206,43 @@ export function googleRoutes(env: Env): Router {
    * GET /api/google/status
    * Returns whether the current user has a Google account connected.
    */
-  router.get('/status', requireAuth(env), async (req, res) => {
-    const userId = (req as any).user?.id || (req as any).user?._id;
-    const user = await UserModel.findById(userId).select('+googleRefreshToken googleEmail').lean();
-    return res.json({
-      connected: !!(user as any)?.googleRefreshToken,
-      googleEmail: (user as any)?.googleEmail || null,
-    });
+  router.get('/status', requireAuth(env), async (req, res, next) => {
+    try {
+      const userId = (req as any).auth?.userId;
+      if (!userId) return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
+      const user = await UserModel.findById(userId).select('+googleRefreshToken googleEmail').lean();
+      return res.json({
+        connected: !!(user as any)?.googleRefreshToken,
+        googleEmail: (user as any)?.googleEmail || null,
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   /**
    * POST /api/google/disconnect
    * Removes the user's Google tokens.
    */
-  router.post('/disconnect', requireAuth(env), async (req, res) => {
-    const userId = (req as any).user?.id || (req as any).user?._id;
-    await UserModel.findByIdAndUpdate(userId, {
-      $unset: { googleRefreshToken: 1, googleEmail: 1 },
-    });
+  router.post('/disconnect', requireAuth(env), async (req, res, next) => {
+    try {
+      const userId = (req as any).auth?.userId;
+      if (!userId) return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
+      await UserModel.findByIdAndUpdate(userId, {
+        $unset: { googleRefreshToken: 1, googleEmail: 1 },
+      });
 
-    writeAuditLog({
-      req,
-      action: 'GOOGLE_OAUTH_DISCONNECTED',
-      entityType: 'User',
-      entityId: String(userId),
-    });
+      writeAuditLog({
+        req,
+        action: 'GOOGLE_OAUTH_DISCONNECTED',
+        entityType: 'User',
+        entityId: String(userId),
+      });
 
-    return res.json({ ok: true });
+      return res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
   });
 
   return router;
@@ -270,7 +283,7 @@ function makeCallbackHtml(success: boolean, message: string): string {
   <script>
     try {
       if (window.opener) {
-        window.opener.postMessage({ type: 'GOOGLE_OAUTH_RESULT', success: ${success} }, '*');
+        window.opener.postMessage({ type: 'GOOGLE_OAUTH_RESULT', success: ${success} }, window.location.origin);
       }
     } catch(e) {}
     setTimeout(function() { window.close(); }, ${success ? 1500 : 4000});
