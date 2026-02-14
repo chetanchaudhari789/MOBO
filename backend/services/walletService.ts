@@ -103,6 +103,20 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       { session }
     );
 
+    // Only write audit log for new transactions (not idempotent replays)
+    await writeAuditLog({
+      action: 'WALLET_CREDIT',
+      entityType: 'Wallet',
+      entityId: String(wallet._id),
+      metadata: {
+        amountPaise: input.amountPaise,
+        type: input.type,
+        idempotencyKey: input.idempotencyKey,
+        transactionId: String(tx[0]._id),
+        walletId: String(wallet._id),
+      },
+    });
+
     return tx[0];
   };
 
