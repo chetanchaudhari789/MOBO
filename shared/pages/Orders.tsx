@@ -33,9 +33,9 @@ import {
 
 /* ─── Sample Screenshot Guide ───────────────────────────────────────── */
 const SAMPLE_IMAGES: Record<string, string> = {
-  order: '/screenshots/sample-order.svg',
-  rating: '/screenshots/sample-rating.svg',
-  returnWindow: '/screenshots/sample-return-window.svg',
+  order: '/screenshots/sample-order.png',
+  rating: '/screenshots/sample-rating.png',
+  returnWindow: '/screenshots/sample-return-window.png',
 };
 
 const SampleScreenshotGuide: React.FC<{
