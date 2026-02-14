@@ -7,6 +7,19 @@ import { makeOrdersController } from '../controllers/ordersController.js';
 import { AuditLogModel } from '../models/AuditLog.js';
 import { OrderModel } from '../models/Order.js';
 
+interface OrderEvent {
+  type: string;
+  at: Date;
+  actorUserId?: mongoose.Types.ObjectId;
+  metadata?: Record<string, any>;
+}
+
+interface OrderDocument {
+  _id: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
+  events?: OrderEvent[];
+}
+
 export function ordersRoutes(env: Env): Router {
   const router = Router();
   const orders = makeOrdersController(env);
@@ -62,7 +75,7 @@ export function ordersRoutes(env: Env): Router {
 
       // Non-privileged users (buyers) may only view audit for their own orders
       // Fetch order with both userId (for ownership check) and events (for timeline)
-      const order = await OrderModel.findById(orderId).select('userId events').lean();
+      const order = await OrderModel.findById(orderId).select('userId events').lean() as OrderDocument | null;
       if (!order) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
       }
@@ -86,8 +99,8 @@ export function ordersRoutes(env: Env): Router {
         .lean();
 
       // Use the already-fetched order.events
-      const rawEvents = Array.isArray((order as any)?.events) ? (order as any).events : [];
-      const events = rawEvents.map((event: any) => ({
+      const rawEvents = Array.isArray(order.events) ? order.events : [];
+      const events = rawEvents.map((event) => ({
         type: event?.type,
         at: event?.at,
         metadata: event?.metadata,
