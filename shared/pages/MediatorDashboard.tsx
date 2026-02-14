@@ -52,6 +52,7 @@ import {
 
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { MobileTabBar } from '../components/MobileTabBar';
 
 // --- UTILS ---
@@ -2158,21 +2159,11 @@ export const MediatorDashboard: React.FC = () => {
                 )}
                 {/* AI rating verification results */}
                 {proofModal.ratingAiVerification && (
-                  <div className="mt-3 space-y-1 text-[10px]">
-                    <p className={`font-bold ${proofModal.ratingAiVerification.accountNameMatch ? 'text-green-400' : 'text-red-400'}`}>
-                      Account Name: {proofModal.ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
-                      {proofModal.ratingAiVerification.detectedAccountName && (
-                        <span className="text-zinc-500 ml-1">(detected: {proofModal.ratingAiVerification.detectedAccountName})</span>
-                      )}
-                    </p>
-                    <p className={`font-bold ${proofModal.ratingAiVerification.productNameMatch ? 'text-green-400' : 'text-red-400'}`}>
-                      Product Name: {proofModal.ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                      {proofModal.ratingAiVerification.detectedProductName && (
-                        <span className="text-zinc-500 ml-1">(detected: {proofModal.ratingAiVerification.detectedProductName})</span>
-                      )}
-                    </p>
-                    <p className="text-zinc-500">Confidence: {proofModal.ratingAiVerification.confidenceScore}%</p>
-                  </div>
+                  <RatingVerificationBadge
+                    data={proofModal.ratingAiVerification}
+                    theme="dark"
+                    className="mt-3 space-y-1 text-[10px]"
+                  />
                 )}
               </div>
             )}
@@ -2226,50 +2217,11 @@ export const MediatorDashboard: React.FC = () => {
                 </p>
                 {/* AI Return Window Verification */}
                 {proofModal.returnWindowAiVerification && (
-                  <div className="mt-3 bg-teal-950/30 rounded-xl border border-teal-500/20 p-3 space-y-1.5">
-                    <p className="text-[10px] font-bold text-teal-400 uppercase tracking-wider">AI Return Window Verification</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {proofModal.returnWindowAiVerification.orderIdMatch !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.orderIdMatch ? 'bg-green-900/30 border border-green-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase">Order ID</p>
-                          <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.orderIdMatch ? 'text-green-400' : 'text-red-400'}`}>
-                            {proofModal.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                        </div>
-                      )}
-                      {proofModal.returnWindowAiVerification.productNameMatch !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.productNameMatch ? 'bg-green-900/30 border border-green-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase">Product Name</p>
-                          <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.productNameMatch ? 'text-green-400' : 'text-red-400'}`}>
-                            {proofModal.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                        </div>
-                      )}
-                      {proofModal.returnWindowAiVerification.amountMatch !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.amountMatch ? 'bg-green-900/30 border border-green-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase">Amount</p>
-                          <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.amountMatch ? 'text-green-400' : 'text-red-400'}`}>
-                            {proofModal.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                        </div>
-                      )}
-                      {proofModal.returnWindowAiVerification.returnWindowClosed !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'bg-green-900/30 border border-green-500/30' : 'bg-yellow-900/30 border border-yellow-500/30'}`}>
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase">Window Closed</p>
-                          <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'text-green-400' : 'text-yellow-400'}`}>
-                            {proofModal.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    {proofModal.returnWindowAiVerification.detectedReturnWindow && (
-                      <p className="text-[9px] text-zinc-500">Detected Window: {proofModal.returnWindowAiVerification.detectedReturnWindow}</p>
-                    )}
-                    {proofModal.returnWindowAiVerification.discrepancyNote && (
-                      <p className="text-[9px] text-red-400 font-semibold">Note: {proofModal.returnWindowAiVerification.discrepancyNote}</p>
-                    )}
-                    <p className="text-[9px] text-zinc-500">Confidence: {proofModal.returnWindowAiVerification.confidenceScore}%</p>
-                  </div>
+                  <ReturnWindowVerificationBadge
+                    data={proofModal.returnWindowAiVerification}
+                    theme="dark"
+                    className="mt-3 bg-teal-950/30 rounded-xl border border-teal-500/20 p-3 space-y-1.5"
+                  />
                 )}
               </div>
             )}

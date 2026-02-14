@@ -10,6 +10,7 @@ import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import {
   Clock,
   CheckCircle2,
@@ -1862,50 +1863,10 @@ export const Orders: React.FC = () => {
                 )}
                 {/* AI Return Window Verification */}
                 {proofToView.returnWindowAiVerification && (
-                  <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
-                    <p className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">AI Return Window Verification</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {proofToView.returnWindowAiVerification.orderIdMatch !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofToView.returnWindowAiVerification.orderIdMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
-                          <p className={`text-xs font-bold ${proofToView.returnWindowAiVerification.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
-                            {proofToView.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                        </div>
-                      )}
-                      {proofToView.returnWindowAiVerification.productNameMatch !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofToView.returnWindowAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
-                          <p className={`text-xs font-bold ${proofToView.returnWindowAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                            {proofToView.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                        </div>
-                      )}
-                      {proofToView.returnWindowAiVerification.amountMatch !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofToView.returnWindowAiVerification.amountMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
-                          <p className={`text-xs font-bold ${proofToView.returnWindowAiVerification.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
-                            {proofToView.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                        </div>
-                      )}
-                      {proofToView.returnWindowAiVerification.returnWindowClosed !== undefined && (
-                        <div className={`p-2 rounded-lg text-center ${proofToView.returnWindowAiVerification.returnWindowClosed ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Window Closed</p>
-                          <p className={`text-xs font-bold ${proofToView.returnWindowAiVerification.returnWindowClosed ? 'text-green-600' : 'text-yellow-600'}`}>
-                            {proofToView.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    {proofToView.returnWindowAiVerification.detectedReturnWindow && (
-                      <p className="text-[9px] text-slate-500">Detected Window: {proofToView.returnWindowAiVerification.detectedReturnWindow}</p>
-                    )}
-                    {proofToView.returnWindowAiVerification.discrepancyNote && (
-                      <p className="text-[9px] text-red-500 font-semibold">Note: {proofToView.returnWindowAiVerification.discrepancyNote}</p>
-                    )}
-                    <p className="text-[9px] text-slate-500">Confidence: {proofToView.returnWindowAiVerification.confidenceScore}%</p>
-                  </div>
+                  <ReturnWindowVerificationBadge
+                    data={proofToView.returnWindowAiVerification}
+                    className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5"
+                  />
                 )}
               </div>
 

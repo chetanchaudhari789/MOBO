@@ -22,20 +22,26 @@ const LOCAL_LANG_PATH = path.join(__backendRoot, '/');
 const OCR_POOL_SIZE = 2;
 const _ocrPool: Array<Awaited<ReturnType<typeof createWorker>>> = [];
 let _ocrPoolReady: Promise<void> | null = null;
+let _ocrPoolInitializing = false;
 
 async function _initOcrPool(): Promise<void> {
-  if (_ocrPool.length >= OCR_POOL_SIZE) return;
-  const promises: Promise<void>[] = [];
-  for (let i = _ocrPool.length; i < OCR_POOL_SIZE; i++) {
-    promises.push(
-      createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH })
-        .then((w) => { _ocrPool.push(w); })
-        .catch((err) => {
-          console.warn('Failed to init Tesseract worker (will create on-demand):', err);
-        })
-    );
+  if (_ocrPool.length >= OCR_POOL_SIZE || _ocrPoolInitializing) return;
+  _ocrPoolInitializing = true;
+  try {
+    const promises: Promise<void>[] = [];
+    for (let i = _ocrPool.length; i < OCR_POOL_SIZE; i++) {
+      promises.push(
+        createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH })
+          .then((w) => { _ocrPool.push(w); })
+          .catch((err) => {
+            console.warn('Failed to init Tesseract worker (will create on-demand):', err);
+          })
+      );
+    }
+    await Promise.allSettled(promises);
+  } finally {
+    _ocrPoolInitializing = false;
   }
-  await Promise.allSettled(promises);
 }
 
 /** Get a worker from the pool or create a fresh one on demand. */

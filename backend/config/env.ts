@@ -64,6 +64,11 @@ const envSchema = z.object({
   AI_MIN_SECONDS_BETWEEN_CALLS: z.coerce.number().int().nonnegative().default(3),
   AI_DEBUG_OCR: z.coerce.boolean().default(false),
 
+  // Minimum AI confidence score (0-100) required for proof verification to pass.
+  // Scores below this threshold will reject the proof. 75 is recommended for production
+  // anti-fraud gating; lower values increase false-positive risk.
+  AI_PROOF_CONFIDENCE_THRESHOLD: z.coerce.number().int().min(0).max(100).default(75),
+
   // Wallet safety limits
   WALLET_MAX_BALANCE_PAISE: z.coerce.number().int().positive().default(1_00_00_000), // ₹1,00,000
 

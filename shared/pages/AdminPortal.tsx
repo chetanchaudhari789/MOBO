@@ -7,6 +7,7 @@ import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutGrid,
@@ -1962,30 +1963,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                   )}
                   {/* AI Rating Verification */}
                   {proofModal.ratingAiVerification && (
-                    <div className="mt-2 bg-orange-50 rounded-xl border border-orange-100 p-3 space-y-1.5">
-                      <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">AI Rating Verification</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className={`p-2 rounded-lg text-center ${proofModal.ratingAiVerification.accountNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Account Name</p>
-                          <p className={`text-xs font-bold ${proofModal.ratingAiVerification.accountNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                            {proofModal.ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                          {proofModal.ratingAiVerification.detectedAccountName && (
-                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {proofModal.ratingAiVerification.detectedAccountName}</p>
-                          )}
-                        </div>
-                        <div className={`p-2 rounded-lg text-center ${proofModal.ratingAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
-                          <p className={`text-xs font-bold ${proofModal.ratingAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                            {proofModal.ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                          {proofModal.ratingAiVerification.detectedProductName && (
-                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {proofModal.ratingAiVerification.detectedProductName}</p>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-[9px] text-slate-500">Confidence: {proofModal.ratingAiVerification.confidenceScore}%</p>
-                    </div>
+                    <RatingVerificationBadge
+                      data={proofModal.ratingAiVerification}
+                      className="mt-2 bg-orange-50 rounded-xl border border-orange-100 p-3 space-y-1.5"
+                    />
                   )}
                 </div>
               )}
@@ -2019,50 +2000,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                   <ZoomableImage src={(proofModal.screenshots as any).returnWindow} alt="Return Window Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-teal-200 bg-teal-50" />
                   {/* AI Return Window Verification */}
                   {proofModal.returnWindowAiVerification && (
-                    <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
-                      <p className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">AI Return Window Verification</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {proofModal.returnWindowAiVerification.orderIdMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.orderIdMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {proofModal.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
-                        )}
-                        {proofModal.returnWindowAiVerification.productNameMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {proofModal.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
-                        )}
-                        {proofModal.returnWindowAiVerification.amountMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.amountMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {proofModal.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
-                        )}
-                        {proofModal.returnWindowAiVerification.returnWindowClosed !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Window Closed</p>
-                            <p className={`text-xs font-bold ${proofModal.returnWindowAiVerification.returnWindowClosed ? 'text-green-600' : 'text-yellow-600'}`}>
-                              {proofModal.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      {proofModal.returnWindowAiVerification.detectedReturnWindow && (
-                        <p className="text-[9px] text-slate-500">Detected Window: {proofModal.returnWindowAiVerification.detectedReturnWindow}</p>
-                      )}
-                      {proofModal.returnWindowAiVerification.discrepancyNote && (
-                        <p className="text-[9px] text-red-500 font-semibold">Note: {proofModal.returnWindowAiVerification.discrepancyNote}</p>
-                      )}
-                      <p className="text-[9px] text-slate-500">Confidence: {proofModal.returnWindowAiVerification.confidenceScore}%</p>
-                    </div>
+                    <ReturnWindowVerificationBadge
+                      data={proofModal.returnWindowAiVerification}
+                      className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5"
+                    />
                   )}
                 </div>
               )}
