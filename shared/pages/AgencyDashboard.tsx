@@ -3088,7 +3088,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     Total:{' '}
-                    <span className="font-mono font-bold text-zinc-900">{proofOrder.total}</span>
+                    <span className="font-mono font-bold text-zinc-900">{formatCurrency(proofOrder.total)}</span>
                   </p>
                 </div>
               </div>
@@ -3138,6 +3138,33 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       </p>
                     </div>
                   )}
+                  {/* AI Rating Verification Results */}
+                  {proofOrder.ratingAiVerification && (
+                    <div className="mt-2 bg-orange-50 rounded-xl border border-orange-100 p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">AI Rating Verification</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className={`p-2 rounded-lg text-center ${proofOrder.ratingAiVerification.accountNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Account Name</p>
+                          <p className={`text-xs font-bold ${proofOrder.ratingAiVerification.accountNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                            {proofOrder.ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
+                          </p>
+                          {proofOrder.ratingAiVerification.detectedAccountName && (
+                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {proofOrder.ratingAiVerification.detectedAccountName}</p>
+                          )}
+                        </div>
+                        <div className={`p-2 rounded-lg text-center ${proofOrder.ratingAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
+                          <p className={`text-xs font-bold ${proofOrder.ratingAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                            {proofOrder.ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                          </p>
+                          {proofOrder.ratingAiVerification.detectedProductName && (
+                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {proofOrder.ratingAiVerification.detectedProductName}</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-slate-500">Confidence: {proofOrder.ratingAiVerification.confidenceScore}%</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3180,6 +3207,53 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       alt="Return Window proof"
                     />
                   </div>
+                  {/* AI Return Window Verification */}
+                  {proofOrder.returnWindowAiVerification && (
+                    <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">AI Return Window Verification</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {proofOrder.returnWindowAiVerification.orderIdMatch !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${proofOrder.returnWindowAiVerification.orderIdMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
+                            <p className={`text-xs font-bold ${proofOrder.returnWindowAiVerification.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
+                              {proofOrder.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
+                            </p>
+                          </div>
+                        )}
+                        {proofOrder.returnWindowAiVerification.productNameMatch !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${proofOrder.returnWindowAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
+                            <p className={`text-xs font-bold ${proofOrder.returnWindowAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                              {proofOrder.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                            </p>
+                          </div>
+                        )}
+                        {proofOrder.returnWindowAiVerification.amountMatch !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${proofOrder.returnWindowAiVerification.amountMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
+                            <p className={`text-xs font-bold ${proofOrder.returnWindowAiVerification.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
+                              {proofOrder.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
+                            </p>
+                          </div>
+                        )}
+                        {proofOrder.returnWindowAiVerification.returnWindowClosed !== undefined && (
+                          <div className={`p-2 rounded-lg text-center ${proofOrder.returnWindowAiVerification.returnWindowClosed ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">Window Closed</p>
+                            <p className={`text-xs font-bold ${proofOrder.returnWindowAiVerification.returnWindowClosed ? 'text-green-600' : 'text-yellow-600'}`}>
+                              {proofOrder.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      {proofOrder.returnWindowAiVerification.detectedReturnWindow && (
+                        <p className="text-[9px] text-slate-500">Detected Window: {proofOrder.returnWindowAiVerification.detectedReturnWindow}</p>
+                      )}
+                      {proofOrder.returnWindowAiVerification.discrepancyNote && (
+                        <p className="text-[9px] text-red-500 font-semibold">Note: {proofOrder.returnWindowAiVerification.discrepancyNote}</p>
+                      )}
+                      <p className="text-[9px] text-slate-500">Confidence: {proofOrder.returnWindowAiVerification.confidenceScore}%</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
