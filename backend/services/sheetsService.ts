@@ -255,14 +255,78 @@ async function formatHeaderRow(
   }
 }
 
+// ─── Auto-share via Google Drive API ───
+
+const DRIVE_API = 'https://www.googleapis.com/drive/v3/files';
+
+/**
+ * Share a Google Drive file (spreadsheet) with a specific email.
+ * Uses the Drive API to create a "writer" permission so the user
+ * gets direct access without manual approval.
+ */
+async function shareWithUser(
+  authHeader: Record<string, string>,
+  spreadsheetId: string,
+  email: string,
+): Promise<void> {
+  try {
+    const url = `${DRIVE_API}/${encodeURIComponent(spreadsheetId)}/permissions`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader },
+      body: JSON.stringify({
+        type: 'user',
+        role: 'writer',
+        emailAddress: email,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      console.warn(`Google Drive share warning: ${res.status} — ${await res.text()}`);
+    }
+  } catch (err) {
+    // Non-critical: user can still access via the URL if they have the link
+    console.warn('Google Drive share failed (non-critical):', err);
+  }
+}
+
+/**
+ * Make a Google Drive file (spreadsheet) accessible to anyone with the link.
+ * Fallback when we don't know the user's email.
+ */
+async function makePublicReadable(
+  authHeader: Record<string, string>,
+  spreadsheetId: string,
+): Promise<void> {
+  try {
+    const url = `${DRIVE_API}/${encodeURIComponent(spreadsheetId)}/permissions`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader },
+      body: JSON.stringify({
+        type: 'anyone',
+        role: 'reader',
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      console.warn(`Google Drive public share warning: ${res.status} — ${await res.text()}`);
+    }
+  } catch (err) {
+    console.warn('Google Drive public share failed (non-critical):', err);
+  }
+}
+
 // ─── Public API ───
 
 export async function exportToGoogleSheet(
   env: Env,
   request: SheetExportRequest,
   userAccessToken?: string | null,
+  sharingEmail?: string | null,
 ): Promise<SheetExportResult> {
   let authHeader: Record<string, string>;
+  let isServiceAccount = false;
 
   if (userAccessToken) {
     // Prefer user's own OAuth token — sheet will be created in THEIR Google Drive
@@ -279,6 +343,7 @@ export async function exportToGoogleSheet(
     }
     const accessToken = await getAccessToken(serviceAccount);
     authHeader = { Authorization: `Bearer ${accessToken}` };
+    isServiceAccount = true;
   }
 
   const sheetName = request.sheetName || 'Sheet1';
@@ -305,6 +370,17 @@ export async function exportToGoogleSheet(
     await formatHeaderRow(authHeader, spreadsheetId, 0, request.headers.length, apiKeyParam);
   } catch {
     // Ignore formatting errors
+  }
+
+  // 4. When using service account, auto-share with the user so they get direct access
+  //    (no "Request access" screen). If user email is known, share directly;
+  //    otherwise make the sheet accessible to anyone with the link.
+  if (isServiceAccount) {
+    if (sharingEmail) {
+      await shareWithUser(authHeader, spreadsheetId, sharingEmail);
+    } else {
+      await makePublicReadable(authHeader, spreadsheetId);
+    }
   }
 
   return { spreadsheetId, spreadsheetUrl, sheetTitle: request.title };

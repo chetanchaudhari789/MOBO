@@ -40,7 +40,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  RefreshCw,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -283,11 +282,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     };
   }, [user]);
 
-  // Auto-fetch audit logs when switching to audit-logs view
+  // Auto-fetch audit logs when switching to audit-logs view or when filters change
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     if (view !== 'audit-logs') return;
-    if (auditLogs.length > 0) return; // already loaded
     setAuditLoading(true);
     const params: any = { limit: 200 };
     if (auditActionFilter) params.action = auditActionFilter;
@@ -298,7 +296,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       .then((data) => setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []))
       .catch((e) => console.error('Audit Logs Fetch Error:', e))
       .finally(() => setAuditLoading(false));
-  }, [user, view]);
+  }, [user, view, auditActionFilter, auditDateFrom, auditDateTo]);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') return;

@@ -23,8 +23,13 @@ function loadMessages(userId: string | null): ChatMessage[] {
   try {
     const raw = sessionStorage.getItem(getStorageKey(userId));
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as ChatMessage[];
-    return Array.isArray(parsed) ? parsed.slice(-MAX_PERSISTED_MESSAGES) : [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Validate each message has required fields to prevent corrupt data from crashing rendering
+    const valid = parsed.filter(
+      (m: any) => m && typeof m.id === 'string' && typeof m.role === 'string' && typeof m.text === 'string'
+    ) as ChatMessage[];
+    return valid.slice(-MAX_PERSISTED_MESSAGES);
   } catch {
     return [];
   }
@@ -43,19 +48,29 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userId, setUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const initialized = useRef(false);
+  const currentUserId = useRef<string | null>(null);
 
   // Load persisted messages when userId changes
   useEffect(() => {
+    // Prevent persisting stale messages to the new user's key during the switch
+    initialized.current = false;
+    currentUserId.current = userId;
     const loaded = loadMessages(userId);
     setMessages(loaded);
-    initialized.current = true;
+    // Use a microtask to ensure setMessages has flushed before enabling persistence
+    Promise.resolve().then(() => {
+      // Only re-enable if userId hasn't changed again during this tick
+      if (currentUserId.current === userId) {
+        initialized.current = true;
+      }
+    });
   }, [userId]);
 
   // Persist messages whenever they change (debounced via effect)
   useEffect(() => {
     if (!initialized.current) return;
-    persistMessages(userId, messages);
-  }, [messages, userId]);
+    persistMessages(currentUserId.current, messages);
+  }, [messages]);
 
   const addMessage = useCallback((message: ChatMessage) => {
     setMessages((prev) => {

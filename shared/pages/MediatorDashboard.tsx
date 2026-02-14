@@ -6,6 +6,7 @@ import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
+import { getApiBaseUrl } from '../utils/apiBaseUrl';
 import { User, Campaign, Order, Product, Ticket } from '../types';
 import {
   LayoutGrid,
@@ -79,6 +80,14 @@ const getPrimaryOrderId = (order: Order) =>
 
 const urlToBase64 = async (url: string): Promise<string> => {
   try {
+    // Only allow fetches from the API origin to prevent arbitrary resource loading
+    const apiBase = getApiBaseUrl();
+    const allowed = apiBase.startsWith('http') ? new URL(apiBase).origin : window.location.origin;
+    const target = new URL(url, window.location.origin);
+    if (target.origin !== allowed && target.origin !== window.location.origin) {
+      console.warn('urlToBase64: blocked non-API origin', target.origin);
+      return '';
+    }
     const response = await fetch(url);
     const blob = await response.blob();
     return new Promise((resolve, reject) => {

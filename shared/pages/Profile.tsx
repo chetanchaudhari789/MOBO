@@ -90,9 +90,16 @@ export const Profile: React.FC = () => {
     }
   };
 
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB max
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'qr') => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        toast.error('Image too large (max 5 MB). Please choose a smaller file.');
+        e.target.value = '';
+        return;
+      }
       if (!isEditing) {
         setIsEditing(true);
         toast.info('Editing enabled — make changes, then tap Save.');
@@ -102,6 +109,9 @@ export const Profile: React.FC = () => {
         const base64 = reader.result as string;
         if (type === 'avatar') setAvatar(base64);
         else setQrCode(base64);
+      };
+      reader.onerror = () => {
+        toast.error('Failed to read image. Please try again.');
       };
       reader.readAsDataURL(file);
     }

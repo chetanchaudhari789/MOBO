@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Bot, ArrowRight, Lock, User, Phone, Hash, ChevronLeft } from 'lucide-react';
 import { Button, Input, Spinner } from '../components/ui';
@@ -17,6 +17,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
   const [mediatorCode, setMediatorCode] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const { login, register, logout } = useAuth();
 
@@ -73,18 +78,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
         const u = await login(mobile, password);
         if (u?.role !== 'user') {
           const portal = u.role === 'brand' ? 'Brand Portal' : u.role === 'admin' ? 'Admin Portal' : 'Partner Ops Portal';
-          setError(`This account is a ${u.role}. Please use the ${portal}.`);
+          if (mountedRef.current) setError(`This account is a ${u.role}. Please use the ${portal}.`);
           // AuthProvider logout clears local session + tokens.
           logout();
-          setIsLoading(false);
           return;
         }
       } else {
         await register(name, mobile, password, mediatorCode);
       }
     } catch (err: any) {
-      setError(formatErrorMessage(err, 'Authentication failed'));
-      setIsLoading(false);
+      if (mountedRef.current) setError(formatErrorMessage(err, 'Authentication failed'));
+    } finally {
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 

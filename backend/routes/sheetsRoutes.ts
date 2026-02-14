@@ -52,11 +52,14 @@ export function sheetsRoutes(env: Env): Router {
 
       // Try user's own Google OAuth token first (sheet goes to THEIR Drive)
       let userAccessToken: string | null = null;
+      let sharingEmail: string | null = null;
       try {
         const userId = (req as any).auth?.userId;
         if (userId) {
-          const userDoc = await UserModel.findById(userId).select('+googleRefreshToken').lean();
+          const userDoc = await UserModel.findById(userId).select('+googleRefreshToken googleEmail email').lean();
           const refreshToken = (userDoc as any)?.googleRefreshToken;
+          // Capture the user's email for auto-sharing when falling back to service account
+          sharingEmail = (userDoc as any)?.googleEmail || (userDoc as any)?.email || null;
           if (refreshToken) {
             userAccessToken = await refreshUserGoogleToken(refreshToken, env);
             if (!userAccessToken) {
@@ -71,7 +74,7 @@ export function sheetsRoutes(env: Env): Router {
         // Fall back to service account silently
       }
 
-      const result = await exportToGoogleSheet(env, { title, sheetName, headers, rows: sanitizedRows }, userAccessToken);
+      const result = await exportToGoogleSheet(env, { title, sheetName, headers, rows: sanitizedRows }, userAccessToken, sharingEmail);
 
       // Audit trail
       writeAuditLog({

@@ -80,6 +80,9 @@ export function googleRoutes(env: Env): Router {
     }
     pendingStates.set(state, { userId: String(userId), createdAt: Date.now() });
 
+    // Use 'consent' prompt to ensure we get a refresh_token.
+    // Google only returns refresh_token on the very first consent or when prompt=consent.
+    // We also include 'include_granted_scopes' for incremental authorization.
     const params = new URLSearchParams({
       client_id: (env as any).GOOGLE_CLIENT_ID,
       redirect_uri: (env as any).GOOGLE_REDIRECT_URI,
@@ -87,6 +90,7 @@ export function googleRoutes(env: Env): Router {
       scope: SCOPES,
       access_type: 'offline',
       prompt: 'consent',
+      include_granted_scopes: 'true',
       state,
     });
 
