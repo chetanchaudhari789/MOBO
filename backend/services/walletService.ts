@@ -120,7 +120,6 @@ export async function applyWalletCredit(input: WalletMutationInput) {
           amountPaise: input.amountPaise,
           type: input.type,
           idempotencyKey: input.idempotencyKey,
-          walletId: String(result.walletId),
           transactionId: String(result.transaction._id),
         },
       });
@@ -140,7 +139,6 @@ export async function applyWalletCredit(input: WalletMutationInput) {
           amountPaise: input.amountPaise,
           type: input.type,
           idempotencyKey: input.idempotencyKey,
-          walletId: String(result.walletId),
           transactionId: String(result.transaction._id),
         },
       });
@@ -228,7 +226,6 @@ export async function applyWalletDebit(input: WalletMutationInput) {
           amountPaise: input.amountPaise,
           type: input.type,
           idempotencyKey: input.idempotencyKey,
-          walletId: String(result.walletId),
           transactionId: String(result.transaction._id),
         },
       });
@@ -248,7 +245,6 @@ export async function applyWalletDebit(input: WalletMutationInput) {
           amountPaise: input.amountPaise,
           type: input.type,
           idempotencyKey: input.idempotencyKey,
-          walletId: String(result.walletId),
           transactionId: String(result.transaction._id),
         },
       });
