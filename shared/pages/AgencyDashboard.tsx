@@ -542,7 +542,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.managerName,
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
