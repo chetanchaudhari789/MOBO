@@ -1708,8 +1708,21 @@ export async function extractOrderDetailsWithAi(
         // ── Address / location lines ──
         /^\d{1,4}\s*,?\s*(street|road|lane|nagar|colony|sector|phase|plot|block|floor|flat|apt|apartment)/i,
         /\b(pincode|pin\s*code|zip)\s*[:\-]?\s*\d{5,6}\b/i,
+        /\b(city|state|district|taluk|tehsil|mandal|village|town|ward|locality|area|landmark)\s*[:\-]/i,
         // ── Payment / transaction labels ──
         /^(payment\s*(method|mode|type|via)|paid\s*(via|using|by|with)|upi|credit\s*card|debit\s*card|net\s*banking|wallet|emi)/i,
+        // ── Comma-separated category lists (not product names) ──
+        /^[A-Z][a-z]+(\s*,\s*[A-Z][a-z]+){3,}/,  // "Tablets, Earbuds, Watch, Blue" pattern
+        // ── Indian address patterns ──
+        /\b(maharashtra|karnataka|tamil\s*nadu|delhi|mumbai|bangalore|chennai|hyderabad|kolkata|pune|jaipur|lucknow|ahmedabad|india)\b/i,
+        /\b\d{6}\b.*\b(india|in)\b/i,   // pincode followed by "India"
+        // ── Order confirmation noise ──
+        /^(thank\s*you|order\s*id|your\s*order|congratulations|order\s*confirmed|successfully)/i,
+        /^(free\s*delivery|standard\s*delivery|express\s*delivery|same\s*day|next\s*day)/i,
+        // ── App / store navigation ──
+        /^(shop\s*(now|by|all)|view\s*(all|more|details)|see\s*(all|more)|browse|explore|discover)/i,
+        /^(add\s*to\s*cart|buy\s*now|add\s*to\s*bag|go\s*to\s*cart|checkout|proceed|continue)/i,
+        /^(similar\s*products?|you\s*may\s*also|frequently\s*bought|customers?\s*(also|who))/i,
       ];
 
       const candidates: Array<{ name: string; score: number }> = [];
@@ -1720,13 +1733,18 @@ export async function extractOrderDetailsWithAi(
         if (excludePatterns.some(p => p.test(line))) continue;
         // Additional URL check: if the line contains a protocol-less URL
         if (/[a-z0-9]\.[a-z]{2,4}\/[^\s]*/i.test(line) && !/\b(ml|gm|kg|ltr|oz)\b/i.test(line)) continue;
+        // Skip lines that are just comma-separated short words (category lists)
+        const commaParts = line.split(/\s*,\s*/);
+        if (commaParts.length >= 3 && commaParts.every(p => p.trim().split(/\s+/).length <= 2)) continue;
+        // Skip lines that look like addresses (contain house no + area/locality info)
+        if (/\d{1,5}\s*[,\/]\s*[A-Za-z]+\s*(road|street|lane|nagar|colony|sector|market|plaza|tower|building|complex|layout|garden|enclave|residency|apartment|society|block|phase|extension)/i.test(line)) continue;
 
         let score = 0;
         // Longer descriptive lines score higher (likely product names)
         if (line.length >= 20 && line.length <= 150) score += 3;
         if (line.length >= 30) score += 1;
         // Contains common product keywords (expanded for Indian e-commerce)
-        if (/\b(for|with|pack|set|kit|box|ml|gm|kg|ltr|pcs|combo|cream|oil|shampoo|serum|lotion|perfume|spray|wash|soap|gel|powder|tablet|capsule|supplement|phone|case|cover|charger|cable|earphone|headphone|speaker|watch|band|ring|necklace|bracelet|shirt|pant|dress|shoe|sandal|slipper|bag|wallet|saree|kurti|kurta|lehenga|dupatta|salwar|churidar|jeans|tshirt|t-shirt|hoodie|jacket|blazer|suit|sneaker|boot|flip.?flop|backpack|handbag|purse|sunglasses|laptop|tablet|mouse|keyboard|monitor|printer|router|trimmer|groomer|dryer|iron|mixer|juicer|blender|cooker|bottle|mug|tumbler|flask|container|jar|brush|comb|razor|lipstick|foundation|mascara|eyeliner|moisturizer|cleanser|toner|face\s*wash|body\s*wash|conditioner|hair\s*oil|vitamin|protein|whey|snack|tea|coffee|ghee|honey|spice|pickle|rice|atta|dal|flour|sugar|milk|diaper|toy|puzzle|game|book|novel|sticker|pen|pencil|notebook|organizer|stand|holder|mount|adapter|converter|hub|splitter|extension)\b/i.test(line)) score += 4;
+        if (/\b(for|with|pack|set|kit|box|ml|gm|kg|ltr|pcs|combo|cream|oil|shampoo|serum|lotion|perfume|spray|wash|soap|gel|powder|tablet|capsule|supplement|phone|case|cover|charger|cable|earphone|headphone|speaker|watch|band|ring|necklace|bracelet|shirt|pant|dress|shoe|sandal|slipper|bag|wallet|saree|kurti|kurta|lehenga|dupatta|salwar|churidar|jeans|tshirt|t-shirt|hoodie|jacket|blazer|suit|sneaker|boot|flip.?flop|backpack|handbag|purse|sunglasses|laptop|tablet|mouse|keyboard|monitor|printer|router|trimmer|groomer|dryer|iron|mixer|juicer|blender|cooker|bottle|mug|tumbler|flask|container|jar|brush|comb|razor|lipstick|foundation|mascara|eyeliner|moisturizer|cleanser|toner|face\s*wash|body\s*wash|conditioner|hair\s*oil|vitamin|protein|whey|snack|tea|coffee|ghee|honey|spice|pickle|rice|atta|dal|flour|sugar|milk|diaper|toy|puzzle|game|book|novel|sticker|pen|pencil|notebook|organizer|stand|holder|mount|adapter|converter|hub|splitter|extension|powerbank|power\s*bank|earbuds?|ear\s*buds?|smartwatch|smart\s*watch|fitness\s*band|smart\s*band|TWS|neckband|neck\s*band|air\s*purifier|water\s*purifier|vacuum|cleaner|mattress|pillow|bedsheet|curtain|towel|rug|carpet|cushion|refrigerator|fridge|washing\s*machine|microwave|AC|air\s*conditioner|fan|heater)\b/i.test(line)) score += 4;
         // Contains pipe or dash separators (common in e-commerce titles)
         if (/[|]/.test(line)) score += 2;
         // Contains parentheses with size/variant info like "(Pack of 2)" or "(100ml)"
@@ -1750,6 +1768,14 @@ export async function extractOrderDetailsWithAi(
         if (alphaRatio < 0.4) score -= 2;
         // Penalize very short lines (less likely to be full product names)
         if (line.length < 15) score -= 1;
+        // Penalize lines that look like address fragments
+        if (/\b(near|behind|opposite|next\s*to|beside|opp|adj)\b/i.test(line)) score -= 3;
+        if (/\b\d{5,6}\b/.test(line) && !/\b\d+\s*(ml|gm|g|kg|ltr|pcs|mah|wh|gb|tb|mb)\b/i.test(line)) score -= 3; // pincode-like numbers (but not "10000mah")
+        // Penalize lines that are ALL CAPS short text (nav elements / buttons)
+        if (line === line.toUpperCase() && line.length < 25 && !/\d/.test(line)) score -= 2;
+        // Bonus: line near "product" or "item" keywords on prev/same line
+        if (/\b(product|item)\s*(name|title|details?|description)?\s*[:\-]?\s*$/i.test(lines[i - 1] || '')) score += 4;
+        if (/\b(product|item)\s*(name|title)\s*[:\-]\s*/i.test(line)) score += 3;
 
         if (score >= 3) {
           candidates.push({ name: line.replace(/\s{2,}/g, ' ').trim(), score });
@@ -1758,7 +1784,10 @@ export async function extractOrderDetailsWithAi(
 
       if (candidates.length === 0) return null;
       candidates.sort((a, b) => b.score - a.score);
-      return candidates[0].name;
+      // If top candidate looks like a generic category list, skip it
+      const top = candidates[0].name;
+      if (/^[A-Z][a-z]+(,\s*[A-Z][a-z]+)+$/.test(top)) return candidates[1]?.name || null;
+      return top;
     };
 
     /** Fix common OCR letter/digit confusion for platform prefixes. */
@@ -2144,9 +2173,14 @@ export async function extractOrderDetailsWithAi(
               '5. EXTRACT the Product Name / Item title — the full product title as shown in the order.',
               '   - This is CRITICAL for fraud detection. Extract the complete product name, not just a partial match.',
               '   - Look near the product image, near the price, or at the top of the order details section.',
+              '   - The product name is typically a descriptive title like "Samsung Galaxy M12 (Blue, 64GB)" or "Avimee Herbal Hair Oil 200ml".',
+              '   - It usually appears as the LARGEST text near the product image, or as a link/heading in the order details.',
               '   - NEVER return a URL, web address, or "amazon.in/..." as the product name. The product name is the item title, not the page URL.',
               '   - NEVER return delivery status text like "Arriving", "Shipped", "Delivered" as the product name.',
-              '   - If you cannot find the product name, return an empty string rather than a URL or status text.',
+              '   - NEVER return comma-separated category words like "Tablets, Earbuds, Watch, Blue" — those are category/breadcrumb navigation, not the actual product name.',
+              '   - NEVER return an address, city name, or pincode as the product name.',
+              '   - NEVER return navigation text like "Shop Now", "View Details", "Add to Cart" as the product name.',
+              '   - If you cannot find the product name, return an empty string rather than a URL, status, or category text.',
               '6. IGNORE ambiguous single/double digit numbers.',
               '7. IGNORE system UUIDs or IDs that look like "SYS-..." or internal codes.',
               '8. If a DETERMINISTIC value is provided and looks correct, confirm it.',
@@ -2215,6 +2249,9 @@ export async function extractOrderDetailsWithAi(
             '5. PRODUCT NAME — Full product title/name as shown in the order.',
             '   NEVER return a URL, webpage address, or "amazon.in/..." as the product name.',
             '   The product name is the descriptive title like "Samsung Galaxy M12" or "Avimee Herbal Oil".',
+            '   NEVER return category breadcrumbs like "Tablets, Earbuds, Watch" — find the actual item title.',
+            '   NEVER return delivery status, addresses, pincodes, or navigation text as the product name.',
+            '   Look for the item title near the product image or the price amount.',
             '',
             'Return JSON. Set confidenceScore 0-100 based on clarity.',
           ].join('\n') },
@@ -2387,7 +2424,19 @@ export async function extractOrderDetailsWithAi(
         accumulatedSoldBy = candidateDeterministic.soldBy;
       }
       if (candidateDeterministic.productName && !accumulatedProductName) {
+        // Prefer product names that look more like real product titles (longer, descriptive)
         accumulatedProductName = candidateDeterministic.productName;
+      } else if (candidateDeterministic.productName && accumulatedProductName) {
+        // If the new candidate name is longer and more descriptive, prefer it
+        const newLen = candidateDeterministic.productName.length;
+        const oldLen = accumulatedProductName.length;
+        const newHasProductWord = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|gel|powder|serum|shampoo|charger|cable|cover|case|book|pack|ml|gm|kg)\b/i.test(candidateDeterministic.productName);
+        const oldHasProductWord = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|gel|powder|serum|shampoo|charger|cable|cover|case|book|pack|ml|gm|kg)\b/i.test(accumulatedProductName);
+        if (newHasProductWord && !oldHasProductWord) {
+          accumulatedProductName = candidateDeterministic.productName;
+        } else if (newLen > oldLen * 1.5 && newLen >= 20) {
+          accumulatedProductName = candidateDeterministic.productName;
+        }
       }
 
       const score = (candidateDeterministic.orderId ? 1 : 0) + (candidateDeterministic.amount ? 1 : 0);
@@ -2713,6 +2762,34 @@ export async function extractOrderDetailsWithAi(
     // 6. Reject product name if it's just generic text / navigation chrome
     if (finalProductName && /^(sign\s*in|log\s*in|sign\s*out|my\s*account|home|search|help|contact|cart|wish\s*list)/i.test(finalProductName)) {
       notes.push('Product name was navigation text — rejected.');
+      finalProductName = null;
+    }
+
+    // 6b. Reject product name if it's a comma-separated category list (e.g., "Tablets, Earbuds, Watch, Blue")
+    if (finalProductName) {
+      const commaParts = finalProductName.split(/\s*,\s*/);
+      if (commaParts.length >= 3 && commaParts.every(p => p.trim().split(/\s+/).length <= 2)) {
+        notes.push('Product name was a category list — rejected.');
+        finalProductName = null;
+      }
+    }
+
+    // 6c. Reject product name if it's an address
+    if (finalProductName && /\b(pincode|pin\s*code|zip)\s*[:\-]?\s*\d{5,6}\b/i.test(finalProductName)) {
+      notes.push('Product name contained address/pincode — rejected.');
+      finalProductName = null;
+    }
+    if (finalProductName && /\b(maharashtra|karnataka|tamil\s*nadu|delhi|mumbai|bangalore|chennai|hyderabad|kolkata|pune|jaipur|lucknow|ahmedabad|india)\b/i.test(finalProductName)) {
+      const hasProductKeyword = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|powder|book)\b/i.test(finalProductName);
+      if (!hasProductKeyword) {
+        notes.push('Product name looked like an address — rejected.');
+        finalProductName = null;
+      }
+    }
+
+    // 6d. Reject product name if it's just a platform/store name
+    if (finalProductName && /^(amazon|flipkart|myntra|meesho|ajio|nykaa|tata\s*cliq|jiomart|snapdeal|bigbasket|blinkit|zepto|swiggy|croma|lenskart|pharmeasy)\s*$/i.test(finalProductName.trim())) {
+      notes.push('Product name was just a platform name — rejected.');
       finalProductName = null;
     }
 
