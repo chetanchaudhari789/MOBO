@@ -857,6 +857,8 @@ export type RatingVerificationPayload = {
   imageBase64: string;
   expectedBuyerName: string;
   expectedProductName: string;
+  /** Marketplace reviewer / profile name (may differ from buyer's real name) */
+  expectedReviewerName?: string;
 };
 
 export type RatingVerificationResult = {
@@ -872,6 +874,7 @@ async function verifyRatingWithOcr(
   imageBase64: string,
   expectedBuyerName: string,
   expectedProductName: string,
+  expectedReviewerName?: string,
 ): Promise<RatingVerificationResult> {
   try {
     const rawData = imageBase64.includes(',') ? imageBase64.split(',')[1]! : imageBase64;
@@ -974,10 +977,16 @@ async function verifyRatingWithOcr(
     }
 
     const lower = ocrText.toLowerCase();
-    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
+    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name or reviewer name appears
     const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
     const nameMatches = buyerParts.filter(p => lower.includes(p));
-    const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+    let accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+    // Also check reviewer / marketplace profile name if provided
+    if (!accountNameMatch && expectedReviewerName) {
+      const reviewerParts = expectedReviewerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+      const reviewerMatches = reviewerParts.filter(p => lower.includes(p));
+      accountNameMatch = reviewerMatches.length >= Math.max(1, Math.ceil(reviewerParts.length * 0.5));
+    }
 
     // Product name matching: check if significant keywords from product name appear
     const productTokens = expectedProductName.toLowerCase()
@@ -1023,7 +1032,7 @@ export async function verifyRatingScreenshotWithAi(
   }
 
   if (!isGeminiConfigured(env)) {
-    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName);
+    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
 
   const apiKey = env.GEMINI_API_KEY!;
@@ -1043,13 +1052,14 @@ export async function verifyRatingScreenshotWithAi(
               ``,
               `Verify this RATING/REVIEW screenshot:`,
               `  Expected Account Name (buyer): ${payload.expectedBuyerName}`,
+              ...(payload.expectedReviewerName ? [`  Expected Marketplace Profile/Reviewer Name: ${payload.expectedReviewerName}`] : []),
               `  Expected Product Name: ${payload.expectedProductName}`,
               ``,
               `RULES:`,
               `1. Find the REVIEWER / ACCOUNT NAME shown in the screenshot. This is the person who wrote the review or gave the rating. It may appear as "public name", "profile name", or at the top of the review.`,
-              `2. Compare the account name with "${payload.expectedBuyerName}" — allow for nickname variations, case differences, and abbreviated names. The key name words must match.`,
+              `2. Compare the account name with "${payload.expectedBuyerName}"${payload.expectedReviewerName ? ` OR the marketplace profile name "${payload.expectedReviewerName}"` : ''} — allow for nickname variations, case differences, and abbreviated names. If EITHER name matches, consider it a match.`,
               `3. Find the PRODUCT NAME visible in the rating screenshot. Compare it to "${payload.expectedProductName}" — key words should match (brand, model, type). Exact match not required.`,
-              `4. If the account name or product does not match, this is potential FRAUD (someone rating a different product or using a different account).`,
+              `4. If the account name does not match ANY of the expected names or the product does not match, this is potential FRAUD (someone rating a different product or using a different account).`,
               `5. Set confidenceScore 0-100 based on how clearly visible and matching both fields are.`,
               `6. Always fill detectedAccountName and detectedProductName with what you actually see.`,
             ].join('\n') },
@@ -1081,7 +1091,7 @@ export async function verifyRatingScreenshotWithAi(
     throw lastError ?? new Error('Gemini rating verification failed');
   } catch (error) {
     console.error('Gemini rating verification error:', error);
-    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName);
+    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
 }
 

@@ -429,6 +429,7 @@ export function makeOrdersController(env: Env) {
             (existing as any).buyerMobile = user.mobile;
             (existing as any).brandName = item.brandName ?? campaign.brandName;
             (existing as any).externalOrderId = resolvedExternalOrderId;
+            if (body.reviewerName) (existing as any).reviewerName = body.reviewerName;
             // Merge screenshots instead of overwriting — preserves any proofs already
             // attached to the pre-order (e.g. rating/review uploaded before upgrade).
             (existing as any).screenshots = {
@@ -500,6 +501,7 @@ export function makeOrdersController(env: Env) {
                 buyerMobile: user.mobile,
                 brandName: item.brandName ?? campaign.brandName,
                 externalOrderId: resolvedExternalOrderId,
+                ...(body.reviewerName ? { reviewerName: body.reviewerName } : {}),
                 screenshots: body.screenshots ?? {},
                 reviewLink: body.reviewLink,
                 ...(body.orderDate && !isNaN(new Date(body.orderDate).getTime()) ? { orderDate: new Date(body.orderDate) } : {}),
@@ -680,11 +682,13 @@ export function makeOrdersController(env: Env) {
             const buyerUser = await UserModel.findById(order.userId).select({ name: 1 }).lean();
             const buyerName = String(buyerUser?.name || (order as any).buyerName || '').trim();
             const productName = String((order.items?.[0] as any)?.title || (order as any).extractedProductName || '').trim();
+            const reviewerName = String((order as any).reviewerName || '').trim();
             if (buyerName && productName) {
               ratingAiResult = await verifyRatingScreenshotWithAi(env, {
                 imageBase64: body.data,
                 expectedBuyerName: buyerName,
                 expectedProductName: productName,
+                ...(reviewerName ? { expectedReviewerName: reviewerName } : {}),
               });
               // Block submission if both name AND product mismatch with high confidence (≥70 for anti-fraud strength)
               if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
@@ -751,6 +755,19 @@ export function makeOrdersController(env: Env) {
           order.screenshots = { ...(order.screenshots ?? {}), returnWindow: body.data } as any;
           if (returnWindowResult) {
             order.returnWindowAiVerification = returnWindowResult;
+            // Audit trail: record AI return-window verification for backtracking
+            writeAuditLog({
+              req,
+              action: 'AI_RETURN_WINDOW_VERIFICATION',
+              entityType: 'Order',
+              entityId: String(order._id),
+              metadata: {
+                orderIdMatch: returnWindowResult.orderIdMatch,
+                productNameMatch: returnWindowResult.productNameMatch,
+                amountMatch: returnWindowResult.amountMatch,
+                confidenceScore: returnWindowResult.confidenceScore,
+              },
+            });
           }
           if (order.rejection?.type === 'returnWindow') {
             order.rejection = undefined;
@@ -778,6 +795,21 @@ export function makeOrdersController(env: Env) {
             (order as any).rejection = undefined;
           }
 
+          // Audit trail: record AI purchase proof verification for backtracking
+          if (aiVerification) {
+            writeAuditLog({
+              req,
+              action: 'AI_PURCHASE_PROOF_VERIFICATION',
+              entityType: 'Order',
+              entityId: String(order._id),
+              metadata: {
+                orderIdMatch: aiVerification.orderIdMatch,
+                amountMatch: aiVerification.amountMatch,
+                confidenceScore: aiVerification.confidenceScore,
+              },
+            });
+          }
+
           (order as any).__aiOrderVerification = aiVerification || undefined;
         }
 
@@ -785,6 +817,11 @@ export function makeOrdersController(env: Env) {
           (order as any).missingProofRequests = (order as any).missingProofRequests.filter(
             (r: any) => String(r?.type) !== String(body.type)
           );
+        }
+
+        // Persist marketplace reviewer/profile name if provided alongside any proof upload
+        if (body.reviewerName) {
+          (order as any).reviewerName = body.reviewerName;
         }
 
         const affiliateStatus = String(order.affiliateStatus || '');

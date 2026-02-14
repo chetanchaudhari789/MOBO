@@ -44,6 +44,8 @@ import {
   Camera,
   Package,
   FileSpreadsheet,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
@@ -569,6 +571,9 @@ const OrdersView = ({ user }: any) => {
   const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [viewProofOrder, setViewProofOrder] = useState<Order | null>(null);
+  // AI purchase proof analysis
+  const [brandAiAnalysis, setBrandAiAnalysis] = useState<any>(null);
+  const [brandIsAnalyzing, setBrandIsAnalyzing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
@@ -577,6 +582,7 @@ const OrdersView = ({ user }: any) => {
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
+  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
 
   const getOrderStatusBadge = (o: Order) => {
     const wf = String(o.workflowStatus || '').trim();
@@ -626,6 +632,28 @@ const OrdersView = ({ user }: any) => {
   useEffect(() => {
     fetchOrders();
   }, [user]);
+
+  // AI Purchase Proof Analysis (Brand)
+  const brandRunAnalysis = async () => {
+    if (!viewProofOrder || !viewProofOrder.screenshots?.order) return;
+    setBrandIsAnalyzing(true);
+    setBrandAiAnalysis(null);
+    try {
+      const imageBase64 = viewProofOrder.screenshots.order;
+      const result = await api.ops.analyzeProof(
+        viewProofOrder.id,
+        imageBase64,
+        viewProofOrder.externalOrderId || '',
+        viewProofOrder.total,
+      );
+      setBrandAiAnalysis(result);
+    } catch (e) {
+      console.error('Brand AI analysis error:', e);
+      toast.error('AI analysis failed. Please try again.');
+    } finally {
+      setBrandIsAnalyzing(false);
+    }
+  };
 
   // Real-time: refresh orders when any order/deal changes.
   useEffect(() => {
@@ -705,6 +733,7 @@ const OrdersView = ({ user }: any) => {
       'Partner ID',
       'Buyer Name',
       'Buyer Mobile',
+      'Reviewer Name',
       'Status',
       'Payment Status',
       'Verification Status',
@@ -742,6 +771,7 @@ const OrdersView = ({ user }: any) => {
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
+        csvSafe((o as any).reviewerName || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
@@ -776,7 +806,7 @@ const OrdersView = ({ user }: any) => {
 
   const handleExportToSheets = () => {
     if (!filtered.length) { toast.info('No orders to export'); return; }
-    const sheetHeaders = ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'];
+    const sheetHeaders = ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Reviewer Name','Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'];
     const sheetRows = filtered.map((o) => {
       const dateObj = new Date(o.createdAt);
       const item = o.items[0];
@@ -795,6 +825,7 @@ const OrdersView = ({ user }: any) => {
         o.managerName || '',
         o.buyerName || '',
         o.buyerMobile || '',
+        (o as any).reviewerName || '',
         o.status,
         o.paymentStatus,
         o.affiliateStatus || '',
@@ -967,14 +998,14 @@ const OrdersView = ({ user }: any) => {
       {viewProofOrder && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-enter"
-          onClick={() => setViewProofOrder(null)}
+          onClick={() => { setViewProofOrder(null); setBrandAiAnalysis(null); }}
         >
           <div
             className="bg-white w-full max-w-lg rounded-[2rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh] animate-enter"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => setViewProofOrder(null)}
+              onClick={() => { setViewProofOrder(null); setBrandAiAnalysis(null); }}
               className="absolute top-4 right-4 p-2 bg-zinc-50 rounded-full hover:bg-zinc-100 transition-colors"
             >
               <X size={18} />
@@ -1035,13 +1066,80 @@ const OrdersView = ({ user }: any) => {
                   <FileText size={14} /> Purchase Proof
                 </div>
                 {viewProofOrder.screenshots?.order ? (
-                  <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
-                    <img
-                      src={viewProofOrder.screenshots.order}
-                      alt="Order Proof"
-                      className="w-full h-auto block"
-                    />
-                  </div>
+                  <>
+                    <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
+                      <img
+                        src={viewProofOrder.screenshots.order}
+                        alt="Order Proof"
+                        className="w-full h-auto block"
+                      />
+                    </div>
+                    {/* AI Analysis Section */}
+                    <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-200 mt-2">
+                      <div className="flex justify-between items-center mb-2">
+                        <h5 className="font-bold text-indigo-600 flex items-center gap-1.5 text-[10px] uppercase tracking-widest">
+                          <Sparkles size={12} className="text-indigo-500" /> AI Analysis
+                        </h5>
+                        {!brandAiAnalysis && !brandIsAnalyzing && (
+                          <button type="button" onClick={brandRunAnalysis} className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                            Analyze
+                          </button>
+                        )}
+                        {brandAiAnalysis && !brandIsAnalyzing && (
+                          <button type="button" onClick={brandRunAnalysis} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-600 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors">
+                            Re-Analyze
+                          </button>
+                        )}
+                      </div>
+                      {brandIsAnalyzing && (
+                        <div className="flex items-center justify-center py-3">
+                          <Loader2 className="animate-spin text-indigo-500 mr-2" size={18} />
+                          <span className="text-xs font-bold text-indigo-500">Analyzing...</span>
+                        </div>
+                      )}
+                      {brandAiAnalysis && (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <div className={`flex-1 p-2 rounded-lg border text-center ${brandAiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                              <p className="text-[9px] font-bold text-zinc-400 uppercase">Order ID</p>
+                              <p className={`text-xs font-bold ${brandAiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                {brandAiAnalysis.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
+                              </p>
+                              {brandAiAnalysis.detectedOrderId && <p className="text-[9px] text-zinc-500 font-mono mt-0.5">Detected: {brandAiAnalysis.detectedOrderId}</p>}
+                            </div>
+                            <div className={`flex-1 p-2 rounded-lg border text-center ${brandAiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                              <p className="text-[9px] font-bold text-zinc-400 uppercase">Amount</p>
+                              <p className={`text-xs font-bold ${brandAiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                {brandAiAnalysis.amountMatch ? '✓ Match' : '✗ Mismatch'}
+                              </p>
+                              {brandAiAnalysis.detectedAmount != null && <p className="text-[9px] text-zinc-500 font-mono mt-0.5">Detected: ₹{brandAiAnalysis.detectedAmount}</p>}
+                            </div>
+                          </div>
+                          {brandAiAnalysis.discrepancyNote && (
+                            <p className="text-[10px] text-zinc-500 bg-white rounded-lg p-2 border border-zinc-100">{brandAiAnalysis.discrepancyNote}</p>
+                          )}
+                          {(() => {
+                            const n = Number(brandAiAnalysis.confidenceScore);
+                            const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
+                            return (
+                              <div className="flex justify-between items-center pt-1">
+                                <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence</span>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-20 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
+                                  </div>
+                                  <span className="text-xs font-bold text-zinc-700">{score}%</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                      {!brandAiAnalysis && !brandIsAnalyzing && (
+                        <p className="text-[10px] text-zinc-400 text-center">Click Analyze to verify purchase proof with AI</p>
+                      )}
+                    </div>
+                  </>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
                     <AlertCircle size={24} className="mx-auto text-red-400 mb-2" />
@@ -1224,8 +1322,10 @@ const OrdersView = ({ user }: any) => {
                   try {
                     const resp = await api.orders.getOrderAudit(viewProofOrder.id);
                     setOrderAuditLogs(resp?.logs ?? []);
+                    setOrderAuditEvents(resp?.events ?? []);
                   } catch {
                     setOrderAuditLogs([]);
+                    setOrderAuditEvents([]);
                   } finally {
                     setAuditLoading(false);
                   }
@@ -1240,18 +1340,33 @@ const OrdersView = ({ user }: any) => {
                 <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
                   {auditLoading ? (
                     <p className="text-xs text-zinc-400 text-center py-2">Loading...</p>
-                  ) : orderAuditLogs.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
                     <p className="text-xs text-zinc-400 text-center py-2">No activity yet</p>
                   ) : (
-                    orderAuditLogs.map((log: any, i: number) => (
+                    <>
+                    {orderAuditLogs.map((log: any, i: number) => (
                       <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
-                        <span className="font-bold text-zinc-600 shrink-0">{log.type}</span>
-                        <span className="flex-1">{new Date(log.at).toLocaleString()}</span>
+                        <span className="font-bold text-zinc-600 shrink-0">{(log.action || log.type || '').replace(/_/g, ' ')}</span>
+                        <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
                           <span className="bg-zinc-100 px-1.5 py-0.5 rounded text-[9px] font-bold">{log.metadata.proofType}</span>
                         )}
                       </div>
-                    ))
+                    ))}
+                    {/* Inline Event History from order.events */}
+                    {orderAuditEvents.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-zinc-200">
+                        <p className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-1">Event History</p>
+                        {orderAuditEvents.map((evt: any, i: number) => (
+                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-indigo-200 pl-3 py-1">
+                            <span className="font-bold text-indigo-600 shrink-0">{(evt.type || '').replace(/_/g, ' ')}</span>
+                            <span className="flex-1">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
+                            {evt.metadata && <span className="text-zinc-400 truncate text-[9px]">{JSON.stringify(evt.metadata).slice(0, 80)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}
@@ -1259,7 +1374,7 @@ const OrdersView = ({ user }: any) => {
 
             <div className="pt-4 mt-2 border-t border-zinc-100">
               <button
-                onClick={() => { setViewProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); }}
+                onClick={() => { setViewProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); }}
                 className="w-full py-3 bg-zinc-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
               >
                 Close Viewer

@@ -504,6 +504,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Partner ID',
       'Buyer Name',
       'Buyer Mobile',
+      'Reviewer Name',
       'Status',
       'Payment Status',
       'Verification Status',
@@ -541,6 +542,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.managerName,
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
+        csvSafe((o as any).reviewerName || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
@@ -2529,6 +2531,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
+  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
 
   // Keep proof modal in sync when allOrders updates from real-time
   useEffect(() => {
@@ -3271,8 +3274,10 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   try {
                     const resp = await api.orders.getOrderAudit(proofOrder.id);
                     setOrderAuditLogs(resp?.logs ?? []);
+                    setOrderAuditEvents(resp?.events ?? []);
                   } catch {
                     setOrderAuditLogs([]);
+                    setOrderAuditEvents([]);
                   } finally {
                     setAuditLoading(false);
                   }
@@ -3287,25 +3292,40 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
                   {auditLoading ? (
                     <p className="text-xs text-zinc-400 text-center py-2">Loading...</p>
-                  ) : orderAuditLogs.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
                     <p className="text-xs text-zinc-400 text-center py-2">No activity yet</p>
                   ) : (
-                    orderAuditLogs.map((log: any, i: number) => (
+                    <>
+                    {orderAuditLogs.map((log: any, i: number) => (
                       <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
-                        <span className="font-bold text-zinc-600 shrink-0">{log.type}</span>
-                        <span className="flex-1">{new Date(log.at).toLocaleString()}</span>
+                        <span className="font-bold text-zinc-600 shrink-0">{(log.action || log.type || '').replace(/_/g, ' ')}</span>
+                        <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
                           <span className="bg-zinc-100 px-1.5 py-0.5 rounded text-[9px] font-bold">{log.metadata.proofType}</span>
                         )}
                       </div>
-                    ))
+                    ))}
+                    {/* Inline Event History from order.events */}
+                    {orderAuditEvents.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-zinc-200">
+                        <p className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-1">Event History</p>
+                        {orderAuditEvents.map((evt: any, i: number) => (
+                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-indigo-200 pl-3 py-1">
+                            <span className="font-bold text-indigo-600 shrink-0">{(evt.type || '').replace(/_/g, ' ')}</span>
+                            <span className="flex-1">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
+                            {evt.metadata && <span className="text-zinc-400 truncate text-[9px]">{JSON.stringify(evt.metadata).slice(0, 80)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}
             </div>
 
             <button
-              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); }}
+              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); }}
               className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
             >
               Close Viewer
