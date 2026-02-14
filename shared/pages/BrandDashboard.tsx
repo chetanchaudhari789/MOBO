@@ -1896,7 +1896,8 @@ export const BrandDashboard: React.FC = () => {
     // CSV formula injection guard: prefix dangerous chars with a single-quote
     const csvSafe = (v: unknown): string => {
       const s = String(v ?? '').replace(/"/g, '""');
-      if (/^[=+\-@\t\r]/.test(s)) return `"'${s}"`;
+      // Check for dangerous chars after trimming leading whitespace
+      if (/^\s*[=+\-@\t\r]/.test(s)) return `"'${s}"`;
       return `"${s}"`;
     };
 
