@@ -177,7 +177,10 @@ export function OrderVerificationBadge({
   const s = themeStyles[theme];
   return (
     <div className={className ?? 'space-y-1'}>
-      <p className={`text-[10px] font-semibold ${s.headerText}`}>🤖 AI Order Proof Verification</p>
+      <p className={`text-[10px] font-semibold ${s.headerText}`}>
+        <span aria-hidden="true" className="mr-1">🤖</span>
+        AI Order Proof Verification
+      </p>
       <div className="grid grid-cols-2 gap-1">
         <VerifyItem label="Order ID" match={data.orderIdMatch} theme={theme} />
         <VerifyItem label="Amount" match={data.amountMatch} theme={theme} />

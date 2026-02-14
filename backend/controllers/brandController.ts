@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
 import { UserModel } from '../models/User.js';
@@ -242,7 +243,7 @@ export function makeBrandController() {
           // Atomic payout: wrap debit + credit in a single MongoDB session so that
           // partial failures (e.g., brand debit succeeds but agency credit fails)
           // are rolled back automatically, preventing money loss.
-          const payoutSession = await (await import('mongoose')).default.startSession();
+          const payoutSession = await mongoose.startSession();
           try {
             await payoutSession.withTransaction(async () => {
               // Debit brand first (fails if insufficient funds).
