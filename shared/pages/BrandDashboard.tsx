@@ -70,6 +70,9 @@ type Tab = 'dashboard' | 'agencies' | 'campaigns' | 'requests' | 'orders' | 'pro
 const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || order.id || '').trim();
 
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+
 // --- COMPONENTS ---
 
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
@@ -930,7 +933,7 @@ const OrdersView = ({ user }: any) => {
                       <td className="p-6 text-sm text-zinc-700">
                         <span className="font-mono text-xs text-zinc-500">{o.managerName || '-'}</span>
                       </td>
-                      <td className="p-6 text-right font-bold text-zinc-900">{o.total}</td>
+                      <td className="p-6 text-right font-bold text-zinc-900">{formatCurrency(o.total)}</td>
                       <td className="p-6 text-right">
                         {getOrderStatusBadge(o)}
                       </td>
@@ -1007,7 +1010,7 @@ const OrdersView = ({ user }: any) => {
                   <p className="text-xs text-zinc-500 mt-1">
                     Value:{' '}
                     <span className="font-mono font-bold text-zinc-900">
-                      {viewProofOrder.total}
+                      {formatCurrency(viewProofOrder.total)}
                     </span>
                   </p>
                   {(viewProofOrder.soldBy || viewProofOrder.orderDate || viewProofOrder.extractedProductName) && (

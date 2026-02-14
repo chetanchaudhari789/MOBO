@@ -255,6 +255,23 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     };
   }, [user]);
 
+  // Auto-fetch audit logs when switching to audit-logs view
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    if (view !== 'audit-logs') return;
+    if (auditLogs.length > 0) return; // already loaded
+    setAuditLoading(true);
+    const params: any = { limit: 200 };
+    if (auditActionFilter) params.action = auditActionFilter;
+    if (auditDateFrom) params.from = new Date(auditDateFrom).toISOString();
+    if (auditDateTo) params.to = new Date(auditDateTo + 'T23:59:59').toISOString();
+    api.admin
+      .getAuditLogs(params)
+      .then((data) => setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []))
+      .catch((e) => console.error('Audit Logs Fetch Error:', e))
+      .finally(() => setAuditLoading(false));
+  }, [user, view]);
+
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     if (view !== 'users') return;

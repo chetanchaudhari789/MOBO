@@ -102,6 +102,19 @@ export const Orders: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
+  // Rating screenshot pre-validation state
+  const [ratingPreview, setRatingPreview] = useState<string | null>(null);
+  const [ratingAnalyzing, setRatingAnalyzing] = useState(false);
+  const [ratingVerification, setRatingVerification] = useState<{
+    accountNameMatch: boolean;
+    productNameMatch: boolean;
+    confidenceScore: number;
+    detectedAccountName?: string;
+    detectedProductName?: string;
+    discrepancyNote?: string;
+  } | null>(null);
+  const [ratingFile, setRatingFile] = useState<File | null>(null);
+
   // Order list search & filter
   const [orderListSearch, setOrderListSearch] = useState('');
   const [orderListStatus, setOrderListStatus] = useState<string>('All');
@@ -397,6 +410,88 @@ export const Orders: React.FC = () => {
       toast.info('Screenshot uploaded. Enter Order ID and Amount below.');
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  // Rating screenshot pre-validation: check account name + product name before upload
+  const handleRatingScreenshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedOrder || !user) return;
+    if (!isValidImageFile(file)) {
+      toast.error('Please upload a valid image (PNG/JPG, max 50MB).');
+      return;
+    }
+
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = () => setRatingPreview(reader.result as string);
+    reader.readAsDataURL(file);
+
+    setRatingFile(file);
+    setRatingAnalyzing(true);
+    setRatingVerification(null);
+
+    try {
+      const buyerName = user.name || '';
+      const productName = selectedOrder.items?.[0]?.title || '';
+
+      if (buyerName && productName) {
+        const result = await api.orders.verifyRating(file, buyerName, productName);
+        setRatingVerification(result);
+
+        if (!result.accountNameMatch && !result.productNameMatch) {
+          toast.error('Account name and product name do not match! Please upload the correct rating screenshot.');
+        } else if (!result.accountNameMatch) {
+          toast.warning('Account name does not match your profile. Please check the screenshot.');
+        } else if (!result.productNameMatch) {
+          toast.warning('Product name does not match this order. Please check the screenshot.');
+        } else {
+          toast.success('Rating screenshot verified! Account and product match.');
+        }
+      } else {
+        // Can't verify without buyer name/product name, allow upload
+        setRatingVerification({ accountNameMatch: true, productNameMatch: true, confidenceScore: 50 });
+        toast.info('Screenshot ready for upload.');
+      }
+    } catch (err) {
+      console.error('Rating pre-validation failed:', err);
+      // Allow upload even if pre-validation fails — backend will still validate
+      setRatingVerification(null);
+      toast.info('Screenshot ready. AI pre-check unavailable.');
+    } finally {
+      setRatingAnalyzing(false);
+    }
+  };
+
+  // Submit the pre-validated rating screenshot
+  const submitRatingScreenshot = async () => {
+    if (!ratingFile || !selectedOrder || isUploading) return;
+
+    // Block if both name and product mismatch
+    if (ratingVerification && !ratingVerification.accountNameMatch && !ratingVerification.productNameMatch) {
+      toast.error('Cannot submit: account name and product name do not match. Please upload the correct screenshot.');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(ratingFile);
+      });
+      await api.orders.submitClaim(selectedOrder.id, { type: uploadType, data });
+      toast.success('Proof uploaded!');
+      setSelectedOrder(null);
+      setRatingPreview(null);
+      setRatingFile(null);
+      setRatingVerification(null);
+      loadOrders();
+    } catch (err: any) {
+      toast.error(String(err?.message || 'Failed to upload proof'));
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -1149,6 +1244,11 @@ export const Orders: React.FC = () => {
                   key={type}
                   onClick={() => {
                     setDealTypeFilter(type as any);
+                    // Reset all form state when switching deal type tab
+                    setFormScreenshot(null);
+                    setExtractedDetails({ orderId: '', amount: '' });
+                    setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+                    setOrderIdLocked(false);
                     setSelectedProduct(null);
                   }}
                   className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${dealTypeFilter === type ? 'bg-black text-white shadow-md' : 'text-slate-500'}`}
@@ -1178,7 +1278,14 @@ export const Orders: React.FC = () => {
                     {filteredProducts.map((p) => (
                       <div
                         key={p.id}
-                        onClick={() => setSelectedProduct(p)}
+                        onClick={() => {
+                          // Reset screenshot state to prevent leak from previous product
+                          setFormScreenshot(null);
+                          setExtractedDetails({ orderId: '', amount: '' });
+                          setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+                          setOrderIdLocked(false);
+                          setSelectedProduct(p);
+                        }}
                         className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl hover:bg-gray-50 cursor-pointer active:scale-95 transition-transform"
                       >
                         <img
@@ -1216,7 +1323,14 @@ export const Orders: React.FC = () => {
                       </p>
                     </div>
                     <button
-                      onClick={() => setSelectedProduct(null)}
+                      onClick={() => {
+                        // Reset all form state when clearing product selection
+                        setFormScreenshot(null);
+                        setExtractedDetails({ orderId: '', amount: '' });
+                        setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
+                        setOrderIdLocked(false);
+                        setSelectedProduct(null);
+                      }}
                       aria-label="Clear selected product"
                       className="absolute -top-2 -right-2 bg-white border border-gray-200 p-1.5 rounded-full shadow-sm text-slate-400 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                     >
@@ -1627,25 +1741,31 @@ export const Orders: React.FC = () => {
           onClick={() => {
             setSelectedOrder(null);
             setInputValue('');
+            setRatingPreview(null);
+            setRatingFile(null);
+            setRatingVerification(null);
           }}
         >
           <div
-            className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-slide-up relative"
+            className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-slide-up relative max-h-[85vh] overflow-y-auto scrollbar-hide"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => {
                 setSelectedOrder(null);
                 setInputValue('');
+                setRatingPreview(null);
+                setRatingFile(null);
+                setRatingVerification(null);
               }}
               aria-label="Close"
-              className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+              className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 focus-visible:ring-offset-2 focus-visible:ring-offset-white z-10"
             >
               <X size={16} />
             </button>
 
             <h3 className="text-lg font-extrabold text-slate-900 mb-1">
-              {uploadType === 'review' ? 'Submit Review Link' : uploadType === 'returnWindow' ? 'Upload Return Window' : 'Upload Proof'}
+              {uploadType === 'review' ? 'Submit Review Link' : uploadType === 'returnWindow' ? 'Upload Return Window' : uploadType === 'rating' ? 'Upload Rating Proof' : 'Upload Proof'}
             </h3>
             <p className="text-xs text-slate-500 font-bold uppercase mb-5">
               Order {getPrimaryOrderId(selectedOrder)}
@@ -1670,10 +1790,109 @@ export const Orders: React.FC = () => {
                   {isUploading ? 'Submitting...' : 'Submit'}
                 </button>
               </div>
+            ) : uploadType === 'rating' ? (
+              /* Enhanced rating upload with AI pre-validation */
+              <div className="space-y-4">
+                <label
+                  className={`w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${ratingPreview ? 'border-lime-200' : 'border-gray-200'}`}
+                >
+                  {ratingPreview ? (
+                    <img src={ratingPreview} className="w-full h-full object-cover opacity-80" alt="Rating preview" />
+                  ) : (
+                    <>
+                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                        <ScanLine size={20} className="text-slate-400" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-400">
+                        Upload Rating Screenshot
+                      </span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleRatingScreenshot}
+                    disabled={isUploading || ratingAnalyzing}
+                  />
+                  {ratingAnalyzing && (
+                    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center">
+                      <Loader2 size={24} className="animate-spin motion-reduce:animate-none text-lime-600 mb-2" />
+                      <span className="text-xs font-bold text-lime-600 animate-pulse motion-reduce:animate-none">
+                        AI Verifying Rating...
+                      </span>
+                    </div>
+                  )}
+                </label>
+
+                {/* AI Verification Results */}
+                {ratingVerification && (
+                  <div className="space-y-2 animate-enter">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className={`p-2.5 rounded-xl text-center ${ratingVerification.accountNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Account Name</div>
+                        <div className={`text-xs font-bold ${ratingVerification.accountNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                          {ratingVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
+                        </div>
+                        {ratingVerification.detectedAccountName && (
+                          <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                            Found: {ratingVerification.detectedAccountName}
+                          </div>
+                        )}
+                      </div>
+                      <div className={`p-2.5 rounded-xl text-center ${ratingVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Product Name</div>
+                        <div className={`text-xs font-bold ${ratingVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
+                          {ratingVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
+                        </div>
+                        {ratingVerification.detectedProductName && (
+                          <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                            Found: {ratingVerification.detectedProductName}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {ratingVerification.accountNameMatch && ratingVerification.productNameMatch && (
+                      <p className="text-[10px] text-green-600 font-bold bg-green-50 p-2 rounded-lg flex items-center gap-1.5">
+                        <CheckCircle2 size={12} /> Rating screenshot verified. Ready to submit.
+                      </p>
+                    )}
+                    {(!ratingVerification.accountNameMatch || !ratingVerification.productNameMatch) && (
+                      <p className="text-[10px] text-red-600 font-bold bg-red-50 p-2 rounded-lg flex items-center gap-1.5">
+                        <AlertTriangle size={12} />
+                        {!ratingVerification.accountNameMatch && !ratingVerification.productNameMatch
+                          ? 'Account name & product do not match. Upload the correct rating screenshot.'
+                          : !ratingVerification.accountNameMatch
+                            ? 'Account name does not match your profile name.'
+                            : 'Product does not match this order\'s product.'}
+                      </p>
+                    )}
+                    {ratingVerification.discrepancyNote && (
+                      <p className="text-[10px] text-slate-500 italic px-1">
+                        {ratingVerification.discrepancyNote}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  onClick={submitRatingScreenshot}
+                  disabled={
+                    isUploading ||
+                    ratingAnalyzing ||
+                    !ratingFile ||
+                    (ratingVerification != null && !ratingVerification.accountNameMatch && !ratingVerification.productNameMatch)
+                  }
+                  className="w-full py-3.5 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploading ? 'Submitting...' : ratingAnalyzing ? 'Verifying...' : 'Submit Rating Proof'}
+                </button>
+              </div>
             ) : (
               <div className="space-y-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block">
-                  {uploadType === 'rating' ? 'Rating Screenshot' : uploadType === 'returnWindow' ? 'Return Window Screenshot' : 'Proof'}
+                  {uploadType === 'returnWindow' ? 'Return Window Screenshot' : 'Proof'}
                 </label>
                 <label className="block w-full rounded-2xl border-2 border-dashed border-slate-200 p-6 text-center cursor-pointer hover:border-slate-300">
                   <div className="text-sm font-bold text-slate-700">Choose an image</div>
