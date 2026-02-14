@@ -80,6 +80,9 @@ const getPrimaryOrderId = (order: Order) =>
 
 const urlToBase64 = async (url: string): Promise<string> => {
   try {
+    // If already a data-URI (base64), return directly — no fetch needed
+    if (url.startsWith('data:')) return url;
+
     // Only allow fetches from the API origin to prevent arbitrary resource loading
     const apiBase = getApiBaseUrl();
     const allowed = apiBase.startsWith('http') ? new URL(apiBase).origin : window.location.origin;
@@ -1521,6 +1524,7 @@ export const MediatorDashboard: React.FC = () => {
   // Audit trail state
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
+  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
@@ -1936,8 +1940,14 @@ export const MediatorDashboard: React.FC = () => {
               </div>
 
               {/* AI-Extracted Metadata */}
-              {(proofModal.soldBy || proofModal.orderDate || proofModal.extractedProductName) && (
+              {(proofModal.soldBy || proofModal.orderDate || proofModal.extractedProductName || proofModal.reviewerName) && (
                 <div className="grid grid-cols-3 gap-3 mt-3">
+                  {proofModal.reviewerName && (
+                    <div className="bg-black/40 p-2.5 rounded-xl border border-indigo-500/20">
+                      <p className="text-[9px] text-indigo-400 font-bold uppercase mb-1">Reviewer Name</p>
+                      <p className="text-[11px] font-bold text-indigo-200">{proofModal.reviewerName}</p>
+                    </div>
+                  )}
                   {proofModal.extractedProductName && (
                     <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
                       <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Product Name</p>
@@ -2312,8 +2322,10 @@ export const MediatorDashboard: React.FC = () => {
                   try {
                     const resp = await api.orders.getOrderAudit(proofModal.id);
                     setOrderAuditLogs(resp?.logs ?? []);
+                    setOrderAuditEvents(resp?.events ?? []);
                   } catch {
                     setOrderAuditLogs([]);
+                    setOrderAuditEvents([]);
                   } finally {
                     setAuditLoading(false);
                   }
@@ -2332,10 +2344,11 @@ export const MediatorDashboard: React.FC = () => {
                     <div className="flex justify-center py-3">
                       <Loader2 size={16} className="animate-spin text-zinc-500" />
                     </div>
-                  ) : orderAuditLogs.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
                     <p className="text-[10px] text-zinc-600 italic">No activity recorded yet.</p>
                   ) : (
-                    orderAuditLogs.map((log: any, i: number) => (
+                    <>
+                    {orderAuditLogs.map((log: any, i: number) => (
                       <div key={log._id || i} className="flex items-start gap-2 text-[10px]">
                         <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 mt-1.5 shrink-0" />
                         <div className="min-w-0">
@@ -2350,7 +2363,24 @@ export const MediatorDashboard: React.FC = () => {
                           )}
                         </div>
                       </div>
-                    ))
+                    ))}
+                    {/* Inline Event History from order.events */}
+                    {orderAuditEvents.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-zinc-700/50">
+                        <p className="text-[9px] font-extrabold text-zinc-500 uppercase tracking-wider mb-1">Event History</p>
+                        {orderAuditEvents.map((evt: any, i: number) => (
+                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] mt-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
+                            <div className="min-w-0">
+                              <span className="font-bold text-indigo-300">{(evt.type || '').replace(/_/g, ' ')}</span>
+                              <span className="text-zinc-500 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
+                              {evt.metadata && <span className="ml-1 text-zinc-600 truncate">({JSON.stringify(evt.metadata).slice(0, 80)})</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}

@@ -444,12 +444,12 @@ export const api = {
       });
     },
     /** Pre-validate rating screenshot: checks account name + product name match */
-    verifyRating: async (file: File, expectedBuyerName: string, expectedProductName: string) => {
+    verifyRating: async (file: File, expectedBuyerName: string, expectedProductName: string, expectedReviewerName?: string) => {
       const rawBase64 = await readFileAsDataUrl(file);
       return fetchJson('/ai/verify-rating', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ imageBase64: rawBase64, expectedBuyerName, expectedProductName }),
+        body: JSON.stringify({ imageBase64: rawBase64, expectedBuyerName, expectedProductName, ...(expectedReviewerName ? { expectedReviewerName } : {}) }),
       });
     },
   },

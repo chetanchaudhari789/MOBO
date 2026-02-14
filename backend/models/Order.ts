@@ -167,6 +167,8 @@ const orderSchema = new Schema(
 
     buyerName: { type: String, required: true, trim: true },
     buyerMobile: { type: String, required: true, trim: true, match: /^\d{10}$/ },
+    // Marketplace reviewer/profile name used by the buyer on the e-commerce platform
+    reviewerName: { type: String, trim: true },
 
     brandName: { type: String, trim: true },
 

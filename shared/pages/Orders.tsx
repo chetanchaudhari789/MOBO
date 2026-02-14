@@ -75,7 +75,9 @@ export const Orders: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const [formScreenshot, setFormScreenshot] = useState<string | null>(null);
-  const [reviewLinkInput, setReviewLinkInput] = useState('');  
+  const [reviewLinkInput, setReviewLinkInput] = useState('');
+  // Marketplace reviewer / profile name used by the buyer on the e-commerce platform
+  const [reviewerNameInput, setReviewerNameInput] = useState('');
 
   const [extractedDetails, setExtractedDetails] = useState<{
     orderId: string;
@@ -100,6 +102,7 @@ export const Orders: React.FC = () => {
   // Audit trail state: tracks which order's audit log is expanded
   const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
   // Rating screenshot pre-validation state
@@ -434,9 +437,11 @@ export const Orders: React.FC = () => {
     try {
       const buyerName = user.name || '';
       const productName = selectedOrder.items?.[0]?.title || '';
+      // Use marketplace profile name if available for better matching
+      const reviewerName = reviewerNameInput.trim() || (selectedOrder as any).reviewerName || '';
 
       if (buyerName && productName) {
-        const result = await api.orders.verifyRating(file, buyerName, productName);
+        const result = await api.orders.verifyRating(file, buyerName, productName, reviewerName || undefined);
         setRatingVerification(result);
 
         if (!result.accountNameMatch && !result.productNameMatch) {
@@ -549,6 +554,7 @@ export const Orders: React.FC = () => {
           orderDate: extractedDetails.orderDate || undefined,
           soldBy: extractedDetails.soldBy || undefined,
           extractedProductName: extractedDetails.productName || undefined,
+          reviewerName: reviewerNameInput.trim() || undefined,
         }
       );
 
@@ -556,6 +562,7 @@ export const Orders: React.FC = () => {
       setSelectedProduct(null);
       setFormScreenshot(null);
       setReviewLinkInput('');
+      setReviewerNameInput('');
       setExtractedDetails({ orderId: '', amount: '' });
       setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
       setOrderIdLocked(false);
@@ -638,7 +645,7 @@ export const Orders: React.FC = () => {
             title="Download as CSV"
             onClick={() => {
               if (!orders.length) { toast.error('No orders to export'); return; }
-              const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Created'];
+              const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];
               const csvRows = orders.map(o => [
                 getPrimaryOrderId(o),
                 o.items[0]?.title || '',
@@ -646,6 +653,7 @@ export const Orders: React.FC = () => {
                 o.items[0]?.dealType || '',
                 o.affiliateStatus || o.workflowStatus || '',
                 o.paymentStatus || '',
+                o.reviewerName || '',
                 o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
               ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
               const csv = [h.join(','), ...csvRows].join('\n');
@@ -1153,8 +1161,10 @@ export const Orders: React.FC = () => {
                       try {
                         const resp = await api.orders.getOrderAudit(order.id);
                         setAuditLogs(resp?.logs ?? []);
+                        setAuditEvents(resp?.events ?? []);
                       } catch {
                         setAuditLogs([]);
+                        setAuditEvents([]);
                       } finally {
                         setAuditLoading(false);
                       }
@@ -1166,6 +1176,7 @@ export const Orders: React.FC = () => {
                     {auditOrderId === order.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </button>
                   {auditOrderId === order.id && (
+                    <>
                     <div className="mt-2 max-h-40 overflow-y-auto space-y-1.5 scrollbar-hide">
                       {auditLoading ? (
                         <div className="flex justify-center py-2">
@@ -1192,6 +1203,25 @@ export const Orders: React.FC = () => {
                         ))
                       )}
                     </div>
+                    {/* Inline Event History from order.events */}
+                    {auditEvents.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-50">
+                        <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Event History</p>
+                        <div className="space-y-1.5">
+                          {auditEvents.map((evt: any, i: number) => (
+                            <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px]">
+                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-300 mt-1.5 shrink-0" />
+                              <div className="min-w-0">
+                                <span className="font-bold text-indigo-600">{(evt.type || '').replace(/_/g, ' ')}</span>
+                                <span className="text-slate-400 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
+                                {evt.metadata && <span className="ml-1 text-slate-400 truncate">({JSON.stringify(evt.metadata).slice(0, 80)})</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               </div>
@@ -1468,6 +1498,26 @@ export const Orders: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Reviewer / Marketplace profile name */}
+                  {formScreenshot && (selectedProduct?.dealType === 'Rating' || selectedProduct?.dealType === 'Review') && (
+                    <div className="space-y-1 animate-enter">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Your Marketplace Profile Name <span className="text-zinc-300">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={reviewerNameInput}
+                        onChange={(e) => setReviewerNameInput(e.target.value)}
+                        className="w-full p-3 rounded-xl bg-gray-50 border border-gray-100 font-bold text-sm outline-none focus:ring-2 focus:ring-lime-100 transition-all"
+                        placeholder="e.g. John D. on Amazon"
+                        maxLength={200}
+                      />
+                      <p className="text-[9px] text-zinc-400 ml-1">
+                        Your profile name on the marketplace — helps verify your review/rating screenshots.
+                      </p>
+                    </div>
+                  )}
+
                   {/* For Rating/Review deals, rating/review proof is submitted AFTER mediator verifies order screenshot */}
                   {(selectedProduct?.dealType === 'Rating' || selectedProduct?.dealType === 'Review') && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 animate-enter">
@@ -1635,6 +1685,11 @@ export const Orders: React.FC = () => {
               <p className="text-xs text-slate-500 font-bold uppercase">
                 Order {getPrimaryOrderId(proofToView)}
               </p>
+              {proofToView.reviewerName && (
+                <p className="text-[10px] mt-1 text-indigo-600 font-bold flex items-center gap-1">
+                  Marketplace Profile: {proofToView.reviewerName}
+                </p>
+              )}
             </div>
             <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
               <div className="space-y-2">
