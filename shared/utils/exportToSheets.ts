@@ -60,13 +60,20 @@ export async function connectGoogleAccount(): Promise<boolean> {
       }
 
       let resolved = false;
+      let pollTimer: ReturnType<typeof setInterval> | undefined;
+      let safetyTimer: ReturnType<typeof setTimeout> | undefined;
+
       const cleanup = () => {
         window.removeEventListener('message', handleMessage);
-        clearInterval(pollTimer);
-        clearTimeout(safetyTimer);
+        if (pollTimer) clearInterval(pollTimer);
+        if (safetyTimer) clearTimeout(safetyTimer);
       };
 
       const handleMessage = (event: MessageEvent) => {
+        // Validate the message comes from the popup window and expected origin
+        if (event.source !== popup) return;
+        if (event.origin !== window.location.origin) return;
+        
         if (event.data?.type === 'GOOGLE_OAUTH_RESULT') {
           resolved = true;
           cleanup();
@@ -79,7 +86,7 @@ export async function connectGoogleAccount(): Promise<boolean> {
       window.addEventListener('message', handleMessage);
 
       // Fallback: poll for popup closure
-      const pollTimer = setInterval(() => {
+      pollTimer = setInterval(() => {
         if (popup.closed && !resolved) {
           resolved = true;
           cleanup();
@@ -94,7 +101,7 @@ export async function connectGoogleAccount(): Promise<boolean> {
       }, 500);
 
       // Safety timeout: 5 minutes
-      const safetyTimer = setTimeout(() => {
+      safetyTimer = setTimeout(() => {
         if (!resolved) {
           resolved = true;
           cleanup();
