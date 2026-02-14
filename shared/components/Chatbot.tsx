@@ -126,6 +126,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
   // Cache for context API calls to avoid fetching on every single message
   const contextCacheRef = useRef<{
+    userId: string | null;
+    mediatorCode: string | undefined;
     products: Product[];
     orders: Order[];
     tickets: Ticket[];
@@ -365,14 +367,19 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     let ticketsForAi: Ticket[] = [];
 
     try {
-      // Use cached context if fresh enough, otherwise fetch (avoids 3 API calls per message)
+      // Use cached context if fresh enough AND for the same user, otherwise fetch (avoids 3 API calls per message)
       const now = Date.now();
       const cache = contextCacheRef.current;
       let allProducts: Product[];
       let userOrders: Order[];
       let allTickets: Ticket[];
 
-      if (cache && (now - cache.fetchedAt) < CONTEXT_CACHE_TTL) {
+      const cacheValid = cache &&
+        (now - cache.fetchedAt) < CONTEXT_CACHE_TTL &&
+        cache.userId === (user?.id ?? null) &&
+        cache.mediatorCode === user?.mediatorCode;
+
+      if (cacheValid) {
         allProducts = cache.products;
         userOrders = cache.orders;
         allTickets = cache.tickets;
@@ -383,6 +390,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           api.tickets.getAll(),
         ]);
         contextCacheRef.current = {
+          userId: user?.id ?? null,
+          mediatorCode: user?.mediatorCode,
           products: allProducts,
           orders: userOrders,
           tickets: allTickets,
@@ -450,6 +459,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         response.intent === 'navigation' &&
         VALID_NAV_TARGETS.includes(response.navigateTo as AiNavigateTo)
       ) {
+        // Clear any previously scheduled navigation
+        if (navTimerRef.current) clearTimeout(navTimerRef.current);
+        
         // Use ref-tracked timeout so it's cancelled if component unmounts
         const navTimer = setTimeout(() => {
           onNavigate?.(response.navigateTo as AiNavigateTo);
