@@ -4,8 +4,12 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import {
   Clock,
   CheckCircle2,
@@ -25,13 +29,110 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Download,
+  Info,
 } from 'lucide-react';
 
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || '').trim() || 'Pending';
+/* ─── Sample Screenshot Guide ───────────────────────────────────────── */
+const SAMPLE_IMAGES: Record<string, string> = {
+  order: '/screenshots/sample-order.png',
+  rating: '/screenshots/sample-rating.png',
+  returnWindow: '/screenshots/sample-return-window.png',
+};
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+const SampleScreenshotGuide: React.FC<{
+  type: 'order' | 'rating' | 'returnWindow';
+}> = ({ type }) => {
+  const [open, setOpen] = useState(false);
+  const guides: Record<string, { title: string; bullets: string[]; highlights: string[] }> = {
+    order: {
+      title: 'Order Confirmation Screenshot',
+      bullets: [
+        'Go to your order details page on the marketplace (Amazon, Flipkart, etc.)',
+        'Screenshot must clearly show the Order ID / Order Number',
+        'Grand Total / Amount Paid should be visible',
+        'Product name and "Sold by" seller info should be visible',
+        'Include the "Order placed" date if possible',
+      ],
+      highlights: ['Order Number', 'Grand Total', 'Product Name', 'Sold by', 'Order Date'],
+    },
+    rating: {
+      title: 'Rating / Review Screenshot',
+      bullets: [
+        'Open the "Write a product review" or "Rate this product" page',
+        'Your reviewer name / account name must be visible at the top',
+        'The product name should appear clearly on the page',
+        'Star rating should be filled (e.g. 5 stars)',
+        'Take the screenshot BEFORE submitting if "Submit" button is visible',
+      ],
+      highlights: ['Reviewer Name', 'Product Name', 'Star Rating'],
+    },
+    returnWindow: {
+      title: 'Return Window Screenshot',
+      bullets: [
+        'Go to your order details page showing the delivery status',
+        'Look for "Return window closed" or delivery date info',
+        'Order ID and product name should both be visible',
+        'The "Sold by" seller information should be present',
+        'Amount / price must appear on the page',
+      ],
+      highlights: ['Return Window Status', 'Order Number', 'Delivered Date', 'Sold By'],
+    },
+  };
+  const g = guides[type];
+  if (!g) return null;
+  const sampleImg = SAMPLE_IMAGES[type];
+  return (
+    <div className="rounded-xl border border-blue-100 bg-blue-50/50 overflow-hidden animate-enter">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left"
+      >
+        <Info size={13} className="text-blue-500 shrink-0" />
+        <span className="text-[10px] font-bold text-blue-600 flex-1">
+          How to take a {g.title}?
+        </span>
+        {open ? <ChevronUp size={12} className="text-blue-400" /> : <ChevronDown size={12} className="text-blue-400" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
+          {/* Sample annotated image */}
+          {sampleImg && (
+            <div className="mt-2 rounded-lg border border-blue-200 overflow-hidden bg-white">
+              <p className="text-[9px] font-bold text-blue-500 px-2 pt-1.5 pb-0.5">📸 Example — key fields highlighted</p>
+              <img
+                src={sampleImg}
+                alt={`Sample ${g.title}`}
+                className="w-full h-auto"
+                loading="lazy"
+              />
+            </div>
+          )}
+          <ul className="space-y-1.5 mt-2">
+            {g.bullets.map((b, i) => (
+              <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-600">
+                <span className="w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 mt-0.5">{i + 1}</span>
+                {b}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {g.highlights.map((h) => (
+              <span key={h} className="text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded">
+                {h}
+              </span>
+            ))}
+          </div>
+          <p className="text-[9px] text-blue-400 font-semibold italic mt-1">
+            Tip: Use a full-page screenshot in good lighting for best AI detection results.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// formatCurrency, getPrimaryOrderId, csvSafe/downloadCsv imported from shared/utils
 
 const MAX_PROOF_SIZE_BYTES = 50 * 1024 * 1024;
 
@@ -75,7 +176,9 @@ export const Orders: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const [formScreenshot, setFormScreenshot] = useState<string | null>(null);
-  const [reviewLinkInput, setReviewLinkInput] = useState('');  
+  const [reviewLinkInput, setReviewLinkInput] = useState('');
+  // Marketplace reviewer / profile name used by the buyer on the e-commerce platform
+  const [reviewerNameInput, setReviewerNameInput] = useState('');
 
   const [extractedDetails, setExtractedDetails] = useState<{
     orderId: string;
@@ -94,12 +197,13 @@ export const Orders: React.FC = () => {
   const [orderIdLocked, setOrderIdLocked] = useState(false);
 
   const [ticketModal, setTicketModal] = useState<Order | null>(null);
-  const [ticketIssue, setTicketIssue] = useState('Cashback not received');
+  const [ticketIssue, setTicketIssue] = useState('Cashback Delay');
   const [ticketDesc, setTicketDesc] = useState('');
   const [sheetsExporting, setSheetsExporting] = useState(false);
   // Audit trail state: tracks which order's audit log is expanded
   const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
   // Rating screenshot pre-validation state
@@ -434,9 +538,11 @@ export const Orders: React.FC = () => {
     try {
       const buyerName = user.name || '';
       const productName = selectedOrder.items?.[0]?.title || '';
+      // Use marketplace profile name if available for better matching
+      const reviewerName = reviewerNameInput.trim() || (selectedOrder as any).reviewerName || '';
 
       if (buyerName && productName) {
-        const result = await api.orders.verifyRating(file, buyerName, productName);
+        const result = await api.orders.verifyRating(file, buyerName, productName, reviewerName || undefined);
         setRatingVerification(result);
 
         if (!result.accountNameMatch && !result.productNameMatch) {
@@ -549,6 +655,7 @@ export const Orders: React.FC = () => {
           orderDate: extractedDetails.orderDate || undefined,
           soldBy: extractedDetails.soldBy || undefined,
           extractedProductName: extractedDetails.productName || undefined,
+          reviewerName: reviewerNameInput.trim() || undefined,
         }
       );
 
@@ -556,6 +663,7 @@ export const Orders: React.FC = () => {
       setSelectedProduct(null);
       setFormScreenshot(null);
       setReviewLinkInput('');
+      setReviewerNameInput('');
       setExtractedDetails({ orderId: '', amount: '' });
       setMatchStatus({ id: 'none', amount: 'none', productName: 'none' });
       setOrderIdLocked(false);
@@ -585,7 +693,8 @@ export const Orders: React.FC = () => {
       setTicketModal(null);
       setTicketDesc('');
       await loadTickets();
-    } catch {
+    } catch (err) {
+      console.error('submitTicket error:', err);
       toast.error('Failed to raise ticket.');
     } finally {
       setIsUploading(false);
@@ -638,22 +747,19 @@ export const Orders: React.FC = () => {
             title="Download as CSV"
             onClick={() => {
               if (!orders.length) { toast.error('No orders to export'); return; }
-              const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Created'];
+              const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];
               const csvRows = orders.map(o => [
-                getPrimaryOrderId(o),
-                o.items[0]?.title || '',
-                String(o.total || 0),
-                o.items[0]?.dealType || '',
-                o.affiliateStatus || o.workflowStatus || '',
-                o.paymentStatus || '',
-                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+                csvSafe(getPrimaryOrderId(o)),
+                csvSafe(o.items[0]?.title || ''),
+                csvSafe(String(o.total || 0)),
+                csvSafe(o.items[0]?.dealType || ''),
+                csvSafe(o.affiliateStatus || o.workflowStatus || ''),
+                csvSafe(o.paymentStatus || ''),
+                csvSafe(o.reviewerName || ''),
+                csvSafe(o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''),
+              ].join(','));
               const csv = [h.join(','), ...csvRows].join('\n');
-              const blob = new Blob([csv], { type: 'text/csv' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url; a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
-              a.click(); URL.revokeObjectURL(url);
+              downloadCsv(`orders-${new Date().toISOString().slice(0, 10)}.csv`, csv);
               toast.success('CSV downloaded!');
             }}
             className="p-2.5 rounded-xl border border-zinc-100 bg-white hover:bg-zinc-50 transition-colors"
@@ -1131,7 +1237,7 @@ export const Orders: React.FC = () => {
                       </button>
                     )}
                     <button
-                      onClick={() => setTicketModal(order)}
+                      onClick={() => { setTicketIssue('Cashback Delay'); setTicketDesc(''); setTicketModal(order); }}
                       className="w-7 h-7 bg-red-50 text-red-500 rounded-full flex items-center justify-center hover:bg-red-100 ml-2"
                       title="Report Issue"
                     >
@@ -1153,8 +1259,12 @@ export const Orders: React.FC = () => {
                       try {
                         const resp = await api.orders.getOrderAudit(order.id);
                         setAuditLogs(resp?.logs ?? []);
-                      } catch {
+                        setAuditEvents(resp?.events ?? []);
+                      } catch (err) {
+                        console.error('Failed to load activity log:', err);
+                        toast.error('Failed to load activity log');
                         setAuditLogs([]);
+                        setAuditEvents([]);
                       } finally {
                         setAuditLoading(false);
                       }
@@ -1166,6 +1276,7 @@ export const Orders: React.FC = () => {
                     {auditOrderId === order.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </button>
                   {auditOrderId === order.id && (
+                    <>
                     <div className="mt-2 max-h-40 overflow-y-auto space-y-1.5 scrollbar-hide">
                       {auditLoading ? (
                         <div className="flex justify-center py-2">
@@ -1192,6 +1303,25 @@ export const Orders: React.FC = () => {
                         ))
                       )}
                     </div>
+                    {/* Inline Event History from order.events */}
+                    {auditEvents.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-50">
+                        <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Event History</p>
+                        <div className="space-y-1.5">
+                          {auditEvents.map((evt: any, i: number) => (
+                            <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px]">
+                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-300 mt-1.5 shrink-0" />
+                              <div className="min-w-0">
+                                <span className="font-bold text-indigo-600">{(evt.type || '').replace(/_/g, ' ')}</span>
+                                <span className="text-slate-400 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
+                                {evt.metadata && <span className="ml-1 text-slate-400 truncate">({JSON.stringify(evt.metadata).slice(0, 80)})</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               </div>
@@ -1378,6 +1508,9 @@ export const Orders: React.FC = () => {
                     </label>
                   </div>
 
+                  {/* Sample Screenshot Guide */}
+                  {!formScreenshot && <SampleScreenshotGuide type="order" />}
+
                   {/* [AI] Smart Extraction UI: Field Highlighting */}
                   {formScreenshot && (
                     <div className="space-y-3 animate-enter">
@@ -1468,6 +1601,26 @@ export const Orders: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Reviewer name */}
+                  {formScreenshot && (selectedProduct?.dealType === 'Rating' || selectedProduct?.dealType === 'Review') && (
+                    <div className="space-y-1 animate-enter">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
+                        Your Reviewer Name <span className="text-zinc-300">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={reviewerNameInput}
+                        onChange={(e) => setReviewerNameInput(e.target.value)}
+                        className="w-full p-3 rounded-xl bg-gray-50 border border-gray-100 font-bold text-sm outline-none focus:ring-2 focus:ring-lime-100 transition-all"
+                        placeholder="e.g. John D. on Amazon"
+                        maxLength={200}
+                      />
+                      <p className="text-[9px] text-zinc-400 ml-1">
+                        Your reviewer name on the marketplace — helps verify your review/rating screenshots.
+                      </p>
+                    </div>
+                  )}
+
                   {/* For Rating/Review deals, rating/review proof is submitted AFTER mediator verifies order screenshot */}
                   {(selectedProduct?.dealType === 'Rating' || selectedProduct?.dealType === 'Review') && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 animate-enter">
@@ -1487,7 +1640,9 @@ export const Orders: React.FC = () => {
                   !selectedProduct ||
                   !formScreenshot ||
                   isUploading ||
-                  matchStatus.productName === 'mismatch'
+                  matchStatus.productName === 'mismatch' ||
+                  !extractedDetails.orderId ||
+                  !extractedDetails.amount
                 }
                 className="w-full py-4 bg-black text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400 hover:text-black transition-all disabled:opacity-50 active:scale-95 shadow-lg"
               >
@@ -1635,14 +1790,18 @@ export const Orders: React.FC = () => {
               <p className="text-xs text-slate-500 font-bold uppercase">
                 Order {getPrimaryOrderId(proofToView)}
               </p>
+              {proofToView.reviewerName && (
+                <p className="text-[10px] mt-1 text-indigo-600 font-bold flex items-center gap-1">
+                  Reviewer Name: {proofToView.reviewerName}
+                </p>
+              )}
             </div>
             <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase text-slate-400">Order Proof</div>
                 {proofToView.screenshots?.order ? (
-                  <img
+                  <ZoomableImage
                     src={proofToView.screenshots.order}
-                    className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
                     alt="Order proof"
                   />
                 ) : (
@@ -1656,9 +1815,8 @@ export const Orders: React.FC = () => {
                 <div className="space-y-2">
                   <div className="text-[10px] font-bold uppercase text-slate-400">Rating Proof</div>
                   {proofToView.screenshots?.rating ? (
-                    <img
+                    <ZoomableImage
                       src={proofToView.screenshots.rating}
-                      className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
                       alt="Rating proof"
                     />
                   ) : (
@@ -1693,9 +1851,8 @@ export const Orders: React.FC = () => {
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase text-slate-400">Return Window Proof</div>
                 {(proofToView.screenshots as any)?.returnWindow ? (
-                  <img
+                  <ZoomableImage
                     src={(proofToView.screenshots as any).returnWindow}
-                    className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
                     alt="Return window proof"
                   />
                 ) : (
@@ -1872,6 +2029,9 @@ export const Orders: React.FC = () => {
                   )}
                 </label>
 
+                {/* Sample Screenshot Guide */}
+                {!ratingPreview && <SampleScreenshotGuide type="rating" />}
+
                 {/* AI Verification Results */}
                 {ratingVerification && (
                   <div className="space-y-2 animate-enter">
@@ -1911,7 +2071,7 @@ export const Orders: React.FC = () => {
                         {!ratingVerification.accountNameMatch && !ratingVerification.productNameMatch
                           ? 'Account name & product do not match. Upload the correct rating screenshot.'
                           : !ratingVerification.accountNameMatch
-                            ? 'Account name does not match your profile name.'
+                            ? 'Account name does not match your reviewer name.'
                             : 'Product does not match this order\'s product.'}
                       </p>
                     )}
@@ -1952,6 +2112,8 @@ export const Orders: React.FC = () => {
                     disabled={isUploading}
                   />
                 </label>
+                {/* Sample Screenshot Guide for Return Window */}
+                {uploadType === 'returnWindow' && <SampleScreenshotGuide type="returnWindow" />}
                 {isUploading && (
                   <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin motion-reduce:animate-none" /> Uploading...

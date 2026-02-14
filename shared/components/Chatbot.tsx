@@ -15,29 +15,14 @@ import { useChat } from '../context/ChatContext';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
 import { Ticket, Order, Product, AiNavigateTo } from '../types';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { ProductCard } from './ProductCard';
-
-/** Build the API base URL so we can proxy marketplace images through our backend. */
-function getApiBase(): string {
-  const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-  const fromNext =
-    typeof process !== 'undefined' &&
-    (process as any).env &&
-    (process as any).env.NEXT_PUBLIC_API_URL
-      ? String((process as any).env.NEXT_PUBLIC_API_URL)
-      : undefined;
-  let base = String(fromGlobal || fromNext || '/api').trim();
-  if (base.startsWith('/') && typeof window !== 'undefined') {
-    base = `${window.location.origin}${base}`;
-  }
-  return base.replace(/\/$/, '');
-}
 
 /** Return a proxied image URL for external marketplace images. */
 function proxyImageUrl(rawUrl: string | undefined): string | undefined {
   if (!rawUrl) return undefined;
   if (/^https?:\/\//i.test(rawUrl)) {
-    return `${getApiBase()}/media/image?url=${encodeURIComponent(rawUrl)}`;
+    return `${getApiBaseAbsolute()}/media/image?url=${encodeURIComponent(rawUrl)}`;
   }
   return rawUrl; // data URIs, relative paths, etc. are returned as-is
 }
@@ -124,6 +109,25 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Cache for context API calls to avoid fetching on every single message
+  const contextCacheRef = useRef<{
+    products: Product[];
+    orders: Order[];
+    tickets: Ticket[];
+    fetchedAt: number;
+  } | null>(null);
+  const CONTEXT_CACHE_TTL = 60_000; // 1 minute
+
+  // Track navigation timer for cleanup on unmount
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up navigation timer on unmount
+  useEffect(() => {
+    return () => {
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
+    };
+  }, []);
+
   const makeMessageId = () => {
     try {
       if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
@@ -174,6 +178,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   }, [isVisible]);
 
   useEffect(() => {
+    // Stop and clean up any previous recognition instance to prevent leaks
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch { /* ignore */ }
+      recognitionRef.current = null;
+    }
+
     if (
       typeof window !== 'undefined' &&
       ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
@@ -237,6 +247,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       recognition.onend = () => setIsListening(false);
       recognitionRef.current = recognition;
     }
+
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch { /* ignore */ }
+      }
+    };
   }, [onNavigate, addMessage]);
 
   const toggleListening = () => {
@@ -310,6 +326,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         return '';
       });
       if (rawBase64) base64Image = rawBase64;
+      // If file read failed and there's no text, bail out entirely
+      if (!rawBase64 && !safeText) {
+        setIsTyping(false);
+        return;
+      }
     }
 
     addMessage({
@@ -329,11 +350,30 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     let ticketsForAi: Ticket[] = [];
 
     try {
-      const [allProducts, userOrders, allTickets] = await Promise.all([
-        api.products.getAll(user?.mediatorCode),
-        user?.id ? api.orders.getUserOrders(user.id) : Promise.resolve([]),
-        api.tickets.getAll(),
-      ]);
+      // Use cached context if fresh enough, otherwise fetch (avoids 3 API calls per message)
+      const now = Date.now();
+      const cache = contextCacheRef.current;
+      let allProducts: Product[];
+      let userOrders: Order[];
+      let allTickets: Ticket[];
+
+      if (cache && (now - cache.fetchedAt) < CONTEXT_CACHE_TTL) {
+        allProducts = cache.products;
+        userOrders = cache.orders;
+        allTickets = cache.tickets;
+      } else {
+        [allProducts, userOrders, allTickets] = await Promise.all([
+          api.products.getAll(user?.mediatorCode),
+          user?.id ? api.orders.getUserOrders(user.id) : Promise.resolve([]),
+          api.tickets.getAll(),
+        ]);
+        contextCacheRef.current = {
+          products: allProducts,
+          orders: userOrders,
+          tickets: allTickets,
+          fetchedAt: now,
+        };
+      }
       const userTickets = user?.id
         ? allTickets.filter((t: Ticket) => t.userId === user.id)
         : [];
@@ -368,8 +408,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         : [];
 
       // Build conversation history from recent messages for multi-turn context.
+      // Filter out error messages to avoid polluting AI context with "Something went wrong" etc.
       const history = messages
-        .filter((m) => m.role === 'user' || m.role === 'model')
+        .filter((m) => (m.role === 'user' || m.role === 'model') && !m.isError)
         .slice(-6)
         .map((m) => ({
           role: m.role === 'model' ? ('assistant' as const) : ('user' as const),
@@ -394,9 +435,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         response.intent === 'navigation' &&
         VALID_NAV_TARGETS.includes(response.navigateTo as AiNavigateTo)
       ) {
-        setTimeout(() => {
+        // Use ref-tracked timeout so it's cancelled if component unmounts
+        const navTimer = setTimeout(() => {
           onNavigate?.(response.navigateTo as AiNavigateTo);
         }, 1500);
+        // Store for cleanup (will be cleared if component unmounts via effect)
+        navTimerRef.current = navTimer;
       }
 
       addMessage({
@@ -448,7 +492,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         role: 'model',
         text: isRate
           ? 'Please wait a few seconds before trying again.'
-          : String(err?.message || 'Something went wrong. Please try again.'),
+          : 'Something went wrong. Please try again.',
         isError: true,
         timestamp: Date.now(),
       });

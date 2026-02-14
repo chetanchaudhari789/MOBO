@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
 import type { Env } from '../config/env.js';
 import { requireAuth, requireRoles } from '../middleware/auth.js';
@@ -33,6 +34,23 @@ export function adminRoutes(env: Env): Router {
   router.post('/invites/revoke', invites.adminRevokeInvite);
   router.delete('/invites/:code', invites.adminDeleteInvite);
 
+  // ObjectId parameter validation middleware for destructive delete endpoints
+  const validateObjectIdParam = (paramName: string) => (req: any, res: any, next: any) => {
+    const val = req.params[paramName];
+    if (!mongoose.Types.ObjectId.isValid(val)) {
+      return res.status(400).json({ error: { code: 'INVALID_ID', message: `Invalid ${paramName} format` } });
+    }
+    next();
+  };
+
+  // Require X-Confirm-Delete header for destructive operations to prevent accidental deletion
+  const requireDeleteConfirmation = (req: any, res: any, next: any) => {
+    if (req.headers['x-confirm-delete'] !== 'true') {
+      return res.status(400).json({ error: { code: 'CONFIRMATION_REQUIRED', message: 'Set X-Confirm-Delete: true header to confirm deletion' } });
+    }
+    next();
+  };
+
   router.get('/config', admin.getSystemConfig);
   router.patch('/config', admin.updateSystemConfig);
 
@@ -42,9 +60,9 @@ export function adminRoutes(env: Env): Router {
   router.get('/growth', admin.getGrowth);
   router.get('/products', admin.getProducts);
   router.patch('/users/status', admin.updateUserStatus);
-  router.delete('/products/:dealId', admin.deleteDeal);
-  router.delete('/users/:userId', admin.deleteUser);
-  router.delete('/wallets/:userId', admin.deleteWallet);
+  router.delete('/products/:dealId', validateObjectIdParam('dealId'), requireDeleteConfirmation, admin.deleteDeal);
+  router.delete('/users/:userId', validateObjectIdParam('userId'), requireDeleteConfirmation, admin.deleteUser);
+  router.delete('/wallets/:userId', validateObjectIdParam('userId'), requireDeleteConfirmation, admin.deleteWallet);
 
   router.post('/orders/reactivate', admin.reactivateOrder);
 

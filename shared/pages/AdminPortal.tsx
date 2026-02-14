@@ -2,9 +2,11 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutGrid,
@@ -40,7 +42,8 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  RefreshCw,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -52,6 +55,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { User, Order, Product, Invite, Ticket } from '../types';
+import { formatCurrency as formatCurrencyBase } from '../utils/formatCurrency';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 
 // --- TYPES & CONSTANTS ---
 type ViewMode =
@@ -206,23 +211,51 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [inventorySearch, setInventorySearch] = useState('');
   const [proofModal, setProofModal] = useState<Order | null>(null);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
+  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
   const [orderAuditLoading, setOrderAuditLoading] = useState(false);
   const [orderAuditExpanded, setOrderAuditExpanded] = useState(false);
+  // AI purchase proof analysis
+  const [adminAiAnalysis, setAdminAiAnalysis] = useState<any>(null);
+  const [adminIsAnalyzing, setAdminIsAnalyzing] = useState(false);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount);
-  };
+  // Admin-specific: show up to 2 decimal places
+  const formatCurrency = (amount: number) => formatCurrencyBase(amount, { maximumFractionDigits: 2 });
 
   const fetchOrderAudit = async (orderId: string) => {
     setOrderAuditLoading(true);
     try {
-      const logs = await api.orders.getOrderAudit(orderId);
-      setOrderAuditLogs(Array.isArray(logs) ? logs : []);
+      const resp = await api.orders.getOrderAudit(orderId);
+      setOrderAuditLogs(Array.isArray(resp?.logs) ? resp.logs : []);
+      setOrderAuditEvents(Array.isArray(resp?.events) ? resp.events : []);
     } catch (e) {
       console.error('Order audit fetch error:', e);
+      toast.error('Failed to load audit trail for this order.');
       setOrderAuditLogs([]);
+      setOrderAuditEvents([]);
     } finally {
       setOrderAuditLoading(false);
+    }
+  };
+
+  // AI Purchase Proof Analysis (Admin)
+  const adminRunAnalysis = async () => {
+    if (!proofModal || !proofModal.screenshots?.order) return;
+    setAdminIsAnalyzing(true);
+    setAdminAiAnalysis(null);
+    try {
+      const imageBase64 = proofModal.screenshots.order;
+      const result = await api.ops.analyzeProof(
+        proofModal.id,
+        imageBase64,
+        proofModal.externalOrderId || '',
+        proofModal.total,
+      );
+      setAdminAiAnalysis(result);
+    } catch (e) {
+      console.error('Admin AI analysis error:', e);
+      toast.error('AI analysis failed. Please try again.');
+    } finally {
+      setAdminIsAnalyzing(false);
     }
   };
 
@@ -243,6 +276,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       if (cfg?.adminContactEmail) setConfigEmail(String(cfg.adminContactEmail));
     } catch (e) {
       console.error('Admin Config Fetch Error:', e);
+      toast.error('Failed to load system configuration.');
     }
   };
 
@@ -283,11 +317,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     };
   }, [user]);
 
-  // Auto-fetch audit logs when switching to audit-logs view
+  // Auto-fetch audit logs when switching to audit-logs view or when filters change
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     if (view !== 'audit-logs') return;
-    if (auditLogs.length > 0) return; // already loaded
     setAuditLoading(true);
     const params: any = { limit: 200 };
     if (auditActionFilter) params.action = auditActionFilter;
@@ -296,9 +329,9 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     api.admin
       .getAuditLogs(params)
       .then((data) => setAuditLogs(Array.isArray(data) ? data : data?.logs ?? []))
-      .catch((e) => console.error('Audit Logs Fetch Error:', e))
+      .catch((e) => { console.error('Audit Logs Fetch Error:', e); toast.error('Failed to load audit logs.'); })
       .finally(() => setAuditLoading(false));
-  }, [user, view]);
+  }, [user, view, auditActionFilter, auditDateFrom, auditDateTo]);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -306,7 +339,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     api.admin
       .getUsers('all')
       .then((u) => setUsers(u))
-      .catch((e) => console.error('Admin Users Fetch Error:', e));
+      .catch((e) => { console.error('Admin Users Fetch Error:', e); toast.error('Failed to refresh users list.'); });
   }, [user, view]);
 
   useEffect(() => {
@@ -315,7 +348,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     api.admin
       .getInvites()
       .then((i) => setInvites(i))
-      .catch((e) => console.error('Admin Invites Fetch Error:', e));
+      .catch((e) => { console.error('Admin Invites Fetch Error:', e); toast.error('Failed to refresh invites.'); });
   }, [user, view]);
 
   useEffect(() => {
@@ -339,8 +372,10 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
       const [u, o, p, s, g, i, t] = results;
 
+      const failures: string[] = [];
+
       if (u.status === 'fulfilled') setUsers(u.value);
-      else console.error('Admin Users Fetch Error:', u.reason);
+      else { console.error('Admin Users Fetch Error:', u.reason); failures.push('users'); }
 
       if (o.status === 'fulfilled') {
         setOrders(o.value);
@@ -350,24 +385,29 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
           const updated = (o.value as Order[]).find((ord: Order) => ord.id === prev.id);
           return updated || null;
         });
-      } else console.error('Admin Financials Fetch Error:', o.reason);
+      } else { console.error('Admin Financials Fetch Error:', o.reason); failures.push('financials'); }
 
       if (p.status === 'fulfilled') setProducts(p.value);
-      else console.error('Admin Products Fetch Error:', p.reason);
+      else { console.error('Admin Products Fetch Error:', p.reason); failures.push('products'); }
 
       if (s.status === 'fulfilled') setStats(s.value);
-      else console.error('Admin Stats Fetch Error:', s.reason);
+      else { console.error('Admin Stats Fetch Error:', s.reason); failures.push('stats'); }
 
       if (g.status === 'fulfilled') setChartData(g.value);
-      else console.error('Admin Growth Fetch Error:', g.reason);
+      else { console.error('Admin Growth Fetch Error:', g.reason); failures.push('analytics'); }
 
       if (i.status === 'fulfilled') setInvites(i.value);
-      else console.error('Admin Invites Fetch Error:', i.reason);
+      else { console.error('Admin Invites Fetch Error:', i.reason); failures.push('invites'); }
 
       if (t.status === 'fulfilled') setTickets(t.value);
-      else console.error('Admin Tickets Fetch Error:', t.reason);
+      else { console.error('Admin Tickets Fetch Error:', t.reason); failures.push('tickets'); }
+
+      if (failures.length > 0) {
+        toast.error(`Failed to load: ${failures.join(', ')}. Some data may be stale.`);
+      }
     } catch (e) {
       console.error('Admin Data Fetch Error:', e);
+      toast.error('Failed to load admin data. Please refresh the page.');
     } finally {
       setIsLoading(false);
     }
@@ -543,33 +583,13 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       return;
     }
 
-    const getApiBase = () => {
-      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-      const fromNext =
-        typeof process !== 'undefined' &&
-        (process as any).env &&
-        (process as any).env.NEXT_PUBLIC_API_URL
-          ? String((process as any).env.NEXT_PUBLIC_API_URL)
-          : undefined;
-      let base = String(fromGlobal || fromNext || '/api').trim();
-      if (base.startsWith('/')) {
-        base = `${window.location.origin}${base}`;
-      }
-      return base.endsWith('/') ? base.slice(0, -1) : base;
-    };
-
-    const apiBase = getApiBase();
+    const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) => (url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No');
 
     const headers = [
@@ -578,6 +598,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       'Time',
       'Customer Name',
       'Customer Mobile',
+      'Reviewer Name',
       'Brand',
       'Product',
       'Platform',
@@ -615,6 +636,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         timeStr,
         csvSafe(order.buyerName || ''),
         csvSafe(order.buyerMobile || ''),
+        csvSafe((order as any).reviewerName || ''),
         csvSafe(order.brandName ?? item?.brandName ?? ''),
         csvSafe(item?.title ?? ''),
         item?.platform ?? '',
@@ -645,15 +667,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `buzzma_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`buzzma_admin_${reportType}_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = (reportType: 'orders' | 'finance') => {
@@ -662,7 +676,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       toast.info('No data available to export.');
       return;
     }
-    const sheetHeaders = ['Order ID','Date','Time','Customer Name','Customer Mobile','Brand','Product','Platform','Deal Type','Quantity','Unit Price','Total Amount','Order Status','Payment Status','Verification Status','Mediator Code','Agency Name','Internal Ref','Sold By','Order Date','Extracted Product'];
+    const sheetHeaders = ['Order ID','Date','Time','Customer Name','Customer Mobile','Reviewer Name','Brand','Product','Platform','Deal Type','Quantity','Unit Price','Total Amount','Order Status','Payment Status','Verification Status','Mediator Code','Agency Name','Internal Ref','Sold By','Order Date','Extracted Product'];
     const sheetRows = dataToExport.map((order) => {
       const dateObj = new Date(order.createdAt);
       const item = order.items[0];
@@ -672,6 +686,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         dateObj.toLocaleTimeString(),
         order.buyerName || '',
         order.buyerMobile || '',
+        (order as any).reviewerName || '',
         order.brandName ?? item?.brandName ?? '',
         item?.title ?? '',
         item?.platform ?? '',
@@ -1833,14 +1848,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
       {/* Proof Viewer Modal */}
       {proofModal && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); }}>
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAdminAiAnalysis(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900">Order Proofs &amp; Audit</h3>
                 <p className="text-xs text-slate-500 font-mono mt-1">{proofModal.externalOrderId || proofModal.id}</p>
               </div>
-              <button type="button" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); }} className="p-2 rounded-lg hover:bg-slate-100">
+              <button type="button" aria-label="Close proof modal" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAdminAiAnalysis(null); }} className="p-2 rounded-lg hover:bg-slate-100">
                 <span className="text-slate-400 text-xl font-bold">&times;</span>
               </button>
             </div>
@@ -1849,6 +1864,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div><span className="text-slate-400 font-bold text-xs uppercase">Buyer</span><p className="font-bold text-slate-900">{proofModal.buyerName}</p></div>
                 <div><span className="text-slate-400 font-bold text-xs uppercase">Amount</span><p className="font-bold text-slate-900">{formatCurrency(proofModal.total)}</p></div>
+                {(proofModal as any).reviewerName && <div><span className="text-indigo-400 font-bold text-xs uppercase">Reviewer Name</span><p className="font-bold text-indigo-700">{(proofModal as any).reviewerName}</p></div>}
                 <div><span className="text-slate-400 font-bold text-xs uppercase">Status</span><p><StatusBadge status={proofModal.affiliateStatus === 'Unchecked' ? proofModal.paymentStatus : proofModal.affiliateStatus} /></p></div>
                 <div><span className="text-slate-400 font-bold text-xs uppercase">Payment</span><p className="font-bold text-slate-900">{proofModal.paymentStatus}</p></div>
                 {proofModal.soldBy && <div><span className="text-slate-400 font-bold text-xs uppercase">Sold By</span><p className="font-bold text-slate-900">{proofModal.soldBy}</p></div>}
@@ -1862,7 +1878,74 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               <div>
                 <h4 className="flex items-center gap-2 text-xs font-extrabold text-blue-500 uppercase tracking-wider mb-2"><ShoppingCart size={14} /> Purchase Proof</h4>
                 {proofModal.screenshots?.order ? (
-                  <img src={proofModal.screenshots.order} alt="Purchase Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-blue-200 bg-blue-50" />
+                  <>
+                    <ZoomableImage src={proofModal.screenshots.order} alt="Purchase Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-blue-200 bg-blue-50" />
+                    {/* AI Analysis Section */}
+                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200 mt-3">
+                      <div className="flex justify-between items-center mb-2">
+                        <h5 className="font-bold text-indigo-600 flex items-center gap-2 text-[10px] uppercase tracking-widest">
+                          <Sparkles size={12} className="text-indigo-500" /> AI Analysis
+                        </h5>
+                        {!adminAiAnalysis && !adminIsAnalyzing && (
+                          <button type="button" onClick={adminRunAnalysis} className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                            Analyze
+                          </button>
+                        )}
+                        {adminAiAnalysis && !adminIsAnalyzing && (
+                          <button type="button" onClick={adminRunAnalysis} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-600 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors">
+                            Re-Analyze
+                          </button>
+                        )}
+                      </div>
+                      {adminIsAnalyzing && (
+                        <div className="flex items-center justify-center py-3">
+                          <Loader2 className="animate-spin text-indigo-500 mr-2" size={18} />
+                          <span className="text-xs font-bold text-indigo-500">Analyzing Screenshot...</span>
+                        </div>
+                      )}
+                      {adminAiAnalysis && (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <div className={`flex-1 p-2 rounded-lg border text-center ${adminAiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
+                              <p className={`text-xs font-bold ${adminAiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                {adminAiAnalysis.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
+                              </p>
+                              {adminAiAnalysis.detectedOrderId && <p className="text-[9px] text-slate-500 font-mono mt-0.5">Detected: {adminAiAnalysis.detectedOrderId}</p>}
+                            </div>
+                            <div className={`flex-1 p-2 rounded-lg border text-center ${adminAiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
+                              <p className={`text-xs font-bold ${adminAiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                {adminAiAnalysis.amountMatch ? '✓ Match' : '✗ Mismatch'}
+                              </p>
+                              {adminAiAnalysis.detectedAmount != null && <p className="text-[9px] text-slate-500 font-mono mt-0.5">Detected: ₹{adminAiAnalysis.detectedAmount}</p>}
+                            </div>
+                          </div>
+                          {adminAiAnalysis.discrepancyNote && (
+                            <p className="text-[10px] text-slate-500 bg-white rounded-lg p-2 border border-slate-100">{adminAiAnalysis.discrepancyNote}</p>
+                          )}
+                          {(() => {
+                            const n = Number(adminAiAnalysis.confidenceScore);
+                            const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
+                            return (
+                              <div className="flex justify-between items-center pt-1">
+                                <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence</span>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
+                                  </div>
+                                  <span className="text-xs font-bold text-slate-700">{score}%</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                      {!adminAiAnalysis && !adminIsAnalyzing && (
+                        <p className="text-[10px] text-slate-400 text-center">Click Analyze to verify purchase proof with AI</p>
+                      )}
+                    </div>
+                  </>
                 ) : (
                   <div className="py-4 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-200"><AlertCircle size={16} className="inline mr-1" />Not uploaded</div>
                 )}
@@ -1873,7 +1956,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 <div>
                   <h4 className="flex items-center gap-2 text-xs font-extrabold text-orange-400 uppercase tracking-wider mb-2"><Star size={14} /> Rating Proof</h4>
                   {proofModal.screenshots?.rating ? (
-                    <img src={proofModal.screenshots.rating} alt="Rating Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-orange-200 bg-orange-50" />
+                    <ZoomableImage src={proofModal.screenshots.rating} alt="Rating Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-orange-200 bg-orange-50" />
                   ) : (
                     <div className="py-4 text-center text-xs text-orange-400 font-bold bg-orange-50 rounded-xl border border-dashed border-orange-200">Waiting for rating screenshot...</div>
                   )}
@@ -1922,7 +2005,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       <ExternalLink size={16} className="group-hover:scale-110 transition-transform" />
                     </a>
                   ) : proofModal.screenshots?.review ? (
-                    <img src={proofModal.screenshots.review} alt="Review Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-purple-200 bg-purple-50" />
+                    <ZoomableImage src={proofModal.screenshots.review} alt="Review Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-purple-200 bg-purple-50" />
                   ) : (
                     <div className="py-4 text-center text-xs text-purple-400 font-bold bg-purple-50 rounded-xl border border-dashed border-purple-200">Review not submitted</div>
                   )}
@@ -1933,7 +2016,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               {(proofModal.screenshots as any)?.returnWindow && (
                 <div>
                   <h4 className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-wider mb-2"><Package size={14} /> Return Window Proof</h4>
-                  <img src={(proofModal.screenshots as any).returnWindow} alt="Return Window Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-teal-200 bg-teal-50" />
+                  <ZoomableImage src={(proofModal.screenshots as any).returnWindow} alt="Return Window Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-teal-200 bg-teal-50" />
                   {/* AI Return Window Verification */}
                   {proofModal.returnWindowAiVerification && (
                     <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
@@ -1988,7 +2071,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               <div>
                 <h4 className="flex items-center gap-2 text-xs font-extrabold text-green-500 uppercase tracking-wider mb-2"><DollarSign size={14} /> Payment Screenshot</h4>
                 {proofModal.screenshots?.payment ? (
-                  <img src={proofModal.screenshots.payment} alt="Payment Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-green-200 bg-green-50" />
+                  <ZoomableImage src={proofModal.screenshots.payment} alt="Payment Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-green-200 bg-green-50" />
                 ) : (
                   <div className="py-4 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-200">Not uploaded</div>
                 )}
@@ -2037,12 +2120,12 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 )}
               </div>
 
-              {/* 7. Inline Events (from order.events) */}
-              {proofModal.events && proofModal.events.length > 0 && (
+              {/* 7. Inline Events (from order.events — loaded via audit API or proofModal fallback) */}
+              {((orderAuditEvents.length > 0) || (proofModal.events && proofModal.events.length > 0)) && (
                 <div className="border-t border-slate-100 pt-4">
                   <h4 className="flex items-center gap-2 text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-3"><Clock size={14} /> Event History</h4>
                   <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                    {proofModal.events.map((evt: any, i: number) => (
+                    {(orderAuditEvents.length > 0 ? orderAuditEvents : proofModal.events || []).map((evt: any, i: number) => (
                       <div key={i} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
                         <Clock size={12} className="text-slate-400 mt-0.5 flex-shrink-0" />
                         <div className="flex-1 min-w-0">

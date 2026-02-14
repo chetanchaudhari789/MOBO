@@ -128,6 +128,8 @@ export interface Order {
   agencyName?: string;
   buyerName: string;
   buyerMobile: string;
+  /** Marketplace reviewer / profile name used by the buyer on the e-commerce platform */
+  reviewerName?: string;
   brandName?: string;
   createdAt: string;
   expectedSettlementDate?: string;

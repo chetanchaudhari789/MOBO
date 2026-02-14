@@ -58,6 +58,7 @@ export function aiRoutes(env: Env): Router {
     imageBase64: z.string().min(1).max(env.AI_MAX_IMAGE_CHARS),
     expectedBuyerName: z.string().min(1).max(200),
     expectedProductName: z.string().min(1).max(500),
+    expectedReviewerName: z.string().max(200).optional(),
   });
 
   // Optional auth so the UI can call AI routes without sending a token,
@@ -587,6 +588,7 @@ export function aiRoutes(env: Env): Router {
         imageBase64: payload.imageBase64,
         expectedBuyerName: payload.expectedBuyerName,
         expectedProductName: payload.expectedProductName,
+        ...(payload.expectedReviewerName ? { expectedReviewerName: payload.expectedReviewerName } : {}),
       });
 
       writeAuditLog({

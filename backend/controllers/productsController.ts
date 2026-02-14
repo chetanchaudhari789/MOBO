@@ -6,6 +6,7 @@ import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediator
 import { OrderModel } from '../models/Order.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { pushOrderEvent } from '../services/orderEvents.js';
+import { writeAuditLog } from '../services/audit.js';
 
 export function makeProductsController() {
   return {
@@ -108,6 +109,14 @@ export function makeProductsController() {
             metadata: { from: 'CREATED', to: 'REDIRECTED', dealId, campaignId: String((deal as any).campaignId) },
           }),
           createdBy: requesterId as any,
+        });
+
+        writeAuditLog({
+          req,
+          action: 'ORDER_REDIRECT_CREATED',
+          entityType: 'Order',
+          entityId: String((preOrder as any)._id),
+          metadata: { dealId, campaignId: String((deal as any).campaignId), mediatorCode },
         });
 
         res.status(201).json({

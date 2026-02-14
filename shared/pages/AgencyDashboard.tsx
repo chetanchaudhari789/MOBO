@@ -2,12 +2,18 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv } from '../utils/csvHelpers';
+import { urlToBase64 } from '../utils/imageHelpers';
 import {
   LayoutDashboard,
   Users,
@@ -53,6 +59,8 @@ import {
   Package,
   FileSpreadsheet,
   History,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -66,16 +74,7 @@ import {
   Bar,
 } from 'recharts';
 
-// --- HELPERS ---
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(val);
-
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || order.id || '').trim();
+// formatCurrency, getPrimaryOrderId, urlToBase64, csvSafe, downloadCsv imported from shared/utils
 
 // --- COMPONENTS ---
 
@@ -180,7 +179,8 @@ const AgencyProfile = ({ user }: any) => {
       });
       setIsEditing(false);
       toast.success('Profile updated');
-    } catch {
+    } catch (err) {
+      console.error('Failed to update profile:', err);
       toast.error('Failed to update profile.');
     } finally {
       setLoading(false);
@@ -451,7 +451,8 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       toast.success('Ledger updated');
       setEditingOrder(null);
       onRefresh();
-    } catch {
+    } catch (err) {
+      console.error('Ledger update failed:', err);
       toast.error('Update failed');
     } finally {
       setIsUpdating(false);
@@ -459,33 +460,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   };
 
   const handleExport = () => {
-    const getApiBase = () => {
-      const fromGlobal = (globalThis as any).__MOBO_API_URL__ as string | undefined;
-      const fromNext =
-        typeof process !== 'undefined' &&
-        (process as any).env &&
-        (process as any).env.NEXT_PUBLIC_API_URL
-          ? String((process as any).env.NEXT_PUBLIC_API_URL)
-          : undefined;
-      let base = String(fromGlobal || fromNext || '/api').trim();
-      if (base.startsWith('/')) {
-        base = `${window.location.origin}${base}`;
-      }
-      return base.endsWith('/') ? base.slice(0, -1) : base;
-    };
-
-    const apiBase = getApiBase();
+    const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
       return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
+    // csvSafe imported from shared/utils/csvHelpers
     const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-    // Sanitize user-controlled values: neutralize spreadsheet formula injection
-    const csvSafe = (val: string) => {
-      let s = String(val ?? '');
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return csvEscape(s);
-    };
     const hyperlinkYes = (url?: string) =>
       url ? csvEscape(`=HYPERLINK("${url}","Yes")`) : 'No';
 
@@ -504,6 +485,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Partner ID',
       'Buyer Name',
       'Buyer Mobile',
+      'Reviewer Name',
       'Status',
       'Payment Status',
       'Verification Status',
@@ -541,6 +523,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.managerName,
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
+        csvSafe((o as any).reviewerName || ''),
         o.status,
         o.paymentStatus,
         o.affiliateStatus,
@@ -562,15 +545,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `agency_orders_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(`agency_orders_report_${new Date().toISOString().slice(0, 10)}.csv`, csvString);
   };
 
   const handleExportToSheets = () => {
@@ -984,7 +959,7 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
     });
 
     const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2013,6 +1988,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-black text-slate-900">New Campaign</h3>
               <button
+                aria-label="Close new campaign modal"
                 onClick={() => setCreateModal(false)}
                 className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
               >
@@ -2176,6 +2152,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                 </p>
               </div>
               <button
+                aria-label="Close distribution modal"
                 onClick={() => setAssignModal(null)}
                 className="p-2.5 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors shrink-0"
               >
@@ -2529,6 +2506,40 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
+  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
+  // AI Analysis state
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const lastAnalyzedOrderRef = useRef<string | null>(null);
+
+  const runAgencyAnalysis = async (order: Order) => {
+    if (!order.screenshots?.order) return;
+    setIsAnalyzing(true);
+    setAiAnalysis(null);
+    try {
+      const imageBase64 = await urlToBase64(order.screenshots.order);
+      const result = await api.ops.analyzeProof(
+        order.id,
+        imageBase64,
+        order.externalOrderId || '',
+        order.total
+      );
+      setAiAnalysis(result);
+    } catch (e) {
+      console.error(e);
+      toast.error('Analysis failed. Try again.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Auto-trigger AI analysis when proof modal opens
+  useEffect(() => {
+    if (proofOrder && proofOrder.screenshots?.order && proofOrder.id !== lastAnalyzedOrderRef.current) {
+      lastAnalyzedOrderRef.current = proofOrder.id;
+      runAgencyAnalysis(proofOrder);
+    }
+  }, [proofOrder]);
 
   // Keep proof modal in sync when allOrders updates from real-time
   useEffect(() => {
@@ -2837,6 +2848,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 </div>
               </div>
               <button
+                aria-label="Close mediator details"
                 onClick={() => setSelectedMediator(null)}
                 className="p-2 hover:bg-white/10 rounded-full transition-colors"
               >
@@ -3047,6 +3059,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
           >
             <button
               type="button"
+              aria-label="Close proof modal"
               onClick={() => setProofOrder(null)}
               className="absolute top-4 right-4 p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"
             >
@@ -3099,13 +3112,81 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   <FileText size={14} /> Purchase Proof
                 </div>
                 {proofOrder.screenshots?.order ? (
-                  <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
-                    <img
-                      src={proofOrder.screenshots.order}
-                      alt="Order Proof"
-                      className="w-full h-auto block"
-                    />
-                  </div>
+                  <>
+                    <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
+                      <ZoomableImage
+                        src={proofOrder.screenshots.order}
+                        alt="Order Proof"
+                        className="w-full h-auto block"
+                      />
+                    </div>
+                    {/* AI Analysis Section */}
+                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mt-3 relative overflow-hidden">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="font-bold text-indigo-600 flex items-center gap-2 text-xs uppercase tracking-widest">
+                          <Sparkles size={14} className="text-indigo-500" /> AI Assistant
+                        </h4>
+                        {!aiAnalysis && !isAnalyzing && (
+                          <button
+                            type="button"
+                            onClick={() => runAgencyAnalysis(proofOrder)}
+                            className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow active:scale-95"
+                          >
+                            Re-Analyze
+                          </button>
+                        )}
+                      </div>
+                      {isAnalyzing && (
+                        <div className="flex flex-col items-center justify-center py-4">
+                          <Loader2 className="animate-spin text-indigo-500 mb-2" size={24} />
+                          <p className="text-xs font-bold text-indigo-400 animate-pulse">Analyzing Screenshot...</p>
+                        </div>
+                      )}
+                      {aiAnalysis && (
+                        <div className="space-y-3 animate-fade-in">
+                          {(() => {
+                            const n = Number(aiAnalysis.confidenceScore);
+                            const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
+                            return (
+                              <>
+                                <div className="flex gap-2">
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>Order ID</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {(aiAnalysis as any).detectedOrderId && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono break-all">Detected: {(aiAnalysis as any).detectedOrderId}</p>
+                                    )}
+                                  </div>
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>Amount</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {(aiAnalysis as any).detectedAmount != null && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono">Detected: ₹{(aiAnalysis as any).detectedAmount}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="bg-slate-100 p-2 rounded-lg">
+                                  <p className="text-[10px] text-slate-600 leading-relaxed">{aiAnalysis.discrepancyNote || 'Verified. Details match expected values.'}</p>
+                                </div>
+                                <div className="flex justify-between items-center pt-1">
+                                  <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence Score</span>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                        style={{ width: `${score}%` }}
+                                      ></div>
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-900">{score}%</span>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
                     <AlertCircle size={24} className="mx-auto text-red-400 mb-2" />
@@ -3125,7 +3206,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       <div className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-2 py-1 rounded-lg">
                         5 Stars
                       </div>
-                      <img
+                      <ZoomableImage
                         src={proofOrder.screenshots.rating}
                         alt="Rating Proof"
                         className="w-full h-auto block"
@@ -3201,7 +3282,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
-                    <img
+                    <ZoomableImage
                       src={(proofOrder.screenshots as any).returnWindow}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
@@ -3271,8 +3352,12 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   try {
                     const resp = await api.orders.getOrderAudit(proofOrder.id);
                     setOrderAuditLogs(resp?.logs ?? []);
-                  } catch {
+                    setOrderAuditEvents(resp?.events ?? []);
+                  } catch (err) {
+                    console.error('Failed to load activity log:', err);
+                    toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
+                    setOrderAuditEvents([]);
                   } finally {
                     setAuditLoading(false);
                   }
@@ -3287,25 +3372,40 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
                   {auditLoading ? (
                     <p className="text-xs text-zinc-400 text-center py-2">Loading...</p>
-                  ) : orderAuditLogs.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
                     <p className="text-xs text-zinc-400 text-center py-2">No activity yet</p>
                   ) : (
-                    orderAuditLogs.map((log: any, i: number) => (
+                    <>
+                    {orderAuditLogs.map((log: any, i: number) => (
                       <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
-                        <span className="font-bold text-zinc-600 shrink-0">{log.type}</span>
-                        <span className="flex-1">{new Date(log.at).toLocaleString()}</span>
+                        <span className="font-bold text-zinc-600 shrink-0">{(log.action || log.type || '').replace(/_/g, ' ')}</span>
+                        <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
                           <span className="bg-zinc-100 px-1.5 py-0.5 rounded text-[9px] font-bold">{log.metadata.proofType}</span>
                         )}
                       </div>
-                    ))
+                    ))}
+                    {/* Inline Event History from order.events */}
+                    {orderAuditEvents.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-zinc-200">
+                        <p className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-1">Event History</p>
+                        {orderAuditEvents.map((evt: any, i: number) => (
+                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-indigo-200 pl-3 py-1">
+                            <span className="font-bold text-indigo-600 shrink-0">{(evt.type || '').replace(/_/g, ' ')}</span>
+                            <span className="flex-1">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
+                            {evt.metadata && <span className="text-zinc-400 truncate text-[9px]">{JSON.stringify(evt.metadata).slice(0, 80)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}
             </div>
 
             <button
-              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); }}
+              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAiAnalysis(null); lastAnalyzedOrderRef.current = null; }}
               className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
             >
               Close Viewer
@@ -3321,6 +3421,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
 
 export const AgencyDashboard: React.FC = () => {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   useRealtimeConnection();
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'team' | 'inventory' | 'finance' | 'payouts' | 'brands' | 'profile'
@@ -3369,7 +3470,8 @@ export const AgencyDashboard: React.FC = () => {
         activeCampaigns: activeCount,
       });
     } catch (e) {
-      console.error(e);
+      console.error('Dashboard data fetch failed', e);
+      toast.error('Failed to load dashboard data');
     } finally {
       setIsDataLoading(false);
     }

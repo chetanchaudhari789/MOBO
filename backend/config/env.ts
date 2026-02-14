@@ -64,6 +64,15 @@ const envSchema = z.object({
   AI_MIN_SECONDS_BETWEEN_CALLS: z.coerce.number().int().nonnegative().default(3),
   AI_DEBUG_OCR: z.coerce.boolean().default(false),
 
+  // Wallet safety limits
+  WALLET_MAX_BALANCE_PAISE: z.coerce.number().int().positive().default(1_00_00_000), // ₹1,00,000
+
+  // Admin seed credentials (used during SEED_ADMIN)
+  ADMIN_SEED_MOBILE: z.string().optional(),
+  ADMIN_SEED_USERNAME: z.string().optional(),
+  ADMIN_SEED_PASSWORD: z.string().optional(),
+  ADMIN_SEED_NAME: z.string().optional(),
+
   // Web push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),

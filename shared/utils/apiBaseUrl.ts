@@ -72,3 +72,16 @@ export function getApiBaseUrl(): string {
 
   return base.endsWith('/') ? base.slice(0, -1) : base;
 }
+
+/**
+ * Like `getApiBaseUrl()` but guarantees an absolute URL (with origin) when
+ * running in the browser.  This is needed for CSV export hyperlinks and
+ * image-proxy `src` attributes where a relative `/api` path won't work.
+ */
+export function getApiBaseAbsolute(): string {
+  let base = getApiBaseUrl();
+  if (base.startsWith('/') && typeof window !== 'undefined') {
+    base = `${window.location.origin}${base}`;
+  }
+  return base.replace(/\/$/, '');
+}

@@ -1,7 +1,74 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Env } from '../config/env.js';
+
+// ── Tesseract Worker Pool ──
+// Reuse workers across OCR calls instead of creating/terminating per request.
+// This avoids repeated WASM init + eng.traineddata download on every OCR call.
+
+const __ocrDirname = path.dirname(fileURLToPath(import.meta.url));
+// In dist/ the compiled JS lives at dist/services/aiService.js → go up 2 levels to backend/
+// In source (tsx watch) it lives at services/aiService.ts → go up 1 level to backend/
+const __backendRoot = path.basename(path.resolve(__ocrDirname, '..')) === 'dist'
+  ? path.resolve(__ocrDirname, '..', '..')
+  : path.resolve(__ocrDirname, '..');
+
+// Use local eng.traineddata to avoid CDN downloads in production
+const LOCAL_LANG_PATH = path.join(__backendRoot, '/');
+
+const OCR_POOL_SIZE = 2;
+const _ocrPool: Array<Awaited<ReturnType<typeof createWorker>>> = [];
+let _ocrPoolReady: Promise<void> | null = null;
+
+async function _initOcrPool(): Promise<void> {
+  if (_ocrPool.length >= OCR_POOL_SIZE) return;
+  const promises: Promise<void>[] = [];
+  for (let i = _ocrPool.length; i < OCR_POOL_SIZE; i++) {
+    promises.push(
+      createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH })
+        .then((w) => { _ocrPool.push(w); })
+        .catch((err) => {
+          console.warn('Failed to init Tesseract worker (will create on-demand):', err);
+        })
+    );
+  }
+  await Promise.allSettled(promises);
+}
+
+/** Get a worker from the pool or create a fresh one on demand. */
+async function acquireOcrWorker(): Promise<Awaited<ReturnType<typeof createWorker>>> {
+  // Lazy-init pool on first call
+  if (!_ocrPoolReady) _ocrPoolReady = _initOcrPool();
+  await _ocrPoolReady;
+
+  const w = _ocrPool.pop();
+  if (w) return w;
+  // Pool exhausted — create a temporary worker
+  return createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH });
+}
+
+/** Return a worker to the pool (or terminate if pool is full). */
+async function releaseOcrWorker(worker: Awaited<ReturnType<typeof createWorker>> | null): Promise<void> {
+  if (!worker) return;
+  if (_ocrPool.length < OCR_POOL_SIZE) {
+    _ocrPool.push(worker);
+  } else {
+    try { await worker.terminate(); } catch { /* ignore */ }
+  }
+}
+
+/** Graceful shutdown: terminate all pooled OCR workers. */
+async function _shutdownOcrPool(): Promise<void> {
+  const workers = _ocrPool.splice(0);
+  await Promise.allSettled(workers.map((w) => w.terminate().catch(() => {})));
+}
+// Register cleanup handlers for graceful shutdown
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(sig, () => { _shutdownOcrPool().finally(() => process.exit(0)); });
+}
 
 type ChatPayload = {
   message: string;
@@ -523,6 +590,7 @@ type ProofVerificationResult = {
   detectedOrderId?: string;
   detectedAmount?: number;
   discrepancyNote?: string;
+  verificationMethod?: 'gemini' | 'ocr' | 'combined';
 };
 
 type ExtractOrderPayload = {
@@ -573,10 +641,10 @@ async function verifyProofWithOcr(
       processedBuffer = imgBuffer;
     }
 
-    let worker = await createWorker('eng');
+    let worker = await acquireOcrWorker();
     try {
       const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
-      await worker.terminate();
+      await releaseOcrWorker(worker);
       worker = null as any;
 
       let ocrText = (data.text || '').trim();
@@ -590,14 +658,14 @@ async function verifyProofWithOcr(
             .linear(1.6, -40)
             .sharpen({ sigma: 2 })
             .toBuffer();
-          hcWorker = await createWorker('eng');
+          hcWorker = await acquireOcrWorker();
           const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-          await hcWorker.terminate();
+          await releaseOcrWorker(hcWorker);
           hcWorker = null;
           const hcText = (hcResult.data.text || '').trim();
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
-          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
+          if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
         }
       }
 
@@ -645,7 +713,9 @@ async function verifyProofWithOcr(
       }
     }
 
-    // Check if expected amount appears in OCR text (allow ±2 tolerance for OCR errors)
+    // Check if expected amount appears in OCR text (allow smart tolerance for OCR errors)
+    // ±₹2 for orders under ₹1000, ±0.5% for higher-value orders (min ₹2)
+    const amountTolerance = Math.max(2, expectedAmount >= 1000 ? Math.ceil(expectedAmount * 0.005) : 2);
     const amountPatterns = [
       String(expectedAmount),
       expectedAmount.toFixed(2),
@@ -658,9 +728,9 @@ async function verifyProofWithOcr(
     ];
     let amountMatch = amountPatterns.some((p) => ocrText.includes(p));
 
-    // If exact match failed, try ±2 tolerance (OCR may misread 499 as 497, etc.)
+    // If exact match failed, try ±tolerance (OCR may misread 499 as 497, etc.)
     if (!amountMatch) {
-      for (let delta = -2; delta <= 2; delta++) {
+      for (let delta = -amountTolerance; delta <= amountTolerance; delta++) {
         if (delta === 0) continue;
         const nearby = expectedAmount + delta;
         if (nearby <= 0) continue;
@@ -677,7 +747,7 @@ async function verifyProofWithOcr(
       const amountRegex = /(?:₹|rs\.?|inr|r[s5$]\.?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
       for (const m of ocrText.matchAll(amountRegex)) {
         const val = Number(m[1].replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= 2) {
+        if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= amountTolerance) {
           amountMatch = true;
           break;
         }
@@ -688,7 +758,7 @@ async function verifyProofWithOcr(
       const bareNumbers = ocrText.match(/\b\d[\d,\s]*(?:\.\d{1,2})?\b/g) || [];
       for (const raw of bareNumbers) {
         const val = Number(raw.replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmount) <= 2) {
+        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmount) <= amountTolerance) {
           amountMatch = true;
           break;
         }
@@ -712,7 +782,7 @@ async function verifyProofWithOcr(
       discrepancyNote: detectedNotes.join(' ') || 'OCR fallback verification complete.',
     };
     } catch (workerErr) {
-      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+      if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
       throw workerErr;
     }
   } catch (err) {
@@ -754,7 +824,8 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
 
   // If Gemini is not available, fall back to OCR-based verification.
   if (!geminiAvailable) {
-    return verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    return { ...ocrResult, verificationMethod: 'ocr' as const };
   }
 
   const apiKey = env.GEMINI_API_KEY!;
@@ -831,7 +902,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
 
         console.info('Gemini proof usage estimate', { model, estimatedTokens });
 
-        return parsed;
+        return { ...parsed, verificationMethod: 'gemini' as const };
       } catch (innerError) {
         lastError = innerError;
         continue;
@@ -842,7 +913,8 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
   } catch (error) {
     console.error('Gemini proof verification error:', error);
     // Fall back to OCR when Gemini fails at runtime.
-    return verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    return { ...ocrResult, verificationMethod: 'ocr' as const };
   }
 }
 
@@ -857,6 +929,8 @@ export type RatingVerificationPayload = {
   imageBase64: string;
   expectedBuyerName: string;
   expectedProductName: string;
+  /** Marketplace reviewer / profile name (may differ from buyer's real name) */
+  expectedReviewerName?: string;
 };
 
 export type RatingVerificationResult = {
@@ -872,6 +946,7 @@ async function verifyRatingWithOcr(
   imageBase64: string,
   expectedBuyerName: string,
   expectedProductName: string,
+  expectedReviewerName?: string,
 ): Promise<RatingVerificationResult> {
   try {
     const rawData = imageBase64.includes(',') ? imageBase64.split(',')[1]! : imageBase64;
@@ -896,16 +971,16 @@ async function verifyRatingWithOcr(
     const allTexts: string[] = [];
 
     // Helper to run OCR on a buffer
-    const ocrOnBuffer = async (buf: Buffer, label: string): Promise<string> => {
+    const ocrOnBuffer = async (buf: Buffer, _label: string): Promise<string> => {
       let worker: any = null;
       try {
-        worker = await createWorker('eng');
+        worker = await acquireOcrWorker();
         const { data }: any = await withOcrTimeout(worker.recognize(buf));
-        await worker.terminate();
+        await releaseOcrWorker(worker);
         worker = null;
         return (data.text || '').trim();
       } catch {
-        if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+        if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
         return '';
       }
     };
@@ -974,22 +1049,38 @@ async function verifyRatingWithOcr(
     }
 
     const lower = ocrText.toLowerCase();
-    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name appears
-    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+    // Common stop words that cause false positives when matching names/products in OCR text
+    const STOP_WORDS = new Set(['the','for','and','with','from','that','this','you','your','was','are','has','have','been','not','but','all','can','had','her','his','one','our','out','use','how','its','may','new','now','old','see','way','who','boy','did','get','him','let','say','she','too','any','per','set','top','end','off','big','own','put','run','two','via','pro','free','pack','item','best','good','great','nice','mini','max','size','pair','home','made','full','high','low','day','set','box','buy','kit']);
+
+    // Account name matching: fuzzy — check if any 2+ word segment of the buyer name or reviewer name appears
+    const buyerParts = expectedBuyerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2 && !STOP_WORDS.has(p));
     const nameMatches = buyerParts.filter(p => lower.includes(p));
-    const accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.5));
+    let accountNameMatch = nameMatches.length >= Math.max(1, Math.ceil(buyerParts.length * 0.6));
+    // Also check reviewer / marketplace profile name if provided
+    if (!accountNameMatch && expectedReviewerName) {
+      const reviewerParts = expectedReviewerName.toLowerCase().split(/\s+/).filter(p => p.length >= 2 && !STOP_WORDS.has(p));
+      const reviewerMatches = reviewerParts.filter(p => lower.includes(p));
+      accountNameMatch = reviewerMatches.length >= Math.max(1, Math.ceil(reviewerParts.length * 0.6));
+    }
 
     // Product name matching: check if significant keywords from product name appear
     const productTokens = expectedProductName.toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
-      .filter(t => t.length >= 3);
+      .filter(t => t.length >= 3 && !STOP_WORDS.has(t));
     const matchedTokens = productTokens.filter(t => lower.includes(t));
-    const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+    const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.4));
 
+    // Graduated confidence scoring — partial matches contribute proportionally
     let confidenceScore = 20;
-    if (accountNameMatch) confidenceScore += 35;
-    if (productNameMatch) confidenceScore += 35;
+    if (accountNameMatch) {
+      const nameRatio = buyerParts.length > 0 ? nameMatches.length / buyerParts.length : 0;
+      confidenceScore += Math.round(35 * nameRatio);
+    }
+    if (productNameMatch) {
+      const productRatio = productTokens.length > 0 ? matchedTokens.length / productTokens.length : 0;
+      confidenceScore += Math.round(35 * productRatio);
+    }
 
     // Try to detect the actual account name shown
     const nameLineRe = /(?:public\s*name|profile|account|by|reviewer|reviewed|written\s*by|posted\s*by)\s*[:\-]?\s*(.{2,40})/i;
@@ -1023,7 +1114,7 @@ export async function verifyRatingScreenshotWithAi(
   }
 
   if (!isGeminiConfigured(env)) {
-    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName);
+    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
 
   const apiKey = env.GEMINI_API_KEY!;
@@ -1043,13 +1134,14 @@ export async function verifyRatingScreenshotWithAi(
               ``,
               `Verify this RATING/REVIEW screenshot:`,
               `  Expected Account Name (buyer): ${payload.expectedBuyerName}`,
+              ...(payload.expectedReviewerName ? [`  Expected Marketplace Profile/Reviewer Name: ${payload.expectedReviewerName}`] : []),
               `  Expected Product Name: ${payload.expectedProductName}`,
               ``,
               `RULES:`,
               `1. Find the REVIEWER / ACCOUNT NAME shown in the screenshot. This is the person who wrote the review or gave the rating. It may appear as "public name", "profile name", or at the top of the review.`,
-              `2. Compare the account name with "${payload.expectedBuyerName}" — allow for nickname variations, case differences, and abbreviated names. The key name words must match.`,
+              `2. Compare the account name with "${payload.expectedBuyerName}"${payload.expectedReviewerName ? ` OR the marketplace profile name "${payload.expectedReviewerName}"` : ''} — allow for nickname variations, case differences, and abbreviated names. If EITHER name matches, consider it a match.`,
               `3. Find the PRODUCT NAME visible in the rating screenshot. Compare it to "${payload.expectedProductName}" — key words should match (brand, model, type). Exact match not required.`,
-              `4. If the account name or product does not match, this is potential FRAUD (someone rating a different product or using a different account).`,
+              `4. If the account name does not match ANY of the expected names or the product does not match, this is potential FRAUD (someone rating a different product or using a different account).`,
               `5. Set confidenceScore 0-100 based on how clearly visible and matching both fields are.`,
               `6. Always fill detectedAccountName and detectedProductName with what you actually see.`,
             ].join('\n') },
@@ -1081,7 +1173,7 @@ export async function verifyRatingScreenshotWithAi(
     throw lastError ?? new Error('Gemini rating verification failed');
   } catch (error) {
     console.error('Gemini rating verification error:', error);
-    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName);
+    return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
 }
 
@@ -1121,10 +1213,10 @@ async function verifyReturnWindowWithOcr(
     try { processedBuffer = await sharp(imgBuffer).greyscale().normalize().sharpen().toBuffer(); }
     catch { processedBuffer = imgBuffer; }
 
-    let worker: any = await createWorker('eng');
+    let worker: any = await acquireOcrWorker();
     try {
       const { data }: any = await withOcrTimeout(worker.recognize(processedBuffer));
-      await worker.terminate();
+      await releaseOcrWorker(worker);
       worker = null;
       let ocrText = (data.text || '').trim();
 
@@ -1137,14 +1229,14 @@ async function verifyReturnWindowWithOcr(
             .linear(1.6, -40)
             .sharpen({ sigma: 2 })
             .toBuffer();
-          hcWorker = await createWorker('eng');
+          hcWorker = await acquireOcrWorker();
           const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
-          await hcWorker.terminate();
+          await releaseOcrWorker(hcWorker);
           hcWorker = null;
           const hcText = (hcResult.data.text || '').trim();
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
-          if (hcWorker) try { await hcWorker.terminate(); } catch { /* ignore */ }
+          if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
         }
       }
 
@@ -1159,9 +1251,10 @@ async function verifyReturnWindowWithOcr(
     const ocrNorm = ocrText.replace(/[\s\-]/g, '').toLowerCase();
     const orderIdMatch = ocrNorm.includes(orderIdNorm);
 
-    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3);
+    const PROOF_STOP_WORDS = new Set(['the','for','and','with','from','that','this','you','your','was','are','has','have','been','not','but','all','can','had','her','his','one','our','out','use','how','its','may','new','now','old','see','way','who','did','get','him','let','say','she','too','any','per','set','top','end','off','big','own','put','run','two','via','pro','free','pack','item','best','good','great','nice','mini','max','size','pair','home','made','full','high','low','day','box','buy','kit']);
+    const productTokens = expected.expectedProductName.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length >= 3 && !PROOF_STOP_WORDS.has(t));
     const matchedProd = productTokens.filter(t => lower.includes(t));
-    const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.3));
+    const productNameMatch = matchedProd.length >= Math.max(1, Math.ceil(productTokens.length * 0.4));
 
     const expectedAmt = expected.expectedAmount;
     const amountStr = String(expectedAmt);
@@ -1174,9 +1267,10 @@ async function verifyReturnWindowWithOcr(
       || ocrText.includes(expectedAmt.toFixed(2))
       || ocrText.includes(indianFormatted);
 
-    // ±2 tolerance (OCR may misread digits)
+    // Smart tolerance (OCR may misread digits)
+    const rwAmountTolerance = Math.max(2, expectedAmt >= 1000 ? Math.ceil(expectedAmt * 0.005) : 2);
     if (!amountMatch) {
-      for (let delta = -2; delta <= 2; delta++) {
+      for (let delta = -rwAmountTolerance; delta <= rwAmountTolerance; delta++) {
         if (delta === 0) continue;
         const nearby = expectedAmt + delta;
         if (nearby <= 0) continue;
@@ -1192,7 +1286,7 @@ async function verifyReturnWindowWithOcr(
       const amtRegex = /(?:₹|rs\.?|inr|r[s5$]\.?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
       for (const m of ocrText.matchAll(amtRegex)) {
         const val = Number(m[1].replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && Math.abs(val - expectedAmt) <= 2) {
+        if (Number.isFinite(val) && Math.abs(val - expectedAmt) <= rwAmountTolerance) {
           amountMatch = true;
           break;
         }
@@ -1204,7 +1298,7 @@ async function verifyReturnWindowWithOcr(
       const bareNums = ocrText.match(/\b\d[\d,\s]*(?:\.\d{1,2})?\b/g) || [];
       for (const raw of bareNums) {
         const val = Number(raw.replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmt) <= 2) {
+        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmt) <= rwAmountTolerance) {
           amountMatch = true;
           break;
         }
@@ -1221,7 +1315,11 @@ async function verifyReturnWindowWithOcr(
 
     let confidenceScore = 15;
     if (orderIdMatch) confidenceScore += 20;
-    if (productNameMatch) confidenceScore += 20;
+    // Graduated product confidence based on token match ratio
+    if (productNameMatch && productTokens.length > 0) {
+      const ratio = matchedProd.length / productTokens.length;
+      confidenceScore += Math.round(20 * ratio);
+    }
     if (amountMatch) confidenceScore += 15;
     if (soldByMatch) confidenceScore += 10;
     if (returnWindowClosed) confidenceScore += 10;
@@ -1237,7 +1335,7 @@ async function verifyReturnWindowWithOcr(
       ].filter(Boolean).join(' ') || 'OCR verification complete.',
     };
     } catch (workerErr) {
-      if (worker) try { await worker.terminate(); } catch { /* ignore */ }
+      if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
       throw workerErr;
     }
   } catch (err) {
@@ -1584,8 +1682,9 @@ export async function extractOrderDetailsWithAi(
           else labeledAmounts.push(value);
         }
 
-        // Also try INR-prefixed patterns on the same line
-        const inrMatches = line.matchAll(new RegExp(INR_VALUE_PATTERN, 'gi'));
+        // Also try INR-prefixed patterns on the same line (reuse pre-compiled regex)
+        INR_VALUE_GLOBAL_RE.lastIndex = 0;
+        const inrMatches = line.matchAll(INR_VALUE_GLOBAL_RE);
         for (const match of inrMatches) {
           const value = parseAmountString(match[1]);
           if (!value) continue;
@@ -1609,7 +1708,8 @@ export async function extractOrderDetailsWithAi(
               if (isFinalLabel) finalAmounts.push(value);
               else labeledAmounts.push(value);
             }
-            const nextInr = nextLine.matchAll(new RegExp(INR_VALUE_PATTERN, 'gi'));
+            INR_VALUE_GLOBAL_RE.lastIndex = 0;
+            const nextInr = nextLine.matchAll(INR_VALUE_GLOBAL_RE);
             for (const match of nextInr) {
               const value = parseAmountString(match[1]);
               if (!value) continue;
@@ -2054,7 +2154,11 @@ export async function extractOrderDetailsWithAi(
       crop?: { top?: number; left?: number; height?: number; width?: number },
       mode: 'default' | 'highContrast' | 'inverted' = 'default',
     ) => {
+      // Wrap in a timeout to prevent hangs on maliciously-crafted images
+      const PREPROCESS_TIMEOUT = 15_000; // 15 seconds max per image
       try {
+        const result = await Promise.race([
+          (async () => {
         const rawBuf = getImageBuffer(base64);
         if (!isRecognizedImageBuffer(rawBuf)) {
           return base64; // Not a valid image — skip Sharp processing
@@ -2073,8 +2177,8 @@ export async function extractOrderDetailsWithAi(
           pipeline = pipeline.extract({ left, top, width: cw, height: ch });
         }
 
-        // Upscale to help OCR with small fonts; avoid stripping info by keeping aspect ratio.
-        pipeline = pipeline.resize({ width: 2400, withoutEnlargement: false });
+        // Upscale to help OCR with small fonts; keep aspect ratio. Don't enlarge small images unnecessarily.
+        pipeline = pipeline.resize({ width: 2400, withoutEnlargement: true });
 
         if (mode === 'inverted') {
           // Dark mode screenshots: invert BEFORE greyscale so dark backgrounds become white
@@ -2095,6 +2199,12 @@ export async function extractOrderDetailsWithAi(
           .toBuffer();
 
         return `data:image/jpeg;base64,${processed.toString('base64')}`;
+          })(),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Preprocessing timeout')), PREPROCESS_TIMEOUT)
+          ),
+        ]);
+        return result;
       } catch (err) {
         console.warn('OCR preprocessing failed, using original image.', err);
         return base64;
@@ -2160,7 +2270,7 @@ export async function extractOrderDetailsWithAi(
           .jpeg({ quality: 95 })
           .toBuffer();
 
-        worker = await createWorker('eng');
+        worker = await acquireOcrWorker();
         // Try default PSM first (automatic), then PSM 6 (uniform block of text)
         const { data } = await worker.recognize(enhanced);
         let text = normalizeOcrText(data.text || '');
@@ -2198,8 +2308,8 @@ export async function extractOrderDetailsWithAi(
         console.warn('Tesseract OCR failed:', err);
         return '';
       } finally {
-        // Always terminate the worker to prevent resource leaks.
-        try { await worker?.terminate(); } catch { /* ignore cleanup errors */ }
+        // Return the worker to the pool instead of terminating.
+        try { await releaseOcrWorker(worker as any); } catch { /* ignore cleanup errors */ }
       }
     };
 
@@ -2376,62 +2486,96 @@ export async function extractOrderDetailsWithAi(
       }
     } catch { /* ignore — default to portrait */ }
 
-    const allOcrVariants: Array<{ label: string; image: string }> = [
+    const allOcrVariants: Array<{ label: string; image: string }> = [];
+
+    // Parallelize independence preprocessing calls for all base variants
+    const [enhancedImg, highContrastImg, invertedImg] = await Promise.all([
+      preprocessForOcr(payload.imageBase64),
+      preprocessForOcr(payload.imageBase64, undefined, 'highContrast'),
+      preprocessForOcr(payload.imageBase64, undefined, 'inverted'),
+    ]);
+
+    allOcrVariants.push(
       { label: 'original', image: payload.imageBase64 },
-      { label: 'enhanced', image: await preprocessForOcr(payload.imageBase64) },
-      // High-contrast variant for faded / low-contrast screenshots
-      { label: 'high-contrast', image: await preprocessForOcr(payload.imageBase64, undefined, 'highContrast') },
-      // Inverted variant for dark mode screenshots
-      { label: 'inverted', image: await preprocessForOcr(payload.imageBase64, undefined, 'inverted') },
-    ];
+      { label: 'enhanced', image: enhancedImg },
+      { label: 'high-contrast', image: highContrastImg },
+      { label: 'inverted', image: invertedImg },
+    );
 
     if (isTablet && !isLandscape) {
       // Tablet portrait (3:4 ish) — wider than phone but taller than desktop
+      const tabVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.05, height: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { top: 0, height: 0.45 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.45 }, 'highContrast'),
+        preprocessForOcr(payload.imageBase64, { left: 0.35, width: 0.6, top: 0.05, height: 0.6 }),
+      ]);
       allOcrVariants.push(
-        { label: 'tab-center-70', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.05, height: 0.5 }) },
-        { label: 'tab-top-45', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.45 }) },
-        { label: 'tab-middle-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }) },
-        { label: 'tab-bottom-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }) },
-        { label: 'tab-hc-center', image: await preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.45 }, 'highContrast') },
-        { label: 'tab-right-60', image: await preprocessForOcr(payload.imageBase64, { left: 0.35, width: 0.6, top: 0.05, height: 0.6 }) },
+        { label: 'tab-center-70', image: tabVariants[0] },
+        { label: 'tab-top-45', image: tabVariants[1] },
+        { label: 'tab-middle-50', image: tabVariants[2] },
+        { label: 'tab-bottom-50', image: tabVariants[3] },
+        { label: 'tab-hc-center', image: tabVariants[4] },
+        { label: 'tab-right-60', image: tabVariants[5] },
       );
     } else if (isTablet && isLandscape) {
       // Tablet landscape (4:3 ish) — shorter/wider than desktop monitor
+      const tabLandVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6, top: 0.1, height: 0.7 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.05, height: 0.65 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.05, width: 0.5, top: 0.1, height: 0.6 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.2, height: 0.5 }, 'highContrast'),
+      ]);
       allOcrVariants.push(
-        { label: 'tab-land-center', image: await preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6, top: 0.1, height: 0.7 }) },
-        { label: 'tab-land-right', image: await preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.05, height: 0.65 }) },
-        { label: 'tab-land-left', image: await preprocessForOcr(payload.imageBase64, { left: 0.05, width: 0.5, top: 0.1, height: 0.6 }) },
-        { label: 'tab-land-hc-mid', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.2, height: 0.5 }, 'highContrast') },
+        { label: 'tab-land-center', image: tabLandVariants[0] },
+        { label: 'tab-land-right', image: tabLandVariants[1] },
+        { label: 'tab-land-left', image: tabLandVariants[2] },
+        { label: 'tab-land-hc-mid', image: tabLandVariants[3] },
       );
     } else if (isLandscape) {
       // Desktop/laptop: order info is often in the center or right portion
       // Amazon desktop: order details occupy the center-right area
+      const desktopVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.5, width: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { left: 0, width: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.4, height: 0.6 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.25, width: 0.55, top: 0.05, height: 0.45 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.35 }),
+        preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.1, height: 0.5 }, 'highContrast'),
+      ]);
       allOcrVariants.push(
-        { label: 'center-60', image: await preprocessForOcr(payload.imageBase64, { left: 0.2, width: 0.6 }) },
-        { label: 'right-50', image: await preprocessForOcr(payload.imageBase64, { left: 0.5, width: 0.5 }) },
-        { label: 'left-50', image: await preprocessForOcr(payload.imageBase64, { left: 0, width: 0.5 }) },
-        { label: 'center-top-half', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0, height: 0.55 }) },
-        { label: 'center-bottom-half', image: await preprocessForOcr(payload.imageBase64, { left: 0.15, width: 0.7, top: 0.4, height: 0.6 }) },
-        // Amazon Order Details page: order info block at center-right, top 40%
-        { label: 'order-details-block', image: await preprocessForOcr(payload.imageBase64, { left: 0.25, width: 0.55, top: 0.05, height: 0.45 }) },
-        // Wide center strip — for when order ID / price are on same horizontal line
-        { label: 'wide-center-strip', image: await preprocessForOcr(payload.imageBase64, { left: 0.1, width: 0.8, top: 0.15, height: 0.35 }) },
-        // High-contrast center-right (desktop order summary area)
-        { label: 'hc-center-right', image: await preprocessForOcr(payload.imageBase64, { left: 0.4, width: 0.55, top: 0.1, height: 0.5 }, 'highContrast') },
+        { label: 'center-60', image: desktopVariants[0] },
+        { label: 'right-50', image: desktopVariants[1] },
+        { label: 'left-50', image: desktopVariants[2] },
+        { label: 'center-top-half', image: desktopVariants[3] },
+        { label: 'center-bottom-half', image: desktopVariants[4] },
+        { label: 'order-details-block', image: desktopVariants[5] },
+        { label: 'wide-center-strip', image: desktopVariants[6] },
+        { label: 'hc-center-right', image: desktopVariants[7] },
       );
     } else {
       // Phone/portrait: order info is vertically distributed
+      const phoneVariants = await Promise.all([
+        preprocessForOcr(payload.imageBase64, { top: 0, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { top: 0, height: 0.35 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.1, height: 0.4 }),
+        preprocessForOcr(payload.imageBase64, { top: 0.3, height: 0.4 }, 'highContrast'),
+        preprocessForOcr(payload.imageBase64, { top: 0.55, height: 0.45 }, 'highContrast'),
+      ]);
       allOcrVariants.push(
-        { label: 'top-55', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.55 }) },
-        { label: 'top-35', image: await preprocessForOcr(payload.imageBase64, { top: 0, height: 0.35 }) },
-        { label: 'middle-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.2, height: 0.5 }) },
-        { label: 'bottom-50', image: await preprocessForOcr(payload.imageBase64, { top: 0.45, height: 0.55 }) },
-        // Phone: product name + price area is typically in the middle
-        { label: 'product-area', image: await preprocessForOcr(payload.imageBase64, { top: 0.1, height: 0.4 }) },
-        // High-contrast version of middle section (where price/total usually lives)
-        { label: 'hc-middle', image: await preprocessForOcr(payload.imageBase64, { top: 0.3, height: 0.4 }, 'highContrast') },
-        // Bottom section with high contrast (order summary / grand total area)
-        { label: 'hc-bottom', image: await preprocessForOcr(payload.imageBase64, { top: 0.55, height: 0.45 }, 'highContrast') },
+        { label: 'top-55', image: phoneVariants[0] },
+        { label: 'top-35', image: phoneVariants[1] },
+        { label: 'middle-50', image: phoneVariants[2] },
+        { label: 'bottom-50', image: phoneVariants[3] },
+        { label: 'product-area', image: phoneVariants[4] },
+        { label: 'hc-middle', image: phoneVariants[5] },
+        { label: 'hc-bottom', image: phoneVariants[6] },
       );
     }
 
@@ -2823,14 +2967,16 @@ export async function extractOrderDetailsWithAi(
       }
     }
 
-    // 4. If amount is unreasonably large (order ID-sized numbers), reject
-    // Very few Indian e-commerce items cost > ₹2,00,000 — threshold raised to
-    // avoid catching high-value electronics (phones, laptops) while still
-    // rejecting order-ID fragments that parse as 6-7 digit numbers.
-    if (finalAmount && finalAmount > 200000) {
+    // 4. If amount is unreasonably large (order ID-sized numbers), flag or reject
+    // Raised threshold to ₹5,00,000 to accommodate premium electronics, jewelry, appliances.
+    // Amounts above this are almost certainly OCR misreads of order ID fragments.
+    if (finalAmount && finalAmount > 500000) {
       notes.push(`Amount ₹${finalAmount} seems unreasonably large — rejected.`);
       finalAmount = null;
       confidenceScore = Math.max(30, confidenceScore - 15);
+    } else if (finalAmount && finalAmount > 200000) {
+      notes.push(`Amount ₹${finalAmount} is high — flagged for manual review.`);
+      confidenceScore = Math.max(50, confidenceScore - 10);
     }
 
     // 5. Reject product name if it's a delivery status line

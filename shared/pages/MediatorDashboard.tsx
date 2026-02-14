@@ -6,6 +6,10 @@ import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
+import { formatCurrency } from '../utils/formatCurrency';
+import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { csvSafe, downloadCsv as downloadCsvFile } from '../utils/csvHelpers';
+import { urlToBase64 } from '../utils/imageHelpers';
 import { User, Campaign, Order, Product, Ticket } from '../types';
 import {
   LayoutGrid,
@@ -47,50 +51,21 @@ import {
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { MobileTabBar } from '../components/MobileTabBar';
 
 // --- UTILS ---
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(amount);
+// formatCurrency, getPrimaryOrderId, csvSafe, downloadCsv, urlToBase64 imported from shared/utils
 
 const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
-  const escape = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const csv = [headers.map(h => csvSafe(h)).join(','), ...rows.map((r) => r.map(v => csvSafe(v)).join(','))].join('\n');
+  downloadCsvFile(filename, csv);
 };
 
 const matchesSearch = (query: string, ...fields: (string | undefined)[]) => {
   if (!query) return true;
   const q = query.toLowerCase();
   return fields.some((f) => f && f.toLowerCase().includes(q));
-};
-
-const getPrimaryOrderId = (order: Order) =>
-  String(order.externalOrderId || order.id || '').trim();
-
-const urlToBase64 = async (url: string): Promise<string> => {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (err) {
-    console.warn('urlToBase64 failed:', url, err);
-    return '';
-  }
 };
 
 const formatRelativeTime = (iso?: string) => {
@@ -1461,6 +1436,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
           >
             <button
               type="button"
+              aria-label="Close QR modal"
               onClick={() => setShowQr(false)}
               className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-900"
             >
@@ -1512,6 +1488,7 @@ export const MediatorDashboard: React.FC = () => {
   // Audit trail state
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
+  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
@@ -1736,6 +1713,7 @@ export const MediatorDashboard: React.FC = () => {
                       Mark all read
                     </button>
                     <button
+                      aria-label="Close notifications"
                       onClick={() => setShowNotifications(false)}
                       className="p-1 bg-zinc-50 rounded-full hover:bg-zinc-100"
                       type="button"
@@ -1927,8 +1905,14 @@ export const MediatorDashboard: React.FC = () => {
               </div>
 
               {/* AI-Extracted Metadata */}
-              {(proofModal.soldBy || proofModal.orderDate || proofModal.extractedProductName) && (
+              {(proofModal.soldBy || proofModal.orderDate || proofModal.extractedProductName || proofModal.reviewerName) && (
                 <div className="grid grid-cols-3 gap-3 mt-3">
+                  {proofModal.reviewerName && (
+                    <div className="bg-black/40 p-2.5 rounded-xl border border-indigo-500/20">
+                      <p className="text-[9px] text-indigo-400 font-bold uppercase mb-1">Reviewer Name</p>
+                      <p className="text-[11px] font-bold text-indigo-200">{proofModal.reviewerName}</p>
+                    </div>
+                  )}
                   {proofModal.extractedProductName && (
                     <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
                       <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Product Name</p>
@@ -1955,7 +1939,7 @@ export const MediatorDashboard: React.FC = () => {
                   <p className="text-[10px] text-zinc-500 font-bold uppercase mb-2">
                     Order Screenshot
                   </p>
-                  <img
+                  <ZoomableImage
                     src={proofModal.screenshots.order}
                     className="w-full rounded-xl border border-white/10"
                     alt="Order Proof"
@@ -2162,7 +2146,7 @@ export const MediatorDashboard: React.FC = () => {
                   <Star size={14} /> 5-Star Rating Check
                 </h4>
                 {proofModal.screenshots?.rating ? (
-                  <img
+                  <ZoomableImage
                     src={proofModal.screenshots.rating}
                     className="w-full rounded-xl border border-orange-500/20"
                     alt="Rating Proof"
@@ -2227,7 +2211,7 @@ export const MediatorDashboard: React.FC = () => {
                   <Package size={14} /> Return Window Check
                 </h4>
                 {(proofModal.screenshots as any)?.returnWindow ? (
-                  <img
+                  <ZoomableImage
                     src={(proofModal.screenshots as any).returnWindow}
                     className="w-full rounded-xl border border-teal-500/20"
                     alt="Return Window Proof"
@@ -2303,8 +2287,12 @@ export const MediatorDashboard: React.FC = () => {
                   try {
                     const resp = await api.orders.getOrderAudit(proofModal.id);
                     setOrderAuditLogs(resp?.logs ?? []);
-                  } catch {
+                    setOrderAuditEvents(resp?.events ?? []);
+                  } catch (err) {
+                    console.error('Failed to load activity log:', err);
+                    toast.error('Failed to load activity log');
                     setOrderAuditLogs([]);
+                    setOrderAuditEvents([]);
                   } finally {
                     setAuditLoading(false);
                   }
@@ -2323,10 +2311,11 @@ export const MediatorDashboard: React.FC = () => {
                     <div className="flex justify-center py-3">
                       <Loader2 size={16} className="animate-spin text-zinc-500" />
                     </div>
-                  ) : orderAuditLogs.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
                     <p className="text-[10px] text-zinc-600 italic">No activity recorded yet.</p>
                   ) : (
-                    orderAuditLogs.map((log: any, i: number) => (
+                    <>
+                    {orderAuditLogs.map((log: any, i: number) => (
                       <div key={log._id || i} className="flex items-start gap-2 text-[10px]">
                         <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 mt-1.5 shrink-0" />
                         <div className="min-w-0">
@@ -2341,7 +2330,24 @@ export const MediatorDashboard: React.FC = () => {
                           )}
                         </div>
                       </div>
-                    ))
+                    ))}
+                    {/* Inline Event History from order.events */}
+                    {orderAuditEvents.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-zinc-700/50">
+                        <p className="text-[9px] font-extrabold text-zinc-500 uppercase tracking-wider mb-1">Event History</p>
+                        {orderAuditEvents.map((evt: any, i: number) => (
+                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] mt-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
+                            <div className="min-w-0">
+                              <span className="font-bold text-indigo-300">{(evt.type || '').replace(/_/g, ' ')}</span>
+                              <span className="text-zinc-500 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
+                              {evt.metadata && <span className="ml-1 text-zinc-600 truncate">({JSON.stringify(evt.metadata).slice(0, 80)})</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}
@@ -2592,6 +2598,7 @@ export const MediatorDashboard: React.FC = () => {
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-bold text-base">Reject Proof</h4>
               <button
+                aria-label="Close reject modal"
                 onClick={() => setRejectModalOpen(false)}
                 className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20"
               >

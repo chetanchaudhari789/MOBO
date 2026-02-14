@@ -15,7 +15,7 @@ const ALLOWED: Record<OrderWorkflowStatus, OrderWorkflowStatus[]> = {
   PROOF_SUBMITTED: ['UNDER_REVIEW'],
   UNDER_REVIEW: ['APPROVED', 'REJECTED', 'PROOF_SUBMITTED'], // re-proof request
   APPROVED: ['REWARD_PENDING'],
-  REJECTED: ['FAILED'],
+  REJECTED: ['FAILED', 'PROOF_SUBMITTED'], // allow re-proof submission after rejection
   REWARD_PENDING: ['COMPLETED', 'FAILED'],
   COMPLETED: [],
   FAILED: [],
@@ -39,15 +39,20 @@ export async function transitionOrderWorkflow(params: {
 }) {
   assertTransition(params.from, params.to);
 
+  // Validate actorUserId is a valid ObjectId to prevent BSONError
+  if (params.actorUserId && !mongoose.Types.ObjectId.isValid(params.actorUserId)) {
+    throw new AppError(400, 'INVALID_ACTOR_ID', 'Invalid actorUserId format');
+  }
+
   const update: any = {
     $set: {
       workflowStatus: params.to,
     },
   };
 
-  update.$set.updatedBy = params.actorUserId ? new mongoose.Types.ObjectId(params.actorUserId) : undefined;
-
-  update.$setOnInsert = undefined;
+  if (params.actorUserId) {
+    update.$set.updatedBy = new mongoose.Types.ObjectId(params.actorUserId);
+  }
 
   update.$push = {
     events: {
@@ -92,7 +97,7 @@ export async function transitionOrderWorkflow(params: {
       order,
       from: params.from,
       to: params.to,
-    }).catch(() => undefined);
+    }).catch((err) => console.warn('[orderWorkflow] push notification failed:', err?.message || err));
   }
 
   writeAuditLog({
@@ -147,7 +152,7 @@ export async function freezeOrders(params: {
   return res;
 }
 
-export async function reactivateOrder(params: { orderId: string; actorUserId: string; reason?: string }) {
+export async function reactivateOrder(params: { orderId: string; actorUserId: string; reason?: string; session?: ClientSession }) {
   const now = new Date();
 
   const order = await OrderModel.findOneAndUpdate(
@@ -162,6 +167,8 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
         frozen: false,
         reactivatedAt: now,
         reactivatedBy: params.actorUserId as any,
+        frozenReason: null,
+        frozenAt: null,
       },
       $push: {
         events: {
@@ -172,7 +179,7 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
         },
       },
     },
-    { new: true }
+    { new: true, session: params.session }
   );
 
   if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found or not frozen');

@@ -513,6 +513,14 @@ export function makeBrandController() {
             roles: ['admin', 'ops'],
           },
         });
+        await writeAuditLog({
+          req,
+          action: 'BRAND_CAMPAIGN_CREATED',
+          entityType: 'Campaign',
+          entityId: String((campaign as any)._id),
+          metadata: { title: body.title, platform: body.platform, totalSlots: body.totalSlots, allowedAgencies: normalizedAllowed },
+        });
+
         res.status(201).json(toUiCampaign(campaign.toObject()));
       } catch (err) {
         next(err);
