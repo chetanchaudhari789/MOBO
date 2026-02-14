@@ -591,7 +591,7 @@ async function verifyProofWithOcr(
             .sharpen({ sigma: 2 })
             .toBuffer();
           hcWorker = await createWorker('eng');
-          const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
+          const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
           await hcWorker.terminate();
           hcWorker = null;
           const hcText = (hcResult.data.text || '').trim();
@@ -883,7 +883,7 @@ async function verifyRatingWithOcr(
 
     let worker: any = await createWorker('eng');
     try {
-      const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
+      const { data }: any = await withOcrTimeout(worker.recognize(processedBuffer));
       await worker.terminate();
       worker = null;
       let ocrText = (data.text || '').trim();
@@ -898,7 +898,7 @@ async function verifyRatingWithOcr(
             .sharpen({ sigma: 2 })
             .toBuffer();
           hcWorker = await createWorker('eng');
-          const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
+          const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
           await hcWorker.terminate();
           hcWorker = null;
           const hcText = (hcResult.data.text || '').trim();
@@ -1067,7 +1067,7 @@ async function verifyReturnWindowWithOcr(
 
     let worker: any = await createWorker('eng');
     try {
-      const { data } = await withOcrTimeout(worker.recognize(processedBuffer));
+      const { data }: any = await withOcrTimeout(worker.recognize(processedBuffer));
       await worker.terminate();
       worker = null;
       let ocrText = (data.text || '').trim();
@@ -1082,7 +1082,7 @@ async function verifyReturnWindowWithOcr(
             .sharpen({ sigma: 2 })
             .toBuffer();
           hcWorker = await createWorker('eng');
-          const hcResult = await withOcrTimeout(hcWorker.recognize(hcBuffer));
+          const hcResult: any = await withOcrTimeout(hcWorker.recognize(hcBuffer));
           await hcWorker.terminate();
           hcWorker = null;
           const hcText = (hcResult.data.text || '').trim();
