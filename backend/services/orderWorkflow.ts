@@ -153,6 +153,10 @@ export async function freezeOrders(params: {
 }
 
 export async function reactivateOrder(params: { orderId: string; actorUserId: string; reason?: string; session?: ClientSession }) {
+  if (!mongoose.Types.ObjectId.isValid(params.actorUserId)) {
+    throw new AppError(400, 'INVALID_ACTOR_ID', 'Invalid actorUserId');
+  }
+
   const now = new Date();
 
   const order = await OrderModel.findOneAndUpdate(
@@ -166,7 +170,7 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
       $set: {
         frozen: false,
         reactivatedAt: now,
-        reactivatedBy: params.actorUserId as any,
+        reactivatedBy: new mongoose.Types.ObjectId(params.actorUserId),
         frozenReason: null,
         frozenAt: null,
       },
@@ -174,7 +178,7 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
         events: {
           type: 'WORKFLOW_REACTIVATED',
           at: now,
-          actorUserId: params.actorUserId as any,
+          actorUserId: new mongoose.Types.ObjectId(params.actorUserId),
           metadata: { reason: params.reason },
         },
       },

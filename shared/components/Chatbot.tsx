@@ -126,6 +126,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
   // Cache for context API calls to avoid fetching on every single message
   const contextCacheRef = useRef<{
+    userId: string | undefined;
+    mediatorCode: string | undefined;
     products: Product[];
     orders: Order[];
     tickets: Ticket[];
@@ -135,6 +137,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
   // Track navigation timer for cleanup on unmount
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Invalidate cache when user changes to prevent data leakage
+  useEffect(() => {
+    contextCacheRef.current = null;
+  }, [user?.id, user?.mediatorCode]);
 
   // Clean up navigation timer on unmount
   useEffect(() => {
@@ -365,14 +372,19 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     let ticketsForAi: Ticket[] = [];
 
     try {
-      // Use cached context if fresh enough, otherwise fetch (avoids 3 API calls per message)
+      // Use cached context if fresh enough and for same user, otherwise fetch (avoids 3 API calls per message)
       const now = Date.now();
       const cache = contextCacheRef.current;
       let allProducts: Product[];
       let userOrders: Order[];
       let allTickets: Ticket[];
 
-      if (cache && (now - cache.fetchedAt) < CONTEXT_CACHE_TTL) {
+      if (
+        cache &&
+        cache.userId === user?.id &&
+        cache.mediatorCode === user?.mediatorCode &&
+        (now - cache.fetchedAt) < CONTEXT_CACHE_TTL
+      ) {
         allProducts = cache.products;
         userOrders = cache.orders;
         allTickets = cache.tickets;
@@ -383,6 +395,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           api.tickets.getAll(),
         ]);
         contextCacheRef.current = {
+          userId: user?.id,
+          mediatorCode: user?.mediatorCode,
           products: allProducts,
           orders: userOrders,
           tickets: allTickets,
@@ -450,6 +464,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         response.intent === 'navigation' &&
         VALID_NAV_TARGETS.includes(response.navigateTo as AiNavigateTo)
       ) {
+        // Clear any previously scheduled navigation to prevent stale navigations
+        if (navTimerRef.current) {
+          clearTimeout(navTimerRef.current);
+          navTimerRef.current = null;
+        }
         // Use ref-tracked timeout so it's cancelled if component unmounts
         const navTimer = setTimeout(() => {
           onNavigate?.(response.navigateTo as AiNavigateTo);
