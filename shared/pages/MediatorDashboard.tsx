@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { MobileTabBar } from '../components/MobileTabBar';
 
 // --- UTILS ---
@@ -1974,7 +1975,7 @@ export const MediatorDashboard: React.FC = () => {
                   <p className="text-[10px] text-zinc-500 font-bold uppercase mb-2">
                     Order Screenshot
                   </p>
-                  <img
+                  <ZoomableImage
                     src={proofModal.screenshots.order}
                     className="w-full rounded-xl border border-white/10"
                     alt="Order Proof"
@@ -2181,7 +2182,7 @@ export const MediatorDashboard: React.FC = () => {
                   <Star size={14} /> 5-Star Rating Check
                 </h4>
                 {proofModal.screenshots?.rating ? (
-                  <img
+                  <ZoomableImage
                     src={proofModal.screenshots.rating}
                     className="w-full rounded-xl border border-orange-500/20"
                     alt="Rating Proof"
@@ -2246,7 +2247,7 @@ export const MediatorDashboard: React.FC = () => {
                   <Package size={14} /> Return Window Check
                 </h4>
                 {(proofModal.screenshots as any)?.returnWindow ? (
-                  <img
+                  <ZoomableImage
                     src={(proofModal.screenshots as any).returnWindow}
                     className="w-full rounded-xl border border-teal-500/20"
                     alt="Return Window Proof"

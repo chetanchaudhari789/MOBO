@@ -53,6 +53,7 @@ import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   AreaChart,
@@ -1068,7 +1069,7 @@ const OrdersView = ({ user }: any) => {
                 {viewProofOrder.screenshots?.order ? (
                   <>
                     <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
-                      <img
+                      <ZoomableImage
                         src={viewProofOrder.screenshots.order}
                         alt="Order Proof"
                         className="w-full h-auto block"
@@ -1159,7 +1160,7 @@ const OrdersView = ({ user }: any) => {
                       <div className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-2 py-1 rounded-lg">
                         5 Stars
                       </div>
-                      <img
+                      <ZoomableImage
                         src={viewProofOrder.screenshots.rating}
                         alt="Rating Proof"
                         className="w-full h-auto block"
@@ -1235,7 +1236,7 @@ const OrdersView = ({ user }: any) => {
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
-                    <img
+                    <ZoomableImage
                       src={(viewProofOrder.screenshots as any).returnWindow}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
@@ -1299,7 +1300,7 @@ const OrdersView = ({ user }: any) => {
                       <CreditCard size={14} /> Payment Confirmation
                     </div>
                     <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
-                      <img
+                      <ZoomableImage
                         src={viewProofOrder.screenshots.payment}
                         alt="Payment Proof"
                         className="w-full h-auto block"
@@ -2080,6 +2081,10 @@ export const BrandDashboard: React.FC = () => {
       toast.error('Enter a valid positive amount');
       return;
     }
+    if (amount > 10_00_000) {
+      toast.error('Payout cannot exceed \u20b910,00,000 per transaction');
+      return;
+    }
     setIsProcessing(true);
     try {
       await api.brand.payoutAgency(user.id, selectedAgency.id, amount, payoutRef);
@@ -2391,7 +2396,7 @@ export const BrandDashboard: React.FC = () => {
                         e.stopPropagation();
                         if (!user) return;
                         if (confirm('Disconnect this Agency?')) {
-                          api.brand.removeAgency(user.id, ag.mediatorCode!).then(fetchData);
+                          api.brand.removeAgency(user.id, ag.mediatorCode!).then(fetchData).catch((err: any) => toast.error(err?.message || 'Failed to disconnect agency'));
                         }
                       }}
                       className="w-10 h-10 rounded-full border border-zinc-100 flex items-center justify-center text-zinc-300 hover:text-red-500 hover:border-red-100 hover:bg-red-50 transition-colors absolute top-6 right-6"

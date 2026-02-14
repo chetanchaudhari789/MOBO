@@ -6,6 +6,7 @@ import { subscribeRealtime } from '../services/realtime';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import {
   Clock,
   CheckCircle2,
@@ -25,7 +26,91 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Download,
+  Eye,
+  Info,
+  ZoomIn,
 } from 'lucide-react';
+
+/* ─── Sample Screenshot Guide ───────────────────────────────────────── */
+const SampleScreenshotGuide: React.FC<{
+  type: 'order' | 'rating' | 'returnWindow';
+}> = ({ type }) => {
+  const [open, setOpen] = useState(false);
+  const guides: Record<string, { title: string; bullets: string[]; highlights: string[] }> = {
+    order: {
+      title: 'Order Confirmation Screenshot',
+      bullets: [
+        'Go to your order details page on the marketplace (Amazon, Flipkart, etc.)',
+        'Screenshot must clearly show the Order ID / Order Number',
+        'Grand Total / Amount Paid should be visible',
+        'Product name and "Sold by" seller info should be visible',
+        'Include the "Order placed" date if possible',
+      ],
+      highlights: ['Order Number', 'Grand Total', 'Product Name', 'Sold by', 'Order Date'],
+    },
+    rating: {
+      title: 'Rating / Review Screenshot',
+      bullets: [
+        'Open the "Write a product review" or "Rate this product" page',
+        'Your marketplace profile name / account name must be visible at the top',
+        'The product name should appear clearly on the page',
+        'Star rating should be filled (e.g. 5 stars)',
+        'Take the screenshot BEFORE submitting if "Submit" button is visible',
+      ],
+      highlights: ['Profile Name / Account', 'Product Name', 'Star Rating'],
+    },
+    returnWindow: {
+      title: 'Return Window Screenshot',
+      bullets: [
+        'Go to your order details page showing the delivery status',
+        'Look for "Return window closed" or delivery date info',
+        'Order ID and product name should both be visible',
+        'The "Sold by" seller information should be present',
+        'Amount / price must appear on the page',
+      ],
+      highlights: ['Return Window Status', 'Order Number', 'Delivered Date', 'Sold By'],
+    },
+  };
+  const g = guides[type];
+  if (!g) return null;
+  return (
+    <div className="rounded-xl border border-blue-100 bg-blue-50/50 overflow-hidden animate-enter">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left"
+      >
+        <Info size={13} className="text-blue-500 shrink-0" />
+        <span className="text-[10px] font-bold text-blue-600 flex-1">
+          How to take a {g.title}?
+        </span>
+        {open ? <ChevronUp size={12} className="text-blue-400" /> : <ChevronDown size={12} className="text-blue-400" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
+          <ul className="space-y-1.5 mt-2">
+            {g.bullets.map((b, i) => (
+              <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-600">
+                <span className="w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 mt-0.5">{i + 1}</span>
+                {b}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {g.highlights.map((h) => (
+              <span key={h} className="text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded">
+                {h}
+              </span>
+            ))}
+          </div>
+          <p className="text-[9px] text-blue-400 font-semibold italic mt-1">
+            Tip: Use a full-page screenshot in good lighting for best AI detection results.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const getPrimaryOrderId = (order: Order) =>
   String(order.externalOrderId || '').trim() || 'Pending';
@@ -96,7 +181,7 @@ export const Orders: React.FC = () => {
   const [orderIdLocked, setOrderIdLocked] = useState(false);
 
   const [ticketModal, setTicketModal] = useState<Order | null>(null);
-  const [ticketIssue, setTicketIssue] = useState('Cashback not received');
+  const [ticketIssue, setTicketIssue] = useState('Cashback Delay');
   const [ticketDesc, setTicketDesc] = useState('');
   const [sheetsExporting, setSheetsExporting] = useState(false);
   // Audit trail state: tracks which order's audit log is expanded
@@ -1139,7 +1224,7 @@ export const Orders: React.FC = () => {
                       </button>
                     )}
                     <button
-                      onClick={() => setTicketModal(order)}
+                      onClick={() => { setTicketIssue('Cashback Delay'); setTicketDesc(''); setTicketModal(order); }}
                       className="w-7 h-7 bg-red-50 text-red-500 rounded-full flex items-center justify-center hover:bg-red-100 ml-2"
                       title="Report Issue"
                     >
@@ -1407,6 +1492,9 @@ export const Orders: React.FC = () => {
                       )}
                     </label>
                   </div>
+
+                  {/* Sample Screenshot Guide */}
+                  {!formScreenshot && <SampleScreenshotGuide type="order" />}
 
                   {/* [AI] Smart Extraction UI: Field Highlighting */}
                   {formScreenshot && (
@@ -1695,9 +1783,8 @@ export const Orders: React.FC = () => {
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase text-slate-400">Order Proof</div>
                 {proofToView.screenshots?.order ? (
-                  <img
+                  <ZoomableImage
                     src={proofToView.screenshots.order}
-                    className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
                     alt="Order proof"
                   />
                 ) : (
@@ -1711,9 +1798,8 @@ export const Orders: React.FC = () => {
                 <div className="space-y-2">
                   <div className="text-[10px] font-bold uppercase text-slate-400">Rating Proof</div>
                   {proofToView.screenshots?.rating ? (
-                    <img
+                    <ZoomableImage
                       src={proofToView.screenshots.rating}
-                      className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
                       alt="Rating proof"
                     />
                   ) : (
@@ -1748,9 +1834,8 @@ export const Orders: React.FC = () => {
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase text-slate-400">Return Window Proof</div>
                 {(proofToView.screenshots as any)?.returnWindow ? (
-                  <img
+                  <ZoomableImage
                     src={(proofToView.screenshots as any).returnWindow}
-                    className="w-full h-auto rounded-xl max-h-[60vh] object-contain border border-slate-100"
                     alt="Return window proof"
                   />
                 ) : (
@@ -1927,6 +2012,9 @@ export const Orders: React.FC = () => {
                   )}
                 </label>
 
+                {/* Sample Screenshot Guide */}
+                {!ratingPreview && <SampleScreenshotGuide type="rating" />}
+
                 {/* AI Verification Results */}
                 {ratingVerification && (
                   <div className="space-y-2 animate-enter">
@@ -2007,6 +2095,8 @@ export const Orders: React.FC = () => {
                     disabled={isUploading}
                   />
                 </label>
+                {/* Sample Screenshot Guide for Return Window */}
+                {uploadType === 'returnWindow' && <SampleScreenshotGuide type="returnWindow" />}
                 {isUploading && (
                   <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin motion-reduce:animate-none" /> Uploading...

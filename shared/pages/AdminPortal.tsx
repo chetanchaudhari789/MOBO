@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
 import {
   LayoutGrid,
@@ -1895,7 +1896,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 <h4 className="flex items-center gap-2 text-xs font-extrabold text-blue-500 uppercase tracking-wider mb-2"><ShoppingCart size={14} /> Purchase Proof</h4>
                 {proofModal.screenshots?.order ? (
                   <>
-                    <img src={proofModal.screenshots.order} alt="Purchase Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-blue-200 bg-blue-50" />
+                    <ZoomableImage src={proofModal.screenshots.order} alt="Purchase Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-blue-200 bg-blue-50" />
                     {/* AI Analysis Section */}
                     <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200 mt-3">
                       <div className="flex justify-between items-center mb-2">
@@ -1972,7 +1973,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 <div>
                   <h4 className="flex items-center gap-2 text-xs font-extrabold text-orange-400 uppercase tracking-wider mb-2"><Star size={14} /> Rating Proof</h4>
                   {proofModal.screenshots?.rating ? (
-                    <img src={proofModal.screenshots.rating} alt="Rating Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-orange-200 bg-orange-50" />
+                    <ZoomableImage src={proofModal.screenshots.rating} alt="Rating Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-orange-200 bg-orange-50" />
                   ) : (
                     <div className="py-4 text-center text-xs text-orange-400 font-bold bg-orange-50 rounded-xl border border-dashed border-orange-200">Waiting for rating screenshot...</div>
                   )}
@@ -2021,7 +2022,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       <ExternalLink size={16} className="group-hover:scale-110 transition-transform" />
                     </a>
                   ) : proofModal.screenshots?.review ? (
-                    <img src={proofModal.screenshots.review} alt="Review Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-purple-200 bg-purple-50" />
+                    <ZoomableImage src={proofModal.screenshots.review} alt="Review Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-purple-200 bg-purple-50" />
                   ) : (
                     <div className="py-4 text-center text-xs text-purple-400 font-bold bg-purple-50 rounded-xl border border-dashed border-purple-200">Review not submitted</div>
                   )}
@@ -2032,7 +2033,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               {(proofModal.screenshots as any)?.returnWindow && (
                 <div>
                   <h4 className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-wider mb-2"><Package size={14} /> Return Window Proof</h4>
-                  <img src={(proofModal.screenshots as any).returnWindow} alt="Return Window Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-teal-200 bg-teal-50" />
+                  <ZoomableImage src={(proofModal.screenshots as any).returnWindow} alt="Return Window Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-teal-200 bg-teal-50" />
                   {/* AI Return Window Verification */}
                   {proofModal.returnWindowAiVerification && (
                     <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
@@ -2087,7 +2088,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               <div>
                 <h4 className="flex items-center gap-2 text-xs font-extrabold text-green-500 uppercase tracking-wider mb-2"><DollarSign size={14} /> Payment Screenshot</h4>
                 {proofModal.screenshots?.payment ? (
-                  <img src={proofModal.screenshots.payment} alt="Payment Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-green-200 bg-green-50" />
+                  <ZoomableImage src={proofModal.screenshots.payment} alt="Payment Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-green-200 bg-green-50" />
                 ) : (
                   <div className="py-4 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-200">Not uploaded</div>
                 )}

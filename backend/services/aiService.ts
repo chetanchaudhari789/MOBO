@@ -523,6 +523,7 @@ type ProofVerificationResult = {
   detectedOrderId?: string;
   detectedAmount?: number;
   discrepancyNote?: string;
+  verificationMethod?: 'gemini' | 'ocr' | 'combined';
 };
 
 type ExtractOrderPayload = {
@@ -645,7 +646,9 @@ async function verifyProofWithOcr(
       }
     }
 
-    // Check if expected amount appears in OCR text (allow ±2 tolerance for OCR errors)
+    // Check if expected amount appears in OCR text (allow smart tolerance for OCR errors)
+    // ±₹2 for orders under ₹1000, ±0.5% for higher-value orders (min ₹2)
+    const amountTolerance = Math.max(2, expectedAmount >= 1000 ? Math.ceil(expectedAmount * 0.005) : 2);
     const amountPatterns = [
       String(expectedAmount),
       expectedAmount.toFixed(2),
@@ -658,9 +661,9 @@ async function verifyProofWithOcr(
     ];
     let amountMatch = amountPatterns.some((p) => ocrText.includes(p));
 
-    // If exact match failed, try ±2 tolerance (OCR may misread 499 as 497, etc.)
+    // If exact match failed, try ±tolerance (OCR may misread 499 as 497, etc.)
     if (!amountMatch) {
-      for (let delta = -2; delta <= 2; delta++) {
+      for (let delta = -amountTolerance; delta <= amountTolerance; delta++) {
         if (delta === 0) continue;
         const nearby = expectedAmount + delta;
         if (nearby <= 0) continue;
@@ -677,7 +680,7 @@ async function verifyProofWithOcr(
       const amountRegex = /(?:₹|rs\.?|inr|r[s5$]\.?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
       for (const m of ocrText.matchAll(amountRegex)) {
         const val = Number(m[1].replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= 2) {
+        if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= amountTolerance) {
           amountMatch = true;
           break;
         }
@@ -688,7 +691,7 @@ async function verifyProofWithOcr(
       const bareNumbers = ocrText.match(/\b\d[\d,\s]*(?:\.\d{1,2})?\b/g) || [];
       for (const raw of bareNumbers) {
         const val = Number(raw.replace(/[,\s]/g, ''));
-        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmount) <= 2) {
+        if (Number.isFinite(val) && val > 10 && Math.abs(val - expectedAmount) <= amountTolerance) {
           amountMatch = true;
           break;
         }
@@ -754,7 +757,8 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
 
   // If Gemini is not available, fall back to OCR-based verification.
   if (!geminiAvailable) {
-    return verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    return { ...ocrResult, verificationMethod: 'ocr' as const };
   }
 
   const apiKey = env.GEMINI_API_KEY!;
@@ -831,7 +835,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
 
         console.info('Gemini proof usage estimate', { model, estimatedTokens });
 
-        return parsed;
+        return { ...parsed, verificationMethod: 'gemini' as const };
       } catch (innerError) {
         lastError = innerError;
         continue;
@@ -842,7 +846,8 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
   } catch (error) {
     console.error('Gemini proof verification error:', error);
     // Fall back to OCR when Gemini fails at runtime.
-    return verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    return { ...ocrResult, verificationMethod: 'ocr' as const };
   }
 }
 
