@@ -16,11 +16,12 @@ export function csvEscape(val: string): string {
  * 1. Coerce to string (handles null/undefined).
  * 2. Prefix formula-triggering characters (`=`, `+`, `-`, `@`, `\t`, `\r`)
  *    with a leading single-quote so spreadsheet apps treat the cell as text.
+ *    Also checks for whitespace before these characters.
  * 3. Double-quote the result.
  */
 export function csvSafe(val: unknown): string {
   let s = String(val ?? '');
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return csvEscape(s);
 }
 

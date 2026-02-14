@@ -15,11 +15,12 @@ export function loadDotenv() {
   // Detect this and adjust so .env files are always found at the real backend root.
   const thisDir = path.dirname(fileURLToPath(import.meta.url));
   const parentDir = path.resolve(thisDir, '..');
+  const grandParentDir = path.resolve(parentDir, '..');
   const isRunningFromDist =
-    path.basename(parentDir) === 'dist' ||
-    path.basename(thisDir) === 'dist';
+    path.basename(parentDir) === 'config' &&
+    path.basename(grandParentDir) === 'dist';
   const backendDir = isRunningFromDist
-    ? path.resolve(parentDir, '..')  // dist/config/.. → dist → dist/.. → backend/
+    ? path.resolve(grandParentDir, '..')  // dist/config/.. → dist → dist/.. → backend/
     : parentDir;                      // config/.. → backend/
   const repoRoot = path.resolve(backendDir, '..');
 
