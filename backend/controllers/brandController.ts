@@ -239,27 +239,39 @@ export function makeBrandController() {
         // Fallback: if wallet is not funded, still record a completed manual ledger entry
         // so the brand can track real-world transfers.
         try {
-          // Debit brand first (fails if insufficient funds).
-          await applyWalletDebit({
-            idempotencyKey: idKey,
-            type: 'agency_payout',
-            ownerUserId: String(brandId),
-            fromUserId: String(brandId),
-            toUserId: String(body.agencyId),
-            amountPaise,
-            metadata: { ref, agencyId: String(body.agencyId), agencyCode, agencyName },
-          });
+          // Atomic payout: wrap debit + credit in a single MongoDB session so that
+          // partial failures (e.g., brand debit succeeds but agency credit fails)
+          // are rolled back automatically, preventing money loss.
+          const payoutSession = await (await import('mongoose')).default.startSession();
+          try {
+            await payoutSession.withTransaction(async () => {
+              // Debit brand first (fails if insufficient funds).
+              await applyWalletDebit({
+                idempotencyKey: idKey,
+                type: 'agency_payout',
+                ownerUserId: String(brandId),
+                fromUserId: String(brandId),
+                toUserId: String(body.agencyId),
+                amountPaise,
+                metadata: { ref, agencyId: String(body.agencyId), agencyCode, agencyName },
+                session: payoutSession,
+              });
 
-          // Credit agency (separate idempotency key to keep both sides independently replay-safe).
-          await applyWalletCredit({
-            idempotencyKey: `${idKey}:credit`,
-            type: 'agency_receipt',
-            ownerUserId: String(body.agencyId),
-            fromUserId: String(brandId),
-            toUserId: String(body.agencyId),
-            amountPaise,
-            metadata: { ref, brandId: String(brandId), brandName },
-          });
+              // Credit agency (separate idempotency key to keep both sides independently replay-safe).
+              await applyWalletCredit({
+                idempotencyKey: `${idKey}:credit`,
+                type: 'agency_receipt',
+                ownerUserId: String(body.agencyId),
+                fromUserId: String(brandId),
+                toUserId: String(body.agencyId),
+                amountPaise,
+                metadata: { ref, brandId: String(brandId), brandName },
+                session: payoutSession,
+              });
+            });
+          } finally {
+            payoutSession.endSession();
+          }
         } catch (e: any) {
           const code = String(e?.code || e?.error?.code || '');
           if (code !== 'INSUFFICIENT_FUNDS' && code !== 'WALLET_NOT_FOUND') throw e;

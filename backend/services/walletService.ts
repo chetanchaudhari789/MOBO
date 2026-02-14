@@ -56,10 +56,11 @@ export async function applyWalletCredit(input: WalletMutationInput) {
 
   const execute = async (session: mongoose.ClientSession) => {
     // Use majority readConcern for idempotency to avoid stale reads after failover.
+    // Query by idempotencyKey alone — the key is globally unique (partial unique index)
+    // and already scoped per-operation. Adding $or on fromUserId/toUserId breaks
+    // idempotency when those fields are not set by the caller.
     const existingTx = await TransactionModel.findOne({
       idempotencyKey: input.idempotencyKey,
-      // Scope to this user to prevent cross-user idempotency collisions
-      $or: [{ fromUserId: input.ownerUserId }, { toUserId: input.ownerUserId }],
     })
       .read('primary')
       .session(session);
@@ -133,10 +134,11 @@ export async function applyWalletDebit(input: WalletMutationInput) {
 
   const execute = async (session: mongoose.ClientSession) => {
     // Use majority readConcern for idempotency to avoid stale reads after failover.
+    // Query by idempotencyKey alone — the key is globally unique (partial unique index)
+    // and already scoped per-operation. Adding $or on fromUserId/toUserId breaks
+    // idempotency when those fields are not set by the caller.
     const existingTx = await TransactionModel.findOne({
       idempotencyKey: input.idempotencyKey,
-      // Scope to this user to prevent cross-user idempotency collisions
-      $or: [{ fromUserId: input.ownerUserId }, { toUserId: input.ownerUserId }],
     })
       .read('primary')
       .session(session);
