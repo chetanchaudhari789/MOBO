@@ -4,6 +4,7 @@ import { CartProvider } from '../context/CartContext';
 import { ChatProvider } from '../context/ChatContext';
 import { NotificationProvider } from '../context/NotificationContext';
 import { ToastProvider } from '../context/ToastContext';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { PortalGuard } from '../components/PortalGuard';
 import { MobileTabBar } from '../components/MobileTabBar';
 import { Button, Card, CardContent } from '../components/ui';
@@ -80,10 +81,11 @@ export const ConsumerApp: React.FC<ConsumerAppProps> = ({ onBack }) => {
   }
 
   return (
-    <ToastProvider>
-      <CartProvider>
-        <ChatProvider>
-          <NotificationProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <CartProvider>
+          <ChatProvider>
+            <NotificationProvider>
             <div className="flex flex-col h-full bg-[#F2F2F7] relative overflow-hidden font-sans">
               <div className="flex-1 overflow-hidden">
                 {activeTab === 'home' && <Home onVoiceNavigate={setActiveTab} />}
@@ -111,5 +113,6 @@ export const ConsumerApp: React.FC<ConsumerAppProps> = ({ onBack }) => {
         </ChatProvider>
       </CartProvider>
     </ToastProvider>
+  </ErrorBoundary>
   );
 };

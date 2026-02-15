@@ -44,9 +44,19 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   await expect(fileInput).toHaveCount(1);
   await fileInput.setInputFiles(proofPath);
 
+  // The proof fixture is a generic SVG — AI extraction won't find a real order
+  // ID or amount.  Fill the manual fields that appear after upload so Submit
+  // Claim becomes enabled.
+  const orderIdInput = claimModal.locator('input[placeholder="e.g. 404-..."]');
+  await expect(orderIdInput).toBeVisible({ timeout: 30_000 });
+  await orderIdInput.fill('E2E-ORDER-1234');
+
+  const amountInput = claimModal.locator('input[placeholder="e.g. 1299"]');
+  await amountInput.fill('999');
+
   // Submit claim
   const submit = page.getByRole('button', { name: 'Submit Claim' });
-  await expect(submit).toBeEnabled();
+  await expect(submit).toBeEnabled({ timeout: 10_000 });
   await submit.click();
 
   await expect(claimModal).toBeHidden({ timeout: 30_000 });

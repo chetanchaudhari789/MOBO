@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ToastProvider } from '../context/ToastContext';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { PortalGuard } from '../components/PortalGuard';
 import { BrandAuthScreen } from '../pages/BrandAuth';
 import { BrandDashboard } from '../pages/BrandDashboard';
@@ -30,11 +31,13 @@ export const BrandApp: React.FC<BrandAppProps> = ({ onBack }) => {
   }
 
   return (
-    <ToastProvider>
-      <div className="relative">
-        <BrandDashboard />
-      </div>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <div className="relative">
+          <BrandDashboard />
+        </div>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 };
 

@@ -290,17 +290,22 @@ export function makeOrdersController(env: Env) {
             (acc: number, it: any) => acc + (Number(it.priceAtPurchase) || 0) * (Number(it.quantity) || 1),
             0
           );
+          // Guard against NaN/Infinity from bad request data
+          if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
+            throw new AppError(400, 'INVALID_ORDER_AMOUNT', 'Could not compute a valid order amount for verification.');
+          }
           const verification = await verifyProofWithAi(env, {
             imageBase64: body.screenshots.order,
             expectedOrderId: resolvedExternalOrderId || body.externalOrderId || '',
             expectedAmount,
           });
 
-          if (!verification?.orderIdMatch || !verification?.amountMatch || verification?.confidenceScore < 60) {
+          const confidenceThreshold = env.AI_PROOF_CONFIDENCE_THRESHOLD ?? 75;
+          if (!verification?.orderIdMatch || !verification?.amountMatch || (verification?.confidenceScore ?? 0) < confidenceThreshold) {
             throw new AppError(
               422,
               'INVALID_ORDER_PROOF',
-              'Order proof did not match the order ID and amount. Please upload a valid proof.'
+              `Order proof did not match the order ID and amount (confidence: ${verification?.confidenceScore ?? 0}/${confidenceThreshold}). Please upload a clear, valid proof.`
             );
           }
         } else {
@@ -706,8 +711,8 @@ export function makeOrdersController(env: Env) {
             // Audit trail: record AI rating verification for backtracking
             writeAuditLog({
               req,
-              action: 'ai.verify_rating',
-              entityType: 'order',
+              action: 'AI_RATING_VERIFICATION',
+              entityType: 'Order',
               entityId: String(order._id),
               metadata: {
                 accountNameMatch: ratingAiResult.accountNameMatch,
@@ -776,11 +781,16 @@ export function makeOrdersController(env: Env) {
             const expectedAmount = ((order as any).items ?? []).reduce(
               (acc: number, it: any) => acc + (Number(it?.priceAtPurchasePaise) || 0) * (Number(it?.quantity) || 1), 0
             ) / 100;
-            aiVerification = await verifyProofWithAi(env, {
-              imageBase64: body.data,
-              expectedOrderId,
-              expectedAmount,
-            });
+            // Guard against NaN/Infinity from corrupted order data
+            if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
+              console.warn(`[ordersController] Skipping AI re-upload verification: invalid expectedAmount=${expectedAmount} for order=${order._id}`);
+            } else {
+              aiVerification = await verifyProofWithAi(env, {
+                imageBase64: body.data,
+                expectedOrderId,
+                expectedAmount,
+              });
+            }
           }
 
           order.screenshots = { ...(order.screenshots ?? {}), order: body.data } as any;

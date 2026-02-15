@@ -55,6 +55,7 @@ import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
@@ -928,7 +929,7 @@ const OrdersView = ({ user }: any) => {
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-white rounded-lg border border-zinc-100 p-1 flex-shrink-0">
                             <img
-                              src={o.items[0].image}
+                              src={o.items?.[0]?.image}
                               className="w-full h-full object-contain mix-blend-multiply"
                             />
                           </div>
@@ -996,14 +997,14 @@ const OrdersView = ({ user }: any) => {
                 <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
                 <span
                   className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
-                    viewProofOrder.items[0].dealType === 'Rating'
+                    viewProofOrder.items?.[0]?.dealType === 'Rating'
                       ? 'bg-orange-50 text-orange-600 border-orange-100'
-                      : viewProofOrder.items[0].dealType === 'Review'
+                      : viewProofOrder.items?.[0]?.dealType === 'Review'
                         ? 'bg-purple-50 text-purple-600 border-purple-100'
                         : 'bg-blue-50 text-blue-600 border-blue-100'
                   }`}
                 >
-                  {viewProofOrder.items[0].dealType || 'Discount'} Deal
+                  {viewProofOrder.items?.[0]?.dealType || 'Discount'} Deal
                 </span>
               </div>
             </div>
@@ -1012,13 +1013,13 @@ const OrdersView = ({ user }: any) => {
               {/* Product Summary */}
               <div className="flex gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
                 <img
-                  src={viewProofOrder.items[0].image}
-                  alt={viewProofOrder.items[0].title}
+                  src={viewProofOrder.items?.[0]?.image}
+                  alt={viewProofOrder.items?.[0]?.title}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-zinc-100 p-1"
                 />
                 <div>
                   <p className="text-sm font-bold text-zinc-900 line-clamp-1">
-                    {viewProofOrder.items[0].title}
+                    {viewProofOrder.items?.[0]?.title}
                   </p>
                   <p className="text-xs text-zinc-500 mt-1">
                     Value:{' '}
@@ -1026,13 +1027,18 @@ const OrdersView = ({ user }: any) => {
                       {formatCurrency(viewProofOrder.total)}
                     </span>
                   </p>
-                  {(viewProofOrder.soldBy || viewProofOrder.orderDate || viewProofOrder.extractedProductName) && (
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-zinc-400">
-                      {viewProofOrder.extractedProductName && <span>Product: {viewProofOrder.extractedProductName}</span>}
-                      {viewProofOrder.soldBy && <span>Seller: {viewProofOrder.soldBy}</span>}
-                      {viewProofOrder.orderDate && <span>Ordered: {new Date(viewProofOrder.orderDate).toLocaleDateString()}</span>}
-                    </div>
-                  )}
+                  {(() => {
+                    const seller = viewProofOrder.soldBy && viewProofOrder.soldBy !== 'null' && viewProofOrder.soldBy !== 'undefined' ? viewProofOrder.soldBy : '';
+                    const d = viewProofOrder.orderDate ? new Date(viewProofOrder.orderDate) : null;
+                    const validDate = d && !isNaN(d.getTime()) && d.getFullYear() > 2020 ? d : null;
+                    return (viewProofOrder.extractedProductName || seller || validDate) ? (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-zinc-400">
+                        {viewProofOrder.extractedProductName && <span>Product: {viewProofOrder.extractedProductName}</span>}
+                        {seller && <span>Seller: {seller}</span>}
+                        {validDate && <span>Ordered: {validDate.toLocaleDateString()}</span>}
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
               </div>
 
@@ -1125,7 +1131,7 @@ const OrdersView = ({ user }: any) => {
               </div>
 
               {/* 2. Rating Screenshot (Conditional) */}
-              {viewProofOrder.items[0].dealType === 'Rating' && (
+              {viewProofOrder.items?.[0]?.dealType === 'Rating' && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-orange-400 uppercase tracking-widest">
                     <Star size={14} /> Rating Proof
@@ -1150,36 +1156,16 @@ const OrdersView = ({ user }: any) => {
                   )}
                   {/* AI Rating Verification Results */}
                   {viewProofOrder.ratingAiVerification && (
-                    <div className="mt-2 bg-orange-50 rounded-xl border border-orange-100 p-3 space-y-1.5">
-                      <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">AI Rating Verification</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className={`p-2 rounded-lg text-center ${viewProofOrder.ratingAiVerification.accountNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Account Name</p>
-                          <p className={`text-xs font-bold ${viewProofOrder.ratingAiVerification.accountNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                            {viewProofOrder.ratingAiVerification.accountNameMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                          {viewProofOrder.ratingAiVerification.detectedAccountName && (
-                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {viewProofOrder.ratingAiVerification.detectedAccountName}</p>
-                          )}
-                        </div>
-                        <div className={`p-2 rounded-lg text-center ${viewProofOrder.ratingAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
-                          <p className={`text-xs font-bold ${viewProofOrder.ratingAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                            {viewProofOrder.ratingAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                          </p>
-                          {viewProofOrder.ratingAiVerification.detectedProductName && (
-                            <p className="text-[9px] text-slate-500 truncate mt-0.5">Found: {viewProofOrder.ratingAiVerification.detectedProductName}</p>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-[9px] text-slate-500">Confidence: {viewProofOrder.ratingAiVerification.confidenceScore}%</p>
-                    </div>
+                    <RatingVerificationBadge
+                      data={viewProofOrder.ratingAiVerification}
+                      className="mt-2 bg-orange-50 rounded-xl border border-orange-100 p-3 space-y-1.5"
+                    />
                   )}
                 </div>
               )}
 
               {/* 3. Review Link (Conditional) */}
-              {viewProofOrder.items[0].dealType === 'Review' && (
+              {viewProofOrder.items?.[0]?.dealType === 'Review' && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-purple-400 uppercase tracking-widest">
                     <MessageCircle size={14} /> Live Review
@@ -1219,50 +1205,10 @@ const OrdersView = ({ user }: any) => {
                   </div>
                   {/* AI Return Window Verification */}
                   {viewProofOrder.returnWindowAiVerification && (
-                    <div className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5">
-                      <p className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">AI Return Window Verification</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {viewProofOrder.returnWindowAiVerification.orderIdMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.orderIdMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
-                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {viewProofOrder.returnWindowAiVerification.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
-                        )}
-                        {viewProofOrder.returnWindowAiVerification.productNameMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.productNameMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Product Name</p>
-                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.productNameMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {viewProofOrder.returnWindowAiVerification.productNameMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
-                        )}
-                        {viewProofOrder.returnWindowAiVerification.amountMatch !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.amountMatch ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
-                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
-                              {viewProofOrder.returnWindowAiVerification.amountMatch ? '✓ Match' : '✗ Mismatch'}
-                            </p>
-                          </div>
-                        )}
-                        {viewProofOrder.returnWindowAiVerification.returnWindowClosed !== undefined && (
-                          <div className={`p-2 rounded-lg text-center ${viewProofOrder.returnWindowAiVerification.returnWindowClosed ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Window Closed</p>
-                            <p className={`text-xs font-bold ${viewProofOrder.returnWindowAiVerification.returnWindowClosed ? 'text-green-600' : 'text-yellow-600'}`}>
-                              {viewProofOrder.returnWindowAiVerification.returnWindowClosed ? '✓ Closed' : '⏳ Open'}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      {viewProofOrder.returnWindowAiVerification.detectedReturnWindow && (
-                        <p className="text-[9px] text-slate-500">Detected Window: {viewProofOrder.returnWindowAiVerification.detectedReturnWindow}</p>
-                      )}
-                      {viewProofOrder.returnWindowAiVerification.discrepancyNote && (
-                        <p className="text-[9px] text-red-500 font-semibold">Note: {viewProofOrder.returnWindowAiVerification.discrepancyNote}</p>
-                      )}
-                      <p className="text-[9px] text-slate-500">Confidence: {viewProofOrder.returnWindowAiVerification.confidenceScore}%</p>
-                    </div>
+                    <ReturnWindowVerificationBadge
+                      data={viewProofOrder.returnWindowAiVerification}
+                      className="mt-2 bg-teal-50 rounded-xl border border-teal-100 p-3 space-y-1.5"
+                    />
                   )}
                 </div>
               )}
@@ -1339,7 +1285,7 @@ const OrdersView = ({ user }: any) => {
                           <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-indigo-200 pl-3 py-1">
                             <span className="font-bold text-indigo-600 shrink-0">{(evt.type || '').replace(/_/g, ' ')}</span>
                             <span className="flex-1">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                            {evt.metadata && <span className="text-zinc-400 truncate text-[9px]">{JSON.stringify(evt.metadata).slice(0, 80)}</span>}
+                            {evt.metadata?.step && <span className="text-zinc-400 text-[9px]">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
                           </div>
                         ))}
                       </div>

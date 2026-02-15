@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ToastProvider } from '../context/ToastContext';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { PortalGuard } from '../components/PortalGuard';
 import { AgencyAuthScreen } from '../pages/AgencyAuth';
 import { AgencyDashboard } from '../pages/AgencyDashboard';
@@ -29,11 +30,13 @@ export const AgencyApp: React.FC<AgencyAppProps> = ({ onBack }) => {
   }
 
   return (
-    <ToastProvider>
-      <div className="relative">
-        <AgencyDashboard />
-      </div>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <div className="relative">
+          <AgencyDashboard />
+        </div>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 };
 
