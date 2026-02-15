@@ -1412,22 +1412,28 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        // Money movements (wallet mode only): enforce conservation on successful settlements.
-        // - Debit brand wallet by the Deal payout
-        // - Credit buyer commission and mediator margin (payout - commission)
-        // Idempotency keys prevent double-moves on retries.
+        // Pre-compute all values needed for settlement BEFORE starting the transaction,
+        // to avoid read conflicts and ensure clean atomic operations.
+        let deal: any = null;
+        let buyerUserId: string | null = null;
+        let brandId: string | null = null;
+        let mediatorUserId: string | null = null;
+        let payoutPaise = 0;
+        let buyerCommissionPaise = 0;
+        let mediatorMarginPaise = 0;
+
         if (!isOverLimit && settlementMode === 'wallet') {
           if (!productId) {
             throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
           }
 
-          const deal = await DealModel.findById(productId).lean();
+          deal = await DealModel.findById(productId).lean();
           if (!deal || (deal as any).deletedAt) {
             throw new AppError(409, 'DEAL_NOT_FOUND', 'Cannot settle: deal not found');
           }
 
-          const payoutPaise = Number((deal as any).payoutPaise ?? 0);
-          const buyerCommissionPaise = Number(order.items?.[0]?.commissionPaise ?? 0);
+          payoutPaise = Number((deal as any).payoutPaise ?? 0);
+          buyerCommissionPaise = Number(order.items?.[0]?.commissionPaise ?? 0);
           if (payoutPaise <= 0) {
             throw new AppError(409, 'INVALID_PAYOUT', 'Cannot settle: deal payout is invalid');
           }
@@ -1438,8 +1444,8 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'INVALID_ECONOMICS', 'Cannot settle: commission exceeds payout');
           }
 
-          const buyerUserId = String(order.createdBy);
-          const brandId = String((order as any).brandUserId || (campaign as any)?.brandUserId || '').trim();
+          buyerUserId = String(order.createdBy);
+          brandId = String((order as any).brandUserId || (campaign as any)?.brandUserId || '').trim();
           if (!brandId) {
             throw new AppError(409, 'MISSING_BRAND', 'Cannot settle: missing brand ownership');
           }
@@ -1450,8 +1456,7 @@ export function makeOpsController(env: Env) {
           await ensureWallet(buyerUserId);
 
           // Look up mediator for margin credit (done outside txn to avoid read conflicts).
-          const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
-          let mediatorUserId: string | null = null;
+          mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
           if (mediatorMarginPaise > 0 && mediatorCode) {
             const mediator = await UserModel.findOne({ mediatorCode }).lean();
             if (mediator && !(mediator as any).deletedAt) {
@@ -1459,19 +1464,22 @@ export function makeOpsController(env: Env) {
               await ensureWallet(mediatorUserId);
             }
           }
+        }
 
-          // Atomic settlement: wrap all wallet mutations in a single MongoDB session
-          // so that partial failures (e.g., brand debit succeeds but buyer credit fails)
-          // are rolled back automatically, preventing money creation/destruction.
-          const settlementSession = await mongoose.startSession();
-          try {
-            await settlementSession.withTransaction(async () => {
+        // Atomic settlement: wrap wallet mutations AND order state update in a single MongoDB session
+        // so that partial failures (e.g., wallet debit succeeds but order.save() fails) are rolled
+        // back automatically, ensuring atomicity between money movement and order state.
+        const settlementSession = await mongoose.startSession();
+        try {
+          await settlementSession.withTransaction(async () => {
+            // Money movements (wallet mode only): enforce conservation on successful settlements.
+            if (!isOverLimit && settlementMode === 'wallet') {
               await applyWalletDebit({
                 idempotencyKey: `order-settlement-debit-${order._id}`,
                 type: 'order_settlement_debit',
-                ownerUserId: brandId,
-                fromUserId: brandId,
-                toUserId: buyerUserId,
+                ownerUserId: brandId!,
+                fromUserId: brandId!,
+                toUserId: buyerUserId!,
                 amountPaise: payoutPaise,
                 orderId: String(order._id),
                 campaignId: campaignId ? String(campaignId) : undefined,
@@ -1484,7 +1492,7 @@ export function makeOpsController(env: Env) {
                 await applyWalletCredit({
                   idempotencyKey: `order-commission-${order._id}`,
                   type: 'commission_settle',
-                  ownerUserId: buyerUserId,
+                  ownerUserId: buyerUserId!,
                   amountPaise: buyerCommissionPaise,
                   orderId: String(order._id),
                   campaignId: campaignId ? String(campaignId) : undefined,
@@ -1506,28 +1514,30 @@ export function makeOpsController(env: Env) {
                   session: settlementSession,
                 });
               }
-            });
-          } finally {
-            settlementSession.endSession();
-          }
+            }
+
+            // Update order state: mark as 'Paid' when wallet movements actually occurred.
+            // This must be in the same session as wallet mutations to ensure atomicity.
+            order.paymentStatus = isOverLimit ? 'Failed' : 'Paid';
+            order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
+            (order as any).settlementMode = settlementMode;
+            if (body.settlementRef) {
+              (order as any).settlementRef = body.settlementRef;
+            }
+            order.events = pushOrderEvent(order.events as any, {
+              type: isOverLimit ? 'CAP_EXCEEDED' : 'SETTLED',
+              at: new Date(),
+              actorUserId: req.auth?.userId,
+              metadata: {
+                ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
+                settlementMode,
+              },
+            }) as any;
+            await order.save({ session: settlementSession });
+          });
+        } finally {
+          settlementSession.endSession();
         }
-        // Only mark as 'Paid' when wallet movements actually occurred
-        order.paymentStatus = isOverLimit ? 'Failed' : 'Paid';
-        order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
-        (order as any).settlementMode = settlementMode;
-        if (body.settlementRef) {
-          (order as any).settlementRef = body.settlementRef;
-        }
-        order.events = pushOrderEvent(order.events as any, {
-          type: isOverLimit ? 'CAP_EXCEEDED' : 'SETTLED',
-          at: new Date(),
-          actorUserId: req.auth?.userId,
-          metadata: {
-            ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
-            settlementMode,
-          },
-        }) as any;
-        await order.save();
 
         // Strict workflow: APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
         // Wrap both transitions in a session so partial failure doesn't leave order stuck.
