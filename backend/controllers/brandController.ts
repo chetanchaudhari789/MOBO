@@ -27,50 +27,57 @@ async function recordManualPayoutLedger(args: {
 }) {
   // Create an immutable ledger record even when wallets are not funded.
   // This supports "manual" real-world transfers while still keeping an audit trail.
-  const existing = await TransactionModel.findOne({ idempotencyKey: args.idempotencyKey, deletedAt: null }).lean();
-  if (!existing) {
-    await TransactionModel.create({
-      idempotencyKey: args.idempotencyKey,
-      type: 'agency_payout',
-      status: 'completed',
-      amountPaise: args.amountPaise,
-      currency: 'INR',
-      fromUserId: args.brandId as any,
-      toUserId: args.agencyId as any,
-      metadata: {
-        ref: args.ref,
-        agencyId: args.agencyId,
-        agencyCode: args.agencyCode,
-        agencyName: args.agencyName,
-        brandId: args.brandId,
-        brandName: args.brandName,
-        mode: 'manual',
+  // Uses findOneAndUpdate+upsert for atomic idempotency (no TOCTOU race).
+  await TransactionModel.findOneAndUpdate(
+    { idempotencyKey: args.idempotencyKey, deletedAt: null },
+    {
+      $setOnInsert: {
+        idempotencyKey: args.idempotencyKey,
+        type: 'agency_payout',
+        status: 'completed',
+        amountPaise: args.amountPaise,
+        currency: 'INR',
+        fromUserId: args.brandId as any,
+        toUserId: args.agencyId as any,
+        metadata: {
+          ref: args.ref,
+          agencyId: args.agencyId,
+          agencyCode: args.agencyCode,
+          agencyName: args.agencyName,
+          brandId: args.brandId,
+          brandName: args.brandName,
+          mode: 'manual',
+        },
       },
-    } as any);
-  }
+    },
+    { upsert: true },
+  );
 
   const creditKey = `${args.idempotencyKey}:credit`;
-  const existingCredit = await TransactionModel.findOne({ idempotencyKey: creditKey, deletedAt: null }).lean();
-  if (!existingCredit) {
-    await TransactionModel.create({
-      idempotencyKey: creditKey,
-      type: 'agency_receipt',
-      status: 'completed',
-      amountPaise: args.amountPaise,
-      currency: 'INR',
-      fromUserId: args.brandId as any,
-      toUserId: args.agencyId as any,
-      metadata: {
-        ref: args.ref,
-        agencyId: args.agencyId,
-        agencyCode: args.agencyCode,
-        agencyName: args.agencyName,
-        brandId: args.brandId,
-        brandName: args.brandName,
-        mode: 'manual',
+  await TransactionModel.findOneAndUpdate(
+    { idempotencyKey: creditKey, deletedAt: null },
+    {
+      $setOnInsert: {
+        idempotencyKey: creditKey,
+        type: 'agency_receipt',
+        status: 'completed',
+        amountPaise: args.amountPaise,
+        currency: 'INR',
+        fromUserId: args.brandId as any,
+        toUserId: args.agencyId as any,
+        metadata: {
+          ref: args.ref,
+          agencyId: args.agencyId,
+          agencyCode: args.agencyCode,
+          agencyName: args.agencyName,
+          brandId: args.brandId,
+          brandName: args.brandName,
+          mode: 'manual',
+        },
       },
-    } as any);
-  }
+    },
+    { upsert: true },
+  );
 }
 
 export function makeBrandController() {

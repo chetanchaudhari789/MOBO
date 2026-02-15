@@ -172,7 +172,7 @@ export const Profile: React.FC = () => {
                 {avatar ? (
                   <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
-                  name.charAt(0)
+                  (name || '?').charAt(0)
                 )}
               </div>
               {isEditing && (

@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
+import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
@@ -204,7 +205,7 @@ export const Orders: React.FC = () => {
   // Audit trail state: tracks which order's audit log is expanded
   const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [auditEvents, setAuditEvents] = useState<any[]>([]);
+  const [_auditEvents, setAuditEvents] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
   // Rating screenshot pre-validation state
@@ -1292,12 +1293,12 @@ export const Orders: React.FC = () => {
                       ) : auditLogs.length === 0 ? (
                         <p className="text-[10px] text-slate-300 italic">No activity recorded yet.</p>
                       ) : (
-                        auditLogs.map((log: any, i: number) => (
+                        filterAuditLogs(auditLogs).map((log: any, i: number) => (
                           <div key={log._id || i} className="flex items-start gap-2 text-[10px]">
                             <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0" />
                             <div className="min-w-0">
                               <span className="font-bold text-slate-600">
-                                {(log.action || '').replace(/_/g, ' ')}
+                                {auditActionLabel(log.action)}
                               </span>
                               <span className="text-slate-400 ml-1.5">
                                 {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}
@@ -1310,24 +1311,6 @@ export const Orders: React.FC = () => {
                         ))
                       )}
                     </div>
-                    {/* Inline Event History from order.events */}
-                    {auditEvents.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-slate-50">
-                        <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Event History</p>
-                        <div className="space-y-1.5">
-                          {auditEvents.map((evt: any, i: number) => (
-                            <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px]">
-                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-300 mt-1.5 shrink-0" />
-                              <div className="min-w-0">
-                                <span className="font-bold text-indigo-600">{(evt.type || '').replace(/_/g, ' ')}</span>
-                                <span className="text-slate-400 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                                {evt.metadata?.step && <span className="ml-1 text-slate-400">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                     </>
                   )}
                 </div>

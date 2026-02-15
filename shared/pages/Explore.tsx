@@ -32,7 +32,6 @@ export const Explore: React.FC = () => {
       setProducts(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
-      setProducts([]);
       if (!silent) toast.error('Failed to load deals. Please try again.');
     } finally {
       setLoading(false);
