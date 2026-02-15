@@ -183,7 +183,7 @@ function stripUnsafeContent(raw: string): string {
   return raw
     .replace(/<[^>]*>/g, ' ') // HTML
     .replace(/```[\s\S]*?```/g, ' ') // code blocks
-    .replace(/\{[\s\S]*\}/g, ' ') // JSON blobs
+    .replace(/\{[^{}]*\}/g, ' ') // JSON blobs (non-greedy: only innermost braces)
     .replace(/(stack trace:|traceback:)[\s\S]*/gi, ' ') // stack traces
     .replace(/[\r\n]+/g, ' ') // logs/newlines
     .replace(/\s{2,}/g, ' ')
@@ -250,7 +250,8 @@ function sanitizeUserMessage(env: Env, message: string): string {
 
 function sanitizeHistory(env: Env, history: ChatPayload['history']) {
   const items = Array.isArray(history) ? history : [];
-  const maxHistoryChars = Math.min(env.AI_MAX_INPUT_CHARS, 600);
+  // Per-message limit: use env config (default 4000) but cap at 2000 for history to save context budget
+  const maxHistoryChars = Math.min(env.AI_MAX_INPUT_CHARS, 2000);
   const trimmed = items.slice(-env.AI_MAX_HISTORY_MESSAGES).map((item) => ({
     role: item.role,
     content: sanitizeUserMessage(env, item.content).slice(0, maxHistoryChars),
@@ -487,7 +488,7 @@ ${
         {
           inlineData: {
             mimeType: 'image/jpeg',
-            data: imageForPrompt.split(',')[1] ?? imageForPrompt,
+            data: imageForPrompt.split(',')[1] || imageForPrompt,
           },
         },
         { text: safeMessage || 'Analyze this image.' },
@@ -850,7 +851,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
             {
               inlineData: {
                 mimeType,
-                data: payload.imageBase64.split(',')[1] ?? payload.imageBase64,
+                data: payload.imageBase64.split(',')[1] || payload.imageBase64,
               },
             },
             {
@@ -1134,7 +1135,7 @@ export async function verifyRatingScreenshotWithAi(
         const response = await withModelTimeout(ai.models.generateContent({
           model,
           contents: [
-            { inlineData: { mimeType, data: payload.imageBase64.split(',')[1] ?? payload.imageBase64 } },
+            { inlineData: { mimeType, data: payload.imageBase64.split(',')[1] || payload.imageBase64 } },
             { text: [
               `RATING SCREENSHOT VERIFICATION — GOD-LEVEL ACCURACY REQUIRED`,
               ``,
@@ -1377,7 +1378,7 @@ export async function verifyReturnWindowWithAi(
         const response = await withModelTimeout(ai.models.generateContent({
           model,
           contents: [
-            { inlineData: { mimeType, data: payload.imageBase64.split(',')[1] ?? payload.imageBase64 } },
+            { inlineData: { mimeType, data: payload.imageBase64.split(',')[1] || payload.imageBase64 } },
             { text: [
               `RETURN WINDOW / DELIVERY SCREENSHOT VERIFICATION — GOD-LEVEL ACCURACY REQUIRED`,
               ``,
@@ -2400,7 +2401,7 @@ export async function extractOrderDetailsWithAi(
       const response = await withModelTimeout(ai.models.generateContent({
         model,
         contents: [
-          { inlineData: { mimeType: imgMimeType, data: imageBase64.split(',')[1] ?? imageBase64 } },
+          { inlineData: { mimeType: imgMimeType, data: imageBase64.split(',')[1] || imageBase64 } },
           { text: [
             'TASK: EXTRACT E-COMMERCE ORDER DETAILS FROM THIS SCREENSHOT.',
             'PRIORITY: GOD-LEVEL ACCURACY REQUIRED.',

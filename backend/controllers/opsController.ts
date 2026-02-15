@@ -1529,25 +1529,32 @@ export function makeOpsController(env: Env) {
         }) as any;
         await order.save();
 
-        // Strict workflow:
-        // APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
-        await transitionOrderWorkflow({
-          orderId: String(order._id),
-          from: 'APPROVED',
-          to: 'REWARD_PENDING',
-          actorUserId: String(req.auth?.userId || ''),
-          metadata: { source: 'settleOrderPayment' },
-          env,
-        });
+        // Strict workflow: APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
+        // Wrap both transitions in a session so partial failure doesn't leave order stuck.
+        const wfSession = await mongoose.startSession();
+        try {
+          await wfSession.withTransaction(async () => {
+            await transitionOrderWorkflow({
+              orderId: String(order._id),
+              from: 'APPROVED',
+              to: 'REWARD_PENDING',
+              actorUserId: String(req.auth?.userId || ''),
+              metadata: { source: 'settleOrderPayment' },
+              env,
+            });
 
-        await transitionOrderWorkflow({
-          orderId: String(order._id),
-          from: 'REWARD_PENDING',
-          to: isOverLimit ? 'FAILED' : 'COMPLETED',
-          actorUserId: String(req.auth?.userId || ''),
-          metadata: { affiliateStatus: order.affiliateStatus },
-          env,
-        });
+            await transitionOrderWorkflow({
+              orderId: String(order._id),
+              from: 'REWARD_PENDING',
+              to: isOverLimit ? 'FAILED' : 'COMPLETED',
+              actorUserId: String(req.auth?.userId || ''),
+              metadata: { affiliateStatus: order.affiliateStatus },
+              env,
+            });
+          });
+        } finally {
+          wfSession.endSession();
+        }
 
         await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: String(order._id), metadata: { affiliateStatus: order.affiliateStatus } });
 
@@ -1698,39 +1705,66 @@ export function makeOpsController(env: Env) {
                   session: unsettleSession,
                 });
               }
+
+              // Include order state reset inside the same transaction to ensure atomicity
+              // between wallet reversals and order status update.
+              (order as any).workflowStatus = 'APPROVED';
+              order.paymentStatus = 'Pending';
+              order.affiliateStatus = 'Pending_Cooling';
+              (order as any).settlementRef = undefined;
+              (order as any).settlementMode = 'wallet';
+
+              order.events = pushOrderEvent(order.events as any, {
+                type: 'UNSETTLED',
+                at: new Date(),
+                actorUserId: req.auth?.userId,
+                metadata: {
+                  reason: 'UNSETTLE',
+                  paymentStatus: { from: 'Paid', to: 'Pending' },
+                  affiliateStatus: { from: prevAffiliateStatus, to: 'Pending_Cooling' },
+                },
+              }) as any;
+
+              order.events = pushOrderEvent(order.events as any, {
+                type: 'WORKFLOW_TRANSITION',
+                at: new Date(),
+                actorUserId: req.auth?.userId,
+                metadata: { from: wf, to: 'APPROVED', forced: true, source: 'unsettleOrderPayment' },
+              }) as any;
+
+              await order.save({ session: unsettleSession });
             });
           } finally {
             unsettleSession.endSession();
           }
+        } else {
+          // Non-wallet path (cap exceeded or external settlement): no session needed.
+          (order as any).workflowStatus = 'APPROVED';
+          order.paymentStatus = 'Pending';
+          order.affiliateStatus = 'Pending_Cooling';
+          (order as any).settlementRef = undefined;
+          (order as any).settlementMode = 'wallet';
+
+          order.events = pushOrderEvent(order.events as any, {
+            type: 'UNSETTLED',
+            at: new Date(),
+            actorUserId: req.auth?.userId,
+            metadata: {
+              reason: 'UNSETTLE',
+              paymentStatus: { from: 'Paid', to: 'Pending' },
+              affiliateStatus: { from: prevAffiliateStatus, to: 'Pending_Cooling' },
+            },
+          }) as any;
+
+          order.events = pushOrderEvent(order.events as any, {
+            type: 'WORKFLOW_TRANSITION',
+            at: new Date(),
+            actorUserId: req.auth?.userId,
+            metadata: { from: wf, to: 'APPROVED', forced: true, source: 'unsettleOrderPayment' },
+          }) as any;
+
+          await order.save();
         }
-
-        // Force-reset workflow back to APPROVED so it can be settled again.
-        // This is an administrative correction path and is always event-logged.
-        (order as any).workflowStatus = 'APPROVED';
-        order.paymentStatus = 'Pending';
-        order.affiliateStatus = 'Pending_Cooling';
-        (order as any).settlementRef = undefined;
-        (order as any).settlementMode = 'wallet';
-
-        order.events = pushOrderEvent(order.events as any, {
-          type: 'UNSETTLED',
-          at: new Date(),
-          actorUserId: req.auth?.userId,
-          metadata: {
-            reason: 'UNSETTLE',
-            paymentStatus: { from: 'Paid', to: 'Pending' },
-            affiliateStatus: { from: prevAffiliateStatus, to: 'Pending_Cooling' },
-          },
-        }) as any;
-
-        order.events = pushOrderEvent(order.events as any, {
-          type: 'WORKFLOW_TRANSITION',
-          at: new Date(),
-          actorUserId: req.auth?.userId,
-          metadata: { from: wf, to: 'APPROVED', forced: true, source: 'unsettleOrderPayment' },
-        }) as any;
-
-        await order.save();
 
         await writeAuditLog({
           req,
@@ -1866,7 +1900,7 @@ export function makeOpsController(env: Env) {
     updateCampaignStatus: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const campaignId = String(req.params.campaignId || '').trim();
-        if (!campaignId) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
+        if (!campaignId || !mongoose.Types.ObjectId.isValid(campaignId)) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'Valid campaignId required');
 
         const body = updateCampaignStatusSchema.parse(req.body);
         const nextStatus = String(body.status || '').toLowerCase();
@@ -1949,7 +1983,7 @@ export function makeOpsController(env: Env) {
     deleteCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const campaignId = String(req.params.campaignId || '').trim();
-        if (!campaignId) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
+        if (!campaignId || !mongoose.Types.ObjectId.isValid(campaignId)) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'Valid campaignId required');
 
         const { roles, userId } = getRequester(req);
 
@@ -2433,7 +2467,7 @@ export function makeOpsController(env: Env) {
     deletePayout: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const payoutId = String(req.params.payoutId || '').trim();
-        if (!payoutId) throw new AppError(400, 'INVALID_PAYOUT_ID', 'payoutId required');
+        if (!payoutId || !mongoose.Types.ObjectId.isValid(payoutId)) throw new AppError(400, 'INVALID_PAYOUT_ID', 'Valid payoutId required');
 
         const { roles, user } = getRequester(req);
         const isPriv = isPrivileged(roles);

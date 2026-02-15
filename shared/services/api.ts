@@ -464,6 +464,7 @@ export const api = {
       tickets: Ticket[],
       image?: string,
       history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+      signal?: AbortSignal,
     ) => {
       return fetchJson('/ai/chat', {
         method: 'POST',
@@ -478,6 +479,7 @@ export const api = {
           image,
           history,
         }),
+        signal,
       });
     },
   },
