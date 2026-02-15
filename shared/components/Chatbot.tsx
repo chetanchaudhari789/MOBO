@@ -301,14 +301,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     }
   };
 
-  const clearAttachment = () => {
+  const clearAttachment = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setAttachment(null);
     setPreviewUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+  }, [previewUrl]);
 
-  const handleSendMessage = async (e?: React.FormEvent, overrideText?: string) => {
+  const handleSendMessage = useCallback(async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
     if (isTyping) return;
     const textToSend = overrideText || inputText;
@@ -520,7 +520,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     } finally {
       setIsTyping(false);
     }
-  };
+  }, [isTyping, inputText, attachment, clearAttachment, user, messages, addMessage, onNavigate]);
 
   const quickActions = [
     { emoji: '\u{1F525}', text: 'Loot Deals', command: 'Show me the top 5 loot deals' },
@@ -532,7 +532,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     if (lastFailedText) {
       handleSendMessage(undefined, lastFailedText);
     }
-  }, [lastFailedText]);
+  }, [lastFailedText, handleSendMessage]);
 
   const handleClearChat = useCallback(() => {
     abortRef.current?.abort();

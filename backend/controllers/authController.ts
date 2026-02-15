@@ -282,14 +282,25 @@ export function makeAuthController(env: Env) {
 
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
-          // Increment failed attempts; lock if threshold exceeded.
-          // Increment failed attempts atomically with $inc
-          await UserModel.updateOne({ _id: user._id }, {
-            $inc: { failedLoginAttempts: 1 },
-            ...((((user as any).failedLoginAttempts ?? 0) + 1) >= MAX_FAILED_ATTEMPTS
-              ? { $set: { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) } }
-              : {}),
-          });
+          // Increment failed attempts atomically and conditionally set lockout using aggregation pipeline
+          // This avoids race conditions by calculating the threshold check after the increment
+          await UserModel.updateOne(
+            { _id: user._id },
+            [
+              {
+                $set: {
+                  failedLoginAttempts: { $add: [{ $ifNull: ['$failedLoginAttempts', 0] }, 1] },
+                  lockoutUntil: {
+                    $cond: {
+                      if: { $gte: [{ $add: [{ $ifNull: ['$failedLoginAttempts', 0] }, 1] }, MAX_FAILED_ATTEMPTS] },
+                      then: new Date(Date.now() + LOCKOUT_DURATION_MS),
+                      else: '$lockoutUntil',
+                    },
+                  },
+                },
+              },
+            ]
+          );
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
