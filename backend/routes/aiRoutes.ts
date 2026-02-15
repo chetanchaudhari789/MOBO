@@ -491,7 +491,7 @@ export function aiRoutes(env: Env): Router {
         req,
         actorUserId: req.auth?.userId,
         actorRoles: req.auth?.roles,
-        action: 'AI_CHAT',
+        action: 'ai.chat',
         entityType: 'ai',
         entityId: req.auth?.userId || 'anonymous',
         metadata: { intent: result?.intent, messageLength: rawMessage.length },
