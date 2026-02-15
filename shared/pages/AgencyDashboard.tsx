@@ -726,7 +726,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                       <div className="text-[10px] text-slate-500 truncate max-w-[180px]">
                         {o.items[0]?.title}
                       </div>
-                      {o.soldBy && (
+                      {o.soldBy && o.soldBy !== 'null' && o.soldBy !== 'undefined' && (
                         <div className="text-[9px] text-slate-400 mt-0.5">Seller: {o.soldBy}</div>
                       )}
                     </td>
@@ -2887,7 +2887,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       >
                         <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
                           <img
-                            src={o.items[0].image}
+                            src={o.items?.[0]?.image}
                             className="w-full h-full object-contain mix-blend-multiply"
                           />
                         </div>
@@ -2899,7 +2899,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                             {getStatusBadge(o)}
                           </div>
                           <h4 className="font-bold text-slate-900 text-sm truncate">
-                            {o.items[0].title}
+                            {o.items?.[0]?.title}
                           </h4>
                           <div className="flex justify-between items-center mt-1">
                             <span className="text-xs text-slate-500">Buyer: {o.buyerName}</span>
@@ -3075,14 +3075,14 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                 <span
                   className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
-                    proofOrder.items[0].dealType === 'Rating'
+                    proofOrder.items?.[0]?.dealType === 'Rating'
                       ? 'bg-orange-50 text-orange-600 border-orange-100'
-                      : proofOrder.items[0].dealType === 'Review'
+                      : proofOrder.items?.[0]?.dealType === 'Review'
                         ? 'bg-purple-50 text-purple-600 border-purple-100'
                         : 'bg-blue-50 text-blue-600 border-blue-100'
                   }`}
                 >
-                  {proofOrder.items[0].dealType || 'Discount'} Deal
+                  {proofOrder.items?.[0]?.dealType || 'Discount'} Deal
                 </span>
               </div>
             </div>
@@ -3091,13 +3091,13 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               {/* Product Summary */}
               <div className="flex gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <img
-                  src={proofOrder.items[0].image}
-                  alt={proofOrder.items[0].title}
+                  src={proofOrder.items?.[0]?.image}
+                  alt={proofOrder.items?.[0]?.title}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-slate-100 p-1"
                 />
                 <div>
                   <p className="text-sm font-bold text-slate-900 line-clamp-1">
-                    {proofOrder.items[0].title}
+                    {proofOrder.items?.[0]?.title}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     Total:{' '}
@@ -3131,6 +3131,15 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                             type="button"
                             onClick={() => runAgencyAnalysis(proofOrder)}
                             className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow active:scale-95"
+                          >
+                            Analyze
+                          </button>
+                        )}
+                        {aiAnalysis && !isAnalyzing && (
+                          <button
+                            type="button"
+                            onClick={() => runAgencyAnalysis(proofOrder)}
+                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-600 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors active:scale-95"
                           >
                             Re-Analyze
                           </button>
@@ -3196,7 +3205,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               </div>
 
               {/* 2. Rating Screenshot (Conditional) */}
-              {proofOrder.items[0].dealType === 'Rating' && (
+              {proofOrder.items?.[0]?.dealType === 'Rating' && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-orange-400 uppercase tracking-widest">
                     <Star size={14} /> Rating Proof
@@ -3250,7 +3259,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               )}
 
               {/* 3. Review Link (Conditional) */}
-              {proofOrder.items[0].dealType === 'Review' && (
+              {proofOrder.items?.[0]?.dealType === 'Review' && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-purple-400 uppercase tracking-widest">
                     <MessageCircle size={14} /> Live Review
@@ -3393,7 +3402,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                           <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-indigo-200 pl-3 py-1">
                             <span className="font-bold text-indigo-600 shrink-0">{(evt.type || '').replace(/_/g, ' ')}</span>
                             <span className="flex-1">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                            {evt.metadata && <span className="text-zinc-400 truncate text-[9px]">{JSON.stringify(evt.metadata).slice(0, 80)}</span>}
+                            {evt.metadata?.step && <span className="text-zinc-400 text-[9px]">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
                           </div>
                         ))}
                       </div>

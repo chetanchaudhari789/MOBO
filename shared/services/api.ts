@@ -583,6 +583,13 @@ export const api = {
         body: JSON.stringify({ orderId, type }),
       });
     },
+    verifyAllSteps: async (orderId: string) => {
+      return fetchJson('/ops/orders/verify-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ orderId }),
+      });
+    },
     rejectOrderProof: async (orderId: string, type: 'order' | 'review' | 'rating' | 'returnWindow', reason: string) => {
       return fetchJson('/ops/orders/reject-proof', {
         method: 'POST',

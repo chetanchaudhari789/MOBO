@@ -2072,7 +2072,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-bold text-slate-600 uppercase">{(evt.type || '').replace(/_/g, ' ')}</p>
                           <p className="text-[9px] text-slate-400">{evt.at ? new Date(evt.at).toLocaleString() : ''}</p>
-                          {evt.metadata && <p className="text-[9px] text-slate-400 truncate">{JSON.stringify(evt.metadata).slice(0, 100)}</p>}
+                          {evt.metadata?.step && <p className="text-[9px] text-slate-400">Step: {String(evt.metadata.step).replace(/_/g, ' ')}</p>}
                         </div>
                       </div>
                     ))}

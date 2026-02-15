@@ -960,12 +960,18 @@ export const Orders: React.FC = () => {
                       <span className="text-lime-600">+{formatCurrency(firstItem.commission)} Reward</span>
                     </div>
                     {/* AI-extracted metadata */}
-                    {(order.soldBy || order.orderDate) && (
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px] text-slate-400 font-medium">
-                        {order.soldBy && <span>Seller: {order.soldBy}</span>}
-                        {order.orderDate && <span>Ordered: {new Date(order.orderDate).toLocaleDateString()}</span>}
-                      </div>
-                    )}
+                    {(() => {
+                      const seller = order.soldBy && order.soldBy !== 'null' && order.soldBy !== 'undefined' ? order.soldBy : '';
+                      const rawDate = order.orderDate;
+                      const parsedDate = rawDate ? new Date(rawDate) : null;
+                      const validDate = parsedDate && !isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 2020 ? parsedDate : null;
+                      return (seller || validDate) ? (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px] text-slate-400 font-medium">
+                          {seller && <span>Seller: {seller}</span>}
+                          {validDate && <span>Ordered: {validDate.toLocaleDateString()}</span>}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
 
@@ -1315,7 +1321,7 @@ export const Orders: React.FC = () => {
                               <div className="min-w-0">
                                 <span className="font-bold text-indigo-600">{(evt.type || '').replace(/_/g, ' ')}</span>
                                 <span className="text-slate-400 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                                {evt.metadata && <span className="ml-1 text-slate-400 truncate">({JSON.stringify(evt.metadata).slice(0, 80)})</span>}
+                                {evt.metadata?.step && <span className="ml-1 text-slate-400">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
                               </div>
                             </div>
                           ))}

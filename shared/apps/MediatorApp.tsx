@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { NotificationProvider } from '../context/NotificationContext';
 import { ToastProvider } from '../context/ToastContext';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { PortalGuard } from '../components/PortalGuard';
 import { MediatorAuthScreen } from '../pages/MediatorAuth';
 import { MediatorDashboard } from '../pages/MediatorDashboard';
@@ -31,13 +32,15 @@ export const MediatorApp: React.FC<MediatorAppProps> = ({ onBack }) => {
   }
 
   return (
-    <ToastProvider>
-      <NotificationProvider>
-        <div className="relative min-h-[100dvh] flex flex-col">
-          <MediatorDashboard />
-        </div>
-      </NotificationProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <NotificationProvider>
+          <div className="relative min-h-[100dvh] flex flex-col">
+            <MediatorDashboard />
+          </div>
+        </NotificationProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 };
 

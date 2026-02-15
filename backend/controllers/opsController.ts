@@ -947,6 +947,116 @@ export function makeOpsController(env: Env) {
       }
     },
 
+    /**
+     * Verify ALL steps for an order in a single call.
+     * Verifies purchase proof first, then any remaining requirements (review/rating/returnWindow).
+     * Only succeeds when all required proofs have been uploaded by the buyer.
+     */
+    verifyAllSteps: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const body = verifyOrderSchema.parse(req.body);
+        const { roles, user: requester } = getRequester(req);
+        const order = await OrderModel.findById(body.orderId);
+        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+
+        if ((order as any).frozen) {
+          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
+        }
+
+        if (!isPrivileged(roles)) {
+          if (roles.includes('mediator')) {
+            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
+              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
+            }
+          } else if (roles.includes('agency')) {
+            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
+            if (!allowed.includes(String(order.managerName))) {
+              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
+            }
+          } else {
+            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
+          }
+        }
+
+        const managerCode = String(order.managerName || '');
+        if (!(await isMediatorActive(managerCode))) {
+          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
+        }
+        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
+        if (agencyCode && !(await isAgencyActive(agencyCode))) {
+          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
+        }
+
+        const wf = String((order as any).workflowStatus || 'CREATED');
+        if (wf !== 'UNDER_REVIEW') {
+          throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot verify in state ${wf}`);
+        }
+
+        const required = getRequiredStepsForOrder(order);
+        const missingProofs = required.filter((t) => !hasProofForRequirement(order, t));
+        if (missingProofs.length) {
+          throw new AppError(409, 'MISSING_PROOFS', `Missing proofs: ${missingProofs.join(', ')}`);
+        }
+
+        // Step 1: Verify purchase proof if not already verified
+        if (!order.verification?.order?.verifiedAt) {
+          (order as any).verification = (order as any).verification ?? {};
+          (order as any).verification.order = (order as any).verification.order ?? {};
+          (order as any).verification.order.verifiedAt = new Date();
+          (order as any).verification.order.verifiedBy = req.auth?.userId;
+          order.events = pushOrderEvent(order.events as any, {
+            type: 'VERIFIED',
+            at: new Date(),
+            actorUserId: req.auth?.userId,
+            metadata: { step: 'order' },
+          }) as any;
+        }
+
+        // Step 2: Verify each required step
+        for (const type of required) {
+          if (!isRequirementVerified(order, type)) {
+            (order as any).verification[type] = (order as any).verification[type] ?? {};
+            (order as any).verification[type].verifiedAt = new Date();
+            (order as any).verification[type].verifiedBy = req.auth?.userId;
+            order.events = pushOrderEvent(order.events as any, {
+              type: 'VERIFIED',
+              at: new Date(),
+              actorUserId: req.auth?.userId,
+              metadata: { step: type },
+            }) as any;
+          }
+        }
+
+        await order.save();
+
+        // Finalize — all steps are verified, should move to cooling
+        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''), env);
+        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
+
+        const audience = buildOrderAudience(order, agencyCode);
+        publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
+        publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
+
+        const buyerId = String((order as any).userId || '').trim();
+        if (buyerId) {
+          await sendPushToUser({
+            env, userId: buyerId, app: 'buyer',
+            payload: { title: 'Deal Verified!', body: 'All proofs verified! Your cashback is now in the cooling period.', url: '/orders' },
+          }).catch(() => {});
+        }
+
+        const refreshed = await OrderModel.findById(order._id);
+        res.json({
+          ok: true,
+          approved: (finalize as any).approved,
+          ...(finalize as any),
+          order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+        });
+      } catch (err) {
+        next(err);
+      }
+    },
+
     rejectOrderProof: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = rejectOrderProofSchema.parse(req.body);
