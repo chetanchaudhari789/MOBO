@@ -2072,7 +2072,31 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-bold text-slate-600 uppercase">{(evt.type || '').replace(/_/g, ' ')}</p>
                           <p className="text-[9px] text-slate-400">{evt.at ? new Date(evt.at).toLocaleString() : ''}</p>
-                          {evt.metadata?.step && <p className="text-[9px] text-slate-400">Step: {String(evt.metadata.step).replace(/_/g, ' ')}</p>}
+                          {evt.metadata && (
+                            <>
+                              {evt.metadata.step && (
+                                <p className="text-[9px] text-slate-400">
+                                  Step: {String(evt.metadata.step).replace(/_/g, ' ')}
+                                </p>
+                              )}
+                              {evt.metadata.reason && (
+                                <p className="text-[9px] text-slate-400">
+                                  Reason: {String(evt.metadata.reason)}
+                                </p>
+                              )}
+                              {evt.metadata.note && (
+                                <p className="text-[9px] text-slate-400">
+                                  Note: {String(evt.metadata.note)}
+                                </p>
+                              )}
+                              {(evt.metadata.from || evt.metadata.to) && (
+                                <p className="text-[9px] text-slate-400">
+                                  Transition: {evt.metadata.from ? String(evt.metadata.from) : '–'} →{' '}
+                                  {evt.metadata.to ? String(evt.metadata.to) : '–'}
+                                </p>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}

@@ -951,6 +951,10 @@ export function makeOpsController(env: Env) {
      * Verify ALL steps for an order in a single call.
      * Verifies purchase proof first, then any remaining requirements (review/rating/returnWindow).
      * Only succeeds when all required proofs have been uploaded by the buyer.
+     * 
+     * Note: This performs multiple separate database writes (verification updates, then finalization/workflow transition).
+     * While not using a single database transaction, all verification state is written before triggering finalization,
+     * ensuring consistency in the verification flow.
      */
     verifyAllSteps: async (req: Request, res: Response, next: NextFunction) => {
       try {

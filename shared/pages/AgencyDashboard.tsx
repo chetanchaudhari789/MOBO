@@ -11,7 +11,7 @@ import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
 import { DesktopShell } from '../components/DesktopShell';
 import { formatCurrency } from '../utils/formatCurrency';
-import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { getPrimaryOrderId, normalizeNullableString } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { urlToBase64 } from '../utils/imageHelpers';
 import {
@@ -726,9 +726,12 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                       <div className="text-[10px] text-slate-500 truncate max-w-[180px]">
                         {o.items[0]?.title}
                       </div>
-                      {o.soldBy && o.soldBy !== 'null' && o.soldBy !== 'undefined' && (
-                        <div className="text-[9px] text-slate-400 mt-0.5">Seller: {o.soldBy}</div>
-                      )}
+                      {(() => {
+                        const seller = normalizeNullableString(o.soldBy);
+                        return seller && (
+                          <div className="text-[9px] text-slate-400 mt-0.5">Seller: {seller}</div>
+                        );
+                      })()}
                     </td>
                     <td className="p-5">
                       <div className="flex items-center gap-2">
@@ -3092,7 +3095,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               <div className="flex gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <img
                   src={proofOrder.items?.[0]?.image}
-                  alt={proofOrder.items?.[0]?.title}
+                  alt={proofOrder.items?.[0]?.title || ''}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-slate-100 p-1"
                 />
                 <div>

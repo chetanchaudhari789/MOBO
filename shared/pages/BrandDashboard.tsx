@@ -57,7 +57,7 @@ import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
 import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { formatCurrency } from '../utils/formatCurrency';
-import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { getPrimaryOrderId, normalizeNullableString, parseValidOrderDate } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { DesktopShell } from '../components/DesktopShell';
 import {
@@ -1014,7 +1014,7 @@ const OrdersView = ({ user }: any) => {
               <div className="flex gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
                 <img
                   src={viewProofOrder.items?.[0]?.image}
-                  alt={viewProofOrder.items?.[0]?.title}
+                  alt={viewProofOrder.items?.[0]?.title || ''}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-zinc-100 p-1"
                 />
                 <div>
@@ -1028,9 +1028,8 @@ const OrdersView = ({ user }: any) => {
                     </span>
                   </p>
                   {(() => {
-                    const seller = viewProofOrder.soldBy && viewProofOrder.soldBy !== 'null' && viewProofOrder.soldBy !== 'undefined' ? viewProofOrder.soldBy : '';
-                    const d = viewProofOrder.orderDate ? new Date(viewProofOrder.orderDate) : null;
-                    const validDate = d && !isNaN(d.getTime()) && d.getFullYear() > 2020 ? d : null;
+                    const seller = normalizeNullableString(viewProofOrder.soldBy);
+                    const validDate = parseValidOrderDate(viewProofOrder.orderDate);
                     return (viewProofOrder.extractedProductName || seller || validDate) ? (
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-zinc-400">
                         {viewProofOrder.extractedProductName && <span>Product: {viewProofOrder.extractedProductName}</span>}
