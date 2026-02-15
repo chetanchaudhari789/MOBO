@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
+import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
@@ -212,7 +213,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [inventorySearch, setInventorySearch] = useState('');
   const [proofModal, setProofModal] = useState<Order | null>(null);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
-  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
+  const [_orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
   const [orderAuditLoading, setOrderAuditLoading] = useState(false);
   const [orderAuditExpanded, setOrderAuditExpanded] = useState(false);
   // AI purchase proof analysis
@@ -629,7 +630,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       const dateObj = new Date(order.createdAt);
       const dateStr = dateObj.toLocaleDateString();
       const timeStr = dateObj.toLocaleTimeString();
-      const item = order.items[0];
+      const item = order.items?.[0];
 
       const row = [
         order.externalOrderId || order.id,
@@ -680,7 +681,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     const sheetHeaders = ['Order ID','Date','Time','Customer Name','Customer Mobile','Reviewer Name','Brand','Product','Platform','Deal Type','Quantity','Unit Price','Total Amount','Order Status','Payment Status','Verification Status','Mediator Code','Agency Name','Internal Ref','Sold By','Order Date','Extracted Product'];
     const sheetRows = dataToExport.map((order) => {
       const dateObj = new Date(order.createdAt);
-      const item = order.items[0];
+      const item = order.items?.[0];
       return [
         order.externalOrderId || order.id,
         dateObj.toLocaleDateString(),
@@ -1198,7 +1199,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                         <div className="flex items-center justify-between mt-auto">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-bold text-xs text-slate-500">
-                              {t.userName.charAt(0)}
+                              {(t.userName || '?').charAt(0)}
                             </div>
                             <div className="text-[10px]">
                               <p className="font-bold text-slate-900">{t.userName}</p>
@@ -1317,11 +1318,11 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                                     className="w-full h-full object-cover"
                                   />
                                 ) : (
-                                  u.name.charAt(0)
+                                  (u.name || '?').charAt(0)
                                 )}
                               </div>
                               <div>
-                                <p className="font-bold text-slate-900">{u.name}</p>
+                                <p className="font-bold text-slate-900">{u.name || 'Unknown'}</p>
                                 <p className="text-xs text-slate-400 font-mono mt-0.5">
                                   {u.mobile}
                                 </p>
@@ -2043,13 +2044,13 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       <div className="flex items-center justify-center py-4"><Spinner /> <span className="text-xs text-slate-400 ml-2">Loading audit...</span></div>
                     ) : orderAuditLogs.length > 0 ? (
                       <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                        {orderAuditLogs.map((log: any, i: number) => (
+                        {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
                           <div key={i} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
                             <Clock size={12} className="text-slate-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-[10px] font-bold text-slate-600 uppercase">{(log.action || log.type || '').replace(/_/g, ' ')}</p>
+                              <p className="text-[10px] font-bold text-slate-600 uppercase">{auditActionLabel(log.action)}</p>
                               <p className="text-[9px] text-slate-400">{log.at ? new Date(log.at).toLocaleString() : log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}</p>
-                              {log.metadata && <p className="text-[9px] text-slate-400 truncate">{JSON.stringify(log.metadata).slice(0, 100)}</p>}
+                              {log.metadata?.proofType && <p className="text-[9px] text-slate-400">Proof: {log.metadata.proofType}</p>}
                             </div>
                           </div>
                         ))}
@@ -2061,24 +2062,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 )}
               </div>
 
-              {/* 7. Inline Events (from order.events — loaded via audit API or proofModal fallback) */}
-              {((orderAuditEvents.length > 0) || (proofModal.events && proofModal.events.length > 0)) && (
-                <div className="border-t border-slate-100 pt-4">
-                  <h4 className="flex items-center gap-2 text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-3"><Clock size={14} /> Event History</h4>
-                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                    {(orderAuditEvents.length > 0 ? orderAuditEvents : proofModal.events || []).map((evt: any, i: number) => (
-                      <div key={i} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
-                        <Clock size={12} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-bold text-slate-600 uppercase">{(evt.type || '').replace(/_/g, ' ')}</p>
-                          <p className="text-[9px] text-slate-400">{evt.at ? new Date(evt.at).toLocaleString() : ''}</p>
-                          {evt.metadata?.step && <p className="text-[9px] text-slate-400">Step: {String(evt.metadata.step).replace(/_/g, ' ')}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>

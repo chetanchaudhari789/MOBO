@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
+import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
@@ -506,13 +507,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       const dateObj = new Date(o.createdAt);
       const date = dateObj.toLocaleDateString();
       const time = dateObj.toLocaleTimeString();
-      const item = o.items[0];
+      const item = o.items?.[0];
 
       const row = [
         getPrimaryOrderId(o),
         date,
         time,
-        csvSafe(item.title || ''),
+        csvSafe(item?.title || ''),
         item?.dealType || 'General',
         item?.platform || '',
         item?.dealType || 'Discount',
@@ -551,7 +552,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   const handleExportToSheets = () => {
     const orderRows = ledger.map((o: Order) => {
       const dateObj = new Date(o.createdAt);
-      const item = o.items[0];
+      const item = o.items?.[0];
       return [
         getPrimaryOrderId(o),
         dateObj.toLocaleDateString(),
@@ -733,10 +734,10 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                     <td className="p-5">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500">
-                          {o.managerName.charAt(0)}
+                          {(o.managerName || '?').charAt(0)}
                         </div>
                         <div className="text-xs font-bold text-slate-700 font-mono">
-                          {o.managerName}
+                          {o.managerName || 'Unknown'}
                         </div>
                       </div>
                     </td>
@@ -2388,14 +2389,14 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       <div className="col-span-5 flex items-center gap-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
                           {m.avatar ? (
-                            <img src={m.avatar} className="w-full h-full object-cover" />
+                            <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
-                            m.name.charAt(0)
+                            (m.name || '?').charAt(0)
                           )}
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-slate-900 group-hover:text-purple-700 transition-colors truncate">
-                            {m.name}
+                            {m.name || 'Unknown'}
                           </p>
                           <div className="flex items-center gap-2 mt-0.5">
                             <p className="text-[10px] text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded w-fit border border-slate-100">
@@ -2506,30 +2507,38 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
-  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
+  const [_orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
   // AI Analysis state
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const lastAnalyzedOrderRef = useRef<string | null>(null);
 
+  const analysisAbortRef = useRef<AbortController | null>(null);
+
   const runAgencyAnalysis = async (order: Order) => {
     if (!order.screenshots?.order) return;
+    analysisAbortRef.current?.abort();
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
     setIsAnalyzing(true);
     setAiAnalysis(null);
     try {
       const imageBase64 = await urlToBase64(order.screenshots.order);
+      if (controller.signal.aborted) return;
       const result = await api.ops.analyzeProof(
         order.id,
         imageBase64,
         order.externalOrderId || '',
         order.total
       );
+      if (controller.signal.aborted) return;
       setAiAnalysis(result);
-    } catch (e) {
+    } catch (e: unknown) {
+      if ((e as any)?.name === 'AbortError') return;
       console.error(e);
       toast.error('Analysis failed. Try again.');
     } finally {
-      setIsAnalyzing(false);
+      if (!controller.signal.aborted) setIsAnalyzing(false);
     }
   };
 
@@ -2539,6 +2548,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
       lastAnalyzedOrderRef.current = proofOrder.id;
       runAgencyAnalysis(proofOrder);
     }
+    return () => { analysisAbortRef.current?.abort(); };
   }, [proofOrder]);
 
   // Keep proof modal in sync when allOrders updates from real-time
@@ -2748,12 +2758,12 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                           {m.avatar ? (
                             <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
-                            m.name.charAt(0)
+                            (m.name || '?').charAt(0)
                           )}
                         </div>
                         <div>
                           <div className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors">
-                            {m.name}
+                            {m.name || 'Unknown'}
                           </div>
                           <div className="text-[10px] text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded w-fit mt-0.5 border border-slate-100">
                             {m.mediatorCode}
@@ -2837,11 +2847,11 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    selectedMediator.name.charAt(0)
+                    (selectedMediator?.name || '?').charAt(0)
                   )}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold">{selectedMediator.name}</h2>
+                  <h2 className="text-2xl font-bold">{selectedMediator?.name || 'Unknown'}</h2>
                   <p className="text-sm text-slate-400 font-mono mb-2">
                     {selectedMediator.mediatorCode}
                   </p>
@@ -3381,32 +3391,19 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
                   {auditLoading ? (
                     <p className="text-xs text-zinc-400 text-center py-2">Loading...</p>
-                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 ? (
                     <p className="text-xs text-zinc-400 text-center py-2">No activity yet</p>
                   ) : (
                     <>
-                    {orderAuditLogs.map((log: any, i: number) => (
+                    {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
                       <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
-                        <span className="font-bold text-zinc-600 shrink-0">{(log.action || log.type || '').replace(/_/g, ' ')}</span>
+                        <span className="font-bold text-zinc-600 shrink-0">{auditActionLabel(log.action)}</span>
                         <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
                           <span className="bg-zinc-100 px-1.5 py-0.5 rounded text-[9px] font-bold">{log.metadata.proofType}</span>
                         )}
                       </div>
                     ))}
-                    {/* Inline Event History from order.events */}
-                    {orderAuditEvents.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-zinc-200">
-                        <p className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-1">Event History</p>
-                        {orderAuditEvents.map((evt: any, i: number) => (
-                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-indigo-200 pl-3 py-1">
-                            <span className="font-bold text-indigo-600 shrink-0">{(evt.type || '').replace(/_/g, ' ')}</span>
-                            <span className="flex-1">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                            {evt.metadata?.step && <span className="text-zinc-400 text-[9px]">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                     </>
                   )}
                 </div>
@@ -3626,11 +3623,11 @@ export const AgencyDashboard: React.FC = () => {
                 {user?.avatar ? (
                   <img src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                 ) : (
-                  user?.name.charAt(0)
+                  (user?.name || '?').charAt(0)
                 )}
               </div>
               <div className="text-left min-w-0">
-                <p className="text-sm font-bold text-slate-900 truncate">{user?.name}</p>
+                <p className="text-sm font-bold text-slate-900 truncate">{user?.name || 'Unknown'}</p>
                 <p className="text-[10px] text-slate-400 font-mono truncate">{user?.mediatorCode}</p>
               </div>
             </button>
