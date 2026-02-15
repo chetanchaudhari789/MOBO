@@ -1511,7 +1511,8 @@ export function makeOpsController(env: Env) {
             settlementSession.endSession();
           }
         }
-        // Only mark as 'Paid' when wallet movements actually occurred
+        // Update order state and workflow atomically in a session
+        // to ensure order state and workflow transitions stay in sync
         order.paymentStatus = isOverLimit ? 'Failed' : 'Paid';
         order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
         (order as any).settlementMode = settlementMode;
@@ -1527,13 +1528,13 @@ export function makeOpsController(env: Env) {
             settlementMode,
           },
         }) as any;
-        await order.save();
 
-        // Strict workflow: APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
-        // Wrap both transitions in a session so partial failure doesn't leave order stuck.
+        // Wrap order.save() and workflow transitions in a session so partial failure doesn't leave order stuck.
         const wfSession = await mongoose.startSession();
         try {
           await wfSession.withTransaction(async () => {
+            await order.save({ session: wfSession });
+
             await transitionOrderWorkflow({
               orderId: String(order._id),
               from: 'APPROVED',
