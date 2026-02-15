@@ -347,7 +347,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
         ) : (
           <div className="space-y-3">
             {(viewMode === 'todo' ? actionRequiredOrders : coolingOrders).map((o: Order) => {
-              const dealType = o.items[0].dealType || 'Discount';
+              const dealType = o.items?.[0]?.dealType || 'Discount';
               const settleDate = o.expectedSettlementDate
                 ? new Date(o.expectedSettlementDate).toDateString()
                 : 'N/A';
@@ -378,15 +378,15 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                   <div className="p-2 pb-0 flex gap-3 mb-3">
                     <div className="w-14 h-14 bg-[#F4F4F5] rounded-[1rem] p-1.5 flex-shrink-0 relative overflow-hidden">
                       <img
-                        src={o.items[0].image}
-                        alt={o.items[0].title}
+                        src={o.items?.[0]?.image}
+                        alt={o.items?.[0]?.title}
                         className="w-full h-full object-contain mix-blend-multiply relative z-10"
                       />
                     </div>
                     <div className="min-w-0 flex-1 py-0.5">
                       <div className="flex justify-between items-start">
                         <h4 className="font-bold text-zinc-900 text-sm line-clamp-1 pr-2">
-                          {o.items[0].title}
+                          {o.items?.[0]?.title}
                         </h4>
                         <span
                           className={`text-[9px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap uppercase border ${getDealTypeBadge(dealType)}`}
@@ -1334,8 +1334,8 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-zinc-50 rounded-[0.8rem] p-1.5 flex-shrink-0">
                         <img
-                          src={o.items[0].image}
-                          alt={o.items[0].title}
+                          src={o.items?.[0]?.image}
+                          alt={o.items?.[0]?.title}
                           className="w-full h-full object-contain mix-blend-multiply"
                         />
                       </div>
@@ -1345,11 +1345,11 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                             {getPrimaryOrderId(o)}
                           </span>
                           <span className="text-[9px] font-bold uppercase bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded">
-                            {o.items[0].dealType}
+                            {o.items?.[0]?.dealType}
                           </span>
                         </div>
                         <p className="text-xs font-bold text-zinc-900 line-clamp-1">
-                          {o.items[0].title}
+                          {o.items?.[0]?.title}
                         </p>
                       </div>
                     </div>
@@ -1920,18 +1920,21 @@ export const MediatorDashboard: React.FC = () => {
                       <p className="text-[11px] font-bold text-zinc-200 line-clamp-2">{proofModal.extractedProductName}</p>
                     </div>
                   )}
-                  {proofModal.soldBy && (
+                  {proofModal.soldBy && proofModal.soldBy !== 'null' && proofModal.soldBy !== 'undefined' && (
                     <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
                       <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Sold By</p>
                       <p className="text-[11px] font-bold text-zinc-200">{proofModal.soldBy}</p>
                     </div>
                   )}
-                  {proofModal.orderDate && (
-                    <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
-                      <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Order Date</p>
-                      <p className="text-[11px] font-bold text-zinc-200">{new Date(proofModal.orderDate).toLocaleDateString()}</p>
-                    </div>
-                  )}
+                  {(() => {
+                    const d = proofModal.orderDate ? new Date(proofModal.orderDate) : null;
+                    return d && !isNaN(d.getTime()) && d.getFullYear() > 2020 ? (
+                      <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
+                        <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Order Date</p>
+                        <p className="text-[11px] font-bold text-zinc-200">{d.toLocaleDateString()}</p>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
               )}
 
@@ -1957,6 +1960,15 @@ export const MediatorDashboard: React.FC = () => {
                           type="button"
                           onClick={runAnalysis}
                           className="bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]"
+                        >
+                          Analyze
+                        </button>
+                      )}
+                      {aiAnalysis && !isAnalyzing && (
+                        <button
+                          type="button"
+                          onClick={runAnalysis}
+                          className="bg-indigo-900/60 hover:bg-indigo-800/80 text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]"
                         >
                           Re-Analyze
                         </button>
@@ -2141,7 +2153,7 @@ export const MediatorDashboard: React.FC = () => {
             )}
 
             {/* 2. DEAL SPECIFIC PROOFS */}
-            {proofModal.items[0].dealType === 'Rating' && (
+            {proofModal.items?.[0]?.dealType === 'Rating' && (
               <div className="bg-orange-950/20 rounded-2xl border border-orange-500/20 p-4">
                 <h4 className="text-xs font-bold text-orange-400 uppercase mb-3 flex items-center gap-2">
                   <Star size={14} /> 5-Star Rating Check
@@ -2168,7 +2180,7 @@ export const MediatorDashboard: React.FC = () => {
               </div>
             )}
 
-            {proofModal.items[0].dealType === 'Review' && (
+            {proofModal.items?.[0]?.dealType === 'Review' && (
               <div className="bg-purple-950/20 rounded-2xl border border-purple-500/20 p-4">
                 <h4 className="text-xs font-bold text-purple-400 uppercase mb-3 flex items-center gap-2">
                   <FileText size={14} /> Text Review Check
@@ -2293,7 +2305,7 @@ export const MediatorDashboard: React.FC = () => {
                             <div className="min-w-0">
                               <span className="font-bold text-indigo-300">{(evt.type || '').replace(/_/g, ' ')}</span>
                               <span className="text-zinc-500 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                              {evt.metadata && <span className="ml-1 text-zinc-600 truncate">({JSON.stringify(evt.metadata).slice(0, 80)})</span>}
+                              {evt.metadata?.step && <span className="ml-1 text-zinc-500">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
                             </div>
                           </div>
                         ))}
@@ -2401,17 +2413,18 @@ export const MediatorDashboard: React.FC = () => {
               </button>
             ) : (
               <>
-                {proofModal?.requirements?.required?.includes('review') && (
+                {/* ── Primary: Verify Deal (all steps at once) ── */}
+                {(proofModal?.requirements?.missingVerifications as string[] ?? []).length > 0 && (
                   <button
                     onClick={async () => {
                       try {
-                        const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'review');
+                        const resp = await api.ops.verifyAllSteps(proofModal.id);
 
                         if (resp?.approved) {
-                          toast.success('Review verified ✓ Order fully approved! Cashback in cooling period.');
+                          toast.success('Deal verified ✓ Cashback is now in cooling period!');
                           setProofModal(null);
                         } else {
-                          toast.success('Review verified ✓');
+                          toast.success('Deal verified ✓');
                         }
 
                         await loadData();
@@ -2421,110 +2434,23 @@ export const MediatorDashboard: React.FC = () => {
                           setProofModal(null);
                         }
                       } catch (err) {
-                        const msg = err instanceof Error ? err.message : 'Failed to verify review';
+                        const msg = err instanceof Error ? err.message : 'Failed to verify deal';
                         toast.error(msg);
                       }
                     }}
-                    disabled={
-                      !!proofModal?.requirements?.missingProofs?.includes('review') ||
-                      !proofModal?.requirements?.missingVerifications?.includes('review')
-                    }
-                    className="flex-1 py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
+                    disabled={!!(proofModal?.requirements?.missingProofs as string[] ?? []).length}
+                    className="flex-[2] py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
                     title={
-                      proofModal?.requirements?.missingProofs?.includes('review')
-                        ? 'Buyer hasn\'t uploaded review proof yet'
-                        : !proofModal?.requirements?.missingVerifications?.includes('review')
-                          ? 'Already verified'
-                          : undefined
+                      (proofModal?.requirements?.missingProofs as string[] ?? []).length
+                        ? `Buyer hasn't uploaded: ${(proofModal?.requirements?.missingProofs as string[] ?? []).join(', ')}`
+                        : 'Verify all remaining steps at once'
                     }
                   >
-                    <CheckCircle2 size={18} strokeWidth={3} /> Verify Review
+                    <ShieldCheck size={18} strokeWidth={3} /> Verify Deal
                   </button>
                 )}
 
-                {proofModal?.requirements?.required?.includes('rating') && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'rating');
-
-                        if (resp?.approved) {
-                          toast.success('Rating verified ✓ Order fully approved! Cashback in cooling period.');
-                          setProofModal(null);
-                        } else {
-                          toast.success('Rating verified ✓');
-                        }
-
-                        await loadData();
-                        if (!resp?.approved && resp?.order) {
-                          setProofModal(resp.order);
-                        } else if (!resp?.approved) {
-                          setProofModal(null);
-                        }
-                      } catch (err) {
-                        const msg = err instanceof Error ? err.message : 'Failed to verify rating';
-                        toast.error(msg);
-                      }
-                    }}
-                    disabled={
-                      !!proofModal?.requirements?.missingProofs?.includes('rating') ||
-                      !proofModal?.requirements?.missingVerifications?.includes('rating')
-                    }
-                    className="flex-1 py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-                    title={
-                      proofModal?.requirements?.missingProofs?.includes('rating')
-                        ? 'Buyer hasn\'t uploaded rating proof yet'
-                        : !proofModal?.requirements?.missingVerifications?.includes('rating')
-                          ? 'Already verified'
-                          : undefined
-                    }
-                  >
-                    <CheckCircle2 size={18} strokeWidth={3} /> Verify Rating
-                  </button>
-                )}
-
-                {(proofModal?.requirements?.required as string[] ?? []).includes('returnWindow') && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        const resp = await api.ops.verifyOrderRequirement(proofModal.id, 'returnWindow');
-
-                        if (resp?.approved) {
-                          toast.success('Return window verified ✓ Order fully approved! Cashback in cooling period.');
-                          setProofModal(null);
-                        } else {
-                          toast.success('Return window verified ✓');
-                        }
-
-                        await loadData();
-                        if (!resp?.approved && resp?.order) {
-                          setProofModal(resp.order);
-                        } else if (!resp?.approved) {
-                          setProofModal(null);
-                        }
-                      } catch (err) {
-                        const msg = err instanceof Error ? err.message : 'Failed to verify return window';
-                        toast.error(msg);
-                      }
-                    }}
-                    disabled={
-                      !!(proofModal?.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ||
-                      !(proofModal?.requirements?.missingVerifications as string[] ?? []).includes('returnWindow')
-                    }
-                    className="flex-1 py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-                    title={
-                      (proofModal?.requirements?.missingProofs as string[] ?? []).includes('returnWindow')
-                        ? 'Buyer hasn\'t uploaded return window proof yet'
-                        : !(proofModal?.requirements?.missingVerifications as string[] ?? []).includes('returnWindow')
-                          ? 'Already verified'
-                          : undefined
-                    }
-                  >
-                    <CheckCircle2 size={18} strokeWidth={3} /> Verify Return Window
-                  </button>
-                )}
-
-                {!proofModal?.requirements?.required?.length && (
+                {!proofModal?.requirements?.required?.length && !(proofModal?.requirements?.missingVerifications as string[] ?? []).length && (
                   <button
                     disabled
                     className="flex-[2] py-4 bg-white/10 text-white font-black text-sm rounded-[1.2rem] opacity-60 flex items-center justify-center gap-2"

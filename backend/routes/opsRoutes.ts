@@ -49,6 +49,7 @@ export function opsRoutes(env: Env): Router {
   router.post('/orders/unsettle', ops.unsettleOrderPayment);
   router.post('/verify', ops.verifyOrderClaim);
   router.post('/orders/verify-requirement', ops.verifyOrderRequirement);
+  router.post('/orders/verify-all', ops.verifyAllSteps);
   router.post('/orders/reject-proof', ops.rejectOrderProof);
   router.post('/orders/request-proof', ops.requestMissingProof);
   router.post('/campaigns', ops.createCampaign);
