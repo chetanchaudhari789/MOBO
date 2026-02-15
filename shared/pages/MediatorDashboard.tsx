@@ -7,7 +7,7 @@ import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { formatCurrency } from '../utils/formatCurrency';
-import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { getPrimaryOrderId, normalizeNullableString, parseValidOrderDate } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv as downloadCsvFile } from '../utils/csvHelpers';
 import { urlToBase64 } from '../utils/imageHelpers';
 import { User, Campaign, Order, Product, Ticket } from '../types';
@@ -379,7 +379,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                     <div className="w-14 h-14 bg-[#F4F4F5] rounded-[1rem] p-1.5 flex-shrink-0 relative overflow-hidden">
                       <img
                         src={o.items?.[0]?.image}
-                        alt={o.items?.[0]?.title}
+                        alt={o.items?.[0]?.title ?? ''}
                         className="w-full h-full object-contain mix-blend-multiply relative z-10"
                       />
                     </div>
@@ -1335,7 +1335,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                       <div className="w-10 h-10 bg-zinc-50 rounded-[0.8rem] p-1.5 flex-shrink-0">
                         <img
                           src={o.items?.[0]?.image}
-                          alt={o.items?.[0]?.title}
+                          alt={o.items?.[0]?.title ?? ''}
                           className="w-full h-full object-contain mix-blend-multiply"
                         />
                       </div>
@@ -1920,18 +1920,21 @@ export const MediatorDashboard: React.FC = () => {
                       <p className="text-[11px] font-bold text-zinc-200 line-clamp-2">{proofModal.extractedProductName}</p>
                     </div>
                   )}
-                  {proofModal.soldBy && proofModal.soldBy !== 'null' && proofModal.soldBy !== 'undefined' && (
-                    <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
-                      <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Sold By</p>
-                      <p className="text-[11px] font-bold text-zinc-200">{proofModal.soldBy}</p>
-                    </div>
-                  )}
                   {(() => {
-                    const d = proofModal.orderDate ? new Date(proofModal.orderDate) : null;
-                    return d && !isNaN(d.getTime()) && d.getFullYear() > 2020 ? (
+                    const seller = normalizeNullableString(proofModal.soldBy);
+                    return seller && (
+                      <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
+                        <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Sold By</p>
+                        <p className="text-[11px] font-bold text-zinc-200">{seller}</p>
+                      </div>
+                    );
+                  })()}
+                  {(() => {
+                    const validDate = parseValidOrderDate(proofModal.orderDate);
+                    return validDate && (
                       <div className="bg-black/40 p-2.5 rounded-xl border border-white/5">
                         <p className="text-[9px] text-zinc-500 font-bold uppercase mb-1">Order Date</p>
-                        <p className="text-[11px] font-bold text-zinc-200">{d.toLocaleDateString()}</p>
+                        <p className="text-[11px] font-bold text-zinc-200">{validDate.toLocaleDateString()}</p>
                       </div>
                     ) : null;
                   })()}

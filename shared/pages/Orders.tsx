@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { subscribeRealtime } from '../services/realtime';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { formatCurrency } from '../utils/formatCurrency';
-import { getPrimaryOrderId } from '../utils/orderHelpers';
+import { getPrimaryOrderId, normalizeNullableString, parseValidOrderDate } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
@@ -961,10 +961,8 @@ export const Orders: React.FC = () => {
                     </div>
                     {/* AI-extracted metadata */}
                     {(() => {
-                      const seller = order.soldBy && order.soldBy !== 'null' && order.soldBy !== 'undefined' ? order.soldBy : '';
-                      const rawDate = order.orderDate;
-                      const parsedDate = rawDate ? new Date(rawDate) : null;
-                      const validDate = parsedDate && !isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 2020 ? parsedDate : null;
+                      const seller = normalizeNullableString(order.soldBy);
+                      const validDate = parseValidOrderDate(order.orderDate);
                       return (seller || validDate) ? (
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px] text-slate-400 font-medium">
                           {seller && <span>Seller: {seller}</span>}
