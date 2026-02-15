@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
+import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -584,7 +585,7 @@ const OrdersView = ({ user }: any) => {
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
-  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
+  const [_orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
 
   const getOrderStatusBadge = (o: Order) => {
     const wf = String(o.workflowStatus || '').trim();
@@ -627,7 +628,6 @@ const OrdersView = ({ user }: any) => {
     } catch (err) {
       console.error('Failed to fetch orders', err);
       toast.error('Failed to load orders');
-      setOrders([]);
     } finally {
       setIsLoading(false);
     }
@@ -738,7 +738,7 @@ const OrdersView = ({ user }: any) => {
       const dateObj = new Date(o.createdAt);
       const date = dateObj.toLocaleDateString();
       const time = dateObj.toLocaleTimeString();
-      const item = o.items[0];
+      const item = o.items?.[0];
 
       const row = [
         getPrimaryOrderId(o),
@@ -785,7 +785,7 @@ const OrdersView = ({ user }: any) => {
     const sheetHeaders = ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Reviewer Name','Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'];
     const sheetRows = filtered.map((o) => {
       const dateObj = new Date(o.createdAt);
-      const item = o.items[0];
+      const item = o.items?.[0];
       return [
         getPrimaryOrderId(o),
         dateObj.toLocaleDateString(),
@@ -1264,32 +1264,19 @@ const OrdersView = ({ user }: any) => {
                 <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
                   {auditLoading ? (
                     <p className="text-xs text-zinc-400 text-center py-2">Loading...</p>
-                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 ? (
                     <p className="text-xs text-zinc-400 text-center py-2">No activity yet</p>
                   ) : (
                     <>
-                    {orderAuditLogs.map((log: any, i: number) => (
+                    {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
                       <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
-                        <span className="font-bold text-zinc-600 shrink-0">{(log.action || log.type || '').replace(/_/g, ' ')}</span>
+                        <span className="font-bold text-zinc-600 shrink-0">{auditActionLabel(log.action)}</span>
                         <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
                           <span className="bg-zinc-100 px-1.5 py-0.5 rounded text-[9px] font-bold">{log.metadata.proofType}</span>
                         )}
                       </div>
                     ))}
-                    {/* Inline Event History from order.events */}
-                    {orderAuditEvents.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-zinc-200">
-                        <p className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-1">Event History</p>
-                        {orderAuditEvents.map((evt: any, i: number) => (
-                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-indigo-200 pl-3 py-1">
-                            <span className="font-bold text-indigo-600 shrink-0">{(evt.type || '').replace(/_/g, ' ')}</span>
-                            <span className="flex-1">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                            {evt.metadata?.step && <span className="text-zinc-400 text-[9px]">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                     </>
                   )}
                 </div>
@@ -1364,15 +1351,27 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
 
   const handleCreate = async (e: any) => {
     e.preventDefault();
+    const price = Number(form.price);
+    const payout = Number(form.payout);
+    const totalSlots = Number(form.totalSlots);
+    const originalPrice = Number(form.originalPrice);
+
+    if (!form.title.trim()) { toast.error('Title is required'); return; }
+    if (!Number.isFinite(price) || price <= 0) { toast.error('Price must be greater than 0'); return; }
+    if (!Number.isFinite(originalPrice) || originalPrice < 0) { toast.error('Original price must be 0 or more'); return; }
+    if (!Number.isFinite(payout) || payout < 0) { toast.error('Payout must be 0 or more'); return; }
+    if (payout > price) { toast.error('Payout cannot exceed price'); return; }
+    if (!Number.isFinite(totalSlots) || totalSlots < 1) { toast.error('Total slots must be at least 1'); return; }
+
     try {
       const payload = {
         ...form,
         brand: user.name,
         brandId: user.id,
-        price: Number(form.price),
-        originalPrice: Number(form.originalPrice),
-        payout: Number(form.payout),
-        totalSlots: Number(form.totalSlots),
+        price,
+        originalPrice,
+        payout,
+        totalSlots,
         allowedAgencies: selAgencies,
         dealType: form.dealType || undefined,
       };
@@ -1825,7 +1824,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
             >
               <div className="flex gap-4 mb-4">
                 <div className="w-20 h-20 bg-zinc-50 rounded-2xl p-2 flex-shrink-0 border border-zinc-100 flex items-center justify-center">
-                  <img src={c.image} className="w-full h-full object-contain mix-blend-multiply" />
+                  <img src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" />
                 </div>
                 <div className="flex-1 min-w-0 py-1">
                   <div className="flex justify-between items-start mb-1">
@@ -2205,7 +2204,7 @@ export const BrandDashboard: React.FC = () => {
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold shadow-md text-sm shrink-0 overflow-hidden">
                   {user?.avatar ? (
-                    <img src={user.avatar} className="w-full h-full object-cover" />
+                    <img src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                   ) : (
                     user?.name?.charAt(0) || 'B'
                   )}
@@ -2283,12 +2282,12 @@ export const BrandDashboard: React.FC = () => {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        ag.name.charAt(0)
+                        (ag.name || '?').charAt(0)
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-xl font-bold text-zinc-900 truncate">{ag.name}</h3>
+                      <h3 className="text-xl font-bold text-zinc-900 truncate">{ag.name || 'Unknown'}</h3>
                       <p className="text-xs text-zinc-400 font-mono mt-1 mb-3 bg-zinc-50 px-2 py-0.5 rounded w-fit">
                         {ag.mediatorCode}
                       </p>
@@ -2443,7 +2442,7 @@ export const BrandDashboard: React.FC = () => {
                   >
                     <div className="flex items-center gap-5 w-full sm:w-auto">
                       <div className="w-16 h-16 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-xl font-bold shadow-sm">
-                        {req.agencyName.charAt(0)}
+                        {(req.agencyName || '?').charAt(0)}
                       </div>
                       <div>
                         <h4 className="font-bold text-zinc-900 text-lg">{req.agencyName}</h4>
@@ -2540,12 +2539,12 @@ export const BrandDashboard: React.FC = () => {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  selectedAgency.name.charAt(0)
+                  (selectedAgency?.name || '?').charAt(0)
                 )}
               </div>
               <div>
                 <h3 className="text-2xl font-extrabold text-zinc-900 leading-tight">
-                  {selectedAgency.name}
+                  {selectedAgency?.name || 'Unknown'}
                 </h3>
                 <p className="text-zinc-500 font-mono text-sm mt-0.5">
                   {selectedAgency.mediatorCode}

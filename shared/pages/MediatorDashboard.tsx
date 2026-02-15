@@ -10,6 +10,7 @@ import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv as downloadCsvFile } from '../utils/csvHelpers';
 import { urlToBase64 } from '../utils/imageHelpers';
+import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { User, Campaign, Order, Product, Ticket } from '../types';
 import {
   LayoutGrid,
@@ -182,11 +183,11 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      u.name.charAt(0)
+                      (u.name || '?').charAt(0)
                     )}
                   </div>
                   <div>
-                    <h4 className="font-bold text-zinc-900 text-xs line-clamp-1">{u.name}</h4>
+                    <h4 className="font-bold text-zinc-900 text-xs line-clamp-1">{u.name || 'Unknown'}</h4>
                     <p className="text-[10px] text-zinc-400 font-mono tracking-wide">{u.mobile}</p>
                   </div>
                 </div>
@@ -893,11 +894,11 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        u.name.charAt(0)
+                        (u.name || '?').charAt(0)
                       )}
                     </div>
                     <div>
-                      <p className="font-bold text-xs text-zinc-900">{u.name}</p>
+                      <p className="font-bold text-xs text-zinc-900">{u.name || 'Unknown'}</p>
                       <p className="text-[10px] text-zinc-400 font-mono">{u.mobile}</p>
                     </div>
                   </div>
@@ -1202,11 +1203,11 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  buyer.name.charAt(0)
+                  (buyer?.name || '?').charAt(0)
                 )}
               </div>
               <div>
-                <h3 className="text-xl font-black leading-none">{buyer.name}</h3>
+                <h3 className="text-xl font-black leading-none">{buyer?.name || 'Unknown'}</h3>
                 <p className="text-[10px] text-zinc-400 font-mono mt-1 opacity-80">
                   {buyer.mobile}
                 </p>
@@ -1489,7 +1490,7 @@ export const MediatorDashboard: React.FC = () => {
   // Audit trail state
   const [auditExpanded, setAuditExpanded] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
-  const [orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
+  const [_orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
@@ -1622,24 +1623,33 @@ export const MediatorDashboard: React.FC = () => {
     }
   };
 
+  const analysisAbortRef = useRef<AbortController | null>(null);
+
   const runAnalysis = async () => {
     if (!proofModal || !proofModal.screenshots?.order) return;
+    // Cancel any in-flight analysis
+    analysisAbortRef.current?.abort();
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
     setIsAnalyzing(true);
     setAiAnalysis(null);
     try {
       const imageBase64 = await urlToBase64(proofModal.screenshots.order);
+      if (controller.signal.aborted) return;
       const result = await api.ops.analyzeProof(
         proofModal.id,
         imageBase64,
         proofModal.externalOrderId || '',
         proofModal.total
       );
+      if (controller.signal.aborted) return;
       setAiAnalysis(result);
-    } catch (e) {
+    } catch (e: unknown) {
+      if ((e as any)?.name === 'AbortError') return;
       console.error(e);
       toast.error('Analysis failed. Try again.');
     } finally {
-      setIsAnalyzing(false);
+      if (!controller.signal.aborted) setIsAnalyzing(false);
     }
   };
 
@@ -1650,6 +1660,7 @@ export const MediatorDashboard: React.FC = () => {
       lastAnalyzedOrderRef.current = proofModal.id;
       runAnalysis();
     }
+    return () => { analysisAbortRef.current?.abort(); };
   }, [proofModal]);
 
   const hasNotifications = unreadCount > 0;
@@ -1667,12 +1678,12 @@ export const MediatorDashboard: React.FC = () => {
                 className="w-full h-full object-cover"
               />
             ) : (
-              user?.name.charAt(0)
+              (user?.name || '?').charAt(0)
             )}
           </div>
           <div>
             <h1 className="text-lg font-black text-[#18181B] leading-none tracking-tight">
-              {user?.name}
+              {user?.name || 'Unknown'}
             </h1>
             <div className="mt-1 flex items-center gap-2">
               <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1">
@@ -2275,16 +2286,16 @@ export const MediatorDashboard: React.FC = () => {
                     <div className="flex justify-center py-3">
                       <Loader2 size={16} className="animate-spin text-zinc-500" />
                     </div>
-                  ) : orderAuditLogs.length === 0 && orderAuditEvents.length === 0 ? (
+                  ) : orderAuditLogs.length === 0 ? (
                     <p className="text-[10px] text-zinc-600 italic">No activity recorded yet.</p>
                   ) : (
                     <>
-                    {orderAuditLogs.map((log: any, i: number) => (
+                    {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
                       <div key={log._id || i} className="flex items-start gap-2 text-[10px]">
                         <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 mt-1.5 shrink-0" />
                         <div className="min-w-0">
                           <span className="font-bold text-zinc-300">
-                            {(log.action || '').replace(/_/g, ' ')}
+                            {auditActionLabel(log.action)}
                           </span>
                           <span className="text-zinc-500 ml-1.5">
                             {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}
@@ -2295,22 +2306,6 @@ export const MediatorDashboard: React.FC = () => {
                         </div>
                       </div>
                     ))}
-                    {/* Inline Event History from order.events */}
-                    {orderAuditEvents.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-zinc-700/50">
-                        <p className="text-[9px] font-extrabold text-zinc-500 uppercase tracking-wider mb-1">Event History</p>
-                        {orderAuditEvents.map((evt: any, i: number) => (
-                          <div key={`evt-${i}`} className="flex items-start gap-2 text-[10px] mt-1">
-                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
-                            <div className="min-w-0">
-                              <span className="font-bold text-indigo-300">{(evt.type || '').replace(/_/g, ' ')}</span>
-                              <span className="text-zinc-500 ml-1.5">{evt.at ? new Date(evt.at).toLocaleString() : ''}</span>
-                              {evt.metadata?.step && <span className="ml-1 text-zinc-500">({String(evt.metadata.step).replace(/_/g, ' ')})</span>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                     </>
                   )}
                 </div>

@@ -485,6 +485,18 @@ export function aiRoutes(env: Env): Router {
         image: payload.image,
         history: payload.history,
       });
+
+      // Audit log the AI chat interaction
+      writeAuditLog({
+        req,
+        actorUserId: req.auth?.userId,
+        actorRoles: req.auth?.roles,
+        action: 'AI_CHAT',
+        entityType: 'ai',
+        entityId: req.auth?.userId || 'anonymous',
+        metadata: { intent: result?.intent, messageLength: rawMessage.length },
+      });
+
       res.json(result);
     } catch (err) {
       if (!sendKnownError(err, res)) next(err);
