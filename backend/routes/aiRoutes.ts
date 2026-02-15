@@ -28,13 +28,32 @@ export function aiRoutes(env: Env): Router {
     // Legacy UI fields (ignored server-side unless no auth is present)
     userId: z.string().optional(),
     userName: z.string().max(120).default('Guest'),
-    products: z.array(z.any()).max(200).optional(),
-    orders: z.array(z.any()).max(200).optional(),
-    tickets: z.array(z.any()).max(200).optional(),
+    products: z.array(z.object({
+      id: z.string().max(200).optional(),
+      title: z.string().max(500).optional(),
+      price: z.number().finite().optional(),
+      originalPrice: z.number().finite().optional(),
+      platform: z.string().max(100).optional(),
+      description: z.string().max(2000).optional(),
+      brandName: z.string().max(200).optional(),
+      image: z.string().max(5000).optional(),
+    }).passthrough()).max(200).optional(),
+    orders: z.array(z.object({
+      id: z.string().max(200).optional(),
+      externalOrderId: z.string().max(200).optional(),
+      status: z.string().max(100).optional(),
+      paymentStatus: z.string().max(100).optional(),
+      affiliateStatus: z.string().max(100).optional(),
+    }).passthrough()).max(200).optional(),
+    tickets: z.array(z.object({
+      id: z.string().max(200).optional(),
+      status: z.string().max(100).optional(),
+      issueType: z.string().max(200).optional(),
+    }).passthrough()).max(200).optional(),
     history: z
       .array(
         z.object({
-          role: z.enum(['user', 'assistant', 'system']),
+          role: z.enum(['user', 'assistant']),
           content: z.string().max(maxHistoryChars),
         })
       )
@@ -47,7 +66,7 @@ export function aiRoutes(env: Env): Router {
   const proofSchema = z.object({
     imageBase64: z.string().min(1).max(env.AI_MAX_IMAGE_CHARS),
     expectedOrderId: z.string().min(1),
-    expectedAmount: z.number().finite(),
+    expectedAmount: z.number().finite().positive(),
   });
 
   const extractOrderSchema = z.object({
@@ -275,7 +294,9 @@ export function aiRoutes(env: Env): Router {
 
       // Zero-trust identity: never trust userId/userName from the client if auth is present.
       const authUser = req.auth?.user;
-      const effectiveUserName = authUser ? String((authUser as any)?.name || 'User') : payload.userName;
+      // Sanitize userName to prevent prompt injection via system prompt interpolation
+      const rawUserName = authUser ? String((authUser as any)?.name || 'User') : payload.userName;
+      const effectiveUserName = rawUserName.replace(/[\n\r\t]/g, ' ').replace(/[{}\[\]<>]/g, '').slice(0, 60).trim() || 'Guest';
 
       const slimProducts = Array.isArray(effectiveProducts)
         ? effectiveProducts.slice(0, 25).map((p: any) => ({

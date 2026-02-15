@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   X,
   ArrowRight,
@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Bell,
   AlertTriangle,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
@@ -77,7 +79,7 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
 };
 
 export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }) => {
-  const { messages, addMessage, setUserId } = useChat();
+  const { messages, addMessage, setUserId, clearChat } = useChat();
   const { notifications, removeNotification, unreadCount, markAllRead } = useNotification();
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -121,10 +123,17 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   // Track navigation timer for cleanup on unmount
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Clean up navigation timer on unmount
+  // AbortController for in-flight AI requests (allows cancellation on new message / unmount)
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Store the text of the last failed message so we can offer a retry button
+  const [lastFailedText, setLastFailedText] = useState<string | null>(null);
+
+  // Clean up navigation timer and abort in-flight request on unmount
   useEffect(() => {
     return () => {
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
+      abortRef.current?.abort();
     };
   }, []);
 
@@ -344,6 +353,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     setInputText('');
     clearAttachment();
     setIsTyping(true);
+    setLastFailedText(null);
+
+    // Cancel any in-flight AI request before starting a new one
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     let productsForAi: Product[] = [];
     let ordersForAi: Order[] = [];
@@ -426,6 +441,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         ticketsForAi,
         base64Image,
         history,
+        controller.signal,
       );
 
       // Recommendation 1: Dynamic Navigation Handling with validation
@@ -452,6 +468,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         relatedOrders: response.uiType === 'order_card' ? response.data : undefined,
       });
     } catch (err: any) {
+      // If the request was aborted (user sent a new message), silently bail
+      if (err?.name === 'AbortError') return;
+
       const code = String(err?.code || '').toUpperCase();
       const isRate = code === 'RATE_LIMITED' || code === 'DAILY_LIMIT_REACHED' || code === 'TOO_FREQUENT';
       const lowerText = safeText.toLowerCase();
@@ -496,6 +515,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         isError: true,
         timestamp: Date.now(),
       });
+      // Store the failed text so the retry button can re-send
+      setLastFailedText(safeText);
     } finally {
       setIsTyping(false);
     }
@@ -506,6 +527,20 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     { emoji: '\u{1F4E6}', text: 'Latest Order', command: 'Where is my latest order?' },
     { emoji: '\u{1F39F}\u{FE0F}', text: 'Tickets', command: 'Check status of my support tickets' },
   ];
+
+  const handleRetry = useCallback(() => {
+    if (lastFailedText) {
+      handleSendMessage(undefined, lastFailedText);
+    }
+  }, [lastFailedText]);
+
+  const handleClearChat = useCallback(() => {
+    abortRef.current?.abort();
+    setIsTyping(false);
+    setLastFailedText(null);
+    clearChat();
+    contextCacheRef.current = null;
+  }, [clearChat]);
 
   return (
     <div className="flex flex-col h-full min-h-0 w-full bg-[#F4F4F5]">
@@ -521,7 +556,16 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           </h1>
         </div>
 
-        <div className="relative">
+        <div className="flex items-center gap-2">
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearChat}
+              aria-label="Clear chat"
+              className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 hover:bg-red-50 hover:text-red-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             aria-label={showNotifications ? 'Hide notifications' : 'Show notifications'}
@@ -692,6 +736,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                     } ${msg.isError ? 'bg-red-50 border-red-100 text-red-600' : ''}`}
                   >
                     <FormattedText text={msg.text} />
+                    {msg.isError && lastFailedText && !isTyping && (
+                      <button
+                        onClick={handleRetry}
+                        className="mt-2 flex items-center gap-1 text-xs font-bold text-red-500 hover:text-red-700 transition-colors"
+                      >
+                        <RotateCcw size={12} /> Retry
+                      </button>
+                    )}
                   </div>
                 )}
                 </div>
@@ -784,7 +836,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
             <button
               key={i}
               onClick={() => handleSendMessage(undefined, action.command)}
-              className="px-3.5 py-2 bg-white shadow-sm border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 active:scale-95 flex items-center gap-2 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F4F4F5] whitespace-nowrap"
+              disabled={isTyping}
+              className={`px-3.5 py-2 bg-white shadow-sm border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 active:scale-95 flex items-center gap-2 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F4F4F5] whitespace-nowrap ${isTyping ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <span className="text-base">{action.emoji}</span> {action.text}
             </button>

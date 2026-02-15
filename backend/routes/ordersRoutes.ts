@@ -29,11 +29,12 @@ export function ordersRoutes(env: Env): Router {
   });
 
   // Authorization middleware: ensure users can only access their own orders
+  // Only admin/ops are truly privileged; other roles are checked in the controller
   const ownerOrPrivileged = (req: any, res: any, next: any) => {
     const requestedUserId = req.params.userId;
     const auth = req.auth;
     const roles: string[] = auth?.roles ?? [];
-    const isPrivileged = roles.some((r: string) => ['admin', 'ops', 'agency', 'mediator', 'brand'].includes(r));
+    const isPrivileged = roles.some((r: string) => ['admin', 'ops'].includes(r));
     if (!isPrivileged && auth?.userId !== requestedUserId) {
       return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Access denied' } });
     }

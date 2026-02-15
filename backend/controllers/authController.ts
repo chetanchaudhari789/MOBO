@@ -172,6 +172,15 @@ export function makeAuthController(env: Env) {
 
         const wallet = await ensureWallet(String(user._id));
 
+        // Audit trail: record buyer registration for complete backtracking
+        await writeAuditLog({
+          req,
+          action: 'USER_REGISTERED',
+          entityType: 'User',
+          entityId: String(user._id),
+          metadata: { role: 'shopper', mobile: (user as any).mobile, parentCode: String((user as any).parentCode || '') },
+        }).catch(() => {});
+
         // Realtime: a buyer created via a mediator code must show up immediately in the mediator portal
         // for approve/reject workflows (and in the upstream agency view).
         const upstreamMediatorCode = String((user as any)?.parentCode || '').trim();
@@ -274,13 +283,12 @@ export function makeAuthController(env: Env) {
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
           // Increment failed attempts; lock if threshold exceeded.
-          const newCount = ((user as any).failedLoginAttempts ?? 0) + 1;
-          const lockout = newCount >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
+          // Increment failed attempts atomically with $inc
           await UserModel.updateOne({ _id: user._id }, {
-            $set: {
-              failedLoginAttempts: newCount,
-              ...(lockout ? { lockoutUntil: lockout } : {}),
-            },
+            $inc: { failedLoginAttempts: 1 },
+            ...((((user as any).failedLoginAttempts ?? 0) + 1) >= MAX_FAILED_ATTEMPTS
+              ? { $set: { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) } }
+              : {}),
           });
           await writeAuditLog({
             req,
@@ -511,6 +519,14 @@ export function makeAuthController(env: Env) {
           });
         }
 
+        writeAuditLog({
+          req,
+          action: 'USER_REGISTERED',
+          entityType: 'User',
+          entityId: String(user._id),
+          metadata: { role: user.role, mobile: user.mobile, pendingApproval },
+        }).catch(() => {});
+
         // If mediator joined via agency code, the account is pending and must be approved by agency.
         if (pendingApproval) {
           // Realtime: agency portal must see mediator join requests instantly.
@@ -619,6 +635,14 @@ export function makeAuthController(env: Env) {
           entityId: String(consumed._id),
           metadata: { code: consumed.code, role: consumed.role, usedBy: String(user._id) },
         });
+
+        writeAuditLog({
+          req,
+          action: 'USER_REGISTERED',
+          entityType: 'User',
+          entityId: String(user._id),
+          metadata: { role: 'brand', mobile: user.mobile },
+        }).catch(() => {});
 
         publishRealtime({
           type: 'invites.changed',

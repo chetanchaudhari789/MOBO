@@ -569,7 +569,7 @@ export function makeOrdersController(env: Env) {
           .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
 
         // Audit trail
-        writeAuditLog({
+        await writeAuditLog({
           req,
           action: 'ORDER_CREATED',
           entityType: 'Order',
@@ -579,7 +579,7 @@ export function makeOrdersController(env: Env) {
             total: body.items.reduce((a: number, it: any) => a + (Number(it.priceAtPurchase) || 0) * (Number(it.quantity) || 1), 0),
             externalOrderId: resolvedExternalOrderId,
           },
-        });
+        }).catch(() => {});
 
         // Notify UIs (buyer/mediator/brand/admin) that order-related views should refresh.
         const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -849,15 +849,6 @@ export function makeOrdersController(env: Env) {
         }) as any;
 
         await order.save();
-
-        // Audit trail for proof upload
-        writeAuditLog({
-          req,
-          action: 'PROOF_UPLOADED',
-          entityType: 'Order',
-          entityId: String(order._id),
-          metadata: { proofType: body.type },
-        });
 
         // Strict state machine progression for first proof submission:
         // ORDERED -> PROOF_SUBMITTED -> UNDER_REVIEW
