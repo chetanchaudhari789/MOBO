@@ -957,8 +957,6 @@ export const Orders: React.FC = () => {
                     </h3>
                     <div className="flex items-center gap-3 text-xs font-bold text-slate-500">
                       <span>{formatCurrency(order.total)}</span>
-                      <span>•</span>
-                      <span className="text-lime-600">+{formatCurrency(firstItem.commission)} Reward</span>
                     </div>
                     {/* AI-extracted metadata */}
                     {(() => {

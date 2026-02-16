@@ -116,29 +116,48 @@ export function makeAdminController() {
 
     getStats: async (_req: Request, res: Response, next: NextFunction) => {
       try {
-        const [users, orders] = await Promise.all([
-          UserModel.find({ deletedAt: null }).select({ role: 1 }).lean(),
-          OrderModel.find({ deletedAt: null }).select({ totalPaise: 1, affiliateStatus: 1 }).lean(),
+        // Use aggregation pipelines to avoid loading all docs into memory
+        const [roleCounts, orderStats] = await Promise.all([
+          UserModel.aggregate([
+            { $match: { deletedAt: null } },
+            { $group: { _id: '$role', count: { $sum: 1 } } },
+          ]),
+          OrderModel.aggregate([
+            { $match: { deletedAt: null } },
+            {
+              $group: {
+                _id: null,
+                totalOrders: { $sum: 1 },
+                totalRevenuePaise: { $sum: { $ifNull: ['$totalPaise', 0] } },
+                pendingRevenuePaise: {
+                  $sum: {
+                    $cond: [{ $eq: ['$affiliateStatus', 'Pending_Cooling'] }, { $ifNull: ['$totalPaise', 0] }, 0],
+                  },
+                },
+                riskOrders: {
+                  $sum: {
+                    $cond: [{ $in: ['$affiliateStatus', ['Fraud_Alert', 'Unchecked']] }, 1, 0],
+                  },
+                },
+              },
+            },
+          ]),
         ]);
 
-        const counts: any = { total: users.length, user: 0, mediator: 0, agency: 0, brand: 0 };
-        for (const u of users) {
-          const ui = toUiRole(String(u.role));
-          if (counts[ui] !== undefined) counts[ui] += 1;
+        const counts: any = { total: 0, user: 0, mediator: 0, agency: 0, brand: 0 };
+        for (const rc of roleCounts) {
+          const ui = toUiRole(String(rc._id));
+          if (counts[ui] !== undefined) counts[ui] += rc.count;
+          counts.total += rc.count;
         }
 
-        const totalRevenue = orders.reduce((sum, o) => sum + Math.round((o.totalPaise ?? 0) / 100), 0);
-        const pendingRevenue = orders
-          .filter((o) => o.affiliateStatus === 'Pending_Cooling')
-          .reduce((sum, o) => sum + Math.round((o.totalPaise ?? 0) / 100), 0);
-
-        const riskOrders = orders.filter((o) => o.affiliateStatus === 'Fraud_Alert' || o.affiliateStatus === 'Unchecked').length;
+        const os = orderStats[0] || { totalOrders: 0, totalRevenuePaise: 0, pendingRevenuePaise: 0, riskOrders: 0 };
 
         res.json({
-          totalRevenue,
-          pendingRevenue,
-          totalOrders: orders.length,
-          riskOrders,
+          totalRevenue: Math.round(os.totalRevenuePaise / 100),
+          pendingRevenue: Math.round(os.pendingRevenuePaise / 100),
+          totalOrders: os.totalOrders,
+          riskOrders: os.riskOrders,
           counts,
         });
       } catch (err) {
@@ -152,24 +171,27 @@ export function makeAdminController() {
         since.setDate(since.getDate() - 6);
         since.setHours(0, 0, 0, 0);
 
-        const orders = await OrderModel.find({ createdAt: { $gte: since }, deletedAt: null })
-          .select({ createdAt: 1, totalPaise: 1 })
-          .lean();
+        // Use aggregation to avoid loading all orders into memory
+        const pipeline = await OrderModel.aggregate([
+          { $match: { createdAt: { $gte: since }, deletedAt: null } },
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+              revenue: { $sum: { $ifNull: ['$totalPaise', 0] } },
+            },
+          },
+        ]);
 
-        const buckets = new Map<string, number>();
+        const revenueByDate = new Map(pipeline.map((b) => [b._id, Math.round(b.revenue / 100)]));
+
+        const data: Array<{ date: string; revenue: number }> = [];
         for (let i = 0; i < 7; i += 1) {
           const d = new Date(since);
           d.setDate(since.getDate() + i);
           const key = d.toISOString().slice(0, 10);
-          buckets.set(key, 0);
+          data.push({ date: key, revenue: revenueByDate.get(key) || 0 });
         }
 
-        for (const o of orders) {
-          const key = new Date(o.createdAt as any).toISOString().slice(0, 10);
-          if (buckets.has(key)) buckets.set(key, (buckets.get(key) || 0) + Math.round((o.totalPaise ?? 0) / 100));
-        }
-
-        const data = Array.from(buckets.entries()).map(([date, revenue]) => ({ date, revenue }));
         res.json(data);
       } catch (err) {
         next(err);
@@ -541,10 +563,10 @@ export function makeAdminController() {
         const skip = (page - 1) * limit;
 
         const filter: Record<string, any> = {};
-        if (action) filter.action = action;
-        if (entityType) filter.entityType = entityType;
-        if (entityId) filter.entityId = entityId;
-        if (actorUserId) filter.actorUserId = actorUserId;
+        if (action && typeof action === 'string') filter.action = action;
+        if (entityType && typeof entityType === 'string') filter.entityType = entityType;
+        if (entityId && typeof entityId === 'string') filter.entityId = entityId;
+        if (actorUserId && typeof actorUserId === 'string') filter.actorUserId = actorUserId;
 
         if (from || to) {
           filter.createdAt = {};

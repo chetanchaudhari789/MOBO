@@ -63,6 +63,9 @@ const envSchema = z.object({
   AI_HISTORY_SUMMARY_CHARS: z.coerce.number().int().positive().default(400),
   AI_MIN_SECONDS_BETWEEN_CALLS: z.coerce.number().int().nonnegative().default(3),
   AI_DEBUG_OCR: z.coerce.boolean().default(false),
+  AI_OCR_POOL_SIZE: z.coerce.number().int().min(1).max(8).default(2),
+  AI_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().min(1).default(3),
+  AI_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().min(1000).default(300_000),
 
   // Minimum AI confidence score (0-100) required for proof verification to pass.
   // Scores below this threshold will reject the proof. 75 is recommended for production

@@ -21,6 +21,7 @@ import { notificationsRoutes } from './routes/notificationsRoutes.js';
 import { realtimeRoutes } from './routes/realtimeRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { mediaRoutes } from './routes/mediaRoutes.js';
+import { initAiServiceConfig } from './services/aiService.js';
 
 function isOriginAllowed(origin: string, allowed: string[]): boolean {
   if (!origin) return true;
@@ -70,6 +71,9 @@ function isOriginAllowed(origin: string, allowed: string[]): boolean {
 
 export function createApp(env: Env) {
   const app = express();
+
+  // Sync AI service config from env (OCR pool size, circuit breaker thresholds)
+  initAiServiceConfig(env);
 
   app.disable('x-powered-by');
 

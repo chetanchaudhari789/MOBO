@@ -67,6 +67,7 @@ export function mediaRoutes(_env: Env): Router {
   router.get('/media/image', async (req, res) => {
     const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
     if (isRateLimited(clientIp)) {
+      res.set('Retry-After', String(Math.ceil(RATE_WINDOW_MS / 1000)));
       res.status(429).json({ error: { code: 'TOO_MANY_REQUESTS', message: 'rate limit exceeded' } });
       return;
     }

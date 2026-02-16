@@ -2420,6 +2420,11 @@ export function makeOpsController(env: Env) {
         const wallet = await ensureWallet(String(user._id));
         const amountPaise = rupeesToPaise(body.amount);
 
+        // Pre-check: ensure wallet has sufficient available balance for privileged payouts
+        if (canAny && wallet.availablePaise < amountPaise) {
+          throw new AppError(409, 'INSUFFICIENT_FUNDS', `Wallet only has ₹${(wallet.availablePaise / 100).toFixed(2)} available but payout is ₹${body.amount}`);
+        }
+
         // Deterministic idempotency: use requestId to prevent duplicate payouts on retry.
         // Falls back to timestamp only if no requestId is present.
         const requestId = String(
@@ -2429,34 +2434,47 @@ export function makeOpsController(env: Env) {
         ).trim();
         const idempotencySuffix = requestId || `MANUAL-${Date.now()}`;
 
-        const payout = await PayoutModel.create({
-          beneficiaryUserId: user._id,
-          walletId: wallet._id,
-          amountPaise,
-          status: canAny ? 'paid' : 'recorded',
-          provider: 'manual',
-          providerRef: idempotencySuffix,
-          processedAt: new Date(),
-          requestedAt: new Date(),
-          createdBy: req.auth?.userId,
-          updatedBy: req.auth?.userId,
-        });
+        // Use a transaction to ensure payout record + wallet debit are atomic
+        const session = await mongoose.startSession();
+        try {
+          await session.withTransaction(async () => {
+            const payout = await PayoutModel.create([{
+              beneficiaryUserId: user._id,
+              walletId: wallet._id,
+              amountPaise,
+              status: canAny ? 'paid' : 'recorded',
+              provider: 'manual',
+              providerRef: idempotencySuffix,
+              processedAt: new Date(),
+              requestedAt: new Date(),
+              createdBy: req.auth?.userId,
+              updatedBy: req.auth?.userId,
+            }], { session });
 
-        // Agencies use this flow as a record of an external/manual transfer.
-        // Do not block on internal wallet balance (agencies may reconcile off-platform).
-        // Privileged users keep the strict wallet-debit behavior.
-        if (canAny) {
-          await applyWalletDebit({
-            idempotencyKey: `payout_complete:${payout._id}`,
-            type: 'payout_complete',
-            ownerUserId: String(user._id),
-            amountPaise,
-            payoutId: payout._id as any,
-            metadata: { provider: 'manual', source: 'ops_payout' },
+            const payoutDoc = payout[0];
+
+            // Agencies use this flow as a record of an external/manual transfer.
+            // Do not block on internal wallet balance (agencies may reconcile off-platform).
+            // Privileged users keep the strict wallet-debit behavior.
+            if (canAny) {
+              await applyWalletDebit(
+                {
+                  idempotencyKey: `payout_complete:${payoutDoc._id}`,
+                  type: 'payout_complete',
+                  ownerUserId: String(user._id),
+                  amountPaise,
+                  payoutId: payoutDoc._id as any,
+                  metadata: { provider: 'manual', source: 'ops_payout' },
+                },
+                { session },
+              );
+            }
+
+            await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payoutDoc._id), metadata: { beneficiaryUserId: String(user._id), amountPaise, recordOnly: canAgency } });
           });
+        } finally {
+          await session.endSession();
         }
-
-        await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payout._id), metadata: { beneficiaryUserId: String(user._id), amountPaise, recordOnly: canAgency } });
 
         res.json({ ok: true });
       } catch (err) {
@@ -2540,6 +2558,67 @@ export function makeOpsController(env: Env) {
           .limit(1000)
           .lean();
         res.json(tx);
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    copyCampaign: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { id } = req.body;
+        if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
+        }
+        const { roles, user: requester } = getRequester(req);
+        const campaign = await CampaignModel.findById(id).lean();
+        if (!campaign || (campaign as any).deletedAt) {
+          throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        }
+
+        // Authorization: brand owner, agency with access, or privileged
+        if (!isPrivileged(roles)) {
+          const isBrandOwner = String((campaign as any).brandUserId || '') === String((requester as any)?._id || (requester as any)?.id || '');
+          const isAgencyAllowed = roles.includes('agency') &&
+            Array.isArray((campaign as any).allowedAgencyCodes) &&
+            (campaign as any).allowedAgencyCodes.includes(String((requester as any)?.mediatorCode || ''));
+          if (!isBrandOwner && !isAgencyAllowed) {
+            throw new AppError(403, 'FORBIDDEN', 'Not authorized to copy this campaign');
+          }
+        }
+
+        // Create a clean copy with reset assignments and slots
+        const copyData: any = {
+          title: `${campaign.title} (Copy)`,
+          brandUserId: (campaign as any).brandUserId,
+          brandName: campaign.brandName,
+          platform: campaign.platform,
+          image: campaign.image,
+          productUrl: campaign.productUrl,
+          dealType: (campaign as any).dealType,
+          pricePaise: campaign.pricePaise,
+          originalPricePaise: campaign.originalPricePaise,
+          payoutPaise: campaign.payoutPaise,
+          totalSlots: campaign.totalSlots,
+          returnWindowDays: campaign.returnWindowDays,
+          usedSlots: 0,
+          status: 'active',
+          allowedAgencyCodes: (campaign as any).allowedAgencyCodes || [],
+          assignments: new Map(),
+          locked: false,
+          createdBy: req.auth?.userId as any,
+        };
+
+        const newCampaign = await CampaignModel.create(copyData);
+
+        await writeAuditLog({
+          req,
+          action: 'CAMPAIGN_COPIED',
+          entityType: 'Campaign',
+          entityId: String(newCampaign._id),
+          metadata: { sourceCampaignId: id },
+        });
+
+        res.json({ ok: true, id: String(newCampaign._id) });
       } catch (err) {
         next(err);
       }

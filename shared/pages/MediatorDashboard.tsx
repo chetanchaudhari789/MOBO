@@ -522,6 +522,12 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
     return m;
   }, [deals]);
 
+  const campaignById = useMemo(() => {
+    const m = new Map<string, Campaign>();
+    (campaigns || []).forEach((c: Campaign) => m.set(String(c.id), c));
+    return m;
+  }, [campaigns]);
+
   const unpublishedCampaigns = useMemo(() => {
     return (campaigns || []).filter((c: Campaign) => !dealByCampaignId.has(String(c.id)))
       .filter((c: Campaign) => matchesSearch(marketSearch, c.title, c.platform, c.brand));
@@ -651,9 +657,22 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                           Published
                         </span>
                       </div>
-                      <h4 className="font-bold text-zinc-900 text-base leading-tight line-clamp-1 mb-2">
+                      <h4 className="font-bold text-zinc-900 text-base leading-tight line-clamp-1 mb-1">
                         {d.title}
                       </h4>
+                      {d.campaignId && (
+                        <span
+                          className="text-[8px] text-zinc-400 font-mono cursor-pointer hover:text-zinc-600 transition-colors mb-1 block"
+                          title="Click to copy Campaign ID"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(String(d.campaignId));
+                            toast.success('Campaign ID copied');
+                          }}
+                        >
+                          ID: {String(d.campaignId).slice(-8)}
+                        </span>
+                      )}
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-1">
                           <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
@@ -677,10 +696,17 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
 
                   <button
                     type="button"
-                    disabled
-                    className="w-full py-3 bg-zinc-100 text-zinc-400 rounded-[1rem] font-bold text-xs shadow-inner flex items-center justify-center gap-1.5 cursor-not-allowed"
+                    onClick={() => {
+                      const campaign = d.campaignId ? campaignById.get(String(d.campaignId)) : null;
+                      if (campaign) {
+                        onPublish(campaign);
+                      } else {
+                        toast.error('Campaign data not found for this deal');
+                      }
+                    }}
+                    className="w-full py-3 bg-[#18181B] text-white rounded-[1rem] font-bold text-xs shadow-md hover:bg-[#CCF381] hover:text-black transition-all active:scale-95 flex items-center justify-center gap-1.5"
                   >
-                    <ArrowUpRight size={14} strokeWidth={2.5} /> Published
+                    <ArrowUpRight size={14} strokeWidth={2.5} /> Edit Deal
                   </button>
                 </div>
               ))
@@ -738,9 +764,20 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                           {c.assignments[user.mediatorCode!] || 0} Slots
                         </span>
                       </div>
-                      <h4 className="font-bold text-zinc-900 text-base leading-tight line-clamp-1 mb-2">
+                      <h4 className="font-bold text-zinc-900 text-base leading-tight line-clamp-1 mb-1">
                         {c.title}
                       </h4>
+                      <span
+                        className="text-[8px] text-zinc-400 font-mono cursor-pointer hover:text-zinc-600 transition-colors mb-1 block"
+                        title="Click to copy Campaign ID"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(String(c.id));
+                          toast.success('Campaign ID copied');
+                        }}
+                      >
+                        ID: {String(c.id).slice(-8)}
+                      </span>
                       <div className="flex items-center gap-2">
                         <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
                           Cost
@@ -1495,11 +1532,24 @@ export const MediatorDashboard: React.FC = () => {
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
 
-  // Pre-fill buyer commission from agency's suggested commission when opening deal builder.
+  // Check if dealBuilder's campaign already has a published deal (edit mode)
+  const isEditingPublishedDeal = useMemo(() => {
+    if (!dealBuilder) return false;
+    return deals.some((d: Product) => String(d.campaignId) === String(dealBuilder.id));
+  }, [dealBuilder, deals]);
+
+  // Pre-fill commission when opening deal builder.
+  // If editing a published deal, use the deal's current commission.
+  // Otherwise use agency's suggested commission.
   useEffect(() => {
     if (dealBuilder) {
-      const agencyComm = dealBuilder.assignmentCommission ?? 0;
-      setCommission(agencyComm ? String(agencyComm) : '');
+      const existingDeal = deals.find((d: Product) => String(d.campaignId) === String(dealBuilder.id));
+      if (existingDeal && typeof existingDeal.commission === 'number') {
+        setCommission(String(existingDeal.commission));
+      } else {
+        const agencyComm = dealBuilder.assignmentCommission ?? 0;
+        setCommission(agencyComm ? String(agencyComm) : '');
+      }
     } else {
       setCommission('');
     }
@@ -1614,7 +1664,7 @@ export const MediatorDashboard: React.FC = () => {
       await api.ops.publishDeal(dealBuilder.id, commissionValue, user.mediatorCode);
       setDealBuilder(null);
       setCommission('');
-      toast.success('Deal published');
+      toast.success('Deal saved');
       loadData();
     } catch (e) {
       console.error(e);
@@ -2597,9 +2647,9 @@ export const MediatorDashboard: React.FC = () => {
             {(() => {
               // Agency commission = what agency pays mediator per deal
               const agencyComm = (dealBuilder as any).assignmentPayout ?? dealBuilder.payout ?? 0;
-              // Buyer commission = what mediator adds to the deal price (can be negative)
+              // Your commission = what mediator adds to the deal price (can be negative)
               const buyerComm = parseInt(commission) || 0;
-              // Net earnings = agency commission + buyer commission
+              // Net earnings = agency commission + your commission
               // Example: agency pays ₹10, mediator adds ₹5 buyer commission → net = ₹15
               // Example: agency pays ₹10, mediator adds -₹5 (discount) → net = ₹5
               const net = agencyComm + buyerComm;
@@ -2618,7 +2668,7 @@ export const MediatorDashboard: React.FC = () => {
             })()}
             <div className="space-y-3 mb-6">
               <label className="text-[10px] font-black text-zinc-900 uppercase ml-2 block tracking-wide">
-                Buyer commission (₹)
+                Your commission (₹)
               </label>
               <input
                 type="number"
@@ -2643,7 +2693,7 @@ export const MediatorDashboard: React.FC = () => {
               disabled={!user?.mediatorCode}
               className="w-full py-4 bg-[#18181B] text-white rounded-[1.5rem] font-black text-base shadow-xl hover:bg-[#CCF381] hover:text-black transition-all disabled:opacity-50 disabled:scale-100 active:scale-95 flex items-center justify-center gap-2"
             >
-              Publish Deal <Tag size={16} strokeWidth={3} className="fill-current" />
+              {isEditingPublishedDeal ? 'Update Deal' : 'Publish Deal'} <Tag size={16} strokeWidth={3} className="fill-current" />
             </button>
           </div>
         </div>

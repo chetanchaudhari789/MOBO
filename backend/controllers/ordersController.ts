@@ -353,7 +353,7 @@ export function makeOrdersController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Campaign is not available for your network');
         }
 
-        // Slot checks (global + per-mediator assignment)
+        // Optimistic slot checks (re-verified atomically inside the transaction below)
         if ((campaign.usedSlots ?? 0) >= (campaign.totalSlots ?? 0)) {
           throw new AppError(409, 'SOLD_OUT', 'Sold Out Globally');
         }
@@ -388,6 +388,23 @@ export function makeOrdersController(env: Env) {
           commissionPaise = maybeDeal.commissionPaise;
         }
 
+        // Helper: atomically claim a slot inside the transaction to prevent overselling
+        const claimSlot = async (txSession: mongoose.ClientSession) => {
+          const claimed = await CampaignModel.findOneAndUpdate(
+            {
+              _id: campaign._id,
+              deletedAt: null,
+              $expr: { $lt: ['$usedSlots', '$totalSlots'] },
+            },
+            { $inc: { usedSlots: 1 } },
+            { session: txSession, new: true },
+          );
+          if (!claimed) {
+            throw new AppError(409, 'SOLD_OUT', 'Sold Out — another buyer claimed the last slot');
+          }
+          return claimed;
+        };
+
         const created = await session.withTransaction(async () => {
           // If this is an upgrade from a redirect-tracked pre-order, update that order instead of creating a new one.
           if (body.preOrderId) {
@@ -402,11 +419,8 @@ export function makeOrdersController(env: Env) {
               throw new AppError(409, 'ORDER_STATE_MISMATCH', 'Pre-order is not in REDIRECTED state');
             }
 
-            // Slot consumption happens on ORDERED.
-            await CampaignModel.updateOne(
-              { _id: campaign._id },
-              { $inc: { usedSlots: 1 } },
-            ).session(session);
+            // Slot consumption happens on ORDERED — use atomic claim to prevent overselling.
+            await claimSlot(session);
 
             (existing as any).brandUserId = campaign.brandUserId;
             (existing as any).items = body.items.map((it) => ({
@@ -470,10 +484,8 @@ export function makeOrdersController(env: Env) {
             return updated;
           }
 
-          await CampaignModel.updateOne(
-            { _id: campaign._id },
-            { $inc: { usedSlots: 1 } },
-          ).session(session);
+          // Atomic slot claim to prevent overselling under concurrency
+          await claimSlot(session);
 
           const order = await OrderModel.create(
             [
