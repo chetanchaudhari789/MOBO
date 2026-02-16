@@ -54,6 +54,30 @@ function recordGeminiFailure(): void {
   }
 }
 
+// ── Confidence Score Constants ──
+// Named constants for AI confidence scoring thresholds used across all verification pipelines.
+const CONFIDENCE = {
+  /** Minimum confidence to consider an extraction "usable" */
+  OCR_BASE: 30,
+  OCR_ORDER_ID_BONUS: 30,
+  OCR_AMOUNT_BONUS: 25,
+  OCR_BOTH_BONUS: 10,
+  OCR_MAX_CAP: 85,
+  RATING_BASE: 20,
+  RATING_FIELD_WEIGHT: 35,
+  RETURN_WINDOW_BASE: 15,
+  RETURN_WINDOW_ORDER_BONUS: 20,
+  RETURN_WINDOW_PRODUCT_WEIGHT: 20,
+  RETURN_WINDOW_AMOUNT_BONUS: 15,
+  RETURN_WINDOW_SOLD_BONUS: 10,
+  RETURN_WINDOW_CLOSED_BONUS: 10,
+  /** Fallback score when no fields extracted */
+  FALLBACK_NONE: 25,
+  /** Minimum usable AI fallback score */
+  FALLBACK_LOW: 10,
+  FALLBACK_OCR_ONLY: 15,
+} as const;
+
 /** Call once at startup or first AI request to sync env-driven config values. */
 export function initAiServiceConfig(env: { AI_OCR_POOL_SIZE?: number; AI_CIRCUIT_BREAKER_THRESHOLD?: number; AI_CIRCUIT_BREAKER_COOLDOWN_MS?: number }): void {
   if (env.AI_OCR_POOL_SIZE) OCR_POOL_SIZE = env.AI_OCR_POOL_SIZE;
@@ -607,6 +631,7 @@ ${
             : {}),
         };
       } catch (innerError) {
+        console.warn(`[AI Chatbot] Model fallback error:`, innerError instanceof Error ? innerError.message : innerError);
         lastError = innerError;
         continue;
       }
@@ -812,10 +837,10 @@ async function verifyProofWithOcr(
       }
     }
 
-    let confidenceScore = 30; // base OCR confidence
-    if (orderIdMatch) confidenceScore += 30;
-    if (amountMatch) confidenceScore += 25;
-    if (orderIdMatch && amountMatch) confidenceScore = Math.min(confidenceScore + 10, 85);
+    let confidenceScore: number = CONFIDENCE.OCR_BASE;
+    if (orderIdMatch) confidenceScore += CONFIDENCE.OCR_ORDER_ID_BONUS;
+    if (amountMatch) confidenceScore += CONFIDENCE.OCR_AMOUNT_BONUS;
+    if (orderIdMatch && amountMatch) confidenceScore = Math.min(confidenceScore + CONFIDENCE.OCR_BOTH_BONUS, CONFIDENCE.OCR_MAX_CAP);
 
     const detectedNotes: string[] = [];
     if (!orderIdMatch) detectedNotes.push(`Order ID "${expectedOrderId}" not found in screenshot.`);
@@ -952,6 +977,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
         recordGeminiSuccess();
         return { ...parsed, verificationMethod: 'gemini' as const };
       } catch (innerError) {
+        console.warn(`[AI Proof] Model fallback error:`, innerError instanceof Error ? innerError.message : innerError);
         lastError = innerError;
         continue;
       }
@@ -1121,14 +1147,14 @@ async function verifyRatingWithOcr(
     const productNameMatch = matchedTokens.length >= Math.max(1, Math.ceil(productTokens.length * 0.4));
 
     // Graduated confidence scoring — partial matches contribute proportionally
-    let confidenceScore = 20;
+    let confidenceScore: number = CONFIDENCE.RATING_BASE;
     if (accountNameMatch) {
       const nameRatio = buyerParts.length > 0 ? nameMatches.length / buyerParts.length : 0;
-      confidenceScore += Math.round(35 * nameRatio);
+      confidenceScore += Math.round(CONFIDENCE.RATING_FIELD_WEIGHT * nameRatio);
     }
     if (productNameMatch) {
       const productRatio = productTokens.length > 0 ? matchedTokens.length / productTokens.length : 0;
-      confidenceScore += Math.round(35 * productRatio);
+      confidenceScore += Math.round(CONFIDENCE.RATING_FIELD_WEIGHT * productRatio);
     }
 
     // Try to detect the actual account name shown
@@ -1218,7 +1244,7 @@ export async function verifyRatingScreenshotWithAi(
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
         return parsed;
-      } catch (innerError) { lastError = innerError; continue; }
+      } catch (innerError) { console.warn('[AI Rating] Model fallback error:', innerError instanceof Error ? innerError.message : innerError); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini rating verification failed');
@@ -1364,16 +1390,16 @@ async function verifyReturnWindowWithOcr(
     const returnWindowRe = /return\s*window\s*(closed|expired|ended|over|passed)|no\s*return|non.?returnable/i;
     const returnWindowClosed = returnWindowRe.test(ocrText);
 
-    let confidenceScore = 15;
-    if (orderIdMatch) confidenceScore += 20;
+    let confidenceScore: number = CONFIDENCE.RETURN_WINDOW_BASE;
+    if (orderIdMatch) confidenceScore += CONFIDENCE.RETURN_WINDOW_ORDER_BONUS;
     // Graduated product confidence based on token match ratio
     if (productNameMatch && productTokens.length > 0) {
       const ratio = matchedProd.length / productTokens.length;
-      confidenceScore += Math.round(20 * ratio);
+      confidenceScore += Math.round(CONFIDENCE.RETURN_WINDOW_PRODUCT_WEIGHT * ratio);
     }
-    if (amountMatch) confidenceScore += 15;
-    if (soldByMatch) confidenceScore += 10;
-    if (returnWindowClosed) confidenceScore += 10;
+    if (amountMatch) confidenceScore += CONFIDENCE.RETURN_WINDOW_AMOUNT_BONUS;
+    if (soldByMatch) confidenceScore += CONFIDENCE.RETURN_WINDOW_SOLD_BONUS;
+    if (returnWindowClosed) confidenceScore += CONFIDENCE.RETURN_WINDOW_CLOSED_BONUS;
 
     return {
       orderIdMatch, productNameMatch, amountMatch, soldByMatch, returnWindowClosed, confidenceScore,
@@ -1467,7 +1493,7 @@ export async function verifyReturnWindowWithAi(
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
         return parsed;
-      } catch (innerError) { lastError = innerError; continue; }
+      } catch (innerError) { console.warn('[AI ReturnWindow] Model fallback error:', innerError instanceof Error ? innerError.message : innerError); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini return window verification failed');
@@ -2510,6 +2536,7 @@ export async function extractOrderDetailsWithAi(
               return text;
             }
           } catch (innerError) {
+            console.warn('[AI OCR] Model fallback error:', innerError instanceof Error ? innerError.message : innerError);
             _lastError = innerError;
             continue;
           }
@@ -2918,6 +2945,7 @@ export async function extractOrderDetailsWithAi(
           });
           break;
         } catch (innerError) {
+          console.warn('[AI Extract] Step 1 model fallback error:', innerError instanceof Error ? innerError.message : innerError);
           _lastError = innerError;
           continue;
         }
@@ -2980,6 +3008,7 @@ export async function extractOrderDetailsWithAi(
             }
             break;
           } catch (innerError) {
+            console.warn('[AI Extract] Step 2 model fallback error:', innerError instanceof Error ? innerError.message : innerError);
             _lastError = innerError;
             continue;
           }
@@ -2988,7 +3017,7 @@ export async function extractOrderDetailsWithAi(
     }
 
     if (!finalOrderId && !finalAmount) {
-      confidenceScore = 25;
+      confidenceScore = CONFIDENCE.FALLBACK_NONE;
       notes.push('Unable to extract order details.');
     } else if (!confidenceScore) {
       confidenceScore = 55;

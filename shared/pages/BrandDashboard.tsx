@@ -3,6 +3,7 @@ import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../components/ui/ConfirmDialog';
 import {
   LogOut,
   Building2,
@@ -1300,6 +1301,7 @@ const OrdersView = ({ user }: any) => {
 
 const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) => {
   const { toast } = useToast();
+  const { confirm, ConfirmDialogElement } = useConfirm();
   const [view, setView] = useState<'list' | 'create'>('list');
   const [, setDetailView] = useState<Campaign | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -1434,7 +1436,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
   };
 
   const handleDelete = async (campaign: Campaign) => {
-    const confirmed = confirm('Delete this campaign? This cannot be undone.');
+    const confirmed = await confirm({ message: 'Delete this campaign? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!confirmed) return;
     setDeletingId(campaign.id);
     try {
@@ -1728,6 +1730,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
 
   return (
     <div className="max-w-7xl mx-auto animate-enter h-full flex flex-col">
+      {ConfirmDialogElement}
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-zinc-900 tracking-tight">Active Campaigns</h1>
@@ -1825,7 +1828,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
             >
               <div className="flex gap-4 mb-4">
                 <div className="w-20 h-20 bg-zinc-50 rounded-2xl p-2 flex-shrink-0 border border-zinc-100 flex items-center justify-center">
-                  <img src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" />
+                  <img src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 </div>
                 <div className="flex-1 min-w-0 py-1">
                   <div className="flex justify-between items-start mb-1">
@@ -1845,7 +1848,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                     className="text-[9px] text-zinc-400 font-mono cursor-pointer hover:text-lime-600 transition-colors mb-2 block"
                     title="Click to copy Campaign ID"
                     onClick={() => {
-                      navigator.clipboard.writeText(String(c.id));
+                      navigator.clipboard.writeText(String(c.id)).then(() => toast.success('Campaign ID copied!')).catch(() => {});
                     }}
                   >
                     ID: {String(c.id).slice(-8)}
@@ -1929,7 +1932,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                     onClick={async () => {
                       setCopyingId(c.id);
                       try {
-                        const res = await api.ops.copyCampaign(c.id);
+                        const res = await api.brand.copyCampaign(c.id);
                         if (res.ok) {
                           toast.success('Campaign copied!');
                           onRefresh();
@@ -1963,6 +1966,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
 export const BrandDashboard: React.FC = () => {
   const { user, logout, updateUser } = useAuth();
   const { toast } = useToast();
+  const { confirm: confirmDialog, ConfirmDialogElement: BrandConfirmDialog } = useConfirm();
   useRealtimeConnection();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -2125,6 +2129,7 @@ export const BrandDashboard: React.FC = () => {
   const pendingRequests = user?.pendingConnections?.length || 0;
 
   return (
+    <>
     <DesktopShell
       isSidebarOpen={isSidebarOpen}
       onSidebarOpenChange={setIsSidebarOpen}
@@ -2335,10 +2340,10 @@ export const BrandDashboard: React.FC = () => {
                     </div>
 
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
                         if (!user) return;
-                        if (confirm('Disconnect this Agency?')) {
+                        if (await confirmDialog({ message: 'Disconnect this Agency?', confirmLabel: 'Disconnect', variant: 'destructive' })) {
                           api.brand.removeAgency(user.id, ag.mediatorCode!).then(fetchData).catch((err: any) => toast.error(err?.message || 'Failed to disconnect agency'));
                         }
                       }}
@@ -2696,5 +2701,7 @@ export const BrandDashboard: React.FC = () => {
         </div>
       )}
     </DesktopShell>
+    {BrandConfirmDialog}
+    </>
   );
 };
