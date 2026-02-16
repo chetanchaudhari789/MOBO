@@ -418,9 +418,18 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+    const trimmedPasskey = String(passkey || '').trim();
+    if (!trimmedPasskey || trimmedPasskey.length < 8) {
+      setAuthError('Security key must be at least 8 characters.');
+      return;
+    }
+    if (trimmedPasskey.length > 200) {
+      setAuthError('Security key must not exceed 200 characters.');
+      return;
+    }
     setIsAuthLoading(true);
     try {
-      const u = await loginAdmin(String(adminId || '').trim(), String(passkey || '').trim());
+      const u = await loginAdmin(String(adminId || '').trim(), trimmedPasskey);
       if (u?.role !== 'admin') {
         logout();
         setAuthError('This account is not an admin. Please use the correct portal.');
@@ -587,7 +596,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
     const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
-      return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
+      return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
     // csvSafe imported from shared/utils/csvHelpers
@@ -633,7 +642,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       const item = order.items?.[0];
 
       const row = [
-        order.externalOrderId || order.id,
+        csvSafe(order.externalOrderId || order.id),
         dateStr,
         timeStr,
         csvSafe(order.buyerName || ''),
@@ -641,15 +650,15 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         csvSafe((order as any).reviewerName || ''),
         csvSafe(order.brandName ?? item?.brandName ?? ''),
         csvSafe(item?.title ?? ''),
-        item?.platform ?? '',
-        item?.dealType ?? 'Discount',
+        csvSafe(item?.platform ?? ''),
+        csvSafe(item?.dealType ?? 'Discount'),
         item?.quantity ?? 1,
         item?.priceAtPurchase ?? 0,
         order.total,
-        order.status,
-        order.paymentStatus,
-        order.affiliateStatus,
-        order.managerName || 'N/A',
+        csvSafe(order.status || ''),
+        csvSafe(order.paymentStatus || ''),
+        csvSafe(order.affiliateStatus || ''),
+        csvSafe(order.managerName || 'N/A'),
         csvSafe(order.agencyName || 'Partner Agency'),
         order.id,
         csvSafe(order.soldBy || ''),
@@ -817,6 +826,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               placeholder="••••••••"
               leftIcon={<Key size={18} />}
               className="font-mono text-sm"
+              minLength={8}
+              maxLength={200}
               autoComplete="current-password"
             />
 
@@ -1010,7 +1021,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                   <StatCard
                     title="Orders Processed"
                     value={(stats?.totalOrders || 0).toLocaleString()}
-                    subtext="+24% this week"
+                    subtext="Total"
                     icon={ShoppingCart}
                     colorClass="text-purple-600"
                   />

@@ -26,6 +26,14 @@ export const MediatorAuthScreen: React.FC<MediatorAuthProps> = ({ onBack }) => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!password || password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password.length > 200) {
+      setError('Password must not exceed 200 characters.');
+      return;
+    }
     setIsLoading(true);
     try {
       const u = await login(mobile, password);
@@ -267,6 +275,8 @@ export const MediatorAuthScreen: React.FC<MediatorAuthProps> = ({ onBack }) => {
           onChange={(e) => setPassword(e.target.value)}
           leftIcon={<Lock size={18} />}
           required
+          minLength={8}
+          maxLength={200}
           autoComplete={view === 'login' ? 'current-password' : 'new-password'}
         />
 

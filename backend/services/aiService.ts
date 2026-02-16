@@ -19,10 +19,47 @@ const __backendRoot = path.basename(path.resolve(__ocrDirname, '..')) === 'dist'
 // Use local eng.traineddata to avoid CDN downloads in production
 const LOCAL_LANG_PATH = path.join(__backendRoot, '/');
 
-const OCR_POOL_SIZE = 2;
+let OCR_POOL_SIZE = 2; // overridden by env.AI_OCR_POOL_SIZE at first call
 const _ocrPool: Array<Awaited<ReturnType<typeof createWorker>>> = [];
 let _ocrPoolReady: Promise<void> | null = null;
 let _ocrPoolInitializing = false;
+
+// ── Gemini Circuit Breaker ──
+// After consecutive Gemini failures, skip directly to OCR fallback for a cooldown period.
+let _geminiConsecutiveFails = 0;
+let _geminiLastFailTimestamp = 0;
+let _circuitBreakerThreshold = 3;      // overridden by env
+let _circuitBreakerCooldownMs = 300_000; // 5 min, overridden by env
+
+function isGeminiCircuitOpen(): boolean {
+  if (_geminiConsecutiveFails < _circuitBreakerThreshold) return false;
+  const elapsed = Date.now() - _geminiLastFailTimestamp;
+  if (elapsed >= _circuitBreakerCooldownMs) {
+    // Cooldown expired — half-open: allow retry
+    _geminiConsecutiveFails = 0;
+    return false;
+  }
+  return true; // circuit is OPEN → skip Gemini
+}
+
+function recordGeminiSuccess(): void {
+  _geminiConsecutiveFails = 0;
+}
+
+function recordGeminiFailure(): void {
+  _geminiConsecutiveFails++;
+  _geminiLastFailTimestamp = Date.now();
+  if (_geminiConsecutiveFails >= _circuitBreakerThreshold) {
+    console.warn(`[AI Circuit Breaker] OPEN — ${_geminiConsecutiveFails} consecutive Gemini failures. Skipping Gemini for ${_circuitBreakerCooldownMs / 1000}s.`);
+  }
+}
+
+/** Call once at startup or first AI request to sync env-driven config values. */
+export function initAiServiceConfig(env: { AI_OCR_POOL_SIZE?: number; AI_CIRCUIT_BREAKER_THRESHOLD?: number; AI_CIRCUIT_BREAKER_COOLDOWN_MS?: number }): void {
+  if (env.AI_OCR_POOL_SIZE) OCR_POOL_SIZE = env.AI_OCR_POOL_SIZE;
+  if (env.AI_CIRCUIT_BREAKER_THRESHOLD) _circuitBreakerThreshold = env.AI_CIRCUIT_BREAKER_THRESHOLD;
+  if (env.AI_CIRCUIT_BREAKER_COOLDOWN_MS) _circuitBreakerCooldownMs = env.AI_CIRCUIT_BREAKER_COOLDOWN_MS;
+}
 
 async function _initOcrPool(): Promise<void> {
   if (_ocrPool.length >= OCR_POOL_SIZE || _ocrPoolInitializing) return;
@@ -559,6 +596,7 @@ ${
           estimatedTokens,
         });
 
+        recordGeminiSuccess();
         return {
           text: parsed.responseText,
           intent: parsed.intent ?? 'unknown',
@@ -573,6 +611,7 @@ ${
       }
     }
 
+    recordGeminiFailure();
     throw lastError ?? new Error('Gemini request failed');
   } catch (error) {
     // Fallback response if AI fails
@@ -829,8 +868,8 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     };
   }
 
-  // If Gemini is not available, fall back to OCR-based verification.
-  if (!geminiAvailable) {
+  // If Gemini is not available or circuit breaker is open, fall back to OCR-based verification.
+  if (!geminiAvailable || isGeminiCircuitOpen()) {
     const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
     return { ...ocrResult, verificationMethod: 'ocr' as const };
   }
@@ -909,6 +948,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
 
         console.info('Gemini proof usage estimate', { model, estimatedTokens });
 
+        recordGeminiSuccess();
         return { ...parsed, verificationMethod: 'gemini' as const };
       } catch (innerError) {
         lastError = innerError;
@@ -916,6 +956,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
       }
     }
 
+    recordGeminiFailure();
     throw lastError ?? new Error('Gemini proof verification failed');
   } catch (error) {
     console.error('Gemini proof verification error:', error);
@@ -1120,7 +1161,7 @@ export async function verifyRatingScreenshotWithAi(
       discrepancyNote: 'Image too large for auto verification.' };
   }
 
-  if (!isGeminiConfigured(env)) {
+  if (!isGeminiConfigured(env) || isGeminiCircuitOpen()) {
     return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
 
@@ -1174,9 +1215,11 @@ export async function verifyRatingScreenshotWithAi(
         const parsed = safeJsonParse<RatingVerificationResult>(response.text);
         if (!parsed) throw new Error('Failed to parse AI rating verification response');
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
+        recordGeminiSuccess();
         return parsed;
       } catch (innerError) { lastError = innerError; continue; }
     }
+    recordGeminiFailure();
     throw lastError ?? new Error('Gemini rating verification failed');
   } catch (error) {
     console.error('Gemini rating verification error:', error);
@@ -1363,7 +1406,7 @@ export async function verifyReturnWindowWithAi(
       discrepancyNote: 'Image too large for auto verification.' };
   }
 
-  if (!isGeminiConfigured(env)) {
+  if (!isGeminiConfigured(env) || isGeminiCircuitOpen()) {
     return verifyReturnWindowWithOcr(payload.imageBase64, payload);
   }
 
@@ -1421,9 +1464,11 @@ export async function verifyReturnWindowWithAi(
         const parsed = safeJsonParse<ReturnWindowVerificationResult>(response.text);
         if (!parsed) throw new Error('Failed to parse AI return window verification response');
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
+        recordGeminiSuccess();
         return parsed;
       } catch (innerError) { lastError = innerError; continue; }
     }
+    recordGeminiFailure();
     throw lastError ?? new Error('Gemini return window verification failed');
   } catch (error) {
     console.error('Gemini return window verification error:', error);
@@ -2451,8 +2496,8 @@ export async function extractOrderDetailsWithAi(
     };
 
     const runOcrPass = async (imageBase64: string, label: string) => {
-      // Try Gemini OCR first (if available)
-      if (ai) {
+      // Try Gemini OCR first (if available and circuit breaker is closed)
+      if (ai && !isGeminiCircuitOpen()) {
         let text = '';
         for (const model of GEMINI_MODEL_FALLBACKS) {
           try {
@@ -2460,6 +2505,7 @@ export async function extractOrderDetailsWithAi(
             text = await extractTextOnly(model, imageBase64);
             if (text) {
               console.log('Order extract OCR pass', { label, model, length: text.length });
+              recordGeminiSuccess();
               return text;
             }
           } catch (innerError) {
@@ -2775,8 +2821,8 @@ export async function extractOrderDetailsWithAi(
     let finalProductName = deterministic.productName;
     let aiUsed = false;
 
-    // ALWAYS run AI when available — for validation, gap-filling, and cross-checking
-    if (ai) {
+    // ALWAYS run AI when available and circuit breaker is closed — for validation, gap-filling, and cross-checking
+    if (ai && !isGeminiCircuitOpen()) {
       // Step 1: Text-based refinement (cheap — sends OCR text only)
       for (const model of GEMINI_MODEL_FALLBACKS.slice(0, 3)) {
         try {

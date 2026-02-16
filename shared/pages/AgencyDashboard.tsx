@@ -463,7 +463,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   const handleExport = () => {
     const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
-      return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
+      return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
     // csvSafe imported from shared/utils/csvHelpers
@@ -510,24 +510,24 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       const item = o.items?.[0];
 
       const row = [
-        getPrimaryOrderId(o),
+        csvSafe(getPrimaryOrderId(o)),
         date,
         time,
         csvSafe(item?.title || ''),
-        item?.dealType || 'General',
-        item?.platform || '',
-        item?.dealType || 'Discount',
+        csvSafe(item?.dealType || 'General'),
+        csvSafe(item?.platform || ''),
+        csvSafe(item?.dealType || 'Discount'),
         item?.priceAtPurchase,
         item?.quantity || 1,
         o.total,
         csvSafe(o.agencyName || user?.name || 'Agency'),
-        o.managerName,
+        csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
         csvSafe((o as any).reviewerName || ''),
-        o.status,
-        o.paymentStatus,
-        o.affiliateStatus,
+        csvSafe(o.status || ''),
+        csvSafe(o.paymentStatus || ''),
+        csvSafe(o.affiliateStatus || ''),
         o.id,
         csvSafe((o as any).soldBy || ''),
         (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
@@ -1215,9 +1215,8 @@ const DashboardView = ({ stats, allOrders }: any) => {
           label="Total Revenue"
           value={formatCurrency(stats.revenue)}
           icon={IndianRupee}
-          trend="+12%"
         />
-        <StatCard label="Active Squad" value={stats.totalMediators} icon={Users} trend="Growing" />
+        <StatCard label="Active Squad" value={stats.totalMediators} icon={Users} />
         <StatCard label="Live Campaigns" value={stats.activeCampaigns} icon={Layers} />
         <StatCard
           label="Orders Today"
@@ -1227,7 +1226,6 @@ const DashboardView = ({ stats, allOrders }: any) => {
             ).length
           }
           icon={Box}
-          trend="+24"
         />
       </div>
 
@@ -1356,13 +1354,16 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [customPayout, setCustomPayout] = useState<string>('');
   const [commissionOnDeal, setCommissionOnDeal] = useState<string>('');
   const [commissionToMediator, setCommissionToMediator] = useState<string>('');
+  const [mediatorPayouts, setMediatorPayouts] = useState<Record<string, string>>({});
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!assignModal) return;
     setAssignments(assignModal.assignments || {});
     setAssignSearch('');
+    setMediatorPayouts({});
   }, [assignModal]);
 
   // Get list of mediator codes for this agency to verify if campaign is active in network
@@ -1455,9 +1456,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     }
 
     const isInternal = String(assignModal.brandId || '') === String(user?.id || '');
-    const mediatorPayout = commissionToMediator.trim() ? Number(commissionToMediator) : 0;
+    const globalMediatorPayout = commissionToMediator.trim() ? Number(commissionToMediator) : 0;
     const commission = isInternal ? 0 : commissionOnDeal.trim() ? Number(commissionOnDeal) : 0;
-    if (!Number.isFinite(mediatorPayout) || mediatorPayout < 0) {
+    if (!Number.isFinite(globalMediatorPayout) || globalMediatorPayout < 0) {
       toast.error('Commission to mediator must be 0 or more');
       return;
     }
@@ -1467,12 +1468,26 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
     }
     const dealType = selectedDealType !== (assignModal.dealType || 'Discount') ? selectedDealType : undefined;
 
+    // Build per-mediator rich assignments with individual payout overrides
+    const richAssignments: Record<string, { limit: number; payout: number }> = {};
+    for (const [code, count] of Object.entries(positiveAssignments)) {
+      const perMediatorPayout = mediatorPayouts[code]?.trim()
+        ? Number(mediatorPayouts[code])
+        : globalMediatorPayout;
+      if (!Number.isFinite(perMediatorPayout) || perMediatorPayout < 0) {
+        toast.error(`Invalid commission for mediator ${code}`);
+        return;
+      }
+      richAssignments[code] = { limit: Number(count), payout: perMediatorPayout };
+    }
+
     try {
-      // Send mediator payout and commission so backend stores them per-assignment
-      await api.ops.assignSlots(assignModal.id, positiveAssignments, dealType, undefined, mediatorPayout, commission);
+      // Send rich assignments with per-mediator payout, plus commission on deal
+      await api.ops.assignSlots(assignModal.id, richAssignments, dealType, undefined, undefined, commission);
       toast.success('Distribution saved');
       setAssignModal(null);
       setAssignments({});
+      setMediatorPayouts({});
       onRefresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to distribute inventory';
@@ -1572,6 +1587,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       newAssignments[m.mediatorCode!] = amount;
     });
     setAssignments(newAssignments);
+    // Reset per-mediator overrides so everyone uses the global commission
+    setMediatorPayouts({});
   };
 
   const handleClaimOffered = (c: Campaign) => {
@@ -1794,9 +1811,21 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                             src={c.image}
                             className="w-10 h-10 object-contain rounded-lg bg-slate-50 border border-slate-100 p-1 group-hover:scale-105 transition-transform"
                           />
-                          <span className="font-bold text-slate-900 truncate max-w-[200px]">
-                            {c.title}
-                          </span>
+                          <div>
+                            <span className="font-bold text-slate-900 truncate max-w-[200px] block">
+                              {c.title}
+                            </span>
+                            <span
+                              className="text-[9px] text-slate-400 font-mono cursor-pointer hover:text-purple-600 transition-colors"
+                              title="Click to copy Campaign ID"
+                              onClick={() => {
+                                navigator.clipboard.writeText(String(c.id));
+                                toast.success('Campaign ID copied');
+                              }}
+                            >
+                              ID: {String(c.id).slice(-8)}
+                            </span>
+                          </div>
                           {String(c.brandId || '') === String(user.id || '') && (
                             <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
                               Agency Campaign
@@ -1858,6 +1887,14 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                               setCommissionOnDeal(savedComm ? String(savedComm.commission) : '0');
                               const savedPayout = detailValues.find((d) => typeof d?.payout === 'number' && d.payout > 0);
                               setCommissionToMediator(savedPayout ? String(savedPayout.payout) : c.payout.toString());
+                              // Pre-fill per-mediator commission overrides from saved assignments
+                              const perMediatorOverrides: Record<string, string> = {};
+                              for (const [code, detail] of Object.entries(details)) {
+                                if (detail && typeof (detail as any).payout === 'number') {
+                                  perMediatorOverrides[code] = String((detail as any).payout);
+                                }
+                              }
+                              setMediatorPayouts(perMediatorOverrides);
                             }}
                             className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95"
                           >
@@ -1891,6 +1928,31 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                               {deletingId === c.id ? 'Deleting...' : 'Delete Campaign'}
                             </button>
                           )}
+                          <button
+                            onClick={async () => {
+                              setCopyingId(c.id);
+                              try {
+                                const res = await api.ops.copyCampaign(c.id);
+                                if (res.ok) {
+                                  toast.success('Campaign copied!');
+                                  onRefresh();
+                                } else {
+                                  toast.error((res as any).error || 'Copy failed');
+                                }
+                              } catch {
+                                toast.error('Copy failed');
+                              } finally {
+                                setCopyingId(null);
+                              }
+                            }}
+                            disabled={copyingId === c.id}
+                            className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-2 mx-auto shadow-sm active:scale-95 bg-sky-50 text-sky-600 border-sky-200 hover:bg-sky-100 ${
+                              copyingId === c.id ? 'opacity-60 cursor-not-allowed' : ''
+                            }`}
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            {copyingId === c.id ? 'Copying...' : 'Copy Campaign'}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -2177,6 +2239,16 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   <h4 className="text-sm sm:text-base font-black text-slate-900 mb-0.5 leading-tight line-clamp-1">
                     {assignModal.title}
                   </h4>
+                  <span
+                    className="text-[9px] text-slate-400 font-mono cursor-pointer hover:text-purple-600 transition-colors"
+                    title="Click to copy Campaign ID"
+                    onClick={() => {
+                      navigator.clipboard.writeText(String(assignModal.id));
+                      toast.success('Campaign ID copied');
+                    }}
+                  >
+                    ID: {String(assignModal.id).slice(-8)}
+                  </span>
                   {isAgencyCampaign && (
                     <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
                       Agency Campaign
@@ -2286,7 +2358,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest ml-1">
-                        Commission to Mediator (₹)
+                        Default Commission to Mediator (₹)
                       </label>
                       <div className="bg-white border border-slate-200 rounded-lg shadow-sm h-8 px-2 flex items-center focus-within:ring-2 focus-within:ring-purple-100 transition-all">
                         <span className="text-xs font-bold text-slate-400 mr-2"></span>
@@ -2339,11 +2411,14 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
             {/* List Header */}
             <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100 mb-2 shrink-0">
-              <div className="col-span-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider pl-2">
+              <div className="col-span-4 text-xs font-extrabold text-slate-400 uppercase tracking-wider pl-2">
                 Mediator Profile
               </div>
-              <div className="col-span-4 text-xs font-extrabold text-slate-400 uppercase tracking-wider text-center">
+              <div className="col-span-3 text-xs font-extrabold text-slate-400 uppercase tracking-wider text-center">
                 Sales Performance
+              </div>
+              <div className="col-span-2 text-xs font-extrabold text-slate-400 uppercase tracking-wider text-center">
+                Commission (₹)
               </div>
               <div className="col-span-3 text-xs font-extrabold text-slate-400 uppercase tracking-wider text-right pr-2">
                 Allocation
@@ -2386,7 +2461,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       className={`grid grid-cols-12 gap-4 items-center p-2 border border-slate-100 rounded-2xl transition-all bg-white shadow-sm group ${isActive ? 'hover:border-purple-200 hover:bg-purple-50/10' : 'opacity-70'}`}
                     >
                       {/* Profile */}
-                      <div className="col-span-5 flex items-center gap-4 pl-2">
+                      <div className="col-span-4 flex items-center gap-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
                           {m.avatar ? (
                             <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
@@ -2412,13 +2487,37 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       </div>
 
                       {/* Sales Performance */}
-                      <div className="col-span-4 flex flex-col items-center justify-center">
+                      <div className="col-span-3 flex flex-col items-center justify-center">
                         <p className="text-base font-black text-slate-900">
                           {formatCurrency(salesRevenue)}
                         </p>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
                           {salesCount} Orders
                         </p>
+                      </div>
+
+                      {/* Per-Mediator Commission */}
+                      <div className="col-span-2 flex flex-col items-center">
+                        <div className="relative group/input">
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            className={`w-20 p-2 text-center bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none transition-all group-hover/input:shadow-md ${isActive ? 'focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100' : 'cursor-not-allowed'}`}
+                            placeholder={commissionToMediator || '0'}
+                            value={mediatorPayouts[m.mediatorCode!] ?? ''}
+                            disabled={!isActive}
+                            onChange={(e) =>
+                              setMediatorPayouts({
+                                ...mediatorPayouts,
+                                [m.mediatorCode!]: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                        {mediatorPayouts[m.mediatorCode!]?.trim() && (
+                          <span className="text-[8px] text-purple-500 font-bold mt-0.5">Override</span>
+                        )}
                       </div>
 
                       {/* Input */}

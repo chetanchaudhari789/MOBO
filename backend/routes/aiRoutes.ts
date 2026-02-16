@@ -179,6 +179,7 @@ export function aiRoutes(env: Env): Router {
     const limit = req.auth?.userId ? env.AI_DAILY_LIMIT_AUTH : env.AI_DAILY_LIMIT_ANON;
 
     if (!Number.isFinite(limit) || limit <= 0) {
+      res.set('Retry-After', '3600');
       res.status(429).json({
         error: { code: 'DAILY_LIMIT_REACHED', message: 'Daily AI quota exceeded' },
         requestId: getRequestId(res),
@@ -193,6 +194,7 @@ export function aiRoutes(env: Env): Router {
     }
 
     if (existing.count >= limit) {
+      res.set('Retry-After', '3600');
       res.status(429).json({
         error: { code: 'DAILY_LIMIT_REACHED', message: 'Daily AI quota exceeded' },
         requestId: getRequestId(res),
@@ -211,6 +213,8 @@ export function aiRoutes(env: Env): Router {
     const now = Date.now();
     const last = lastCallAt.get(subject) || 0;
     if (now - last < env.AI_MIN_SECONDS_BETWEEN_CALLS * 1000) {
+      const retryInSeconds = Math.ceil(env.AI_MIN_SECONDS_BETWEEN_CALLS - (now - last) / 1000);
+      res.set('Retry-After', String(Math.max(retryInSeconds, 1)));
       res.status(429).json({
         error: { code: 'TOO_FREQUENT', message: 'Please wait before retrying' },
         requestId: getRequestId(res),
