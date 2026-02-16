@@ -180,7 +180,8 @@ class RealtimeClient {
         }
 
         this.backoffMs = 1000;
-        this.authFailures = 0;        const reader = res.body?.getReader();
+        this.authFailures = 0;
+        const reader = res.body?.getReader();
         if (!reader) {
           await this.sleep(this.backoffMs);
           this.backoffMs = Math.min(this.backoffMs * 2, 10_000);
