@@ -107,6 +107,7 @@ const SampleScreenshotGuide: React.FC<{
                 alt={`Sample ${g.title}`}
                 className="w-full h-auto"
                 loading="lazy"
+                onError={(e) => { (e.currentTarget.parentElement as HTMLElement)?.remove(); }}
               />
             </div>
           )}
@@ -136,7 +137,7 @@ const SampleScreenshotGuide: React.FC<{
 
 // formatCurrency, getPrimaryOrderId, csvSafe/downloadCsv imported from shared/utils
 
-const MAX_PROOF_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_PROOF_SIZE_BYTES = 10 * 1024 * 1024;
 
 const isValidImageFile = (file: File) => {
   if (!file.type.startsWith('image/')) return false;
@@ -336,7 +337,7 @@ export const Orders: React.FC = () => {
     try {
       const file = e.target.files[0];
       if (!isValidImageFile(file)) {
-        throw new Error('Please upload a valid image (PNG/JPG, max 50MB).');
+        throw new Error('Please upload a valid image (PNG/JPG, max 10MB).');
       }
       await api.orders.submitClaim(selectedOrder.id, {
         type: uploadType,
@@ -380,7 +381,7 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid order image (PNG/JPG, max 50MB).');
+      toast.error('Please upload a valid order image (PNG/JPG, max 10MB).');
       return;
     }
 
@@ -524,7 +525,7 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !selectedOrder || !user) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid image (PNG/JPG, max 50MB).');
+      toast.error('Please upload a valid image (PNG/JPG, max 10MB).');
       return;
     }
 

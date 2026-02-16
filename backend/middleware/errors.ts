@@ -46,11 +46,15 @@ export function errorHandler(
 
   // Validation errors should never be 500s.
   if (err instanceof z.ZodError) {
+    const isProd = process.env.NODE_ENV === 'production';
     res.status(400).json({
       error: {
         code: 'BAD_REQUEST',
         message: 'Invalid request',
-        details: err.issues,
+        // In production, only expose user-facing field paths and messages (no internal schema details).
+        details: isProd
+          ? err.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
+          : err.issues,
       },
       requestId,
     });
@@ -63,8 +67,7 @@ export function errorHandler(
     res.status(400).json({
       error: {
         code: 'INVALID_ID',
-        message: 'Invalid identifier',
-        details: { path: anyErr.path, value: anyErr.value },
+        message: 'Invalid identifier format',
       },
       requestId,
     });
@@ -99,6 +102,19 @@ export function errorHandler(
     });
     return;
   }
+
+  // MongoDB duplicate key error (E11000) — surface a clean 409 instead of a raw 500.
+  if (anyErr && (Number(anyErr.code) === 11000 || Number(anyErr.errorResponse?.code) === 11000)) {
+    res.status(409).json({
+      error: {
+        code: 'DUPLICATE_ENTRY',
+        message: 'A record with this value already exists.',
+      },
+      requestId,
+    });
+    return;
+  }
+
   const isProd = process.env.NODE_ENV === 'production';
 
   // eslint-disable-next-line no-console

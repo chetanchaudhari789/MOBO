@@ -99,6 +99,12 @@ export function onAuthExpired(listener: AuthExpiredListener): () => void {
   return () => { authExpiredListeners.delete(listener); };
 }
 
+/**
+ * Exported token helpers for use by realtime.ts (and tests).
+ * All other callers should use the `api` object or `fetchJson` instead.
+ */
+export { readTokens, refreshTokens, notifyAuthExpired };
+
 function notifyAuthExpired(): void {
   for (const fn of authExpiredListeners) {
     try { fn(); } catch { /* listener should not throw */ }
