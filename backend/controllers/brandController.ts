@@ -709,6 +709,77 @@ export function makeBrandController() {
       }
     },
 
+    copyCampaign: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { id } = req.body;
+        if (!id || typeof id !== 'string') {
+          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
+        }
+        const { roles, userId, user } = getRequester(req);
+
+        const campaign = await CampaignModel.findById(id).lean();
+        if (!campaign || (campaign as any).deletedAt) {
+          throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        }
+
+        // Only brand owner or privileged can copy
+        const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
+        if (!isPrivileged(roles) && !isOwner) {
+          throw new AppError(403, 'FORBIDDEN', 'Not authorized to copy this campaign');
+        }
+
+        const copyData: any = {
+          title: `${campaign.title} (Copy)`,
+          brandUserId: (campaign as any).brandUserId,
+          brandName: campaign.brandName,
+          platform: campaign.platform,
+          image: campaign.image,
+          productUrl: campaign.productUrl,
+          dealType: (campaign as any).dealType,
+          originalPricePaise: campaign.originalPricePaise,
+          pricePaise: campaign.pricePaise,
+          payoutPaise: campaign.payoutPaise,
+          totalSlots: campaign.totalSlots,
+          returnWindowDays: campaign.returnWindowDays,
+          usedSlots: 0,
+          status: 'active',
+          allowedAgencyCodes: (campaign as any).allowedAgencyCodes || [],
+          assignments: new Map(),
+          locked: false,
+          createdBy: req.auth?.userId as any,
+        };
+
+        const newCampaign = await CampaignModel.create(copyData);
+
+        await writeAuditLog({
+          req,
+          action: 'CAMPAIGN_COPIED',
+          entityType: 'Campaign',
+          entityId: String(newCampaign._id),
+          metadata: { sourceCampaignId: id },
+        });
+
+        const ts = new Date().toISOString();
+        const allowed = Array.isArray(copyData.allowedAgencyCodes)
+          ? copyData.allowedAgencyCodes.map((c: any) => String(c)).filter(Boolean)
+          : [];
+        publishRealtime({
+          type: 'deals.changed',
+          ts,
+          payload: { campaignId: String(newCampaign._id), brandId: String((campaign as any).brandUserId) },
+          audience: {
+            userIds: [String((campaign as any).brandUserId)],
+            agencyCodes: allowed,
+            roles: ['admin', 'ops'],
+          },
+        });
+
+        res.json({ ok: true, id: String(newCampaign._id) });
+      } catch (err) {
+        next(err);
+      }
+    },
+
     deleteCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const id = String(req.params.campaignId || '').trim();

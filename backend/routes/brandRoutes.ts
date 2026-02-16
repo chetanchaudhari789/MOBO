@@ -38,6 +38,7 @@ export function brandRoutes(env: Env): Router {
   router.post('/agencies/remove', brand.removeAgency);
 
   router.post('/campaigns', brand.createCampaign);
+  router.post('/campaigns/copy', brand.copyCampaign);
   router.patch('/campaigns/:campaignId', brand.updateCampaign);
   router.delete('/campaigns/:campaignId', brand.deleteCampaign);
 

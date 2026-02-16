@@ -54,6 +54,7 @@ export function opsRoutes(env: Env): Router {
   router.post('/orders/request-proof', ops.requestMissingProof);
   router.post('/campaigns', ops.createCampaign);
   router.post('/campaigns/copy', ops.copyCampaign);
+  router.post('/campaigns/decline', ops.declineOffer);
   router.patch('/campaigns/:campaignId/status', ops.updateCampaignStatus);
   router.delete('/campaigns/:campaignId', ops.deleteCampaign);
   router.post('/campaigns/assign', ops.assignSlots);

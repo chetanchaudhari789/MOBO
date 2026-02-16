@@ -640,6 +640,13 @@ export const api = {
       });
       return data;
     },
+    declineOffer: async (campaignId: string) => {
+      await fetchOk('/ops/campaigns/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id: campaignId }),
+      });
+    },
     assignSlots: async (
       id: string,
       assignments: any,
@@ -776,6 +783,14 @@ export const api = {
         method: 'DELETE',
         headers: { ...authHeaders() },
       });
+    },
+    copyCampaign: async (campaignId: string) => {
+      const data = await fetchJson('/brand/campaigns/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id: campaignId }),
+      });
+      return data;
     },
   },
   admin: {

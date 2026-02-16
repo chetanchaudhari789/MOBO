@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../components/ui/ConfirmDialog';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
@@ -909,11 +910,12 @@ const BrandsView = () => {
 
 const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
   const { toast } = useToast();
+  const { confirm, ConfirmDialogElement } = useConfirm();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [sheetsExporting, setSheetsExporting] = useState(false);
 
   const handleDelete = async (payoutId: string) => {
-    const ok = window.confirm('Delete this payout record? This cannot be undone.');
+    const ok = await confirm({ message: 'Delete this payout record? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!ok) return;
     setDeletingId(payoutId);
     try {
@@ -999,6 +1001,7 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
 
   return (
     <div className="space-y-6 animate-enter pb-12 h-full flex flex-col">
+      {ConfirmDialogElement}
       <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm flex flex-col flex-1 overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-slate-50/50">
           <div className="flex items-center gap-4">
@@ -1339,6 +1342,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
 
 const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrders }: any) => {
   const { toast } = useToast();
+  const { confirm, ConfirmDialogElement: InventoryConfirmDialog } = useConfirm();
   const [subTab, setSubTab] = useState<'inventory' | 'offered'>('inventory');
   const [assignModal, setAssignModal] = useState<Campaign | null>(null);
   const [createModal, setCreateModal] = useState(false);
@@ -1358,6 +1362,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [decliningId, setDecliningId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!assignModal) return;
@@ -1628,7 +1633,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
   const handleDelete = async (campaign: Campaign) => {
     const isOwner = String(campaign.brandId || '') === String(user?.id || '');
     if (!isOwner) return;
-    const confirmed = confirm('Delete this campaign? This cannot be undone.');
+    const confirmed = await confirm({ message: 'Delete this campaign? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!confirmed) return;
     setDeletingId(campaign.id);
     try {
@@ -1672,6 +1677,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
 
   return (
     <div className="space-y-6 animate-enter h-full flex flex-col">
+      {InventoryConfirmDialog}
       {/* Header Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between bg-white p-4 rounded-[1.5rem] border border-slate-100 shadow-sm gap-4">
         <div>
@@ -2024,12 +2030,38 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                         <p className="text-sm font-black text-slate-900">{c.totalSlots} Slots</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleClaimOffered(c)}
-                      className="w-full py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-purple-600 transition-all shadow-lg active:scale-95 mt-auto"
-                    >
-                      <BookmarkPlus size={16} /> Add to Network Inventory
-                    </button>
+                    <div className="flex gap-2 mt-auto">
+                      <button
+                        onClick={() => handleClaimOffered(c)}
+                        className="flex-1 py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-purple-600 transition-all shadow-lg active:scale-95"
+                      >
+                        <BookmarkPlus size={16} /> Add to Network
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const confirmed = await confirm({ message: `Decline this offer from "${c.brand}"? This cannot be undone.`, confirmLabel: 'Decline', variant: 'destructive' });
+                          if (!confirmed) return;
+                          setDecliningId(c.id);
+                          try {
+                            await api.ops.declineOffer(c.id);
+                            toast.success('Offer declined');
+                            onRefresh();
+                          } catch (err) {
+                            const msg = err instanceof Error ? err.message : 'Failed to decline offer';
+                            toast.error(msg);
+                          } finally {
+                            setDecliningId(null);
+                          }
+                        }}
+                        disabled={decliningId === c.id}
+                        className={`px-4 py-3.5 bg-red-50 text-red-600 border border-red-200 rounded-2xl font-bold text-xs flex items-center justify-center gap-1 hover:bg-red-100 transition-all active:scale-95 ${
+                          decliningId === c.id ? 'opacity-60 cursor-not-allowed' : ''
+                        }`}
+                        title="Decline this offer"
+                      >
+                        {decliningId === c.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

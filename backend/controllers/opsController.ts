@@ -2659,5 +2659,64 @@ export function makeOpsController(env: Env) {
         next(err);
       }
     },
+
+    declineOffer: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { id } = req.body;
+        if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
+        }
+        const { roles, user: requester } = getRequester(req);
+        requireAnyRole(roles, 'agency');
+
+        const agencyCode = String((requester as any)?.mediatorCode || '').trim();
+        if (!agencyCode) {
+          throw new AppError(409, 'AGENCY_MISSING_CODE', 'Agency is missing a code');
+        }
+
+        const campaign = await CampaignModel.findById(id)
+          .select({ allowedAgencyCodes: 1, brandUserId: 1, title: 1, deletedAt: 1 })
+          .lean();
+        if (!campaign || (campaign as any).deletedAt) {
+          throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        }
+
+        const allowed: string[] = Array.isArray((campaign as any).allowedAgencyCodes)
+          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c))
+          : [];
+        if (!allowed.includes(agencyCode)) {
+          throw new AppError(409, 'NOT_OFFERED', 'This campaign was not offered to your agency');
+        }
+
+        await CampaignModel.updateOne(
+          { _id: (campaign as any)._id },
+          { $pull: { allowedAgencyCodes: agencyCode } }
+        );
+
+        await writeAuditLog({
+          req,
+          action: 'OFFER_DECLINED',
+          entityType: 'Campaign',
+          entityId: String((campaign as any)._id),
+          metadata: { agencyCode },
+        });
+
+        const ts = new Date().toISOString();
+        publishRealtime({
+          type: 'deals.changed',
+          ts,
+          payload: { campaignId: String((campaign as any)._id) },
+          audience: {
+            agencyCodes: [agencyCode],
+            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            roles: ['admin', 'ops'],
+          },
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
   };
 }

@@ -44,7 +44,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     let inFlight = false;
 
     const scheduleRefresh = () => {
-      if (timer) return;
+      // Debounce: always restart the timer so we fetch the latest state after a burst.
+      if (timer) clearTimeout(timer);
       timer = setTimeout(async () => {
         timer = null;
         if (inFlight) return;

@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../components/ui/ConfirmDialog';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
@@ -173,6 +174,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack }) => {
   const { user, loginAdmin, logout } = useAuth();
   const { toast } = useToast();
+  const { confirm, ConfirmDialogElement } = useConfirm();
   const [view, setView] = useState<ViewMode>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -479,7 +481,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       toast.error('Wallet has funds; cannot delete');
       return;
     }
-    const ok = window.confirm('Delete this wallet? This cannot be undone.');
+    const ok = await confirm({ message: 'Delete this wallet? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!ok) return;
     setDeletingWalletId(target.id);
     try {
@@ -496,7 +498,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
   const deleteUser = async (target: User) => {
     if (target.role === 'admin') return;
-    const ok = window.confirm('Delete this user? This cannot be undone.');
+    const ok = await confirm({ message: 'Delete this user? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!ok) return;
     setDeletingUserId(target.id);
     try {
@@ -512,7 +514,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   };
 
   const deleteProduct = async (productId: string) => {
-    const ok = window.confirm('Delete this product/deal? This cannot be undone.');
+    const ok = await confirm({ message: 'Delete this product/deal? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!ok) return;
     setDeletingProductId(productId);
     try {
@@ -544,7 +546,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       toast.error('Resolve or reject the ticket before deleting');
       return;
     }
-    const ok = window.confirm('Delete this ticket? This cannot be undone.');
+    const ok = await confirm({ message: 'Delete this ticket? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!ok) return;
     try {
       await api.tickets.delete(id);
@@ -563,7 +565,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       toast.error('Only unused active codes can be deleted');
       return;
     }
-    const ok = window.confirm('Delete this access code? This cannot be undone.');
+    const ok = await confirm({ message: 'Delete this access code? This cannot be undone.', confirmLabel: 'Delete', variant: 'destructive' });
     if (!ok) return;
     try {
       await api.admin.deleteInvite(code);
@@ -849,6 +851,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   }
 
   return (
+    <>
+    {ConfirmDialogElement}
     <DesktopShell
       isSidebarOpen={isSidebarOpen}
       onSidebarOpenChange={setIsSidebarOpen}
@@ -2078,5 +2082,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         </div>
       )}
     </DesktopShell>
+    </>
   );
 };
