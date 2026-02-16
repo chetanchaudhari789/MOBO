@@ -694,7 +694,7 @@ const OrdersView = ({ user }: any) => {
   const handleExport = () => {
     const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
-      return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
+      return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
     // csvSafe imported from shared/utils/csvHelpers
@@ -741,13 +741,13 @@ const OrdersView = ({ user }: any) => {
       const item = o.items?.[0];
 
       const row = [
-        getPrimaryOrderId(o),
+        csvSafe(getPrimaryOrderId(o)),
         date,
         time,
         csvSafe(item?.title || ''),
-        item?.dealType || 'General',
-        item?.platform || '',
-        item?.dealType || 'Discount',
+        csvSafe(item?.dealType || 'General'),
+        csvSafe(item?.platform || ''),
+        csvSafe(item?.dealType || 'Discount'),
         item?.priceAtPurchase,
         item?.quantity || 1,
         o.total,
@@ -756,9 +756,9 @@ const OrdersView = ({ user }: any) => {
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
         csvSafe((o as any).reviewerName || ''),
-        o.status,
-        o.paymentStatus,
-        o.affiliateStatus,
+        csvSafe(o.status || ''),
+        csvSafe(o.paymentStatus || ''),
+        csvSafe(o.affiliateStatus || ''),
         o.id,
         csvSafe(o.soldBy || ''),
         o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
@@ -1306,6 +1306,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
   const [editingId, setEditingId] = useState<string | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
   const [campaignSearch, setCampaignSearch] = useState('');
   const [filterDealType, setFilterDealType] = useState<string>('All');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
@@ -1837,9 +1838,18 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                       {c.platform}
                     </span>
                   </div>
-                  <h3 className="font-bold text-zinc-900 text-sm line-clamp-1 leading-tight mb-2">
+                  <h3 className="font-bold text-zinc-900 text-sm line-clamp-1 leading-tight mb-1">
                     {c.title}
                   </h3>
+                  <span
+                    className="text-[9px] text-zinc-400 font-mono cursor-pointer hover:text-lime-600 transition-colors mb-2 block"
+                    title="Click to copy Campaign ID"
+                    onClick={() => {
+                      navigator.clipboard.writeText(String(c.id));
+                    }}
+                  >
+                    ID: {String(c.id).slice(-8)}
+                  </span>
                   <div className="flex items-center gap-3">
                     <div className="flex flex-col">
                       <span className="text-[9px] font-bold text-zinc-400 uppercase">Payout</span>
@@ -1914,6 +1924,31 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                     }`}
                   >
                     {deletingId === c.id ? 'Deleting...' : 'Delete Campaign'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setCopyingId(c.id);
+                      try {
+                        const res = await api.ops.copyCampaign(c.id);
+                        if (res.ok) {
+                          toast.success('Campaign copied!');
+                          onRefresh();
+                        } else {
+                          toast.error((res as any).error || 'Copy failed');
+                        }
+                      } catch {
+                        toast.error('Copy failed');
+                      } finally {
+                        setCopyingId(null);
+                      }
+                    }}
+                    disabled={copyingId === c.id}
+                    className={`w-full py-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 bg-sky-50 text-sky-600 border-sky-200 hover:bg-sky-100 ${
+                      copyingId === c.id ? 'opacity-60 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copyingId === c.id ? 'Copying...' : 'Copy Campaign'}
                   </button>
                 </div>
               </div>
@@ -2295,9 +2330,6 @@ export const BrandDashboard: React.FC = () => {
                       <div className="flex gap-2">
                         <span className="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold rounded-full border border-green-100 flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active
-                        </span>
-                        <span className="px-3 py-1 bg-zinc-50 text-zinc-500 text-[10px] font-bold rounded-full border border-zinc-100">
-                          High Volume
                         </span>
                       </div>
                     </div>

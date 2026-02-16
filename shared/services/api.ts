@@ -626,6 +626,14 @@ export const api = {
         headers: { ...authHeaders() },
       });
     },
+    copyCampaign: async (campaignId: string) => {
+      const data = await fetchJson('/ops/campaigns/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id: campaignId }),
+      });
+      return data;
+    },
     assignSlots: async (
       id: string,
       assignments: any,

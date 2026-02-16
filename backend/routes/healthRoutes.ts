@@ -53,38 +53,42 @@ export function healthRoutes(env: Env): Router {
   // It is intentionally conservative: only returns 200 once the DB is connected,
   // the E2E seed accounts exist (when SEED_E2E), and all portal dev servers are responding.
   router.get('/health/e2e', async (_req, res) => {
-    const dbState = mongoose.connection.readyState;
-    const dbOk = dbState === 1;
+    try {
+      const dbState = mongoose.connection.readyState;
+      const dbOk = dbState === 1;
 
-    const portals = [
-      { name: 'buyer', url: 'http://127.0.0.1:3001/' },
-      { name: 'mediator', url: 'http://127.0.0.1:3002/' },
-      { name: 'agency', url: 'http://127.0.0.1:3003/' },
-      { name: 'brand', url: 'http://127.0.0.1:3004/' },
-      { name: 'admin', url: 'http://127.0.0.1:3005/' },
-    ];
+      const portals = [
+        { name: 'buyer', url: 'http://127.0.0.1:3001/' },
+        { name: 'mediator', url: 'http://127.0.0.1:3002/' },
+        { name: 'agency', url: 'http://127.0.0.1:3003/' },
+        { name: 'brand', url: 'http://127.0.0.1:3004/' },
+        { name: 'admin', url: 'http://127.0.0.1:3005/' },
+      ];
 
-    const [buyerOk, mediatorOk, agencyOk, brandOk, adminOk] = await Promise.all(
-      portals.map((p) => isHttpOk(p.url))
-    );
+      const [buyerOk, mediatorOk, agencyOk, brandOk, adminOk] = await Promise.all(
+        portals.map((p) => isHttpOk(p.url))
+      );
 
-    const e2eUsersOk = env.SEED_E2E ? await hasE2EUsers() : true;
+      const e2eUsersOk = env.SEED_E2E ? await hasE2EUsers() : true;
 
-    const allOk = dbOk && buyerOk && mediatorOk && agencyOk && brandOk && adminOk && e2eUsersOk;
+      const allOk = dbOk && buyerOk && mediatorOk && agencyOk && brandOk && adminOk && e2eUsersOk;
 
-    res.status(allOk ? 200 : 503).json({
-      status: allOk ? 'ok' : 'starting',
-      database: { ok: dbOk, readyState: dbState },
-      seed: { e2eUsersOk },
-      portals: {
-        buyer: buyerOk,
-        mediator: mediatorOk,
-        agency: agencyOk,
-        brand: brandOk,
-        admin: adminOk,
-      },
-      timestamp: new Date().toISOString(),
-    });
+      res.status(allOk ? 200 : 503).json({
+        status: allOk ? 'ok' : 'starting',
+        database: { ok: dbOk, readyState: dbState },
+        seed: { e2eUsersOk },
+        portals: {
+          buyer: buyerOk,
+          mediator: mediatorOk,
+          agency: agencyOk,
+          brand: brandOk,
+          admin: adminOk,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      res.status(503).json({ status: 'error', message: String(err) });
+    }
   });
   return router;
 }

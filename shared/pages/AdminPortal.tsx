@@ -587,7 +587,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
     const apiBase = getApiBaseAbsolute();
     const buildProofUrl = (orderId: string, type: 'order' | 'payment' | 'rating' | 'review' | 'returnWindow') => {
-      return `${apiBase}/public/orders/${encodeURIComponent(orderId)}/proof/${type}`;
+      return `${apiBase}/orders/${encodeURIComponent(orderId)}/proof/${type}`;
     };
 
     // csvSafe imported from shared/utils/csvHelpers
@@ -633,7 +633,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       const item = order.items?.[0];
 
       const row = [
-        order.externalOrderId || order.id,
+        csvSafe(order.externalOrderId || order.id),
         dateStr,
         timeStr,
         csvSafe(order.buyerName || ''),
@@ -641,15 +641,15 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         csvSafe((order as any).reviewerName || ''),
         csvSafe(order.brandName ?? item?.brandName ?? ''),
         csvSafe(item?.title ?? ''),
-        item?.platform ?? '',
-        item?.dealType ?? 'Discount',
+        csvSafe(item?.platform ?? ''),
+        csvSafe(item?.dealType ?? 'Discount'),
         item?.quantity ?? 1,
         item?.priceAtPurchase ?? 0,
         order.total,
-        order.status,
-        order.paymentStatus,
-        order.affiliateStatus,
-        order.managerName || 'N/A',
+        csvSafe(order.status || ''),
+        csvSafe(order.paymentStatus || ''),
+        csvSafe(order.affiliateStatus || ''),
+        csvSafe(order.managerName || 'N/A'),
         csvSafe(order.agencyName || 'Partner Agency'),
         order.id,
         csvSafe(order.soldBy || ''),
@@ -1010,7 +1010,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                   <StatCard
                     title="Orders Processed"
                     value={(stats?.totalOrders || 0).toLocaleString()}
-                    subtext="+24% this week"
+                    subtext="Total"
                     icon={ShoppingCart}
                     colorClass="text-purple-600"
                   />
