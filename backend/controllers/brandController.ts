@@ -567,7 +567,7 @@ export function makeBrandController() {
         let previousAllowed: string[] = [];
         let previousBrandUserId: string | null = null;
         const existing = await CampaignModel.findById(id)
-          .select({ brandUserId: 1, brandName: 1, allowedAgencyCodes: 1, locked: 1 })
+          .select({ brandUserId: 1, brandName: 1, allowedAgencyCodes: 1, locked: 1, pricePaise: 1, payoutPaise: 1, originalPricePaise: 1 })
           .lean();
         if (!existing) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
