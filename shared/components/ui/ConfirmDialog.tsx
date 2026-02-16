@@ -52,10 +52,12 @@ export function useConfirm() {
 
   const handleClose = useCallback(
     (result: boolean) => {
-      state?.resolve(result);
-      setState(null);
+      setState(prevState => {
+        prevState?.resolve(result);
+        return null;
+      });
     },
-    [state],
+    [],
   );
 
   const ConfirmDialogElement = state ? (

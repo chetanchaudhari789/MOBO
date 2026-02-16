@@ -1313,6 +1313,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
   const [filterDealType, setFilterDealType] = useState<string>('All');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   const filteredCampaigns = useMemo(() => {
     let result = campaigns as Campaign[];
@@ -1828,7 +1829,14 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
             >
               <div className="flex gap-4 mb-4">
                 <div className="w-20 h-20 bg-zinc-50 rounded-2xl p-2 flex-shrink-0 border border-zinc-100 flex items-center justify-center">
-                  <img src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  {!failedImages.has(c.id) && (
+                    <img 
+                      src={c.image} 
+                      alt={c.title || 'Campaign'} 
+                      className="w-full h-full object-contain mix-blend-multiply" 
+                      onError={() => setFailedImages(prev => new Set(prev).add(c.id))} 
+                    />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0 py-1">
                   <div className="flex justify-between items-start mb-1">

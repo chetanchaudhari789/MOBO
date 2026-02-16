@@ -140,7 +140,7 @@ const SampleScreenshotGuide: React.FC<{
 const MAX_PROOF_SIZE_BYTES = 10 * 1024 * 1024;
 
 /** Allowed MIME types for proof images — matches what backend AI pipeline can process. */
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml']);
 
 type ImageValidationError = 'invalid_type' | 'too_large' | null;
 
