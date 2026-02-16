@@ -2464,6 +2464,7 @@ export function makeOpsController(env: Env) {
                 amountPaise,
                 payoutId: payoutDoc._id as any,
                 metadata: { provider: 'manual', source: 'ops_payout' },
+                session,
               });
             }
 
