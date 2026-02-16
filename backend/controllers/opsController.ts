@@ -2457,14 +2457,17 @@ export function makeOpsController(env: Env) {
             // Do not block on internal wallet balance (agencies may reconcile off-platform).
             // Privileged users keep the strict wallet-debit behavior.
             if (canAny) {
-              await applyWalletDebit({
-                idempotencyKey: `payout_complete:${payoutDoc._id}`,
-                type: 'payout_complete',
-                ownerUserId: String(user._id),
-                amountPaise,
-                payoutId: payoutDoc._id as any,
-                metadata: { provider: 'manual', source: 'ops_payout' },
-              });
+              await applyWalletDebit(
+                {
+                  idempotencyKey: `payout_complete:${payoutDoc._id}`,
+                  type: 'payout_complete',
+                  ownerUserId: String(user._id),
+                  amountPaise,
+                  payoutId: payoutDoc._id as any,
+                  metadata: { provider: 'manual', source: 'ops_payout' },
+                },
+                { session },
+              );
             }
 
             await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payoutDoc._id), metadata: { beneficiaryUserId: String(user._id), amountPaise, recordOnly: canAgency } });
