@@ -73,8 +73,8 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       setInbox(list);
     } catch (e) {
       // Keep UI resilient: don't break app if notifications fail.
+      // Preserve stale inbox data on transient network errors instead of clearing.
       console.error('Failed to load notifications', e);
-      setInbox([]);
     }
   }, [user]);
 

@@ -32,7 +32,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
   const brandLabel = sanitizeLabel(product.brandName) || 'PARTNER';
   const mediatorLabel = sanitizeLabel(product.mediatorCode) || 'PARTNER';
   const effectiveOriginal =
-    product.originalPrice > product.price ? product.originalPrice : product.price * 1.4;
+    product.originalPrice > product.price ? product.originalPrice : null;
 
   const handleLinkClick = () => {
     if (product.productUrl) {
@@ -86,7 +86,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
 
           <div>
             <p className="text-xl font-extrabold text-lime-600 leading-none">
-              {product.price.toLocaleString()}
+              ₹{product.price.toLocaleString('en-IN')}
             </p>
           </div>
         </div>
@@ -105,10 +105,16 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
           .
         </div>
         <div className="pt-2 border-t border-slate-200 border-dashed flex justify-between items-center">
-          <span>Original Price:</span>
-          <span className="text-slate-900 font-bold decoration-slice line-through">
-            {effectiveOriginal.toLocaleString()}
-          </span>
+          {effectiveOriginal ? (
+            <>
+              <span>Original Price:</span>
+              <span className="text-slate-900 font-bold decoration-slice line-through">
+                ₹{effectiveOriginal.toLocaleString('en-IN')}
+              </span>
+            </>
+          ) : (
+            <span className="text-lime-600 font-bold">Best Price</span>
+          )}
         </div>
 
         {/* Decorative 'Online' Dot */}

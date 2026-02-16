@@ -1,5 +1,6 @@
 import { fixMojibakeDeep } from '../utils/mojibake';
 import { getApiBaseUrl } from '../utils/apiBaseUrl';
+import { readTokens, refreshTokens } from './api';
 
 type Listener = (msg: RealtimeMessage) => void;
 
@@ -49,95 +50,25 @@ function getRealtimeApiBaseUrl(): string {
   return baseFromEnv || getApiBaseUrl();
 }
 
+/** Read access token from shared token store managed by api.ts */
 function readAccessToken(): string | null {
-  if (typeof window === 'undefined' || !window.localStorage) return null;
-  try {
-    const raw = window.localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const token = parsed?.accessToken;
-    return typeof token === 'string' && token.trim() ? token.trim() : null;
-  } catch {
-    return null;
-  }
+  const tokens = readTokens();
+  return tokens?.accessToken || null;
 }
 
-function readRefreshToken(): string | null {
-  if (typeof window === 'undefined' || !window.localStorage) return null;
-  try {
-    const raw = window.localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const token = parsed?.refreshToken;
-    return typeof token === 'string' && token.trim() ? token.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeTokens(tokens: { accessToken: string; refreshToken?: string }) {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    window.localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
-  } catch {
-    // ignore
-  }
-}
-
-function clearTokens() {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-let refreshPromise: Promise<boolean> | null = null;
-
+/**
+ * Refresh the access token via the shared singleton in api.ts.
+ * This ensures only ONE refresh request flies at a time across both
+ * the regular API client and the SSE realtime client.
+ */
 async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = readRefreshToken();
-  if (!refreshToken) return false;
-
-  if (!refreshPromise) {
-    refreshPromise = (async () => {
-      try {
-        const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        });
-        if (!res.ok) return false;
-        const payload = await res.json().catch(() => null);
-        const tokens = payload?.tokens;
-        if (tokens?.accessToken) {
-          writeTokens({
-            accessToken: String(tokens.accessToken),
-            refreshToken: tokens.refreshToken ? String(tokens.refreshToken) : refreshToken,
-          });
-          return true;
-        }
-        return false;
-      } catch {
-        return false;
-      } finally {
-        refreshPromise = null;
-      }
-    })();
+  try {
+    const result = await refreshTokens();
+    // refreshTokens() already calls notifyAuthExpired() + clearTokens() on failure
+    return result !== null;
+  } catch {
+    return false;
   }
-
-  const ok = await refreshPromise;
-  // Only clear tokens when the server explicitly rejected the refresh token.
-  // Transient network errors (ok === false from catch) should NOT force logout.
-  // The `ok` check here should be safe because we only return false on explicit server
-  // rejection (res.ok === false) or network error. We keep tokens on network errors
-  // to allow retry on next reconnect.
-  if (!ok) {
-    // Check if we still have a valid refresh token - don't clear on transient errors
-    const currentRefresh = readRefreshToken();
-    if (!currentRefresh) clearTokens();
-  }
-  return ok;
 }
 
 class RealtimeClient {

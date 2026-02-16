@@ -14,6 +14,7 @@ export const Explore: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const silentSyncRef = useRef(false);
 
   const categories = useMemo(() => {
@@ -26,13 +27,18 @@ export const Explore: React.FC = () => {
       silentSyncRef.current = true;
     } else {
       setLoading(true);
+      setFetchError(false);
     }
     try {
       const data = await api.products.getAll();
       setProducts(Array.isArray(data) ? data : []);
+      setFetchError(false);
     } catch (err) {
       console.error(err);
-      if (!silent) toast.error('Failed to load deals. Please try again.');
+      if (!silent) {
+        toast.error('Failed to load deals. Please try again.');
+        setFetchError(true);
+      }
     } finally {
       setLoading(false);
       silentSyncRef.current = false;
@@ -75,13 +81,13 @@ export const Explore: React.FC = () => {
         if (category === selectedLower || dealType === selectedLower || platform === selectedLower) {
           return true;
         }
-        if (selectedLower === 'fashion' && (title.includes('shirt') || title.includes('pant') || title.includes('shoe') || title.includes('sneaker'))) {
+        if ((selectedLower === 'fashion' || selectedLower === 'footwear') && (title.includes('shirt') || title.includes('pant') || title.includes('shoe') || title.includes('sneaker'))) {
           return true;
         }
-        if (selectedLower === 'beauty' && (title.includes('perfume') || title.includes('serum') || title.includes('cream'))) {
+        if ((selectedLower === 'beauty' || selectedLower === 'grooming') && (title.includes('perfume') || title.includes('serum') || title.includes('cream'))) {
           return true;
         }
-        if (selectedLower === 'home' && (title.includes('kitchen') || title.includes('home') || title.includes('decor'))) {
+        if ((selectedLower === 'home' || selectedLower === 'kitchen') && (title.includes('kitchen') || title.includes('home') || title.includes('decor'))) {
           return true;
         }
 
@@ -90,17 +96,8 @@ export const Explore: React.FC = () => {
         if (selectedLower === 'audio') {
           return title.includes('buds') || title.includes('speaker') || title.includes('headphone');
         }
-        if (selectedLower === 'footwear') {
-          return title.includes('shoe') || title.includes('sneaker');
-        }
         if (selectedLower === 'watches') {
           return title.includes('watch');
-        }
-        if (selectedLower === 'beauty' || selectedLower === 'grooming') {
-          return title.includes('perfume') || title.includes('serum') || title.includes('cream');
-        }
-        if (selectedLower === 'home' || selectedLower === 'kitchen') {
-          return title.includes('kitchen') || title.includes('home');
         }
         return false;
       });
@@ -171,6 +168,18 @@ export const Explore: React.FC = () => {
           <div className="flex flex-col items-center justify-center py-20 text-slate-500 font-bold text-sm gap-3">
             <Spinner className="w-7 h-7 text-lime-500" />
             Loading inventory...
+          </div>
+        ) : fetchError && filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <Filter size={40} className="text-zinc-300" />
+            <p className="text-sm font-bold text-zinc-500">Failed to load deals</p>
+            <button
+              type="button"
+              onClick={() => fetchDeals()}
+              className="px-6 py-2.5 bg-black text-white rounded-full text-xs font-bold hover:bg-zinc-800 transition-colors"
+            >
+              Retry
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState

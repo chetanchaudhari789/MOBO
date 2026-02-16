@@ -23,7 +23,7 @@ export const Profile: React.FC = () => {
 
   // Form State
   const [name, setName] = useState(user?.name || '');
-  const [mobile, _setMobile] = useState(user?.mobile || '');
+  const [mobile, setMobile] = useState(user?.mobile || '');
   const [upiId, setUpiId] = useState(user?.upiId || '');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -39,6 +39,23 @@ export const Profile: React.FC = () => {
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const qrInputRef = useRef<HTMLInputElement>(null);
+
+  // Re-sync form fields when the user context changes (e.g. after login, token refresh)
+  // but only when the user is NOT currently editing to avoid overwriting in-progress changes.
+  useEffect(() => {
+    if (!user || isEditing) return;
+    setName(user.name || '');
+    setMobile(user.mobile || '');
+    setUpiId(user.upiId || '');
+    setAvatar(user.avatar);
+    setQrCode(user.qrCode);
+  }, [user, isEditing]);
+
+  /** Mask mobile number for display: 98****1234 */
+  function maskMobile(m: string): string {
+    if (!m || m.length < 6) return m || '';
+    return m.slice(0, 2) + '****' + m.slice(-4);
+  }
 
   useEffect(() => {
     if (user) refreshStats();
@@ -223,7 +240,7 @@ export const Profile: React.FC = () => {
               <input
                 type="tel"
                 disabled
-                value={mobile}
+                value={maskMobile(mobile)}
                 onChange={() => {}}
                 className="w-full p-4 bg-zinc-50 border-none rounded-2xl font-bold text-zinc-900 outline-none focus:ring-2 focus:ring-lime-400 disabled:bg-zinc-50/50 disabled:text-zinc-500 transition-all font-mono"
               />
@@ -264,7 +281,11 @@ export const Profile: React.FC = () => {
               Total Spent
             </p>
             <h2 className="text-5xl font-black text-zinc-900 tracking-tighter">
-              {`₹${totalSpent.toLocaleString()}`}
+              {isStatsLoading ? (
+                <div className="w-8 h-8 border-2 border-zinc-200 border-t-zinc-600 rounded-full animate-spin motion-reduce:animate-none mx-auto" />
+              ) : (
+                `₹${totalSpent.toLocaleString('en-IN')}`
+              )}
             </h2>
             <div className="flex items-center gap-2 mt-4 bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold border border-green-100">
               <TrendingUp size={14} /> +{orders.length} lifetime orders

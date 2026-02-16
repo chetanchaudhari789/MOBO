@@ -35,7 +35,20 @@ const normalizeQueryString = (value: unknown) => {
   return s === '' ? undefined : s;
 };
 
+/** Reusable pagination params for list endpoints (page 1-based, default limit 200, max 1000). */
+const paginationMixin = {
+  page: z.preprocess((v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+  }, z.number().int().min(1).default(1)),
+  limit: z.preprocess((v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 1000) : 200;
+  }, z.number().int().min(1).max(1000).default(200)),
+};
+
 export const opsOrdersQuerySchema = z.object({
+  ...paginationMixin,
   mediatorCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
   role: z.preprocess(
     normalizeQueryString,
@@ -44,21 +57,25 @@ export const opsOrdersQuerySchema = z.object({
 });
 
 export const opsMediatorQuerySchema = z.object({
+  ...paginationMixin,
   agencyCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
   search: z.preprocess(normalizeQueryString, z.string().max(120).optional()),
 });
 
 export const opsCodeQuerySchema = z.object({
+  ...paginationMixin,
   code: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
   search: z.preprocess(normalizeQueryString, z.string().max(120).optional()),
 });
 
 export const opsCampaignsQuerySchema = z.object({
+  ...paginationMixin,
   mediatorCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
   status: z.preprocess(normalizeQueryString, z.enum(['all', 'active', 'paused', 'completed', 'draft']).default('all')),
 });
 
 export const opsDealsQuerySchema = z.object({
+  ...paginationMixin,
   mediatorCode: z.preprocess(normalizeQueryString, z.string().min(1).optional()),
   role: z.preprocess(normalizeQueryString, z.enum(['agency', 'mediator']).optional()),
 });
