@@ -45,6 +45,7 @@ const SampleScreenshotGuide: React.FC<{
   type: 'order' | 'rating' | 'returnWindow';
 }> = ({ type }) => {
   const [open, setOpen] = useState(false);
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const guides: Record<string, { title: string; bullets: string[]; highlights: string[] }> = {
     order: {
       title: 'Order Confirmation Screenshot',
@@ -99,7 +100,7 @@ const SampleScreenshotGuide: React.FC<{
       {open && (
         <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
           {/* Sample annotated image */}
-          {sampleImg && (
+          {sampleImg && !imageLoadFailed && (
             <div className="mt-2 rounded-lg border border-blue-200 overflow-hidden bg-white">
               <p className="text-[9px] font-bold text-blue-500 px-2 pt-1.5 pb-0.5">📸 Example — key fields highlighted</p>
               <img
@@ -107,7 +108,7 @@ const SampleScreenshotGuide: React.FC<{
                 alt={`Sample ${g.title}`}
                 className="w-full h-auto"
                 loading="lazy"
-                onError={(e) => { (e.currentTarget.parentElement as HTMLElement)?.remove(); }}
+                onError={() => setImageLoadFailed(true)}
               />
             </div>
           )}
