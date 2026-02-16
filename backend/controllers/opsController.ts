@@ -1398,6 +1398,13 @@ export function makeOpsController(env: Env) {
             metadata: { reason: 'open_ticket' },
           }) as any;
           await order.save();
+          await writeAuditLog({
+            req,
+            action: 'ORDER_FROZEN_DISPUTED',
+            entityType: 'Order',
+            entityId: String(order._id),
+            metadata: { reason: 'open_ticket' },
+          });
           throw new AppError(409, 'FROZEN_DISPUTE', 'This transaction is frozen due to an open ticket.');
         }
 
@@ -1461,7 +1468,10 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'INVALID_ECONOMICS', 'Cannot settle: commission exceeds payout');
           }
 
-          const buyerUserId = String(order.createdBy);
+          const buyerUserId = String(order.userId);
+          if (!buyerUserId || buyerUserId === 'undefined') {
+            throw new AppError(409, 'MISSING_BUYER', 'Cannot settle: order is missing buyer userId');
+          }
           const brandId = String((order as any).brandUserId || (campaign as any)?.brandUserId || '').trim();
           if (!brandId) {
             throw new AppError(409, 'MISSING_BRAND', 'Cannot settle: missing brand ownership');
@@ -1668,7 +1678,10 @@ export function makeOpsController(env: Env) {
           const buyerCommissionPaise = Number(order.items?.[0]?.commissionPaise ?? 0);
           const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
 
-          const buyerUserId = String(order.createdBy);
+          const buyerUserId = String(order.userId);
+          if (!buyerUserId || buyerUserId === 'undefined') {
+            throw new AppError(409, 'MISSING_BUYER', 'Cannot revert: order is missing buyer userId');
+          }
           if (!brandId) throw new AppError(409, 'MISSING_BRAND', 'Cannot revert: missing brand ownership');
 
           // Atomic unsettlement: wrap all wallet mutations in a single MongoDB session
@@ -2453,13 +2466,13 @@ export function makeOpsController(env: Env) {
         }
 
         // Deterministic idempotency: use requestId to prevent duplicate payouts on retry.
-        // Falls back to timestamp only if no requestId is present.
+        // Falls back to user+amount+date composite key to prevent same-day duplicate manual payouts.
         const requestId = String(
           (req as any).headers?.['x-request-id'] ||
           (res.locals as any)?.requestId ||
           ''
         ).trim();
-        const idempotencySuffix = requestId || `MANUAL-${Date.now()}`;
+        const idempotencySuffix = requestId || `MANUAL-${String(user._id)}-${amountPaise}-${new Date().toISOString().slice(0, 10)}`;
 
         // Use a transaction to ensure payout record + wallet debit are atomic
         const session = await mongoose.startSession();
@@ -2584,8 +2597,8 @@ export function makeOpsController(env: Env) {
         // Non-privileged roles only see their own transactions
         if (!isPrivileged(roles)) {
           txQuery.$or = [
-            { ownerUserId: userId },
-            { counterpartyUserId: userId },
+            { fromUserId: userId },
+            { toUserId: userId },
           ];
         }
 

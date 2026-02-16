@@ -1932,13 +1932,9 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                     onClick={async () => {
                       setCopyingId(c.id);
                       try {
-                        const res = await api.brand.copyCampaign(c.id);
-                        if (res.ok) {
-                          toast.success('Campaign copied!');
-                          onRefresh();
-                        } else {
-                          toast.error((res as any).error || 'Copy failed');
-                        }
+                        await api.brand.copyCampaign(c.id);
+                        toast.success('Campaign copied!');
+                        onRefresh();
                       } catch {
                         toast.error('Copy failed');
                       } finally {
