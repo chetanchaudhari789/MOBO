@@ -2584,8 +2584,8 @@ export function makeOpsController(env: Env) {
         // Non-privileged roles only see their own transactions
         if (!isPrivileged(roles)) {
           txQuery.$or = [
-            { ownerUserId: userId },
-            { counterpartyUserId: userId },
+            { fromUserId: userId },
+            { toUserId: userId },
           ];
         }
 
