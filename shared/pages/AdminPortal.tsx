@@ -418,9 +418,18 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+    const trimmedPasskey = String(passkey || '').trim();
+    if (!trimmedPasskey || trimmedPasskey.length < 8) {
+      setAuthError('Security key must be at least 8 characters.');
+      return;
+    }
+    if (trimmedPasskey.length > 200) {
+      setAuthError('Security key must not exceed 200 characters.');
+      return;
+    }
     setIsAuthLoading(true);
     try {
-      const u = await loginAdmin(String(adminId || '').trim(), String(passkey || '').trim());
+      const u = await loginAdmin(String(adminId || '').trim(), trimmedPasskey);
       if (u?.role !== 'admin') {
         logout();
         setAuthError('This account is not an admin. Please use the correct portal.');
@@ -817,6 +826,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
               placeholder="••••••••"
               leftIcon={<Key size={18} />}
               className="font-mono text-sm"
+              minLength={8}
+              maxLength={200}
               autoComplete="current-password"
             />
 

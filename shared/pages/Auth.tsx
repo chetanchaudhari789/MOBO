@@ -39,6 +39,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
       setError('Password must be at least 8 characters.');
       return;
     }
+    if (password.length > 200) {
+      setError('Password must not exceed 200 characters.');
+      return;
+    }
 
     if (view === 'register') {
       if (!/[A-Z]/.test(password)) {
@@ -211,6 +215,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
           onChange={(e) => setPassword(e.target.value)}
           leftIcon={<Lock size={18} />}
           required
+          minLength={8}
+          maxLength={200}
           autoComplete={view === 'login' ? 'current-password' : 'new-password'}
         />
 
