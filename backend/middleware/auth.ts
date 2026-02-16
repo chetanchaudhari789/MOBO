@@ -123,6 +123,11 @@ export function requireAuth(env: Env) {
   };
 }
 
+/**
+ * @deprecated Currently identical to requireAuth. Intended to support API-key or
+ * link-token auth for proof viewing. Replace usages with requireAuth or implement
+ * the alternative mechanism when needed.
+ */
 export function requireAuthOrToken(env: Env) {
   return async (req: Request, _res: Response, next: NextFunction) => {
     const header = req.header('authorization') || '';

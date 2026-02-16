@@ -108,9 +108,10 @@ async function _shutdownOcrPool(): Promise<void> {
   const workers = _ocrPool.splice(0);
   await Promise.allSettled(workers.map((w) => w.terminate().catch(() => {})));
 }
-// Register cleanup handlers for graceful shutdown
+// Register cleanup handlers for graceful shutdown (do NOT call process.exit —
+// let the main process handler in index.ts coordinate shutdown order).
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(sig, () => { _shutdownOcrPool().finally(() => process.exit(0)); });
+  process.once(sig, () => { _shutdownOcrPool().catch(() => {}); });
 }
 
 type ChatPayload = {

@@ -233,9 +233,14 @@ export function makeOpsController(env: Env) {
           mQuery.$or = [{ name: regex }, { mobile: regex }, { mediatorCode: regex }];
         }
 
+        const page = queryParams.page ?? 1;
+        const limit = queryParams.limit ?? 200;
+        const skip = (page - 1) * limit;
+
         const mediators = await UserModel.find(mQuery)
           .sort({ createdAt: -1 })
-          .limit(5000)
+          .skip(skip)
+          .limit(limit)
           .lean();
 
         const wallets = await WalletModel.find({ ownerUserId: { $in: mediators.map((m) => m._id) } }).lean();
@@ -274,7 +279,13 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const campaigns = await CampaignModel.find(query).sort({ createdAt: -1 }).limit(5000).lean();
+        const cPage = queryParams.page ?? 1;
+        const cLimit = queryParams.limit ?? 200;
+        const campaigns = await CampaignModel.find(query)
+          .sort({ createdAt: -1 })
+          .skip((cPage - 1) * cLimit)
+          .limit(cLimit)
+          .lean();
         const requesterMediatorCode = roles.includes('mediator') ? String((user as any)?.mediatorCode || '').trim() : '';
 
         const normalizeCode = (v: unknown) => String(v || '').trim();
@@ -347,12 +358,15 @@ export function makeOpsController(env: Env) {
           return;
         }
 
+        const dPage = queryParams.page ?? 1;
+        const dLimit = queryParams.limit ?? 200;
         const deals = await DealModel.find({
           mediatorCode: { $in: mediatorRegexes },
           deletedAt: null,
         })
           .sort({ createdAt: -1 })
-          .limit(5000)
+          .skip((dPage - 1) * dLimit)
+          .limit(dLimit)
           .lean();
 
         res.json(deals.map(toUiDeal));
@@ -389,12 +403,15 @@ export function makeOpsController(env: Env) {
           return;
         }
 
+        const oPage = queryParams.page ?? 1;
+        const oLimit = queryParams.limit ?? 200;
         const orders = await OrderModel.find({
           managerName: { $in: managerCodes },
           deletedAt: null,
         })
           .sort({ createdAt: -1 })
-          .limit(5000)
+          .skip((oPage - 1) * oLimit)
+          .limit(oLimit)
           .lean();
 
         res.json(orders.map(toUiOrder));
@@ -423,9 +440,12 @@ export function makeOpsController(env: Env) {
           pQuery.$or = [{ name: regex }, { mobile: regex }];
         }
 
+        const puPage = queryParams.page ?? 1;
+        const puLimit = queryParams.limit ?? 200;
         const users = await UserModel.find(pQuery)
           .sort({ createdAt: -1 })
-          .limit(5000)
+          .skip((puPage - 1) * puLimit)
+          .limit(puLimit)
           .lean();
 
         const wallets = await WalletModel.find({ ownerUserId: { $in: users.map((u) => u._id) } }).lean();
@@ -455,9 +475,12 @@ export function makeOpsController(env: Env) {
           vQuery.$or = [{ name: regex }, { mobile: regex }];
         }
 
+        const vuPage = queryParams.page ?? 1;
+        const vuLimit = queryParams.limit ?? 200;
         const users = await UserModel.find(vQuery)
           .sort({ createdAt: -1 })
-          .limit(5000)
+          .skip((vuPage - 1) * vuLimit)
+          .limit(vuLimit)
           .lean();
 
         const wallets = await WalletModel.find({ ownerUserId: { $in: users.map((u) => u._id) } }).lean();
@@ -1511,7 +1534,8 @@ export function makeOpsController(env: Env) {
             settlementSession.endSession();
           }
         }
-        // Only mark as 'Paid' when wallet movements actually occurred
+        // Wrap order status update AND workflow transitions in a single session
+        // to prevent split-brain (money moved but order stuck in wrong state).
         order.paymentStatus = isOverLimit ? 'Failed' : 'Paid';
         order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
         (order as any).settlementMode = settlementMode;
@@ -1527,13 +1551,14 @@ export function makeOpsController(env: Env) {
             settlementMode,
           },
         }) as any;
-        await order.save();
 
         // Strict workflow: APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
-        // Wrap both transitions in a session so partial failure doesn't leave order stuck.
+        // order.save() + both transitions in a single session for atomicity.
         const wfSession = await mongoose.startSession();
         try {
           await wfSession.withTransaction(async () => {
+            await order.save({ session: wfSession });
+
             await transitionOrderWorkflow({
               orderId: String(order._id),
               from: 'APPROVED',
@@ -1541,6 +1566,7 @@ export function makeOpsController(env: Env) {
               actorUserId: String(req.auth?.userId || ''),
               metadata: { source: 'settleOrderPayment' },
               env,
+              session: wfSession,
             });
 
             await transitionOrderWorkflow({
@@ -1550,6 +1576,7 @@ export function makeOpsController(env: Env) {
               actorUserId: String(req.auth?.userId || ''),
               metadata: { affiliateStatus: order.affiliateStatus },
               env,
+              session: wfSession,
             });
           });
         } finally {
@@ -2457,17 +2484,15 @@ export function makeOpsController(env: Env) {
             // Do not block on internal wallet balance (agencies may reconcile off-platform).
             // Privileged users keep the strict wallet-debit behavior.
             if (canAny) {
-              await applyWalletDebit(
-                {
-                  idempotencyKey: `payout_complete:${payoutDoc._id}`,
-                  type: 'payout_complete',
-                  ownerUserId: String(user._id),
-                  amountPaise,
-                  payoutId: payoutDoc._id as any,
-                  metadata: { provider: 'manual', source: 'ops_payout' },
-                },
-                { session },
-              );
+              await applyWalletDebit({
+                idempotencyKey: `payout_complete:${payoutDoc._id}`,
+                type: 'payout_complete',
+                ownerUserId: String(user._id),
+                amountPaise,
+                payoutId: payoutDoc._id as any,
+                metadata: { provider: 'manual', source: 'ops_payout' },
+                session,
+              });
             }
 
             await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payoutDoc._id), metadata: { beneficiaryUserId: String(user._id), amountPaise, recordOnly: canAgency } });
@@ -2551,11 +2576,22 @@ export function makeOpsController(env: Env) {
     },
 
     // Optional endpoint used by some UI versions.
-    getTransactions: async (_req: Request, res: Response, next: NextFunction) => {
+    getTransactions: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const tx = await TransactionModel.find({ deletedAt: null })
+        const { roles, userId } = getRequester(req);
+        const txQuery: any = { deletedAt: null };
+
+        // Non-privileged roles only see their own transactions
+        if (!isPrivileged(roles)) {
+          txQuery.$or = [
+            { ownerUserId: userId },
+            { counterpartyUserId: userId },
+          ];
+        }
+
+        const tx = await TransactionModel.find(txQuery)
           .sort({ createdAt: -1 })
-          .limit(1000)
+          .limit(500)
           .lean();
         res.json(tx);
       } catch (err) {

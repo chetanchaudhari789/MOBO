@@ -242,6 +242,9 @@ export function makeBrandController() {
         const brandName = String((brand as any).name || 'Brand');
         const agencyName = String((agency as any).name || 'Agency');
 
+        // Track which mode succeeded — wallet-backed vs manual ledger.
+        let payoutMode: 'wallet' | 'manual' = 'wallet';
+
         // Preferred: wallet-backed payout (enforces sufficient balance).
         // Fallback: if wallet is not funded, still record a completed manual ledger entry
         // so the brand can track real-world transfers.
@@ -282,6 +285,7 @@ export function makeBrandController() {
         } catch (e: any) {
           const code = String(e?.code || e?.error?.code || '');
           if (code !== 'INSUFFICIENT_FUNDS' && code !== 'WALLET_NOT_FOUND') throw e;
+          // Wallet-backed payout failed — record a manual ledger entry for tracking purposes.
           await recordManualPayoutLedger({
             idempotencyKey: idKey,
             brandId: String(brandId),
@@ -292,6 +296,8 @@ export function makeBrandController() {
             agencyName,
             brandName,
           });
+          // Indicate in the audit log that this was a manual fallback.
+          payoutMode = 'manual';
         }
 
         await writeAuditLog({
@@ -299,7 +305,7 @@ export function makeBrandController() {
           action: 'BRAND_AGENCY_PAYOUT_RECORDED',
           entityType: 'User',
           entityId: String(brandId),
-          metadata: { agencyId: String(body.agencyId), agencyCode, amountPaise, ref },
+          metadata: { agencyId: String(body.agencyId), agencyCode, amountPaise, ref, mode: payoutMode },
         });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -309,7 +315,7 @@ export function makeBrandController() {
         };
         publishRealtime({ type: 'wallets.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
-        res.json({ ok: true });
+        res.json({ ok: true, mode: payoutMode });
       } catch (err) {
         next(err);
       }
@@ -431,8 +437,14 @@ export function makeBrandController() {
           metadata: { agencyCode: body.agencyCode },
         });
 
-        // Realtime: update both brand + removed agency UIs.
+        // Cascade: remove the agency from allowedAgencyCodes on all this brand's campaigns.
         const agencyCode = String(body.agencyCode || '').trim();
+        if (agencyCode) {
+          await CampaignModel.updateMany(
+            { brandUserId: brand._id, deletedAt: null, allowedAgencyCodes: agencyCode },
+            { $pull: { allowedAgencyCodes: agencyCode } }
+          );
+        }
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'users.changed',
@@ -628,6 +640,17 @@ export function makeBrandController() {
         if (typeof body.payout !== 'undefined') update.payoutPaise = rupeesToPaise(Number(body.payout));
         if (typeof body.totalSlots !== 'undefined') update.totalSlots = Number(body.totalSlots);
         if (typeof body.allowedAgencies !== 'undefined') update.allowedAgencyCodes = body.allowedAgencies;
+
+        // Economic sanity: payout must not exceed selling price.
+        const effectivePrice = update.pricePaise ?? (existing as any).pricePaise ?? 0;
+        const effectivePayout = update.payoutPaise ?? (existing as any).payoutPaise ?? 0;
+        const effectiveOriginalPrice = update.originalPricePaise ?? (existing as any).originalPricePaise ?? effectivePrice;
+        if (effectivePayout > effectivePrice) {
+          throw new AppError(400, 'INVALID_ECONOMICS', 'Payout cannot exceed selling price');
+        }
+        if (effectiveOriginalPrice < effectivePrice && effectiveOriginalPrice > 0) {
+          throw new AppError(400, 'INVALID_ECONOMICS', 'Original price cannot be less than selling price');
+        }
 
         const statusRequested = typeof body.status !== 'undefined';
 

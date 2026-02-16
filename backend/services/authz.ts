@@ -19,7 +19,8 @@ export function requireAnyRole(roles: string[], ...required: string[]) {
 }
 
 export function requireSelfOrPrivileged(requesterId: string, targetUserId: string, roles: string[]) {
-  if (requesterId !== targetUserId && !isPrivileged(roles)) {
+  // Normalize both to strings for safe comparison (one may be an ObjectId).
+  if (String(requesterId) !== String(targetUserId) && !isPrivileged(roles)) {
     throw new AppError(403, 'FORBIDDEN', 'Not allowed');
   }
 }
