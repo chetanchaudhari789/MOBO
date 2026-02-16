@@ -18,8 +18,13 @@ export const Explore: React.FC = () => {
   const silentSyncRef = useRef(false);
 
   const categories = useMemo(() => {
-    return ['All', 'Electronics', 'Fashion', 'Beauty', 'Home'];
-  }, []);
+    const seen = new Set<string>();
+    for (const p of products) {
+      const cat = (p.category || '').trim();
+      if (cat) seen.add(cat);
+    }
+    return ['All', ...Array.from(seen).sort()];
+  }, [products]);
 
   const fetchDeals = async (silent = false) => {
     if (silent) {
@@ -50,7 +55,7 @@ export const Explore: React.FC = () => {
 
     let timer: any = null;
     const schedule = () => {
-      if (timer) return;
+      if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
         fetchDeals(true);
@@ -73,33 +78,17 @@ export const Explore: React.FC = () => {
     if (selectedCategory !== 'All') {
       const selectedLower = selectedCategory.toLowerCase();
       result = result.filter((p) => {
-        const title = String(p.title || '').toLowerCase();
         const category = String(p.category || '').toLowerCase();
         const dealType = String(p.dealType || '').toLowerCase();
         const platform = String(p.platform || '').toLowerCase();
+        const title = String(p.title || '').toLowerCase();
 
-        if (category === selectedLower || dealType === selectedLower || platform === selectedLower) {
-          return true;
-        }
-        if ((selectedLower === 'fashion' || selectedLower === 'footwear') && (title.includes('shirt') || title.includes('pant') || title.includes('shoe') || title.includes('sneaker'))) {
-          return true;
-        }
-        if ((selectedLower === 'beauty' || selectedLower === 'grooming') && (title.includes('perfume') || title.includes('serum') || title.includes('cream'))) {
-          return true;
-        }
-        if ((selectedLower === 'home' || selectedLower === 'kitchen') && (title.includes('kitchen') || title.includes('home') || title.includes('decor'))) {
-          return true;
-        }
-
-        if (title.includes(selectedLower)) return true;
-
-        if (selectedLower === 'audio') {
-          return title.includes('buds') || title.includes('speaker') || title.includes('headphone');
-        }
-        if (selectedLower === 'watches') {
-          return title.includes('watch');
-        }
-        return false;
+        return (
+          category === selectedLower ||
+          dealType === selectedLower ||
+          platform === selectedLower ||
+          title.includes(selectedLower)
+        );
       });
     }
 

@@ -1,5 +1,6 @@
 export * from './cn';
 export * from './Button';
+export * from './ConfirmDialog';
 export * from './Input';
 export * from './Card';
 export * from './Badge';

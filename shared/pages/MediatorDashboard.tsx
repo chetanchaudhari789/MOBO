@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../components/ui/ConfirmDialog';
 import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
@@ -513,6 +514,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
 
 const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: any) => {
   const { toast } = useToast();
+  const { confirm, ConfirmDialogElement } = useConfirm();
   const [marketSearch, setMarketSearch] = useState('');
   const dealByCampaignId = useMemo(() => {
     const m = new Map<string, Product>();
@@ -542,6 +544,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
 
   return (
     <div className="space-y-5 animate-enter">
+      {ConfirmDialogElement}
       <div className="bg-[#18181B] p-5 rounded-[1.5rem] shadow-xl text-white relative overflow-hidden">
         <div className="absolute top-[-50%] right-[-10%] w-40 h-40 bg-[#CCF381] rounded-full blur-[60px] opacity-20 animate-pulse"></div>
         <div className="relative z-10">
@@ -799,7 +802,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                       type="button"
                       onClick={async () => {
                         try {
-                          if (!confirm('Delete this unpublished campaign?')) return;
+                          if (!(await confirm({ message: 'Delete this unpublished campaign?', confirmLabel: 'Delete', variant: 'destructive' }))) return;
                           await api.ops.deleteCampaign(String(c.id));
                           toast.success('Campaign deleted.');
                           onRefresh?.();
@@ -1178,6 +1181,7 @@ const MediatorProfileView = () => {
 
 const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
   const { toast } = useToast();
+  const { confirm, ConfirmDialogElement } = useConfirm();
   const [viewMode, setViewMode] = useState<'pending' | 'settled'>('pending');
   const [settleId, setSettleId] = useState<string | null>(null);
   const [utr, setUtr] = useState('');
@@ -1195,7 +1199,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
 
   const handleSettle = async () => {
     if (!settleId) return;
-    if (!confirm('Confirm settlement? This will move funds to buyer and mediator wallets.')) return;
+    if (!(await confirm({ message: 'Confirm settlement? This will move funds to buyer and mediator wallets.', title: 'Settle Payment', confirmLabel: 'Settle', variant: 'warning' }))) return;
     try {
       await api.ops.settleOrderPayment(settleId, utr.trim() || undefined, 'external');
       setSettleId(null);
@@ -1208,7 +1212,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
   };
 
   const handleRevert = async (orderId: string) => {
-    if (confirm('Undo settlement?')) {
+    if (await confirm({ message: 'Undo this settlement? Funds will be reversed.', title: 'Undo Settlement', confirmLabel: 'Undo', variant: 'destructive' })) {
       try {
         await api.ops.unsettleOrderPayment(orderId);
         onRefresh();
@@ -1224,6 +1228,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
       className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-md flex items-end animate-fade-in"
       onClick={onClose}
     >
+      {ConfirmDialogElement}
       <div
         className="bg-[#F8F9FA] w-full rounded-t-[2.5rem] h-[92%] shadow-2xl animate-slide-up relative flex flex-col"
         onClick={(e) => e.stopPropagation()}

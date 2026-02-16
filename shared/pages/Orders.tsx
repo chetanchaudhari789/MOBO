@@ -139,11 +139,19 @@ const SampleScreenshotGuide: React.FC<{
 
 const MAX_PROOF_SIZE_BYTES = 10 * 1024 * 1024;
 
-const isValidImageFile = (file: File) => {
-  if (!file.type.startsWith('image/')) return false;
-  if (file.size > MAX_PROOF_SIZE_BYTES) return false;
-  return true;
+/** Allowed MIME types for proof images — matches what backend AI pipeline can process. */
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+type ImageValidationError = 'invalid_type' | 'too_large' | null;
+
+const validateImageFile = (file: File): ImageValidationError => {
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) return 'invalid_type';
+  if (file.size > MAX_PROOF_SIZE_BYTES) return 'too_large';
+  return null;
 };
+
+/** @deprecated Use validateImageFile for detailed error */
+const isValidImageFile = (file: File) => validateImageFile(file) === null;
 
 const isValidReviewLink = (value: string) => {
   const trimmed = value.trim();
@@ -337,7 +345,8 @@ export const Orders: React.FC = () => {
     try {
       const file = e.target.files[0];
       if (!isValidImageFile(file)) {
-        throw new Error('Please upload a valid image (PNG/JPG, max 10MB).');
+        const err = validateImageFile(file);
+        throw new Error(err === 'too_large' ? 'Image too large (max 10 MB).' : 'Please upload a PNG, JPG, or WebP image.');
       }
       await api.orders.submitClaim(selectedOrder.id, {
         type: uploadType,
@@ -381,7 +390,8 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid order image (PNG/JPG, max 10MB).');
+      const err = validateImageFile(file);
+      toast.error(err === 'too_large' ? 'Image too large (max 10 MB).' : 'Please upload a PNG, JPG, or WebP image.');
       return;
     }
 
@@ -525,7 +535,8 @@ export const Orders: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !selectedOrder || !user) return;
     if (!isValidImageFile(file)) {
-      toast.error('Please upload a valid image (PNG/JPG, max 10MB).');
+      const err = validateImageFile(file);
+      toast.error(err === 'too_large' ? 'Image too large (max 10 MB).' : 'Please upload a PNG, JPG, or WebP image.');
       return;
     }
 

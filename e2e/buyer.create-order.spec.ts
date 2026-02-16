@@ -39,7 +39,7 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   await claimModal.getByText('E2E', { exact: false }).first().click();
 
   // Upload proof
-  const proofPath = path.resolve(process.cwd(), 'e2e', 'fixtures', 'proof.svg');
+  const proofPath = path.resolve(process.cwd(), 'e2e', 'fixtures', 'proof.png');
   const fileInput = page.locator('input[type="file"][accept="image/*"]');
   await expect(fileInput).toHaveCount(1);
   await fileInput.setInputFiles(proofPath);
