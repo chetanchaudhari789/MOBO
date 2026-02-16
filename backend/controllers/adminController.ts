@@ -419,8 +419,15 @@ export function makeAdminController() {
           throw new AppError(400, 'CANNOT_SELF_SUSPEND', 'Cannot suspend your own account');
         }
 
-        const before = await UserModel.findById(body.userId).select({ status: 1 }).lean();
-        const user = await UserModel.findByIdAndUpdate(body.userId, { status: body.status }, { new: true });
+        const before = await UserModel.findById(body.userId).select({ status: 1, deletedAt: 1 }).lean();
+        if (before && (before as any).deletedAt) {
+          throw new AppError(409, 'USER_DELETED', 'Cannot update status of a deleted user');
+        }
+        const user = await UserModel.findOneAndUpdate(
+          { _id: body.userId, deletedAt: null },
+          { status: body.status },
+          { new: true }
+        );
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
   const statusChanged = !!before && before.status !== user.status;

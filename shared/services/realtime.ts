@@ -1,6 +1,6 @@
 import { fixMojibakeDeep } from '../utils/mojibake';
 import { getApiBaseUrl } from '../utils/apiBaseUrl';
-import { readTokens, refreshTokens } from './api';
+import { readTokens, refreshTokens, TOKEN_STORAGE_KEY } from './api';
 
 type Listener = (msg: RealtimeMessage) => void;
 
@@ -9,8 +9,6 @@ export type RealtimeMessage = {
   ts: string;
   payload?: any;
 };
-
-const TOKEN_STORAGE_KEY = 'mobo_tokens_v1';
 
 function normalizeApiRoot(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
@@ -76,6 +74,8 @@ class RealtimeClient {
   private controller: AbortController | null = null;
   private running = false;
   private backoffMs = 1000;
+  private authFailures = 0;
+  private readonly maxAuthFailures = 5;
   private storageListener: ((e: StorageEvent) => void) | null = null;
 
   // If the connection is open but we stop receiving bytes (proxy buffering/hanging),
@@ -158,10 +158,18 @@ class RealtimeClient {
         if (!res.ok) {
           // Auth errors should not spin hot. Try refresh once.
           if (res.status === 401 || res.status === 403) {
+            this.authFailures++;
             const refreshed = await refreshAccessToken();
             if (!refreshed) {
               this.dispatch({ type: 'auth.error', ts: new Date().toISOString(), payload: { status: res.status } });
-              await this.sleep(3000);
+              // Terminal backoff: stop reconnecting after repeated auth failures
+              if (this.authFailures >= this.maxAuthFailures) {
+                this.running = false;
+                break;
+              }
+              await this.sleep(Math.min(3000 * Math.pow(2, this.authFailures - 1), 60_000));
+            } else {
+              this.authFailures = 0;
             }
           } else {
             await this.sleep(this.backoffMs);
@@ -172,8 +180,7 @@ class RealtimeClient {
         }
 
         this.backoffMs = 1000;
-
-        const reader = res.body?.getReader();
+        this.authFailures = 0;        const reader = res.body?.getReader();
         if (!reader) {
           await this.sleep(this.backoffMs);
           this.backoffMs = Math.min(this.backoffMs * 2, 10_000);

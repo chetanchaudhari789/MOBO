@@ -5,7 +5,7 @@ import { getApiBaseUrl } from '../utils/apiBaseUrl';
 // Real API Base URL
 const API_URL = getApiBaseUrl();
 
-const TOKEN_STORAGE_KEY = 'mobo_tokens_v1';
+export const TOKEN_STORAGE_KEY = 'mobo_tokens_v1';
 
 function makeRequestId(): string {
   try {
@@ -828,7 +828,7 @@ export const api = {
     deleteProduct: async (dealId: string) => {
       await fetchOk(`/admin/products/${encodeURIComponent(dealId)}`, {
         method: 'DELETE',
-        headers: { ...authHeaders() },
+        headers: { ...authHeaders(), 'X-Confirm-Delete': 'true' },
       });
     },
     getGrowthAnalytics: async () =>
@@ -872,13 +872,13 @@ export const api = {
     deleteUser: async (userId: string) => {
       await fetchOk(`/admin/users/${encodeURIComponent(userId)}`, {
         method: 'DELETE',
-        headers: { ...authHeaders() },
+        headers: { ...authHeaders(), 'X-Confirm-Delete': 'true' },
       });
     },
     deleteWallet: async (userId: string) => {
       await fetchOk(`/admin/wallets/${encodeURIComponent(userId)}`, {
         method: 'DELETE',
-        headers: { ...authHeaders() },
+        headers: { ...authHeaders(), 'X-Confirm-Delete': 'true' },
       });
     },
     getAuditLogs: async (filters?: { action?: string; entityType?: string; limit?: number; page?: number }) => {
