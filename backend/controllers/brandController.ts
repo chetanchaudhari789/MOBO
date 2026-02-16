@@ -649,18 +649,22 @@ export function makeBrandController() {
           payoutPaise: 1,
           originalPricePaise: 1
         })) as any;
+        
+        if (!existingEconomics) {
+          throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        }
 
         const effectivePrice =
           update.pricePaise ??
-          (existingEconomics ? existingEconomics.pricePaise : undefined) ??
+          existingEconomics.pricePaise ??
           0;
         const effectivePayout =
           update.payoutPaise ??
-          (existingEconomics ? existingEconomics.payoutPaise : undefined) ??
+          existingEconomics.payoutPaise ??
           0;
         const effectiveOriginalPrice =
           update.originalPricePaise ??
-          (existingEconomics ? existingEconomics.originalPricePaise : undefined) ??
+          existingEconomics.originalPricePaise ??
           effectivePrice;
         if (effectivePayout > effectivePrice) {
           throw new AppError(400, 'INVALID_ECONOMICS', 'Payout cannot exceed selling price');
