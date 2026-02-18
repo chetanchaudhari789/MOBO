@@ -13,7 +13,7 @@
  */
 
 import { getPrisma, isPrismaAvailable } from '../database/prisma.js';
-import type { PrismaClient } from '../generated/prisma/client.js';
+import type { PrismaClient } from '@prisma/client';
 
 // ─── helpers ────────────────────────────────────────────
 

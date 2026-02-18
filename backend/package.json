@@ -28,7 +28,10 @@
     "pg:backfill:force": "tsx scripts/backfillPg.ts --force",
     "pg:verify": "tsx scripts/verifyPgSync.ts",
     "pg:generate": "npx prisma generate",
-    "pg:push": "npx prisma db push"
+    "pg:push": "npx prisma db push",
+    "pg:migrate:dev": "npx prisma migrate dev",
+    "pg:migrate:deploy": "npx prisma migrate deploy",
+    "postinstall": "npx prisma generate || true"
   },
   "dependencies": {
     "@google/genai": "^1.31.0",
@@ -43,7 +46,6 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.0.1",
-    "prisma": "^7.4.0",
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0",
     "web-push": "^3.6.7",
@@ -60,6 +62,7 @@
     "@types/supertest": "^6.0.3",
     "@types/web-push": "^3.6.4",
     "eslint": "^9.39.2",
+    "prisma": "^7.4.0",
     "mongodb-memory-server": "^11.0.1",
     "seedrandom": "^3.0.5",
     "supertest": "^7.2.2",
