@@ -31,7 +31,7 @@
     "pg:push": "npx prisma db push",
     "pg:migrate:dev": "npx prisma migrate dev",
     "pg:migrate:deploy": "npx prisma migrate deploy",
-    "postinstall": "npx prisma generate || true"
+    "postinstall": "tsx scripts/postinstall.ts"
   },
   "dependencies": {
     "@google/genai": "^1.31.0",

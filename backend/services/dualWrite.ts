@@ -113,14 +113,13 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
         where: { userId: pgUser.id },
       });
 
-      // Normalize connections so they can be compared independent of ordering or Date vs string
+      // Normalize connections for comparison (ignore timestamp for comparison as it's auto-generated)
       const normalize = (items: any[]) =>
         items
           .map((pc: any) => ({
             agencyId: pc.agencyId || null,
             agencyName: pc.agencyName || null,
             agencyCode: pc.agencyCode || null,
-            timestamp: pc.timestamp ? new Date(pc.timestamp).toISOString() : null,
           }))
           .sort((a, b) => {
             if (a.agencyId !== b.agencyId) {
@@ -133,14 +132,7 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
           });
 
       const normalizedExisting = normalize(existingPending);
-      const normalizedNew = normalize(
-        newPending.map((pc: any) => ({
-          agencyId: pc.agencyId,
-          agencyName: pc.agencyName,
-          agencyCode: pc.agencyCode,
-          timestamp: pc.timestamp,
-        })),
-      );
+      const normalizedNew = normalize(newPending);
 
       const isSame =
         normalizedExisting.length === normalizedNew.length &&
@@ -149,8 +141,7 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
           return (
             item.agencyId === other.agencyId &&
             item.agencyName === other.agencyName &&
-            item.agencyCode === other.agencyCode &&
-            item.timestamp === other.timestamp
+            item.agencyCode === other.agencyCode
           );
         });
 
@@ -591,7 +582,21 @@ export async function dualWriteOrder(mongoDoc: any): Promise<void> {
 
     const itemsUnchanged =
       normalizedNew.length === normalizedExisting.length &&
-      JSON.stringify(normalizedNew) === JSON.stringify(normalizedExisting);
+      normalizedNew.every((newItem, index) => {
+        const existingItem = normalizedExisting[index];
+        return (
+          newItem.productId === existingItem.productId &&
+          newItem.title === existingItem.title &&
+          newItem.image === existingItem.image &&
+          newItem.priceAtPurchasePaise === existingItem.priceAtPurchasePaise &&
+          newItem.commissionPaise === existingItem.commissionPaise &&
+          newItem.campaignId === existingItem.campaignId &&
+          newItem.dealType === existingItem.dealType &&
+          newItem.quantity === existingItem.quantity &&
+          newItem.platform === existingItem.platform &&
+          newItem.brandName === existingItem.brandName
+        );
+      });
 
     if (itemsUnchanged) {
       // Items already in sync; avoid unnecessary delete/recreate
