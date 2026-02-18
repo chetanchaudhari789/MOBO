@@ -10,7 +10,7 @@
  * Uses @prisma/adapter-neon for Prisma v7 driver-adapter approach with Neon
  * serverless driver (WebSocket-based, works in Node and edge runtimes).
  */
-import { PrismaClient } from '../generated/prisma/client.js';
+import { PrismaClient } from '@prisma/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 
 let _prisma: PrismaClient | null = null;
@@ -66,7 +66,7 @@ export async function connectPrisma(): Promise<void> {
       });
       // Adapter-based clients are connected on first query; run a lightweight
       // query to verify connectivity upfront.
-      await client.$queryRawUnsafe('SELECT 1');
+      await client.$queryRaw`SELECT 1`;
       _prisma = client;
       console.log('[prisma] Connected to PostgreSQL (Neon)');
     } catch (err) {

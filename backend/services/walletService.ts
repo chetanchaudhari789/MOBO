@@ -115,10 +115,13 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     const result = await execute(externalSession);
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
+    // Use the transaction data directly from the result to avoid re-querying
     if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
       dualWriteTransaction(result).catch(() => {});
+      // Fetch wallet from within the session scope to ensure consistency
+      WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }, null, { session: externalSession }).lean()
+        .then(wallet => { if (wallet) dualWriteWallet(wallet).catch(() => {}); })
+        .catch(() => {});
     }
     return result;
   }
@@ -128,10 +131,12 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     const result = await session.withTransaction(() => execute(session));
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
+    // Query wallet with the same session to ensure we get committed data
     if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
       dualWriteTransaction(result).catch(() => {});
+      WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean()
+        .then(wallet => { if (wallet) dualWriteWallet(wallet).catch(() => {}); })
+        .catch(() => {});
     }
     return result;
   } finally {
