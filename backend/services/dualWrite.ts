@@ -122,8 +122,9 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
             if (pc.timestamp) {
               try {
                 isoTimestamp = new Date(pc.timestamp).toISOString();
-              } catch {
-                // Invalid timestamp, treat as null
+              } catch (err) {
+                // Invalid timestamp, treat as null and log for diagnostics
+                console.warn('[dual-write] Invalid timestamp in pendingConnection:', pc.timestamp);
               }
             }
             return {
