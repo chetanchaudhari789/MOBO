@@ -17,6 +17,7 @@ import { updateSystemConfigSchema } from '../validations/systemConfig.js';
 import { AuditLogModel } from '../models/AuditLog.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
+import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
 
 function roleToDb(role: string): string | null {
   const r = role.toLowerCase();
@@ -451,6 +452,7 @@ export function makeAdminController() {
 
             if (roles.includes('mediator') && mediatorCode) {
               await DealModel.updateMany({ mediatorCode, deletedAt: null }, { $set: { active: false } });
+              resyncAfterBulkUpdate('Deal', { mediatorCode, deletedAt: null }).catch(() => {});
               await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminUserId });
               const agencyCode = (await getAgencyCodeForMediatorCode(mediatorCode)) || '';
               publishRealtime({
@@ -470,6 +472,7 @@ export function makeAdminController() {
               const mediatorCodes = await listMediatorCodesForAgency(mediatorCode);
               if (mediatorCodes.length) {
                 await DealModel.updateMany({ mediatorCode: { $in: mediatorCodes }, deletedAt: null }, { $set: { active: false } });
+                resyncAfterBulkUpdate('Deal', { mediatorCode: { $in: mediatorCodes }, deletedAt: null }).catch(() => {});
                 await freezeOrders({ query: { managerName: { $in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminUserId });
                 publishRealtime({
                   type: 'deals.changed',
@@ -486,10 +489,9 @@ export function makeAdminController() {
             }
 
             if (roles.includes('brand')) {
-              await CampaignModel.updateMany(
-                { brandUserId: user._id, deletedAt: null, status: { $in: ['active', 'draft'] } },
-                { $set: { status: 'paused' } }
-              );
+              const brandCampaignFilter = { brandUserId: user._id, deletedAt: null, status: { $in: ['active', 'draft'] } };
+              await CampaignModel.updateMany(brandCampaignFilter, { $set: { status: 'paused' } });
+              resyncAfterBulkUpdate('Campaign', { brandUserId: user._id, deletedAt: null }).catch(() => {});
               await freezeOrders({ query: { brandUserId: user._id }, reason: 'BRAND_SUSPENDED', actorUserId: adminUserId });
             }
           }

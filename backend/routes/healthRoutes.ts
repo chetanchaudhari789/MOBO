@@ -53,6 +53,11 @@ export function healthRoutes(env: Env): Router {
   // It is intentionally conservative: only returns 200 once the DB is connected,
   // the E2E seed accounts exist (when SEED_E2E), and all portal dev servers are responding.
   router.get('/health/e2e', async (_req, res) => {
+    // Production guard: do not expose internal topology in production.
+    if (env.NODE_ENV === 'production') {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
     try {
       const dbState = mongoose.connection.readyState;
       const dbOk = dbState === 1;

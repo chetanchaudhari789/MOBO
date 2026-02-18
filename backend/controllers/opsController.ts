@@ -43,6 +43,7 @@ import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { sendPushToUser } from '../services/pushNotifications.js';
 import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
 
 function buildOrderAudience(order: any, agencyCode?: string) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -1975,10 +1976,9 @@ export function makeOpsController(env: Env) {
         await campaign.save();
 
         if (previousStatus !== nextStatus) {
-          await DealModel.updateMany(
-            { campaignId: (campaign as any)._id, deletedAt: null },
-            { $set: { active: nextStatus === 'active' } }
-          );
+          const dealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
+          await DealModel.updateMany(dealFilter, { $set: { active: nextStatus === 'active' } });
+          resyncAfterBulkUpdate('Deal', dealFilter).catch(() => {});
         }
 
         const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
@@ -2053,10 +2053,9 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
         }
 
-        await DealModel.updateMany(
-          { campaignId: (campaign as any)._id, deletedAt: null },
-          { $set: { deletedAt: now, deletedBy, active: false } }
-        );
+        const opsDeleteDealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
+        await DealModel.updateMany(opsDeleteDealFilter, { $set: { deletedAt: now, deletedBy, active: false } });
+        resyncAfterBulkUpdate('Deal', { campaignId: (campaign as any)._id }).catch(() => {});
 
         await writeAuditLog({
           req,

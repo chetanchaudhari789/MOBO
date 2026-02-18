@@ -101,11 +101,30 @@ export function mediaRoutes(_env: Env): Router {
     try {
       const response = await fetch(target.toString(), {
         signal: controller.signal,
+        redirect: 'manual',  // Prevent SSRF via open-redirect chains
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; BUZZMA/1.0)',
           Accept: 'image/*,*/*;q=0.8',
         },
       });
+
+      // If the upstream redirects, validate the redirect target before following.
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (location) {
+          try {
+            const redirectTarget = new URL(location, target.toString());
+            if (!ALLOWED_PROTOCOLS.has(redirectTarget.protocol) || isPrivateHost(redirectTarget.hostname)) {
+              res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'unsafe redirect target' } });
+              return;
+            }
+          } catch {
+            // Invalid redirect URL
+          }
+        }
+        res.status(404).end();
+        return;
+      }
 
       if (!response.ok || !response.body) {
         res.status(404).end();

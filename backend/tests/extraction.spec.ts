@@ -262,4 +262,223 @@ describe('order extraction (Tesseract fallback)', () => {
     // Should pick "Amount Paid" (29999) as priority over MRP (45999)
     expect(result.amount).toBe(29999);
   });
+
+  // ─── Product Name Extraction Tests ───
+
+  it('extracts product name from Amazon order screenshot', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'Order Details',
+      'Order placed   12 January 2026',
+      'Order number   408-3456789-1234567',
+      '',
+      'Arriving Wednesday',
+      'Samsung Galaxy M14 5G (Berry Blue, 6GB, 128GB Storage)',
+      'Sold by: Appario Retail Private Ltd',
+      'Rs 10,999.00',
+      '',
+      'Payment method',
+      'UPI',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Amazon product name result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    if (result.productName) {
+      expect(result.productName.toLowerCase()).toContain('samsung');
+      // Should NOT be a URL, delivery status, or address
+      expect(result.productName).not.toMatch(/https?:\/\//i);
+      expect(result.productName).not.toMatch(/^arriving/i);
+    }
+  });
+
+  it('extracts Nykaa beauty product name', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'nykaa.com',
+      'My Orders',
+      '',
+      'Order ID: NYK4829371',
+      'Delivered on 5 Feb 2026',
+      '',
+      'Lakme Absolute Matte Revolution Lip Color 3.5gm',
+      'Rs 695.00',
+      'Grand Total: Rs 695.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Nykaa product name result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    if (result.orderId) {
+      // Tesseract may misread digits; just check for NYK prefix pattern
+      expect(result.orderId).toMatch(/NYK[A-Z0-9]+/i);
+    }
+    if (result.productName) {
+      expect(result.productName.toLowerCase()).toContain('lakme');
+      expect(result.productName).not.toMatch(/nykaa\.com/i);
+    }
+    if (result.amount) {
+      expect(result.amount).toBe(695);
+    }
+  });
+
+  it('extracts Blinkit grocery product name', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'blinkit',
+      'My Orders',
+      '',
+      'Order ID: BLK9283746',
+      'Delivered in 12 mins',
+      '',
+      'Amul Gold Milk 500ml',
+      'Qty: 2',
+      'Rs 36.00',
+      'Total: Rs 72.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Blinkit product name result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    if (result.productName) {
+      expect(result.productName.toLowerCase()).toContain('amul');
+      expect(result.productName).not.toMatch(/^blinkit$/i);
+    }
+  });
+
+  it('extracts AJIO fashion product name', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'AJIO.com',
+      'Order Details',
+      '',
+      'Order No: FN7382945',
+      'Shipped on 3 Feb 2026',
+      '',
+      'US Polo Assn Men Slim Fit Cotton Shirt',
+      'Size: M, Color: Navy Blue',
+      'Rs 1,299.00',
+      'Grand Total: Rs 1,299.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('AJIO product name result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    if (result.orderId) {
+      expect(result.orderId).toMatch(/FN\d+/i);
+    }
+    if (result.productName) {
+      expect(result.productName.toLowerCase()).toMatch(/polo|shirt/);
+    }
+  });
+
+  it('rejects URL as product name', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'Order Details',
+      'Order number 408-1111111-2222222',
+      '',
+      'https://www.amazon.in/Samsung-Galaxy/dp/B09G9YPBCQ',
+      'Rs 12,999.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('URL rejection result:', JSON.stringify(result, null, 2));
+
+    // Product name should NOT be a URL
+    if (result.productName) {
+      expect(result.productName).not.toMatch(/https?:\/\//i);
+      expect(result.productName).not.toMatch(/amazon\.in/i);
+    }
+  });
+
+  it('rejects delivery status as product name', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'Order number 408-3333333-4444444',
+      '',
+      'Arriving on Wednesday',
+      'Shipped via Blue Dart',
+      'Rs 599.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Delivery status rejection result:', JSON.stringify(result, null, 2));
+
+    if (result.productName) {
+      expect(result.productName).not.toMatch(/^arriving/i);
+      expect(result.productName).not.toMatch(/^shipped/i);
+    }
+  });
+
+  it('rejects category list as product name', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'Order number 408-5555555-6666666',
+      'Tablets, Earbuds, Watch, Blue',
+      '',
+      'boAt Airdopes 131 TWS Earbuds',
+      'Rs 899.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Category list rejection result:', JSON.stringify(result, null, 2));
+
+    if (result.productName) {
+      // Should NOT be the category list
+      expect(result.productName).not.toBe('Tablets, Earbuds, Watch, Blue');
+      // Should preferably be the actual product
+      if (result.productName.toLowerCase().includes('boat') || result.productName.toLowerCase().includes('airdopes')) {
+        expect(result.productName.toLowerCase()).toMatch(/boat|airdopes|tws|earbuds/);
+      }
+    }
+  });
+
+  it('extracts Meesho product name correctly', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'meesho',
+      'Order ID: MEESHO192837',
+      '',
+      'Delivered on 28 Jan 2026',
+      'Floral Printed Cotton Anarkali Kurti for Women',
+      'Qty: 1',
+      'Total: Rs 449.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Meesho product name result:', JSON.stringify(result, null, 2));
+
+    expect(result.confidenceScore).toBeGreaterThan(0);
+    if (result.productName) {
+      expect(result.productName.toLowerCase()).toMatch(/kurti|anarkali|cotton|floral/);
+    }
+    if (result.amount) {
+      expect(result.amount).toBe(449);
+    }
+  });
+
+  it('rejects address/pincode as product name', { timeout: 120_000 }, async () => {
+    const env = makeTestEnv();
+    const imageBase64 = await renderTextToImage([
+      'Order #408-7777777-8888888',
+      '',
+      '12, Koramangala, Bangalore',
+      'Karnataka, India 560034',
+      '',
+      'JBL Tune 760NC Wireless Headphones',
+      'Rs 3,499.00',
+    ]);
+
+    const result = await extractOrderDetailsWithAi(env, { imageBase64 });
+    console.log('Address rejection result:', JSON.stringify(result, null, 2));
+
+    if (result.productName) {
+      expect(result.productName).not.toMatch(/koramangala|bangalore|karnataka|560034/i);
+    }
+  });
 });

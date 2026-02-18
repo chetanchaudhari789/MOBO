@@ -5,6 +5,7 @@ import { AgencyModel } from '../models/Agency.js';
 import { BrandModel } from '../models/Brand.js';
 import { MediatorProfileModel } from '../models/MediatorProfile.js';
 import { ShopperProfileModel } from '../models/ShopperProfile.js';
+import { dualWriteAgency, dualWriteBrand, dualWriteMediatorProfile, dualWriteShopperProfile } from './dualWrite.js';
 
 type AnyUser = any;
 
@@ -22,7 +23,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
     const agencyCode = String(user?.mediatorCode ?? '').trim();
     if (!agencyCode) throw new AppError(409, 'MISSING_AGENCY_CODE', 'Agency user is missing a code');
 
-    await AgencyModel.findOneAndUpdate(
+    const agencyDoc = await AgencyModel.findOneAndUpdate(
       { agencyCode },
       {
         $set: {
@@ -36,6 +37,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
       },
       { upsert: true, new: true, ...(sessionOpt ?? {}) }
     );
+    if (agencyDoc) dualWriteAgency(agencyDoc).catch(() => {});
   }
 
   if (roles.includes('brand')) {
@@ -46,7 +48,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
       ? user.connectedAgencies.map((c: unknown) => String(c ?? '').trim()).filter(Boolean)
       : [];
 
-    await BrandModel.findOneAndUpdate(
+    const brandDoc = await BrandModel.findOneAndUpdate(
       { brandCode },
       {
         $set: {
@@ -61,13 +63,14 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
       },
       { upsert: true, new: true, ...(sessionOpt ?? {}) }
     );
+    if (brandDoc) dualWriteBrand(brandDoc).catch(() => {});
   }
 
   if (roles.includes('mediator')) {
     const mediatorCode = String(user?.mediatorCode ?? '').trim();
     if (!mediatorCode) throw new AppError(409, 'MISSING_MEDIATOR_CODE', 'Mediator user is missing a code');
 
-    await MediatorProfileModel.findOneAndUpdate(
+    const mediatorDoc = await MediatorProfileModel.findOneAndUpdate(
       { mediatorCode },
       {
         $set: {
@@ -81,10 +84,11 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
       },
       { upsert: true, new: true, ...(sessionOpt ?? {}) }
     );
+    if (mediatorDoc) dualWriteMediatorProfile(mediatorDoc).catch(() => {});
   }
 
   if (roles.includes('shopper')) {
-    await ShopperProfileModel.findOneAndUpdate(
+    const shopperDoc = await ShopperProfileModel.findOneAndUpdate(
       { userId },
       {
         $set: {
@@ -96,5 +100,6 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
       },
       { upsert: true, new: true, ...(sessionOpt ?? {}) }
     );
+    if (shopperDoc) dualWriteShopperProfile(shopperDoc).catch(() => {});
   }
 }
