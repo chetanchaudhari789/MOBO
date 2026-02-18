@@ -101,20 +101,76 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
     });
 
     // Sync pending connections (embedded array → relational table)
-    if (Array.isArray(mongoDoc.pendingConnections) && mongoDoc.pendingConnections.length > 0) {
-      const pgUser = await db.user.findUnique({ where: { mongoId: id }, select: { id: true } });
-      if (pgUser) {
-        // Remove old connections and re-insert
-        await db.pendingConnection.deleteMany({ where: { userId: pgUser.id } });
-        await db.pendingConnection.createMany({
-          data: mongoDoc.pendingConnections.map((pc: any) => ({
-            userId: pgUser.id,
+    const pgUser = await db.user.findUnique({ where: { mongoId: id }, select: { id: true } });
+    if (pgUser) {
+      const isArray = Array.isArray(mongoDoc.pendingConnections);
+
+      // If pendingConnections is not an array, treat it as "no pending connections"
+      const newPending: any[] = isArray ? mongoDoc.pendingConnections : [];
+
+      // Fetch existing PG pending connections for comparison
+      const existingPending = await db.pendingConnection.findMany({
+        where: { userId: pgUser.id },
+      });
+
+      // Normalize connections so they can be compared independent of ordering or Date vs string
+      const normalize = (items: any[]) =>
+        items
+          .map((pc: any) => ({
             agencyId: pc.agencyId || null,
             agencyName: pc.agencyName || null,
             agencyCode: pc.agencyCode || null,
-            timestamp: pc.timestamp ? new Date(pc.timestamp) : new Date(),
-          })),
+            timestamp: pc.timestamp ? new Date(pc.timestamp).toISOString() : null,
+          }))
+          .sort((a, b) => {
+            if (a.agencyId !== b.agencyId) {
+              return String(a.agencyId ?? '').localeCompare(String(b.agencyId ?? ''));
+            }
+            if (a.agencyCode !== b.agencyCode) {
+              return String(a.agencyCode ?? '').localeCompare(String(b.agencyCode ?? ''));
+            }
+            return String(a.agencyName ?? '').localeCompare(String(b.agencyName ?? ''));
+          });
+
+      const normalizedExisting = normalize(existingPending);
+      const normalizedNew = normalize(
+        newPending.map((pc: any) => ({
+          agencyId: pc.agencyId,
+          agencyName: pc.agencyName,
+          agencyCode: pc.agencyCode,
+          timestamp: pc.timestamp,
+        })),
+      );
+
+      const isSame =
+        normalizedExisting.length === normalizedNew.length &&
+        normalizedExisting.every((item, index) => {
+          const other = normalizedNew[index];
+          return (
+            item.agencyId === other.agencyId &&
+            item.agencyName === other.agencyName &&
+            item.agencyCode === other.agencyCode &&
+            item.timestamp === other.timestamp
+          );
         });
+
+      // If nothing has changed, avoid unnecessary deletes/inserts
+      if (!isSame) {
+        // Remove old connections
+        await db.pendingConnection.deleteMany({ where: { userId: pgUser.id } });
+
+        // Re-insert only if there are new pending connections
+        if (newPending.length > 0) {
+          await db.pendingConnection.createMany({
+            data: newPending.map((pc: any) => ({
+              userId: pgUser.id,
+              agencyId: pc.agencyId || null,
+              agencyName: pc.agencyName || null,
+              agencyCode: pc.agencyCode || null,
+              timestamp: pc.timestamp ? new Date(pc.timestamp) : new Date(),
+            })),
+          });
+        }
       }
     }
   });
@@ -438,36 +494,108 @@ export async function dualWriteOrder(mongoDoc: any): Promise<void> {
     });
 
     // Sync order items (embedded array → relational table)
-    if (Array.isArray(mongoDoc.items) && mongoDoc.items.length > 0) {
-      await db.orderItem.deleteMany({ where: { orderId: pgOrder.id } });
+    const existingItems = await db.orderItem.findMany({
+      where: { orderId: pgOrder.id },
+    });
 
-      // Resolve campaign IDs
-      const itemData = [];
-      for (const item of mongoDoc.items) {
-        const campPg = await db.campaign.findUnique({
-          where: { mongoId: oid(item.campaignId)! },
-          select: { id: true },
-        });
-        if (!campPg) continue;
-
-        itemData.push({
-          orderId: pgOrder.id,
-          productId: String(item.productId ?? ''),
-          title: String(item.title ?? ''),
-          image: String(item.image ?? ''),
-          priceAtPurchasePaise: item.priceAtPurchasePaise ?? 0,
-          commissionPaise: item.commissionPaise ?? 0,
-          campaignId: campPg.id,
-          dealType: item.dealType || null,
-          quantity: item.quantity ?? 1,
-          platform: item.platform || null,
-          brandName: item.brandName || null,
-        });
+    // If no items in Mongo, ensure no items in PG, but avoid unnecessary work
+    if (!Array.isArray(mongoDoc.items) || mongoDoc.items.length === 0) {
+      if (existingItems.length > 0) {
+        await db.orderItem.deleteMany({ where: { orderId: pgOrder.id } });
       }
-      if (itemData.length > 0) {
-        await db.orderItem.createMany({ data: itemData });
-      }
+      return;
     }
+
+    // Batch-resolve campaign IDs for all items to avoid N+1 queries
+    const campaignMongoIds = Array.from(
+      new Set(
+        mongoDoc.items
+          .map((item: any) => oid(item.campaignId))
+          .filter((cid: string | null): cid is string => !!cid),
+      ),
+    );
+
+    const campaigns =
+      campaignMongoIds.length > 0
+        ? await db.campaign.findMany({
+            where: { mongoId: { in: campaignMongoIds } },
+            select: { id: true, mongoId: true },
+          })
+        : [];
+
+    const campaignIdByMongoId = new Map<string, number>(
+      campaigns.map((c: any) => [String(c.mongoId), c.id]),
+    );
+
+    const itemData: any[] = [];
+    for (const item of mongoDoc.items) {
+      const campaignMongoId = oid(item.campaignId);
+      if (!campaignMongoId) continue;
+
+      const campaignId = campaignIdByMongoId.get(campaignMongoId);
+      if (!campaignId) continue;
+
+      itemData.push({
+        orderId: pgOrder.id,
+        productId: String(item.productId ?? ''),
+        title: String(item.title ?? ''),
+        image: String(item.image ?? ''),
+        priceAtPurchasePaise: item.priceAtPurchasePaise ?? 0,
+        commissionPaise: item.commissionPaise ?? 0,
+        campaignId,
+        dealType: item.dealType || null,
+        quantity: item.quantity ?? 1,
+        platform: item.platform || null,
+        brandName: item.brandName || null,
+      });
+    }
+
+    // If no valid items after campaign resolution, ensure PG has none
+    if (itemData.length === 0) {
+      if (existingItems.length > 0) {
+        await db.orderItem.deleteMany({ where: { orderId: pgOrder.id } });
+      }
+      return;
+    }
+
+    // Normalize items for comparison: only compare the fields we control
+    const normalizeItems = (items: any[]) =>
+      items
+        .map((i) => ({
+          productId: String(i.productId ?? ''),
+          title: String(i.title ?? ''),
+          image: String(i.image ?? ''),
+          priceAtPurchasePaise: i.priceAtPurchasePaise ?? 0,
+          commissionPaise: i.commissionPaise ?? 0,
+          campaignId: i.campaignId,
+          dealType: i.dealType || null,
+          quantity: i.quantity ?? 1,
+          platform: i.platform || null,
+          brandName: i.brandName || null,
+        }))
+        .sort((a, b) => {
+          if (a.productId < b.productId) return -1;
+          if (a.productId > b.productId) return 1;
+          if (a.campaignId < b.campaignId) return -1;
+          if (a.campaignId > b.campaignId) return 1;
+          return 0;
+        });
+
+    const normalizedNew = normalizeItems(itemData);
+    const normalizedExisting = normalizeItems(existingItems);
+
+    const itemsUnchanged =
+      normalizedNew.length === normalizedExisting.length &&
+      JSON.stringify(normalizedNew) === JSON.stringify(normalizedExisting);
+
+    if (itemsUnchanged) {
+      // Items already in sync; avoid unnecessary delete/recreate
+      return;
+    }
+
+    // Replace existing items only when there is a real change
+    await db.orderItem.deleteMany({ where: { orderId: pgOrder.id } });
+    await db.orderItem.createMany({ data: itemData });
   });
 }
 
