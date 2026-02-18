@@ -113,14 +113,14 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
         where: { userId: pgUser.id },
       });
 
-      // Normalize connections so they can be compared independent of ordering or Date vs string
+      // Normalize connections so they can be compared independent of ordering
+      // Note: We exclude timestamp from comparison since it's auto-generated on creation
       const normalize = (items: any[]) =>
         items
           .map((pc: any) => ({
             agencyId: pc.agencyId || null,
             agencyName: pc.agencyName || null,
             agencyCode: pc.agencyCode || null,
-            timestamp: pc.timestamp ? new Date(pc.timestamp).toISOString() : null,
           }))
           .sort((a, b) => {
             if (a.agencyId !== b.agencyId) {
@@ -138,7 +138,6 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
           agencyId: pc.agencyId,
           agencyName: pc.agencyName,
           agencyCode: pc.agencyCode,
-          timestamp: pc.timestamp,
         })),
       );
 
@@ -149,8 +148,7 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
           return (
             item.agencyId === other.agencyId &&
             item.agencyName === other.agencyName &&
-            item.agencyCode === other.agencyCode &&
-            item.timestamp === other.timestamp
+            item.agencyCode === other.agencyCode
           );
         });
 
@@ -586,7 +584,21 @@ export async function dualWriteOrder(mongoDoc: any): Promise<void> {
 
     const itemsUnchanged =
       normalizedNew.length === normalizedExisting.length &&
-      JSON.stringify(normalizedNew) === JSON.stringify(normalizedExisting);
+      normalizedNew.every((item, index) => {
+        const other = normalizedExisting[index];
+        return (
+          item.productId === other.productId &&
+          item.title === other.title &&
+          item.image === other.image &&
+          item.priceAtPurchasePaise === other.priceAtPurchasePaise &&
+          item.commissionPaise === other.commissionPaise &&
+          item.campaignId === other.campaignId &&
+          item.dealType === other.dealType &&
+          item.quantity === other.quantity &&
+          item.platform === other.platform &&
+          item.brandName === other.brandName
+        );
+      });
 
     if (itemsUnchanged) {
       // Items already in sync; avoid unnecessary delete/recreate
