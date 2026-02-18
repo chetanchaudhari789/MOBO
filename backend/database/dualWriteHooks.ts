@@ -121,6 +121,14 @@ export async function resyncAfterBulkUpdate(
   }
 
   try {
+    const total = await entry.model.countDocuments(filter);
+    if (total > limit) {
+      console.warn(
+        `[dual-write-hooks] resyncAfterBulkUpdate(${modelName}): ${total} documents match filter,` +
+          ` but only the first ${limit} will be re-synced. Consider using a smaller batch or pagination.`,
+      );
+    }
+
     const docs = await entry.model.find(filter).limit(limit).lean();
     const results = await Promise.allSettled(docs.map((d: any) => entry.writer(d)));
     const failures = results.filter((r) => r.status === 'rejected').length;
