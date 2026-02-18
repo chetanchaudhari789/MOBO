@@ -115,11 +115,10 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     const result = await execute(externalSession);
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
-    // Use the transaction data directly from the result to avoid re-querying
+    // Query wallet after the caller's transaction commits (session managed by caller)
     if (result) {
       dualWriteTransaction(result).catch(() => {});
-      // Fetch wallet from within the session scope to ensure consistency
-      WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }, null, { session: externalSession }).lean()
+      WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean()
         .then(wallet => { if (wallet) dualWriteWallet(wallet).catch(() => {}); })
         .catch(() => {});
     }
@@ -131,7 +130,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     const result = await session.withTransaction(() => execute(session));
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
-    // Query wallet with the same session to ensure we get committed data
+    // Query wallet after withTransaction commits to get the final state
     if (result) {
       dualWriteTransaction(result).catch(() => {});
       WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean()
