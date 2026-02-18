@@ -228,7 +228,4 @@ export async function applyWalletDebit(input: WalletMutationInput) {
   } finally {
     session.endSession();
   }
-  } finally {
-    session.endSession();
-  }
 }
