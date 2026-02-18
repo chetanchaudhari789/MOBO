@@ -17,6 +17,7 @@ import { updateSystemConfigSchema } from '../validations/systemConfig.js';
 import { AuditLogModel } from '../models/AuditLog.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
+import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
 
 function roleToDb(role: string): string | null {
   const r = role.toLowerCase();
@@ -447,11 +448,15 @@ export function makeAdminController() {
 
             if (roles.includes('shopper')) {
               await freezeOrders({ query: { userId: user._id }, reason: 'USER_SUSPENDED', actorUserId: adminUserId });
+              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: String(user._id), metadata: { reason: 'USER_SUSPENDED', role: 'shopper' } }).catch(() => {});
             }
 
             if (roles.includes('mediator') && mediatorCode) {
               await DealModel.updateMany({ mediatorCode, deletedAt: null }, { $set: { active: false } });
+              resyncAfterBulkUpdate('Deal', { mediatorCode, deletedAt: null }).catch(() => {});
               await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminUserId });
+              writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: String(user._id), metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => {});
+              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: String(user._id), metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => {});
               const agencyCode = (await getAgencyCodeForMediatorCode(mediatorCode)) || '';
               publishRealtime({
                 type: 'deals.changed',
@@ -470,7 +475,10 @@ export function makeAdminController() {
               const mediatorCodes = await listMediatorCodesForAgency(mediatorCode);
               if (mediatorCodes.length) {
                 await DealModel.updateMany({ mediatorCode: { $in: mediatorCodes }, deletedAt: null }, { $set: { active: false } });
+                resyncAfterBulkUpdate('Deal', { mediatorCode: { $in: mediatorCodes }, deletedAt: null }).catch(() => {});
                 await freezeOrders({ query: { managerName: { $in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminUserId });
+                writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: String(user._id), metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => {});
+                writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: String(user._id), metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => {});
                 publishRealtime({
                   type: 'deals.changed',
                   ts: new Date().toISOString(),
@@ -486,11 +494,12 @@ export function makeAdminController() {
             }
 
             if (roles.includes('brand')) {
-              await CampaignModel.updateMany(
-                { brandUserId: user._id, deletedAt: null, status: { $in: ['active', 'draft'] } },
-                { $set: { status: 'paused' } }
-              );
+              const brandCampaignFilter = { brandUserId: user._id, deletedAt: null, status: { $in: ['active', 'draft'] } };
+              await CampaignModel.updateMany(brandCampaignFilter, { $set: { status: 'paused' } });
+              resyncAfterBulkUpdate('Campaign', { brandUserId: user._id, deletedAt: null }).catch(() => {});
               await freezeOrders({ query: { brandUserId: user._id }, reason: 'BRAND_SUSPENDED', actorUserId: adminUserId });
+              writeAuditLog({ req, action: 'CAMPAIGNS_PAUSED_CASCADE', entityType: 'User', entityId: String(user._id), metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => {});
+              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: String(user._id), metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => {});
             }
           }
           if (before.status === 'suspended' && user.status === 'active') {

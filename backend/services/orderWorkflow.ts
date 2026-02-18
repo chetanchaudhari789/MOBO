@@ -5,6 +5,8 @@ import { OrderModel, type OrderWorkflowStatus } from '../models/Order.js';
 import { pushOrderEvent } from './orderEvents.js';
 import { notifyOrderWorkflowPush } from './pushNotifications.js';
 import { writeAuditLog } from './audit.js';
+import { dualWriteOrder } from './dualWrite.js';
+import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
 
 const TERMINAL: ReadonlySet<OrderWorkflowStatus> = new Set(['COMPLETED', 'FAILED']);
 
@@ -107,6 +109,9 @@ export async function transitionOrderWorkflow(params: {
     metadata: { from: params.from, to: params.to, actorUserId: params.actorUserId },
   });
 
+  // Dual-write updated order to PG
+  dualWriteOrder(order).catch(() => {});
+
   return order;
 }
 
@@ -141,6 +146,13 @@ export async function freezeOrders(params: {
     },
     { session: params.session }
   );
+
+  // Fire-and-forget: resync frozen orders to PG
+  resyncAfterBulkUpdate('Order', {
+    ...params.query,
+    deletedAt: null,
+    frozen: true,
+  }).catch(() => {});
 
   writeAuditLog({
     action: 'ORDERS_FROZEN',

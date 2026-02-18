@@ -60,7 +60,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     (message: string, options?: { title?: string; variant?: ToastVariant; durationMs?: number }) => {
       const id = genId();
       const variant = options?.variant ?? 'info';
-      const durationMs = options?.durationMs ?? (variant === 'error' ? 5000 : 3000);
+      const durationMs = options?.durationMs ?? (variant === 'error' ? 8000 : variant === 'warning' ? 6000 : 3000);
 
       const item: ToastItem = {
         id,
@@ -69,7 +69,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         variant,
       };
 
-      setToasts((prev) => [item, ...prev].slice(0, 4));
+      setToasts((prev) => {
+        // Deduplicate: if the same message+variant already visible, skip.
+        if (prev.some((x) => x.message === message && x.variant === variant)) return prev;
+        return [item, ...prev].slice(0, 4);
+      });
 
       const timeout = window.setTimeout(() => dismiss(id), durationMs);
       timersRef.current.set(id, timeout);
@@ -104,8 +108,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 'px-4 py-3 backdrop-blur',
                 variantClasses(t.variant)
               )}
-              role="status"
-              aria-live="polite"
+              role={t.variant === 'error' || t.variant === 'warning' ? 'alert' : 'status'}
+              aria-live={t.variant === 'error' || t.variant === 'warning' ? 'assertive' : 'polite'}
               onClick={() => dismiss(t.id)}
             >
               {t.title ? <div className="text-xs font-extrabold uppercase tracking-widest opacity-80">{t.title}</div> : null}

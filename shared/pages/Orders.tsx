@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { formatErrorMessage } from '../utils/errors';
 import { subscribeRealtime } from '../services/realtime';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
@@ -361,7 +362,7 @@ export const Orders: React.FC = () => {
       setSelectedOrder(null);
       loadOrders();
     } catch (err: any) {
-      toast.error(String(err?.message || 'Failed to upload proof'));
+      toast.error(formatErrorMessage(err, 'Failed to upload proof'));
     } finally {
       setIsUploading(false);
     }
@@ -380,7 +381,7 @@ export const Orders: React.FC = () => {
       setInputValue('');
       loadOrders();
     } catch (e: any) {
-      toast.error(String(e?.message || 'Failed to submit link'));
+      toast.error(formatErrorMessage(e, 'Failed to submit link'));
     } finally {
       setIsUploading(false);
     }
@@ -609,7 +610,7 @@ export const Orders: React.FC = () => {
       setRatingVerification(null);
       loadOrders();
     } catch (err: any) {
-      toast.error(String(err?.message || 'Failed to upload proof'));
+      toast.error(formatErrorMessage(err, 'Failed to upload proof'));
     } finally {
       setIsUploading(false);
     }
@@ -709,7 +710,7 @@ export const Orders: React.FC = () => {
       await loadTickets();
     } catch (err) {
       console.error('submitTicket error:', err);
-      toast.error('Failed to raise ticket.');
+      toast.error(formatErrorMessage(err, 'Failed to raise ticket.'));
     } finally {
       setIsUploading(false);
     }
@@ -1714,7 +1715,7 @@ export const Orders: React.FC = () => {
                               toast.success('Ticket deleted.');
                               await loadTickets();
                             } catch (err: any) {
-                              toast.error(String(err?.message || 'Failed to delete ticket.'));
+                              toast.error(formatErrorMessage(err, 'Failed to delete ticket.'));
                             }
                           }}
                           className="px-3 py-1 rounded-lg text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200"

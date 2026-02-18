@@ -16,7 +16,8 @@
     "routes/**/*.ts",
     "middleware/**/*.ts",
     "validations/**/*.ts",
-    "seeds/**/*.ts"
+    "seeds/**/*.ts",
+    "utils/**/*.ts"
   ],
   "exclude": ["dist", "node_modules", "tests"]
 }

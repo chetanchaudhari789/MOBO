@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
+import { formatErrorMessage } from '../utils/errors';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
@@ -1945,8 +1946,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                                 } else {
                                   toast.error((res as any).error || 'Copy failed');
                                 }
-                              } catch {
-                                toast.error('Copy failed');
+                              } catch (err) {
+                                toast.error(formatErrorMessage(err, 'Copy failed'));
                               } finally {
                                 setCopyingId(null);
                               }

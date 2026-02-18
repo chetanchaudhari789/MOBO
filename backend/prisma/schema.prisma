@@ -1,0 +1,832 @@
+// ──────────────────────────────────────────────────────────
+// MOBO – Prisma Schema (PostgreSQL / Neon)
+// Mirrors all 17 Mongoose models for parallel dual-write migration.
+// MongoDB remains the primary. Prisma/PG is the shadow write target.
+// ──────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ────────────────────── ENUMS ──────────────────────
+
+enum UserRole {
+  shopper
+  mediator
+  agency
+  brand
+  admin
+  ops
+}
+
+enum UserStatus {
+  active
+  suspended
+  pending
+}
+
+enum KycStatus {
+  none
+  pending
+  verified
+  rejected
+}
+
+enum BrandStatus {
+  active
+  suspended
+  pending
+}
+
+enum AgencyStatus {
+  active
+  suspended
+  pending
+}
+
+enum OrderWorkflowStatus {
+  CREATED
+  REDIRECTED
+  ORDERED
+  PROOF_SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  REWARD_PENDING
+  COMPLETED
+  FAILED
+}
+
+enum OrderStatus {
+  Ordered
+  Shipped
+  Delivered
+  Cancelled
+  Returned
+}
+
+enum PaymentStatus {
+  Pending
+  Paid
+  Refunded
+  Failed
+}
+
+enum AffiliateStatus {
+  Unchecked
+  Pending_Cooling
+  Approved_Settled
+  Rejected
+  Fraud_Alert
+  Cap_Exceeded
+  Frozen_Disputed
+}
+
+enum SettlementMode {
+  wallet
+  external
+}
+
+enum DealType {
+  Discount
+  Review
+  Rating
+}
+
+enum CampaignStatus {
+  draft
+  active
+  paused
+  completed
+}
+
+enum TransactionType {
+  brand_deposit
+  platform_fee
+  commission_lock
+  commission_settle
+  cashback_lock
+  cashback_settle
+  order_settlement_debit
+  commission_reversal
+  margin_reversal
+  agency_payout
+  agency_receipt
+  payout_request
+  payout_complete
+  payout_failed
+  refund
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  failed
+  reversed
+}
+
+enum PayoutStatus {
+  requested
+  processing
+  paid
+  failed
+  canceled
+  recorded
+}
+
+enum Currency {
+  INR
+}
+
+enum InviteStatus {
+  active
+  used
+  revoked
+  expired
+}
+
+enum TicketStatus {
+  Open
+  Resolved
+  Rejected
+}
+
+enum SuspensionAction {
+  suspend
+  unsuspend
+}
+
+enum PushApp {
+  buyer
+  mediator
+}
+
+enum RejectionType {
+  order
+  review
+  rating
+  returnWindow
+}
+
+enum MissingProofType {
+  review
+  rating
+  returnWindow
+}
+
+enum MediatorStatus {
+  active
+  suspended
+  pending
+}
+
+// ────────────────────── MODELS ──────────────────────
+
+/// Core user account — all roles share a single User row.
+model User {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId  String?  @unique /// Original MongoDB _id for cross-referencing during migration
+
+  name     String   @db.VarChar(120)
+  username String?  @unique @db.VarChar(64)
+  mobile   String   @db.VarChar(10)
+  email    String?  @db.VarChar(320)
+  passwordHash String
+
+  role     UserRole  @default(shopper)
+  roles    UserRole[] @default([shopper])
+  status   UserStatus @default(active)
+
+  // Ops hierarchy / attribution
+  mediatorCode   String?  @db.VarChar(64)
+  parentCode     String?  @db.VarChar(64)
+  generatedCodes String[] @default([])
+
+  // Consumer specific
+  isVerifiedByMediator Boolean @default(false)
+
+  // Brand specific
+  brandCode          String?  @db.VarChar(64)
+  connectedAgencies  String[] @default([])
+
+  // KYC
+  kycStatus     KycStatus @default(none)
+  kycPanCard    String?
+  kycAadhaar    String?
+  kycGst        String?
+
+  // Financials
+  upiId              String?
+  qrCode             String?
+  bankAccountNumber  String?
+  bankIfsc           String?
+  bankName           String?
+  bankHolderName     String?
+  walletBalancePaise Int     @default(0)
+  walletPendingPaise Int     @default(0)
+
+  // Meta
+  avatar String?
+
+  // Account lockout
+  failedLoginAttempts Int       @default(0)
+  lockoutUntil        DateTime?
+
+  // Google OAuth
+  googleRefreshToken String?
+  googleEmail        String?  @db.VarChar(320)
+
+  // Audit / soft delete
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations (self-referential for audit)
+  pendingConnections PendingConnection[]
+  orders             Order[]            @relation("OrderUser")
+  brandOrders        Order[]            @relation("OrderBrandUser")
+  wallets            Wallet[]
+  payouts            Payout[]
+  tickets            Ticket[]
+  pushSubscriptions  PushSubscription[]
+  suspensionsTarget  Suspension[]       @relation("SuspensionTarget")
+  suspensionsAdmin   Suspension[]       @relation("SuspensionAdmin")
+  auditLogs          AuditLog[]
+  invitesCreated     Invite[]           @relation("InviteCreatedBy")
+  mediatorProfile    MediatorProfile?
+  shopperProfile     ShopperProfile?
+
+  @@unique([mobile], map: "User_mobile_unique")
+  @@index([role])
+  @@index([status])
+  @@index([parentCode])
+  @@index([brandCode, roles])
+  @@index([mediatorCode, roles])
+  @@index([roles, status])
+  @@map("users")
+}
+
+/// Pending brand-agency connection requests (embedded array in Mongo -> join table in PG)
+model PendingConnection {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @db.Uuid
+  agencyId   String?
+  agencyName String?
+  agencyCode String?
+  timestamp  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("pending_connections")
+}
+
+/// Brand entity (mirrors Brand.ts)
+model Brand {
+  id                   String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId              String?     @unique
+  name                 String      @db.VarChar(200)
+  brandCode            String      @unique
+  ownerUserId          String      @db.Uuid
+  connectedAgencyCodes String[]    @default([])
+  status               BrandStatus @default(active)
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("brands")
+}
+
+/// Agency entity (mirrors Agency.ts)
+model Agency {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId     String?      @unique
+  name        String       @db.VarChar(200)
+  agencyCode  String       @unique
+  ownerUserId String       @db.Uuid
+  status      AgencyStatus @default(active)
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("agencies")
+}
+
+/// Mediator profile (mirrors MediatorProfile.ts)
+model MediatorProfile {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId          String?        @unique
+  userId           String         @unique @db.Uuid
+  mediatorCode     String         @unique
+  parentAgencyCode String?
+  status           MediatorStatus @default(active)
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mediator_profiles")
+}
+
+/// Shopper profile (mirrors ShopperProfile.ts)
+model ShopperProfile {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId             String? @unique
+  userId              String  @unique @db.Uuid
+  defaultMediatorCode String?
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("shopper_profiles")
+}
+
+/// Campaign created by a brand (mirrors Campaign.ts)
+model Campaign {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId       String?        @unique
+  title         String         @db.VarChar(200)
+  brandUserId   String         @db.Uuid
+  brandName     String         @db.VarChar(200)
+  platform      String         @db.VarChar(80)
+  image         String
+  productUrl    String
+
+  originalPricePaise Int
+  pricePaise         Int
+  payoutPaise        Int
+  returnWindowDays   Int      @default(14)
+
+  dealType           DealType?
+  totalSlots         Int
+  usedSlots          Int      @default(0)
+  status             CampaignStatus @default(draft)
+
+  allowedAgencyCodes String[] @default([])
+
+  /// Mediator code -> { limit, payout, commissionPaise }. Stored as JSONB because it is a dynamic Map.
+  assignments        Json     @default("{}")
+
+  locked       Boolean   @default(false)
+  lockedAt     DateTime?
+  lockedReason String?
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  deals  Deal[]
+  orders OrderItem[]
+
+  @@index([status, brandUserId, createdAt(sort: Desc)])
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@map("campaigns")
+}
+
+/// Deal = campaign snapshot for a mediator (mirrors Deal.ts)
+model Deal {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId     String?  @unique
+  campaignId  String   @db.Uuid
+  mediatorCode String
+
+  // Snapshot fields
+  title       String
+  description String   @default("Exclusive")
+  image       String
+  productUrl  String
+  platform    String
+  brandName   String
+
+  dealType    DealType
+
+  originalPricePaise Int
+  pricePaise         Int
+  commissionPaise    Int
+  payoutPaise        Int
+
+  rating   Float   @default(5)
+  category String  @default("General")
+  active   Boolean @default(true)
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, mediatorCode])
+  @@index([mediatorCode, createdAt(sort: Desc)])
+  @@index([active])
+  @@map("deals")
+}
+
+/// Order (mirrors Order.ts)
+model Order {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId     String? @unique
+  userId      String  @db.Uuid
+  brandUserId String? @db.Uuid
+
+  totalPaise  Int
+
+  workflowStatus  OrderWorkflowStatus @default(CREATED)
+
+  // Suspension freeze
+  frozen       Boolean   @default(false)
+  frozenAt     DateTime?
+  frozenReason String?
+  reactivatedAt DateTime?
+  reactivatedBy String?   @db.Uuid
+
+  status         OrderStatus    @default(Ordered)
+  paymentStatus  PaymentStatus  @default(Pending)
+  affiliateStatus AffiliateStatus @default(Unchecked)
+
+  externalOrderId String?
+
+  // AI-extracted metadata
+  orderDate          DateTime?
+  soldBy             String?
+  extractedProductName String?
+
+  settlementRef  String?
+  settlementMode SettlementMode @default(wallet)
+
+  // Screenshots stored as URLs
+  screenshotOrder       String?
+  screenshotPayment     String?
+  screenshotReview      String?
+  screenshotRating      String?
+  screenshotReturnWindow String?
+  reviewLink            String?
+  returnWindowDays      Int     @default(14)
+
+  // AI verification results (JSONB because deeply nested)
+  ratingAiVerification      Json?
+  returnWindowAiVerification Json?
+
+  // Rejection info
+  rejectionType     RejectionType?
+  rejectionReason   String?
+  rejectionAt       DateTime?
+  rejectionBy       String?   @db.Uuid
+
+  // Verification timestamps (JSONB for nested structure)
+  verification Json?
+
+  // Display names
+  managerName  String
+  agencyName   String?
+  buyerName    String
+  buyerMobile  String  @db.VarChar(10)
+  reviewerName String?
+  brandName    String?
+
+  // Events log (JSONB array)
+  events Json @default("[]")
+
+  // Missing proof requests (JSONB array)
+  missingProofRequests Json @default("[]")
+
+  expectedSettlementDate DateTime?
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  user      User        @relation("OrderUser", fields: [userId], references: [id])
+  brandUser User?       @relation("OrderBrandUser", fields: [brandUserId], references: [id])
+  items     OrderItem[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([managerName, createdAt(sort: Desc)])
+  @@index([brandUserId, createdAt(sort: Desc)])
+  @@index([workflowStatus])
+  @@index([frozen])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([affiliateStatus])
+  @@index([settlementMode])
+  @@map("orders")
+}
+
+/// Order item (embedded array in Mongo -> join table in PG)
+model OrderItem {
+  id                   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId              String  @db.Uuid
+  productId            String
+  title                String
+  image                String
+  priceAtPurchasePaise Int
+  commissionPaise      Int
+  campaignId           String  @db.Uuid
+  dealType             String?
+  quantity             Int     @default(1)
+  platform             String?
+  brandName            String?
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@index([orderId])
+  @@index([campaignId])
+  @@map("order_items")
+}
+
+/// Wallet (mirrors Wallet.ts)
+model Wallet {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId        String?  @unique
+  ownerUserId    String   @unique @db.Uuid
+  currency       Currency @default(INR)
+  availablePaise Int      @default(0)
+  pendingPaise   Int      @default(0)
+  lockedPaise    Int      @default(0)
+  version        Int      @default(0)
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  owner        User          @relation(fields: [ownerUserId], references: [id])
+  transactions Transaction[]
+  payouts      Payout[]
+
+  @@map("wallets")
+}
+
+/// Financial transaction (mirrors Transaction.ts)
+model Transaction {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId         String?           @unique
+  idempotencyKey  String            @unique
+  type            TransactionType
+  status          TransactionStatus @default(pending)
+  amountPaise     Int
+  currency        String            @default("INR")
+
+  orderId    String? @db.VarChar(64)
+  campaignId String? @db.Uuid
+  payoutId   String? @db.Uuid
+  walletId   String? @db.Uuid
+  fromUserId String? @db.Uuid
+  toUserId   String? @db.Uuid
+
+  metadata Json?
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  wallet Wallet? @relation(fields: [walletId], references: [id])
+
+  @@index([status, type, createdAt(sort: Desc)])
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@index([walletId, createdAt(sort: Desc)])
+  @@index([orderId])
+  @@index([campaignId])
+  @@index([payoutId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("transactions")
+}
+
+/// Payout request (mirrors Payout.ts)
+model Payout {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId           String?      @unique
+  beneficiaryUserId String       @db.Uuid
+  walletId          String       @db.Uuid
+  amountPaise       Int
+  currency          String       @default("INR")
+  status            PayoutStatus @default(requested)
+
+  provider    String?
+  providerRef String?
+
+  failureCode    String?
+  failureMessage String?
+
+  requestedAt DateTime  @default(now())
+  processedAt DateTime?
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  beneficiary User   @relation(fields: [beneficiaryUserId], references: [id])
+  wallet      Wallet @relation(fields: [walletId], references: [id])
+
+  @@unique([provider, providerRef])
+  @@index([status, requestedAt(sort: Desc)])
+  @@index([beneficiaryUserId, requestedAt(sort: Desc)])
+  @@map("payouts")
+}
+
+/// Invite code (mirrors Invite.ts)
+model Invite {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId      String?      @unique
+  code         String       @unique
+  role         UserRole
+  label        String?
+
+  parentUserId String?      @db.Uuid
+  parentCode   String?
+
+  status       InviteStatus @default(active)
+
+  maxUses  Int @default(1)
+  useCount Int @default(0)
+
+  expiresAt DateTime?
+
+  createdBy String?   @db.Uuid
+  usedBy    String?   @db.Uuid
+  usedAt    DateTime?
+
+  /// Array of { usedBy, usedAt } stored as JSONB
+  uses Json @default("[]")
+
+  revokedBy String?   @db.Uuid
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creator User? @relation("InviteCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([status, expiresAt])
+  @@index([code, status, useCount])
+  @@index([parentCode, status, createdAt(sort: Desc)])
+  @@map("invites")
+}
+
+/// Support ticket (mirrors Ticket.ts)
+model Ticket {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId     String?      @unique
+  userId      String       @db.Uuid
+  userName    String
+  role        String
+  orderId     String?
+  issueType   String
+  description String
+  status      TicketStatus @default(Open)
+
+  resolvedBy     String?   @db.Uuid
+  resolvedAt     DateTime?
+  resolutionNote String?   @db.VarChar(1000)
+
+  createdBy String?   @db.Uuid
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime?
+  deletedBy String?   @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("tickets")
+}
+
+/// Push notification subscription (mirrors PushSubscription.ts)
+model PushSubscription {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId        String? @unique
+  userId         String  @db.Uuid
+  app            PushApp
+  endpoint       String  @unique
+  expirationTime Int?
+  keysP256dh     String
+  keysAuth       String
+  userAgent      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, app])
+  @@map("push_subscriptions")
+}
+
+/// Admin suspension / unsuspension record (mirrors Suspension.ts)
+model Suspension {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId      String?         @unique
+  targetUserId String          @db.Uuid
+  action       SuspensionAction
+  reason       String?
+  adminUserId  String          @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  target User @relation("SuspensionTarget", fields: [targetUserId], references: [id])
+  admin  User @relation("SuspensionAdmin", fields: [adminUserId], references: [id])
+
+  @@index([targetUserId, createdAt(sort: Desc)])
+  @@map("suspensions")
+}
+
+/// Audit log (mirrors AuditLog.ts)
+model AuditLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId      String?  @unique
+  actorUserId  String?  @db.Uuid
+  actorRoles   String[] @default([])
+  action       String
+  entityType   String?
+  entityId     String?
+  ip           String?
+  userAgent    String?
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([createdAt(sort: Desc), action])
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+/// System configuration key-value (mirrors SystemConfig.ts)
+model SystemConfig {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId           String? @unique
+  key               String  @unique @default("system")
+  adminContactEmail String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+/// Migration sync tracking for backfilling Mongo data to PG (per-collection).
+model MigrationSync {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  collection  String   @unique
+  status      String   @default("pending")
+  syncedCount Int      @default(0)
+  errorCount  Int      @default(0)
+  lastSyncAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@map("migration_sync")
+}
