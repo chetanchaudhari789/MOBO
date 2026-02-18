@@ -116,12 +116,23 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
       // Normalize connections so they can be compared independent of ordering or Date vs string
       const normalize = (items: any[]) =>
         items
-          .map((pc: any) => ({
-            agencyId: pc.agencyId || null,
-            agencyName: pc.agencyName || null,
-            agencyCode: pc.agencyCode || null,
-            timestamp: pc.timestamp ? new Date(pc.timestamp).toISOString() : null,
-          }))
+          .map((pc: any) => {
+            // Normalize timestamp to ISO string for consistent comparison
+            let isoTimestamp = null;
+            if (pc.timestamp) {
+              try {
+                isoTimestamp = new Date(pc.timestamp).toISOString();
+              } catch {
+                // Invalid timestamp, treat as null
+              }
+            }
+            return {
+              agencyId: pc.agencyId || null,
+              agencyName: pc.agencyName || null,
+              agencyCode: pc.agencyCode || null,
+              timestamp: isoTimestamp,
+            };
+          })
           .sort((a, b) => {
             if (a.agencyId !== b.agencyId) {
               return String(a.agencyId ?? '').localeCompare(String(b.agencyId ?? ''));
@@ -586,7 +597,21 @@ export async function dualWriteOrder(mongoDoc: any): Promise<void> {
 
     const itemsUnchanged =
       normalizedNew.length === normalizedExisting.length &&
-      JSON.stringify(normalizedNew) === JSON.stringify(normalizedExisting);
+      normalizedNew.every((newItem, index) => {
+        const existingItem = normalizedExisting[index];
+        return (
+          newItem.productId === existingItem.productId &&
+          newItem.title === existingItem.title &&
+          newItem.image === existingItem.image &&
+          newItem.priceAtPurchasePaise === existingItem.priceAtPurchasePaise &&
+          newItem.commissionPaise === existingItem.commissionPaise &&
+          newItem.campaignId === existingItem.campaignId &&
+          newItem.dealType === existingItem.dealType &&
+          newItem.quantity === existingItem.quantity &&
+          newItem.platform === existingItem.platform &&
+          newItem.brandName === existingItem.brandName
+        );
+      });
 
     if (itemsUnchanged) {
       // Items already in sync; avoid unnecessary delete/recreate
