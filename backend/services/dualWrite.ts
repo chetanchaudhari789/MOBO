@@ -114,7 +114,7 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
       });
 
       // Normalize connections so they can be compared independent of ordering
-      // Note: We exclude timestamp from comparison since it's auto-generated on creation
+      // Note: We exclude timestamp (auto-generated) and userId (same for all items) from comparison
       const normalize = (items: any[]) =>
         items
           .map((pc: any) => ({
