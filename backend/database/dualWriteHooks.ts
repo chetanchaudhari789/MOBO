@@ -59,6 +59,47 @@ import {
   dualWriteSystemConfig,
 } from '../services/dualWrite.js';
 
+// ─── Dual-write error tracking ──────────────────────────
+
+/** In-memory counters for dual-write failures (for monitoring / alerting) */
+const dualWriteErrorCounters: Map<string, number> = new Map();
+
+/**
+ * Track a dual-write failure. Increments the counter for the given model label.
+ * In production, this could be extended to push metrics to a monitoring service
+ * or write to a dead-letter queue for reconciliation.
+ */
+function trackDualWriteFailure(label: string, operation: string, mongoId: string, error: any): void {
+  const key = `${label}:${operation}`;
+  const count = (dualWriteErrorCounters.get(key) || 0) + 1;
+  dualWriteErrorCounters.set(key, count);
+  
+  console.error(
+    `[dual-write-hooks][${label}][${operation}] FAILED for mongoId=${mongoId}: ${error?.message ?? error}`,
+    `(total failures for ${key}: ${count})`,
+  );
+  
+  // TODO: In production, consider:
+  // - Pushing to a dead-letter queue (e.g., SQS, Kafka) for retry/reconciliation
+  // - Sending metrics to CloudWatch, Datadog, or Prometheus
+  // - Triggering alerts when failure rate exceeds threshold
+}
+
+/**
+ * Get dual-write error counters for monitoring.
+ * Returns a map of "ModelLabel:operation" → failure count.
+ */
+export function getDualWriteErrorCounters(): Map<string, number> {
+  return new Map(dualWriteErrorCounters);
+}
+
+/**
+ * Reset dual-write error counters (useful for testing or periodic resets).
+ */
+export function resetDualWriteErrorCounters(): void {
+  dualWriteErrorCounters.clear();
+}
+
 type HookEntry = {
   model: any;
   writer: (doc: any) => Promise<void>;
@@ -174,7 +215,7 @@ export function registerDualWriteHooks(): void {
     // ── post('save') — covers .save() and Model.create() ──
     schema.post('save', function (doc: any) {
       writer(doc).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-save failed:`, err?.message ?? err);
+        trackDualWriteFailure(label, 'save', String(doc._id ?? ''), err);
       });
     });
 
@@ -182,7 +223,7 @@ export function registerDualWriteHooks(): void {
     schema.post('findOneAndUpdate', function (doc: any) {
       if (!doc) return;
       writer(doc).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-findOneAndUpdate failed:`, err?.message ?? err);
+        trackDualWriteFailure(label, 'findOneAndUpdate', String(doc._id ?? ''), err);
       });
     });
 
@@ -191,7 +232,7 @@ export function registerDualWriteHooks(): void {
       if (!Array.isArray(docs)) return;
       for (const doc of docs) {
         writer(doc).catch((err: any) => {
-          console.error(`[dual-write-hooks][${label}] post-insertMany failed:`, err?.message ?? err);
+          trackDualWriteFailure(label, 'insertMany', String(doc._id ?? ''), err);
         });
       }
     });
@@ -202,7 +243,7 @@ export function registerDualWriteHooks(): void {
       const id = String(doc._id ?? '');
       if (!id) return;
       hardDeleteFromPg(label, prismaDelegate, id).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-findOneAndDelete failed:`, err?.message ?? err);
+        trackDualWriteFailure(label, 'findOneAndDelete', id, err);
       });
     });
 
@@ -211,7 +252,7 @@ export function registerDualWriteHooks(): void {
       const id = String(this._id ?? '');
       if (!id) return;
       hardDeleteFromPg(label, prismaDelegate, id).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-deleteOne failed:`, err?.message ?? err);
+        trackDualWriteFailure(label, 'deleteOne', id, err);
       });
     });
   }
