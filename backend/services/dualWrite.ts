@@ -518,7 +518,7 @@ export async function dualWriteOrder(mongoDoc: any): Promise<void> {
     const campaigns =
       campaignMongoIds.length > 0
         ? await db.campaign.findMany({
-            where: { mongoId: { in: campaignMongoIds } },
+            where: { mongoId: { in: campaignMongoIds as string[] } },
             select: { id: true, mongoId: true },
           })
         : [];
