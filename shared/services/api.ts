@@ -1,6 +1,7 @@
 ﻿import { User, Product, Order, Ticket } from '../types';
 import { fixMojibakeDeep, maybeFixMojibake } from '../utils/mojibake';
 import { getApiBaseUrl } from '../utils/apiBaseUrl';
+import { isNetworkError, isTimeoutError, httpStatusToFriendlyMessage } from '../utils/errors';
 
 // Real API Base URL
 const API_URL = getApiBaseUrl();
@@ -186,10 +187,23 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 
 function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   // If the caller already provides an AbortSignal, respect it.
-  if (init?.signal) return fetch(url, init);
+  if (init?.signal) return fetch(url, init).catch(wrapFetchError);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+  return fetch(url, { ...init, signal: controller.signal })
+    .catch(wrapFetchError)
+    .finally(() => clearTimeout(timer));
+}
+
+/** Convert raw fetch errors (network, abort) into user-friendly Error instances. */
+function wrapFetchError(err: unknown): never {
+  if (isTimeoutError(err)) {
+    throw new Error('The request took too long. Please try again.');
+  }
+  if (isNetworkError(err)) {
+    throw new Error('Unable to connect. Please check your internet connection and try again.');
+  }
+  throw err;
 }
 
 async function fetchJson(path: string, init?: RequestInit): Promise<any> {
@@ -206,14 +220,14 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
       };
       const retryRes = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
-      if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
+      if (!retryRes.ok) throw toErrorFromPayload(retryPayload, httpStatusToFriendlyMessage(retryRes.status));
       return fixMojibakeDeep(retryPayload);
     }
     // Refresh failed — session is dead. Notify listeners (AuthContext) for redirect.
     notifyAuthExpired();
   }
 
-  if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
+  if (!res.ok) throw toErrorFromPayload(payload, httpStatusToFriendlyMessage(res.status));
   return fixMojibakeDeep(payload);
 }
 
@@ -231,14 +245,14 @@ async function fetchOk(path: string, init?: RequestInit): Promise<void> {
       };
       const retryRes = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
-      if (!retryRes.ok) throw toErrorFromPayload(retryPayload, `Request failed: ${retryRes.status}`);
+      if (!retryRes.ok) throw toErrorFromPayload(retryPayload, httpStatusToFriendlyMessage(retryRes.status));
       return;
     }
     // Refresh failed — session is dead. Notify listeners.
     notifyAuthExpired();
   }
 
-  if (!res.ok) throw toErrorFromPayload(payload, `Request failed: ${res.status}`);
+  if (!res.ok) throw toErrorFromPayload(payload, httpStatusToFriendlyMessage(res.status));
 }
 
 function unwrapAuthResponse(payload: any): any {

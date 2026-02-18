@@ -22,6 +22,14 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1),
   MONGODB_DBNAME: z.string().trim().min(1).optional(),
 
+  // PostgreSQL (Neon) — used by Prisma for the dual-write migration.
+  // Optional: when not set, Prisma writes are silently skipped.
+  DATABASE_URL: z.string().url().optional(),
+
+  // Feature flag: when true, every Mongo write is also shadow-written to PG.
+  // Set to false to disable PG writes without removing the Prisma config.
+  DUAL_WRITE_ENABLED: z.coerce.boolean().default(false),
+
   JWT_ACCESS_SECRET: z.string().optional(),
   JWT_REFRESH_SECRET: z.string().optional(),
   JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),

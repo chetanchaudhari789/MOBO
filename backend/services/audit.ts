@@ -1,5 +1,6 @@
 import type { Request } from 'express';
 import { AuditLogModel } from '../models/AuditLog.js';
+import { dualWriteAuditLog } from './dualWrite.js';
 
 export type AuditParams = {
   req?: Request;
@@ -25,6 +26,9 @@ export async function writeAuditLog(params: AuditParams): Promise<void> {
       ip: params.req?.ip,
       userAgent: params.req?.header('user-agent') || undefined,
       metadata: params.metadata,
+    }).then((doc) => {
+      // Dual-write audit log to PG (fire-and-forget, no await)
+      dualWriteAuditLog(doc).catch(() => {});
     });
   } catch (err) {
     // Audit logs must never break business flows, but we log failures

@@ -14,6 +14,7 @@ import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchem
 import { TransactionModel } from '../models/Transaction.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
 import { publishRealtime } from '../services/realtimeHub.js';
+import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
 
 async function recordManualPayoutLedger(args: {
   idempotencyKey: string;
@@ -203,7 +204,7 @@ export function makeBrandController() {
         const brandId = isPrivileged(roles) && body.brandId ? String(body.brandId) : userId;
 
         const brand = await UserModel.findById(brandId).select({ roles: 1, connectedAgencies: 1, name: 1, status: 1, deletedAt: 1 }).lean();
-        if (!brand || (brand as any).deletedAt) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
+        if (!brand || (brand as any).deletedAt) throw new AppError(404, 'NOT_FOUND', 'Brand not found');
         if (!isPrivileged(roles) && !(brand as any).roles?.includes('brand')) {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can record payouts');
         }
@@ -440,10 +441,18 @@ export function makeBrandController() {
         // Cascade: remove the agency from allowedAgencyCodes on all this brand's campaigns.
         const agencyCode = String(body.agencyCode || '').trim();
         if (agencyCode) {
-          await CampaignModel.updateMany(
-            { brandUserId: brand._id, deletedAt: null, allowedAgencyCodes: agencyCode },
-            { $pull: { allowedAgencyCodes: agencyCode } }
-          );
+          const campaignFilter = { brandUserId: brand._id, deletedAt: null, allowedAgencyCodes: agencyCode };
+          const cascadeResult = await CampaignModel.updateMany(campaignFilter, { $pull: { allowedAgencyCodes: agencyCode } });
+          resyncAfterBulkUpdate('Campaign', campaignFilter).catch(() => {});
+          if (cascadeResult.modifiedCount > 0) {
+            writeAuditLog({
+              req,
+              action: 'CAMPAIGNS_AGENCY_REMOVED_CASCADE',
+              entityType: 'User',
+              entityId: String(brand._id),
+              metadata: { agencyCode, campaignsAffected: cascadeResult.modifiedCount },
+            }).catch(() => {});
+          }
         }
         const ts = new Date().toISOString();
         publishRealtime({
@@ -659,10 +668,9 @@ export function makeBrandController() {
 
         if (statusRequested) {
           const isActive = String((campaign as any).status || '').toLowerCase() === 'active';
-          await DealModel.updateMany(
-            { campaignId: (campaign as any)._id, deletedAt: null },
-            { $set: { active: isActive } }
-          );
+          const dealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
+          await DealModel.updateMany(dealFilter, { $set: { active: isActive } });
+          resyncAfterBulkUpdate('Deal', dealFilter).catch(() => {});
         }
 
         const nextAllowed = Array.isArray((campaign as any).allowedAgencyCodes)
@@ -715,7 +723,7 @@ export function makeBrandController() {
         if (!id || typeof id !== 'string') {
           throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
         }
-        const { roles, userId, user } = getRequester(req);
+        const { roles, userId } = getRequester(req);
 
         const campaign = await CampaignModel.findById(id).lean();
         if (!campaign || (campaign as any).deletedAt) {
@@ -810,10 +818,9 @@ export function makeBrandController() {
           throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
         }
 
-        await DealModel.updateMany(
-          { campaignId: (campaign as any)._id, deletedAt: null },
-          { $set: { deletedAt: now, deletedBy, active: false } }
-        );
+        const dealDeleteFilter = { campaignId: (campaign as any)._id, deletedAt: null };
+        await DealModel.updateMany(dealDeleteFilter, { $set: { deletedAt: now, deletedBy, active: false } });
+        resyncAfterBulkUpdate('Deal', { campaignId: (campaign as any)._id }).catch(() => {});
 
         await writeAuditLog({
           req,

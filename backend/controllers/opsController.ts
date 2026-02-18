@@ -43,6 +43,7 @@ import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { sendPushToUser } from '../services/pushNotifications.js';
 import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
 
 function buildOrderAudience(order: any, agencyCode?: string) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -668,6 +669,16 @@ export function makeOpsController(env: Env) {
           }
         }
 
+        // Agencies can only approve buyers whose mediator is within their sub-mediator network.
+        if (roles.includes('agency') && !isPrivileged(roles) && !roles.includes('mediator')) {
+          const agencyCode = String((requester as any)?.mediatorCode || '').trim();
+          if (!agencyCode) throw new AppError(403, 'FORBIDDEN', 'Agency code not found');
+          const subMediators = await listMediatorCodesForAgency(agencyCode);
+          if (!subMediators.includes(upstreamMediatorCode)) {
+            throw new AppError(403, 'FORBIDDEN', 'Cannot approve users outside your agency network');
+          }
+        }
+
         const user = await UserModel.findByIdAndUpdate(body.id, { isVerifiedByMediator: true }, { new: true });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
@@ -714,6 +725,16 @@ export function makeOpsController(env: Env) {
         if (roles.includes('mediator') && !isPrivileged(roles)) {
           if (String(upstreamMediatorCode) !== String((requester as any)?.mediatorCode)) {
             throw new AppError(403, 'FORBIDDEN', 'Cannot reject users outside your network');
+          }
+        }
+
+        // Agencies can only reject buyers whose mediator is within their sub-mediator network.
+        if (roles.includes('agency') && !isPrivileged(roles) && !roles.includes('mediator')) {
+          const agencyCode = String((requester as any)?.mediatorCode || '').trim();
+          if (!agencyCode) throw new AppError(403, 'FORBIDDEN', 'Agency code not found');
+          const subMediators = await listMediatorCodesForAgency(agencyCode);
+          if (!subMediators.includes(upstreamMediatorCode)) {
+            throw new AppError(403, 'FORBIDDEN', 'Cannot reject users outside your agency network');
           }
         }
 
@@ -1202,7 +1223,27 @@ export function makeOpsController(env: Env) {
         }) as any;
 
         await order.save();
-        await writeAuditLog({ req, action: 'ORDER_REJECTED', entityType: 'Order', entityId: String(order._id) });
+        await writeAuditLog({
+          req,
+          action: 'ORDER_REJECTED',
+          entityType: 'Order',
+          entityId: String(order._id),
+          metadata: { proofType: body.type, reason: body.reason },
+        });
+
+        // Audit slot release separately for campaign backtracking
+        if (body.type === 'order') {
+          const campaignId = order.items?.[0]?.campaignId;
+          if (campaignId) {
+            writeAuditLog({
+              req,
+              action: 'CAMPAIGN_SLOT_RELEASED',
+              entityType: 'Campaign',
+              entityId: String(campaignId),
+              metadata: { orderId: String(order._id), reason: 'proof_rejected' },
+            }).catch(() => {});
+          }
+        }
 
         const audience = buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -1219,7 +1260,7 @@ export function makeOpsController(env: Env) {
               body: body.reason || 'Please re-upload the required proof.',
               url: '/orders',
             },
-          });
+          }).catch(() => {});
         }
 
         res.json({ ok: true });
@@ -1975,10 +2016,9 @@ export function makeOpsController(env: Env) {
         await campaign.save();
 
         if (previousStatus !== nextStatus) {
-          await DealModel.updateMany(
-            { campaignId: (campaign as any)._id, deletedAt: null },
-            { $set: { active: nextStatus === 'active' } }
-          );
+          const dealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
+          await DealModel.updateMany(dealFilter, { $set: { active: nextStatus === 'active' } });
+          resyncAfterBulkUpdate('Deal', dealFilter).catch(() => {});
         }
 
         const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
@@ -2053,10 +2093,9 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
         }
 
-        await DealModel.updateMany(
-          { campaignId: (campaign as any)._id, deletedAt: null },
-          { $set: { deletedAt: now, deletedBy, active: false } }
-        );
+        const opsDeleteDealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
+        await DealModel.updateMany(opsDeleteDealFilter, { $set: { deletedAt: now, deletedBy, active: false } });
+        resyncAfterBulkUpdate('Deal', { campaignId: (campaign as any)._id }).catch(() => {});
 
         await writeAuditLog({
           req,

@@ -214,7 +214,7 @@ export function makeTicketsController() {
           action: 'TICKET_CREATED',
           entityType: 'Ticket',
           entityId: String((ticket as any)._id),
-          metadata: { issueType: body.issueType, orderId: body.orderId },
+          metadata: { issueType: body.issueType, orderId: body.orderId, actorRole: role },
         });
 
         res.status(201).json(toUiTicket(ticket.toObject()));
@@ -270,13 +270,14 @@ export function makeTicketsController() {
 
         const auditAction = body.status === 'Resolved' ? 'TICKET_RESOLVED'
           : body.status === 'Rejected' ? 'TICKET_REJECTED'
+          : (previousStatus === 'Resolved' || previousStatus === 'Rejected') && body.status === 'Open' ? 'TICKET_REOPENED'
           : 'TICKET_UPDATED';
         await writeAuditLog({
           req,
           action: auditAction,
           entityType: 'Ticket',
           entityId: id,
-          metadata: { previousStatus, newStatus: body.status },
+          metadata: { previousStatus, newStatus: body.status, actorRole: String((user as any)?.role || roles[0] || '') },
         });
 
         res.json(toUiTicket(ticket.toObject()));

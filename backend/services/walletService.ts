@@ -3,6 +3,7 @@ import { WalletModel } from '../models/Wallet.js';
 import { TransactionModel, type TransactionType } from '../models/Transaction.js';
 import { AppError } from '../middleware/errors.js';
 import { writeAuditLog } from './audit.js';
+import { dualWriteWallet, dualWriteTransaction } from './dualWrite.js';
 
 export type WalletMutationInput = {
   idempotencyKey: string;
@@ -113,6 +114,12 @@ export async function applyWalletCredit(input: WalletMutationInput) {
   if (externalSession) {
     const result = await execute(externalSession);
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    // Dual-write wallet & transaction to PG (fire-and-forget)
+    if (result) {
+      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
+      if (wallet) dualWriteWallet(wallet).catch(() => {});
+      dualWriteTransaction(result).catch(() => {});
+    }
     return result;
   }
 
@@ -120,6 +127,12 @@ export async function applyWalletCredit(input: WalletMutationInput) {
   try {
     const result = await session.withTransaction(() => execute(session));
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    // Dual-write wallet & transaction to PG (fire-and-forget)
+    if (result) {
+      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
+      if (wallet) dualWriteWallet(wallet).catch(() => {});
+      dualWriteTransaction(result).catch(() => {});
+    }
     return result;
   } finally {
     session.endSession();
@@ -196,6 +209,12 @@ export async function applyWalletDebit(input: WalletMutationInput) {
   if (externalSession) {
     const result = await execute(externalSession);
     writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    // Dual-write wallet & transaction to PG (fire-and-forget)
+    if (result) {
+      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
+      if (wallet) dualWriteWallet(wallet).catch(() => {});
+      dualWriteTransaction(result).catch(() => {});
+    }
     return result;
   }
 
@@ -203,6 +222,12 @@ export async function applyWalletDebit(input: WalletMutationInput) {
   try {
     const result = await session.withTransaction(() => execute(session));
     writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+    // Dual-write wallet & transaction to PG (fire-and-forget)
+    if (result) {
+      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
+      if (wallet) dualWriteWallet(wallet).catch(() => {});
+      dualWriteTransaction(result).catch(() => {});
+    }
     return result;
   } finally {
     session.endSession();

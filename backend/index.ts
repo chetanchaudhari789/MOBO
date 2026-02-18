@@ -3,6 +3,8 @@ import { loadDotenv } from './config/dotenvLoader.js';
 loadDotenv();
 import { loadEnv, type Env } from './config/env.js';
 import { connectMongo, disconnectMongo } from './database/mongo.js';
+import { connectPrisma, disconnectPrisma } from './database/prisma.js';
+import { registerDualWriteHooks } from './database/dualWriteHooks.js';
 import { createApp } from './app.js';
 import type { Server } from 'node:http';
 
@@ -39,6 +41,13 @@ async function shutdown(signal: string) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('Error while disconnecting Mongo:', err);
+  }
+
+  try {
+    await disconnectPrisma();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Error while disconnecting Prisma:', err);
   } finally {
     clearTimeout(forceTimer);
   }
@@ -89,6 +98,13 @@ async function main() {
   const env = loadEnv();
 
   await connectMongo(env);
+
+  // Connect PostgreSQL (Prisma) if configured. Non-fatal — degrades gracefully.
+  await connectPrisma();
+
+  // Register Mongoose post-hooks for dual-write to PG.
+  // Hooks fire only when DUAL_WRITE_ENABLED=true AND Prisma is connected.
+  registerDualWriteHooks();
 
   const seedAdminRequested = env.SEED_ADMIN;
   const seedE2ERequested = env.SEED_E2E;

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { formatErrorMessage } from '../utils/errors';
 import { api } from '../services/api';
 import { subscribeRealtime } from '../services/realtime';
 import {
@@ -99,8 +100,7 @@ export const Profile: React.FC = () => {
     } catch (e) {
       console.error(e);
       if (!opts?.silent) {
-        const msg = (e as any)?.message ? String((e as any).message) : 'Failed to refresh wallet stats.';
-        toast.error(msg);
+        toast.error(formatErrorMessage(e, 'Failed to refresh wallet stats.'));
       }
     } finally {
       setIsStatsLoading(false);
@@ -145,7 +145,7 @@ export const Profile: React.FC = () => {
       toast.success('Profile updated');
       setIsEditing(false);
     } catch (e) {
-      toast.error(String((e as any)?.message || 'Failed to update profile'));
+      toast.error(formatErrorMessage(e, 'Failed to update profile'));
     } finally {
       setIsSaving(false);
     }

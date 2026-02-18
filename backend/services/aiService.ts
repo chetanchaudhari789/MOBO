@@ -1909,9 +1909,44 @@ export async function extractOrderDetailsWithAi(
       return null;
     };
 
+    // ── Platform detection from OCR text for context-aware extraction ──
+    const detectPlatform = (text: string): string => {
+      const lower = text.toLowerCase();
+      // Direct domain / branding matches
+      if (/amazon\.(in|com)|amzn|a]mazon/i.test(text)) return 'amazon';
+      if (/flipkart|f1ipkart|fl[i1]pkart/i.test(text)) return 'flipkart';
+      if (/myntra|myntr[a4]/i.test(text)) return 'myntra';
+      if (/meesho|m[e3][e3]sh[o0]/i.test(text)) return 'meesho';
+      if (/\bblinkit|blink\s*it|grofers/i.test(text)) return 'blinkit';
+      if (/nykaa|nyk[a4][a4]/i.test(text)) return 'nykaa';
+      if (/\bajio\b/i.test(text)) return 'ajio';
+      if (/jiomart|jio\s*mart/i.test(text)) return 'jiomart';
+      if (/tata\s*cliq|tatacliq/i.test(text)) return 'tatacliq';
+      if (/snapdeal/i.test(text)) return 'snapdeal';
+      if (/bigbasket|big\s*basket/i.test(text)) return 'bigbasket';
+      if (/\bzepto\b/i.test(text)) return 'zepto';
+      if (/\bcroma\b/i.test(text)) return 'croma';
+      if (/lenskart/i.test(text)) return 'lenskart';
+      if (/pharmeasy|pharm\s*easy/i.test(text)) return 'pharmeasy';
+      if (/\bswiggy\b/i.test(text)) return 'swiggy';
+      if (/\bpurplle\b/i.test(text)) return 'purplle';
+      if (/\bshopsy\b/i.test(text)) return 'shopsy';
+      // Order ID pattern detection
+      if (/\b\d{3}-\d{7}-\d{7}\b/.test(text)) return 'amazon';
+      if (/\bOD\d{10,}\b/i.test(text)) return 'flipkart';
+      if (/\bMYN\d{6,}\b/i.test(text)) return 'myntra';
+      if (/\bMSH\d{6,}\b|MEESHO\d+/i.test(text)) return 'meesho';
+      if (/\bNYK\d{6,}\b/i.test(text)) return 'nykaa';
+      if (/\bFN\d{6,}\b/i.test(text)) return 'ajio';
+      if (/\bBLK\d{6,}\b|BLINKIT\d+/i.test(text)) return 'blinkit';
+      if (lower.includes('prime') && lower.includes('order')) return 'amazon';
+      return 'unknown';
+    };
+
     /** Extract product name from OCR text. */
     const extractProductName = (text: string): string | null => {
       const lines = text.split('\n').map(normalizeLine).filter(Boolean);
+      const platform = detectPlatform(text);
 
       // ── Patterns that DISQUALIFY a line from being a product name ──
       const excludePatterns = [
@@ -1958,13 +1993,167 @@ export async function extractOrderDetailsWithAi(
         /^(shop\s*(now|by|all)|view\s*(all|more|details)|see\s*(all|more)|browse|explore|discover)/i,
         /^(add\s*to\s*cart|buy\s*now|add\s*to\s*bag|go\s*to\s*cart|checkout|proceed|continue)/i,
         /^(similar\s*products?|you\s*may\s*also|frequently\s*bought|customers?\s*(also|who))/i,
+        // ── Rating / review noise ──
+        /^(\d+\s*(star|rating|review)|★|☆|\d+(\.\d)?\s*\/\s*5)/i,
+        // ── Quantity / item count lines ──
+        /^(qty|quantity)\s*[:\-]?\s*\d+$/i,
+        // ── Order ID-like patterns (should not be product names) ──
+        /^\d{3}-\d{7}-\d{7}$/,
+        /^OD\d{10,}$/i,
+        /^MYN\d{6,}$/i,
+        /^MSH\d{6,}$/i,
+        /^FN\d{6,}$/i,
       ];
 
+      // ── PHASE 1: Platform-specific product name extraction ──
+      // Platform-specific patterns locate product names more precisely by understanding page layout.
+      let platformCandidate: string | null = null;
+
+      if (platform === 'amazon') {
+        // Amazon: product name appears AFTER "Order placed/Arriving/Delivered" and BEFORE "Sold by"
+        // Also appears after the order number line.
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          // Look for product title lines between key markers
+          const isAfterOrderInfo = i > 0 && lines.slice(Math.max(0, i - 5), i).some(
+            l => /order\s*(placed|number|#|\d{3}-\d{7})|arriving|delivered|shipped/i.test(l)
+          );
+          const isBeforeSoldBy = i < lines.length - 1 && lines.slice(i + 1, Math.min(lines.length, i + 5)).some(
+            l => /sold\s*by|seller|fulfilled|₹|rs\.?|price|quantity/i.test(l)
+          );
+          if (isAfterOrderInfo || isBeforeSoldBy) {
+            if (line.length >= 10 && line.length <= 250
+              && !excludePatterns.some(p => p.test(line))
+              && /[a-zA-Z]/.test(line)
+              && (line.match(/[a-zA-Z]/g) || []).length / line.length > 0.4) {
+              // Ensure it doesn't look like a date, status, or navigation line
+              if (!/^(order|arriving|delivered|shipped|tracking|payment|sold|seller|fulfilled|return|refund)/i.test(line)
+                && !/^\d{1,2}\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(line)) {
+                platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+                break;
+              }
+            }
+          }
+        }
+      } else if (platform === 'flipkart' || platform === 'shopsy') {
+        // Flipkart: product name is often the FIRST long descriptive line after order status
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.length < 10) continue;
+          if (excludePatterns.some(p => p.test(line))) continue;
+          // Flipkart product names are typically long, descriptive, and mixed-case
+          const alphaRatio = (line.match(/[a-zA-Z]/g) || []).length / line.length;
+          if (alphaRatio < 0.4) continue;
+          // After order ID or delivery status
+          const prevLines = lines.slice(Math.max(0, i - 4), i).join(' ');
+          if (/OD\d+|order\s*id|delivered|shipped|your\s*order/i.test(prevLines)) {
+            // Next lines should have price/seller info
+            const nextLines = lines.slice(i + 1, Math.min(lines.length, i + 4)).join(' ');
+            if (/₹|rs\.?|sold\s*by|seller|size|color|qty/i.test(nextLines)) {
+              platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+              break;
+            }
+          }
+        }
+      } else if (platform === 'myntra') {
+        // Myntra: Brand name on one line, then product type on the next
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.length < 4) continue;
+          if (excludePatterns.some(p => p.test(line))) continue;
+          // Look for a brand-style short line followed by a descriptive product line
+          const nextLine = lines[i + 1];
+          if (nextLine && !excludePatterns.some(p => p.test(nextLine))) {
+            const combined = `${line} ${nextLine}`.trim();
+            if (combined.length >= 12 && combined.length <= 200
+              && /[a-zA-Z]/.test(combined)
+              && !/^(order|payment|track|deliver|return)/i.test(combined)) {
+              // Check if nearby lines have price info
+              const nearby = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 4)).join(' ');
+              if (/₹|rs\.?|mrp|price|size|qty/i.test(nearby)) {
+                platformCandidate = combined.replace(/\s{2,}/g, ' ').trim();
+                break;
+              }
+            }
+          }
+          // Single line product name
+          if (line.length >= 15 && line.length <= 200) {
+            const nearby = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 3)).join(' ');
+            if (/₹|rs\.?|size|qty|MYN/i.test(nearby) && /[a-zA-Z]/.test(line)) {
+              const alphaRatio = (line.match(/[a-zA-Z]/g) || []).length / line.length;
+              if (alphaRatio > 0.5) {
+                platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+                break;
+              }
+            }
+          }
+        }
+      } else if (platform === 'meesho') {
+        // Meesho: product name is usually a descriptive line near the price
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.length < 10) continue;
+          if (excludePatterns.some(p => p.test(line))) continue;
+          const alphaRatio = (line.match(/[a-zA-Z]/g) || []).length / line.length;
+          if (alphaRatio < 0.4) continue;
+          const nearby = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 3)).join(' ');
+          if (/₹|rs\.?|price|total|MEESHO|MSH/i.test(nearby)) {
+            platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+            break;
+          }
+        }
+      } else if (platform === 'nykaa' || platform === 'purplle') {
+        // Nykaa/Purplle: beauty product names, often with brand + product type + size
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.length < 10) continue;
+          if (excludePatterns.some(p => p.test(line))) continue;
+          // Beauty products often have ml/gm units
+          if (/\b(ml|gm|g|serum|cream|lipstick|foundation|mascara|lotion|shampoo|conditioner|moisturizer|cleanser|toner|perfume|fragrance|sunscreen|face\s*wash|body\s*wash|hair\s*oil|eye\s*liner|nail\s*polish|lip\s*balm|face\s*mask|sheet\s*mask)\b/i.test(line)) {
+            platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+            break;
+          }
+          const nearest = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 3)).join(' ');
+          if (/₹|rs\.?|price|NYK|nykaa|purplle/i.test(nearest)) {
+            const alphaRatio = (line.match(/[a-zA-Z]/g) || []).length / line.length;
+            if (alphaRatio > 0.5 && line.length >= 12) {
+              platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+              break;
+            }
+          }
+        }
+      } else if (platform === 'blinkit' || platform === 'zepto' || platform === 'bigbasket' || platform === 'swiggy') {
+        // Grocery/quick commerce: product names include brand + item + weight
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.length < 8) continue;
+          if (excludePatterns.some(p => p.test(line))) continue;
+          if (/\b(ml|gm|g|kg|ltr|l|pcs|pieces?|pack|units?)\b/i.test(line) && /[a-zA-Z]/.test(line)) {
+            platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+            break;
+          }
+          const nearby = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 3)).join(' ');
+          if (/₹|rs\.?|qty|quantity|items?/i.test(nearby)) {
+            const alphaRatio = (line.match(/[a-zA-Z]/g) || []).length / line.length;
+            if (alphaRatio > 0.4 && line.length >= 10) {
+              platformCandidate = line.replace(/\s{2,}/g, ' ').trim();
+              break;
+            }
+          }
+        }
+      }
+
+      // ── PHASE 2: Generic scoring approach (fallback) ──
       const candidates: Array<{ name: string; score: number }> = [];
+
+      // Add platform candidate with high bonus score if found
+      if (platformCandidate && platformCandidate.length >= 5) {
+        candidates.push({ name: platformCandidate, score: 15 }); // High priority for platform-detected names
+      }
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (line.length < 8 || line.length > 250) continue;
+        if (line.length < 6 || line.length > 250) continue;
         if (excludePatterns.some(p => p.test(line))) continue;
         // Additional URL check: if the line contains a protocol-less URL
         if (/[a-z0-9]\.[a-z]{2,4}\/[^\s]*/i.test(line) && !/\b(ml|gm|kg|ltr|oz)\b/i.test(line)) continue;
@@ -1979,7 +2168,7 @@ export async function extractOrderDetailsWithAi(
         if (line.length >= 20 && line.length <= 150) score += 3;
         if (line.length >= 30) score += 1;
         // Contains common product keywords (expanded for Indian e-commerce)
-        if (/\b(for|with|pack|set|kit|box|ml|gm|kg|ltr|pcs|combo|cream|oil|shampoo|serum|lotion|perfume|spray|wash|soap|gel|powder|tablet|capsule|supplement|phone|case|cover|charger|cable|earphone|headphone|speaker|watch|band|ring|necklace|bracelet|shirt|pant|dress|shoe|sandal|slipper|bag|wallet|saree|kurti|kurta|lehenga|dupatta|salwar|churidar|jeans|tshirt|t-shirt|hoodie|jacket|blazer|suit|sneaker|boot|flip.?flop|backpack|handbag|purse|sunglasses|laptop|tablet|mouse|keyboard|monitor|printer|router|trimmer|groomer|dryer|iron|mixer|juicer|blender|cooker|bottle|mug|tumbler|flask|container|jar|brush|comb|razor|lipstick|foundation|mascara|eyeliner|moisturizer|cleanser|toner|face\s*wash|body\s*wash|conditioner|hair\s*oil|vitamin|protein|whey|snack|tea|coffee|ghee|honey|spice|pickle|rice|atta|dal|flour|sugar|milk|diaper|toy|puzzle|game|book|novel|sticker|pen|pencil|notebook|organizer|stand|holder|mount|adapter|converter|hub|splitter|extension|powerbank|power\s*bank|earbuds?|ear\s*buds?|smartwatch|smart\s*watch|fitness\s*band|smart\s*band|TWS|neckband|neck\s*band|air\s*purifier|water\s*purifier|vacuum|cleaner|mattress|pillow|bedsheet|curtain|towel|rug|carpet|cushion|refrigerator|fridge|washing\s*machine|microwave|AC|air\s*conditioner|fan|heater)\b/i.test(line)) score += 4;
+        if (/\b(for|with|pack|set|kit|box|ml|gm|kg|ltr|pcs|combo|cream|oil|shampoo|serum|lotion|perfume|spray|wash|soap|gel|powder|tablet|capsule|supplement|phone|case|cover|charger|cable|earphone|headphone|speaker|watch|band|ring|necklace|bracelet|shirt|pant|dress|shoe|sandal|slipper|bag|wallet|saree|kurti|kurta|lehenga|dupatta|salwar|churidar|jeans|tshirt|t-shirt|hoodie|jacket|blazer|suit|sneaker|boot|flip.?flop|backpack|handbag|purse|sunglasses|laptop|tablet|mouse|keyboard|monitor|printer|router|trimmer|groomer|dryer|iron|mixer|juicer|blender|cooker|bottle|mug|tumbler|flask|container|jar|brush|comb|razor|lipstick|foundation|mascara|eyeliner|moisturizer|cleanser|toner|face\s*wash|body\s*wash|conditioner|hair\s*oil|vitamin|protein|whey|snack|tea|coffee|ghee|honey|spice|pickle|rice|atta|dal|flour|sugar|milk|diaper|toy|puzzle|game|book|novel|sticker|pen|pencil|notebook|organizer|stand|holder|mount|adapter|converter|hub|splitter|extension|powerbank|power\s*bank|earbuds?|ear\s*buds?|smartwatch|smart\s*watch|fitness\s*band|smart\s*band|TWS|neckband|neck\s*band|air\s*purifier|water\s*purifier|vacuum|cleaner|mattress|pillow|bedsheet|curtain|towel|rug|carpet|cushion|refrigerator|fridge|washing\s*machine|microwave|AC|air\s*conditioner|fan|heater|inverter|stabilizer|geyser|water\s*heater|led|bulb|light|lamp|torch|battery|cell|sd\s*card|memory\s*card|pendrive|pen\s*drive|hard\s*disk|ssd|hdd|camera|lens|tripod|selfie\s*stick|gimbal|drone|gopro|action\s*cam|projector|screen\s*guard|tempered\s*glass|protector|stroller|walker|cradle|bassinet|car\s*seat)\b/i.test(line)) score += 4;
         // Contains pipe or dash separators (common in e-commerce titles)
         if (/[|]/.test(line)) score += 2;
         // Contains parentheses with size/variant info like "(Pack of 2)" or "(100ml)"
@@ -1989,9 +2178,10 @@ export async function extractOrderDetailsWithAi(
         // Near price/amount lines
         if (i > 0 && /₹|rs\.?|inr|price/i.test(lines[i - 1] || '')) score += 1;
         if (i < lines.length - 1 && /₹|rs\.?|inr|price/i.test(lines[i + 1] || '')) score += 2;
-        // Near "sold by" lines
+        // Near "sold by" lines (product is usually ABOVE "sold by")
+        if (i < lines.length - 1 && /sold\s*by/i.test(lines[i + 1] || '')) score += 3;
+        if (i < lines.length - 2 && /sold\s*by/i.test(lines[i + 2] || '')) score += 2;
         if (i > 0 && /sold\s*by/i.test(lines[i - 1] || '')) score += 1;
-        if (i < lines.length - 1 && /sold\s*by/i.test(lines[i + 1] || '')) score += 2;
         // Brand name patterns (e.g., "Avimee Herbal", "HQ9", "Samsung")
         if (/^[A-Z][a-z]+\s[A-Z]/.test(line)) score += 1;
         // Product quantity/size patterns like "250ml", "1kg", "Pack of 3"
@@ -2728,19 +2918,39 @@ export async function extractOrderDetailsWithAi(
       if (candidateDeterministic.soldBy && !accumulatedSoldBy) {
         accumulatedSoldBy = candidateDeterministic.soldBy;
       }
-      if (candidateDeterministic.productName && !accumulatedProductName) {
-        // Prefer product names that look more like real product titles (longer, descriptive)
-        accumulatedProductName = candidateDeterministic.productName;
-      } else if (candidateDeterministic.productName && accumulatedProductName) {
-        // If the new candidate name is longer and more descriptive, prefer it
-        const newLen = candidateDeterministic.productName.length;
-        const oldLen = accumulatedProductName.length;
-        const newHasProductWord = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|gel|powder|serum|shampoo|charger|cable|cover|case|book|pack|ml|gm|kg)\b/i.test(candidateDeterministic.productName);
-        const oldHasProductWord = /\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|gel|powder|serum|shampoo|charger|cable|cover|case|book|pack|ml|gm|kg)\b/i.test(accumulatedProductName);
-        if (newHasProductWord && !oldHasProductWord) {
+      if (candidateDeterministic.productName) {
+        // Score-based selection: prefer product names that look more like real product titles
+        const scoreProductName = (name: string): number => {
+          let s = 0;
+          // Length bonus: descriptive product titles are typically 15-150 chars
+          if (name.length >= 15 && name.length <= 150) s += 3;
+          if (name.length >= 30) s += 2;
+          // Product keyword bonus (comprehensive Indian e-commerce categories)
+          if (/\b(phone|laptop|tablet|watch|earbuds?|headphone|speaker|shirt|shoe|bag|cream|oil|gel|powder|serum|shampoo|charger|cable|cover|case|book|pack|ml|gm|kg|ltr|pcs|combo|set|kit|box|saree|kurti|kurta|jeans|dress|sneaker|wallet|backpack|perfume|lotion|conditioner|lipstick|foundation|mascara|cleanser|toner|sunscreen|moisturizer|vitamin|protein|snack|tea|coffee|trimmer|dryer|iron|mixer|blender|cooker|bottle|flask|brush|razor|diaper|toy|game|puzzle|novel|pen|pencil|notebook|organizer|stand|holder|mount|adapter|powerbank|neckband|TWS|smartwatch|air\s*purifier|water\s*purifier|vacuum|mattress|pillow|bedsheet|curtain|towel|rug|carpet|cushion|fridge|microwave|fan|heater|led|bulb|camera|lens|tripod|projector|screen\s*guard|tempered\s*glass|stroller)\b/i.test(name)) s += 4;
+          // Size/unit patterns: "250ml", "1kg", "(Pack of 2)"
+          if (/\b\d+\s*(ml|gm|g|kg|ltr|l|oz|pcs|mah|wh|gb|tb|mb|pieces?|count|pack)\b/i.test(name)) s += 3;
+          // Brand + product pattern: "Samsung Galaxy M12", "Avimee Herbal Hair Oil"
+          if (/^[A-Z][a-z]+\s[A-Z]/.test(name)) s += 2;
+          // Pipe separators common in e-commerce titles
+          if (/[|]/.test(name)) s += 1;
+          // Parenthetical info: "(Blue, 64GB)", "(Pack of 2)"
+          if (/\([^)]{2,30}\)/.test(name)) s += 2;
+          // Mixed-case text (product titles are mixed-case)
+          if (/[A-Z]/.test(name) && /[a-z]/.test(name)) s += 1;
+          // Penalize short names
+          if (name.length < 10) s -= 2;
+          // Penalize names that are just platform names + generic words
+          if (/^(amazon|flipkart|myntra|meesho|ajio|nykaa|blinkit|zepto)\b/i.test(name) && name.split(/\s+/).length <= 2) s -= 5;
+          return s;
+        };
+        if (!accumulatedProductName) {
           accumulatedProductName = candidateDeterministic.productName;
-        } else if (newLen > oldLen * 1.5 && newLen >= 20) {
-          accumulatedProductName = candidateDeterministic.productName;
+        } else {
+          const newScore = scoreProductName(candidateDeterministic.productName);
+          const oldScore = scoreProductName(accumulatedProductName);
+          if (newScore > oldScore) {
+            accumulatedProductName = candidateDeterministic.productName;
+          }
         }
       }
 
@@ -3097,9 +3307,45 @@ export async function extractOrderDetailsWithAi(
     }
 
     // 6d. Reject product name if it's just a platform/store name
-    if (finalProductName && /^(amazon|flipkart|myntra|meesho|ajio|nykaa|tata\s*cliq|jiomart|snapdeal|bigbasket|blinkit|zepto|swiggy|croma|lenskart|pharmeasy)\s*$/i.test(finalProductName.trim())) {
+    if (finalProductName && /^(amazon|flipkart|myntra|meesho|ajio|nykaa|tata\s*cliq|jiomart|snapdeal|bigbasket|blinkit|zepto|swiggy|croma|lenskart|pharmeasy|shopsy|purplle|1mg)\s*$/i.test(finalProductName.trim())) {
       notes.push('Product name was just a platform name — rejected.');
       finalProductName = null;
+    }
+
+    // 6e. Reject product name if it's a phone number pattern (10+ digits with optional separators)
+    if (finalProductName && /^\+?\d[\d\s\-]{8,}\d$/.test(finalProductName.replace(/[()]/g, ''))) {
+      notes.push('Product name looked like a phone number — rejected.');
+      finalProductName = null;
+    }
+
+    // 6f. Reject product name if it looks like a tracking/AWB number
+    if (finalProductName && /^(AWB|tracking|shipment|invoice|txn|utr|ref)\s*[:\-#]?\s*[A-Z0-9]{6,}/i.test(finalProductName)) {
+      notes.push('Product name was a tracking/reference number — rejected.');
+      finalProductName = null;
+    }
+
+    // 6g. Reject product name if it's just "Qty: N" or "Quantity: N"
+    if (finalProductName && /^(qty|quantity)\s*[:\-]?\s*\d+$/i.test(finalProductName)) {
+      notes.push('Product name was a quantity label — rejected.');
+      finalProductName = null;
+    }
+
+    // 6h. Reject product name if it's a thank you/confirmation message
+    if (finalProductName && /^(thank\s*you|order\s*(confirmed|placed|successful)|congrat|yay|hooray)/i.test(finalProductName)) {
+      notes.push('Product name was a confirmation message — rejected.');
+      finalProductName = null;
+    }
+
+    // 6i. Clean up product name: remove leading/trailing special chars, trim whitespace
+    if (finalProductName) {
+      finalProductName = finalProductName
+        .replace(/^[\s\-:•·|>]+/, '')  // Remove leading dashes, colons, bullets
+        .replace(/[\s\-:•·|]+$/, '')    // Remove trailing dashes, colons, bullets
+        .replace(/\s{2,}/g, ' ')         // Collapse multiple spaces
+        .trim();
+      if (finalProductName.length < 3) {
+        finalProductName = null;
+      }
     }
 
     // 7. If amount looks like a date (e.g. 20250206 = 2,02,50,206), reject
