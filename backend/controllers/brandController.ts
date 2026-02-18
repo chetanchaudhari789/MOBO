@@ -204,7 +204,7 @@ export function makeBrandController() {
         const brandId = isPrivileged(roles) && body.brandId ? String(body.brandId) : userId;
 
         const brand = await UserModel.findById(brandId).select({ roles: 1, connectedAgencies: 1, name: 1, status: 1, deletedAt: 1 }).lean();
-        if (!brand || (brand as any).deletedAt) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
+        if (!brand || (brand as any).deletedAt) throw new AppError(404, 'NOT_FOUND', 'Brand not found');
         if (!isPrivileged(roles) && !(brand as any).roles?.includes('brand')) {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can record payouts');
         }
@@ -442,8 +442,17 @@ export function makeBrandController() {
         const agencyCode = String(body.agencyCode || '').trim();
         if (agencyCode) {
           const campaignFilter = { brandUserId: brand._id, deletedAt: null, allowedAgencyCodes: agencyCode };
-          await CampaignModel.updateMany(campaignFilter, { $pull: { allowedAgencyCodes: agencyCode } });
+          const cascadeResult = await CampaignModel.updateMany(campaignFilter, { $pull: { allowedAgencyCodes: agencyCode } });
           resyncAfterBulkUpdate('Campaign', campaignFilter).catch(() => {});
+          if (cascadeResult.modifiedCount > 0) {
+            writeAuditLog({
+              req,
+              action: 'CAMPAIGNS_AGENCY_REMOVED_CASCADE',
+              entityType: 'User',
+              entityId: String(brand._id),
+              metadata: { agencyCode, campaignsAffected: cascadeResult.modifiedCount },
+            }).catch(() => {});
+          }
         }
         const ts = new Date().toISOString();
         publishRealtime({

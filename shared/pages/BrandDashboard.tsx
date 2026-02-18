@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
+import { formatErrorMessage } from '../utils/errors';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
@@ -1935,8 +1936,8 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                         await api.brand.copyCampaign(c.id);
                         toast.success('Campaign copied!');
                         onRefresh();
-                      } catch {
-                        toast.error('Copy failed');
+                      } catch (err) {
+                        toast.error(formatErrorMessage(err, 'Copy failed'));
                       } finally {
                         setCopyingId(null);
                       }

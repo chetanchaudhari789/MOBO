@@ -669,6 +669,16 @@ export function makeOpsController(env: Env) {
           }
         }
 
+        // Agencies can only approve buyers whose mediator is within their sub-mediator network.
+        if (roles.includes('agency') && !isPrivileged(roles) && !roles.includes('mediator')) {
+          const agencyCode = String((requester as any)?.mediatorCode || '').trim();
+          if (!agencyCode) throw new AppError(403, 'FORBIDDEN', 'Agency code not found');
+          const subMediators = await listMediatorCodesForAgency(agencyCode);
+          if (!subMediators.includes(upstreamMediatorCode)) {
+            throw new AppError(403, 'FORBIDDEN', 'Cannot approve users outside your agency network');
+          }
+        }
+
         const user = await UserModel.findByIdAndUpdate(body.id, { isVerifiedByMediator: true }, { new: true });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
@@ -715,6 +725,16 @@ export function makeOpsController(env: Env) {
         if (roles.includes('mediator') && !isPrivileged(roles)) {
           if (String(upstreamMediatorCode) !== String((requester as any)?.mediatorCode)) {
             throw new AppError(403, 'FORBIDDEN', 'Cannot reject users outside your network');
+          }
+        }
+
+        // Agencies can only reject buyers whose mediator is within their sub-mediator network.
+        if (roles.includes('agency') && !isPrivileged(roles) && !roles.includes('mediator')) {
+          const agencyCode = String((requester as any)?.mediatorCode || '').trim();
+          if (!agencyCode) throw new AppError(403, 'FORBIDDEN', 'Agency code not found');
+          const subMediators = await listMediatorCodesForAgency(agencyCode);
+          if (!subMediators.includes(upstreamMediatorCode)) {
+            throw new AppError(403, 'FORBIDDEN', 'Cannot reject users outside your agency network');
           }
         }
 
@@ -1203,7 +1223,27 @@ export function makeOpsController(env: Env) {
         }) as any;
 
         await order.save();
-        await writeAuditLog({ req, action: 'ORDER_REJECTED', entityType: 'Order', entityId: String(order._id) });
+        await writeAuditLog({
+          req,
+          action: 'ORDER_REJECTED',
+          entityType: 'Order',
+          entityId: String(order._id),
+          metadata: { proofType: body.type, reason: body.reason },
+        });
+
+        // Audit slot release separately for campaign backtracking
+        if (body.type === 'order') {
+          const campaignId = order.items?.[0]?.campaignId;
+          if (campaignId) {
+            writeAuditLog({
+              req,
+              action: 'CAMPAIGN_SLOT_RELEASED',
+              entityType: 'Campaign',
+              entityId: String(campaignId),
+              metadata: { orderId: String(order._id), reason: 'proof_rejected' },
+            }).catch(() => {});
+          }
+        }
 
         const audience = buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -1220,7 +1260,7 @@ export function makeOpsController(env: Env) {
               body: body.reason || 'Please re-upload the required proof.',
               url: '/orders',
             },
-          });
+          }).catch(() => {});
         }
 
         res.json({ ok: true });

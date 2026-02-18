@@ -5,6 +5,7 @@ import { useConfirm } from '../components/ui/ConfirmDialog';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
+import { formatErrorMessage } from '../utils/errors';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
@@ -457,7 +458,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       setInviteLabel('');
       toast.success('Invite generated');
     } catch (e) {
-      toast.error(String((e as any)?.message || 'Failed to generate invite'));
+      toast.error(formatErrorMessage(e, 'Failed to generate invite'));
     } finally {
       setIsLoading(false);
     }
@@ -470,7 +471,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       await api.admin.updateUserStatus(target.id, newStatus);
       setUsers(users.map((u) => (u.id === target.id ? { ...u, status: newStatus } : u)));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update user status');
+      toast.error(formatErrorMessage(err, 'Failed to update user status'));
     }
   };
 
@@ -490,7 +491,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       const updated = await api.admin.getUsers('all');
       setUsers(updated);
     } catch (e: any) {
-      toast.error(String(e?.message || 'Failed to delete wallet'));
+      toast.error(formatErrorMessage(e, 'Failed to delete wallet'));
     } finally {
       setDeletingWalletId(null);
     }
@@ -507,7 +508,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       const updated = await api.admin.getUsers('all');
       setUsers(updated);
     } catch (e: any) {
-      toast.error(String(e?.message || 'Failed to delete user'));
+      toast.error(formatErrorMessage(e, 'Failed to delete user'));
     } finally {
       setDeletingUserId(null);
     }
@@ -523,7 +524,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       const updated = await api.admin.getProducts();
       setProducts(updated);
     } catch (e: any) {
-      toast.error(String(e?.message || 'Failed to delete product'));
+      toast.error(formatErrorMessage(e, 'Failed to delete product'));
     } finally {
       setDeletingProductId(null);
     }
@@ -535,7 +536,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       setTickets(tickets.map((t) => (t.id === id ? { ...t, status } : t)));
       toast.success(`Ticket ${status.toLowerCase()} successfully`);
     } catch (e: any) {
-      toast.error(String(e?.message || `Failed to ${status.toLowerCase()} ticket`));
+      toast.error(formatErrorMessage(e, `Failed to ${status.toLowerCase()} ticket`));
     }
   };
 
@@ -553,7 +554,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       setTickets(tickets.filter((x) => x.id !== id));
       toast.success('Ticket deleted');
     } catch (e: any) {
-      toast.error(String(e?.message || 'Failed to delete ticket'));
+      toast.error(formatErrorMessage(e, 'Failed to delete ticket'));
     }
   };
 
@@ -572,7 +573,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       setInvites(invites.filter((x) => x.code !== code));
       toast.success('Access code deleted');
     } catch (e: any) {
-      toast.error(String(e?.message || 'Failed to delete access code'));
+      toast.error(formatErrorMessage(e, 'Failed to delete access code'));
     }
   };
 
@@ -583,7 +584,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       if (saved?.adminContactEmail) setConfigEmail(String(saved.adminContactEmail));
       toast.success('System configuration saved');
     } catch (e: any) {
-      toast.error(String(e?.message || 'Failed to save system configuration'));
+      toast.error(formatErrorMessage(e, 'Failed to save system configuration'));
     } finally {
       setIsLoading(false);
     }

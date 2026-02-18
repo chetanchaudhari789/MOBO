@@ -150,6 +150,10 @@ export function makeOrdersController(env: Env) {
 
         getOrderProofPublic: async (req: Request, res: Response, next: NextFunction) => {
           try {
+            // Require authentication — prevents unauthenticated enumeration of proof images.
+            const requesterId = req.auth?.userId;
+            if (!requesterId) throw new AppError(401, 'UNAUTHENTICATED', 'Authentication required');
+
             const orderId = String(req.params.orderId || '').trim();
             const proofType = String(req.params.type || '').trim().toLowerCase();
             if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
@@ -576,11 +580,8 @@ export function makeOrdersController(env: Env) {
           });
         }
 
-        res
-          .status(201)
-          .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
-
-        // Audit trail
+        // Audit trail — write BEFORE sending response so the audit entry is guaranteed
+        // even if the client disconnects or the response write fails.
         await writeAuditLog({
           req,
           action: 'ORDER_CREATED',
@@ -592,6 +593,10 @@ export function makeOrdersController(env: Env) {
             externalOrderId: resolvedExternalOrderId,
           },
         }).catch(() => {});
+
+        res
+          .status(201)
+          .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
 
         // Notify UIs (buyer/mediator/brand/admin) that order-related views should refresh.
         const privilegedRoles: Role[] = ['admin', 'ops'];

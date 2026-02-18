@@ -12,6 +12,7 @@ import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv as downloadCsvFile } from '../utils/csvHelpers';
 import { urlToBase64 } from '../utils/imageHelpers';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
+import { formatErrorMessage } from '../utils/errors';
 import { User, Campaign, Order, Product, Ticket } from '../types';
 import {
   LayoutGrid,
@@ -496,7 +497,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                       toast.success('Ticket deleted.');
                       onRefresh();
                     } catch (err: any) {
-                      toast.error(String(err?.message || 'Failed to delete ticket.'));
+                      toast.error(formatErrorMessage(err, 'Failed to delete ticket.'));
                     }
                   }}
                   className="px-3 py-1 rounded-lg text-[10px] font-bold bg-zinc-50 border border-zinc-200 text-zinc-600 hover:text-red-600 hover:border-red-200"
@@ -807,8 +808,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                           toast.success('Campaign deleted.');
                           onRefresh?.();
                         } catch (err) {
-                          const msg = err instanceof Error ? err.message : 'Failed to delete campaign';
-                          toast.error(msg);
+                          toast.error(formatErrorMessage(err, 'Failed to delete campaign'));
                         }
                       }}
                       className="w-full py-3 bg-red-50 text-red-600 rounded-[1rem] font-bold text-xs border border-red-200 hover:bg-red-100 transition-all shadow-sm active:scale-95"
@@ -996,7 +996,7 @@ const MediatorProfileView = () => {
       setIsEditing(false);
       toast.success('Profile updated');
     } catch (e) {
-      toast.error(String((e as any)?.message || 'Update failed'));
+      toast.error(formatErrorMessage(e, 'Update failed'));
     } finally {
       setLoading(false);
     }
