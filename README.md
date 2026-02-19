@@ -1,4 +1,4 @@
-﻿# BUZZMA ECOSYSTEM Version 
+﻿# BUZZMA ECOSYSTEM V1
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
