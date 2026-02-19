@@ -65,7 +65,11 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     })
       .read('primary')
       .session(session);
-    if (existingTx) return existingTx;
+    if (existingTx) {
+      // For idempotent case, we still need the wallet for dual-write
+      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).session(session);
+      return { transaction: existingTx, wallet };
+    }
 
     const wallet = await WalletModel.findOneAndUpdate(
       { ownerUserId: input.ownerUserId, deletedAt: null },
@@ -107,7 +111,7 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       { session }
     );
 
-    return tx[0];
+    return { transaction: tx[0], wallet };
   };
 
   // If the caller provides an external session, run within it (no new session/transaction).
@@ -116,11 +120,10 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
     if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
+      if (result.wallet) dualWriteWallet(result.wallet.toObject ? result.wallet.toObject() : result.wallet).catch(() => {});
+      dualWriteTransaction(result.transaction).catch(() => {});
     }
-    return result;
+    return result.transaction;
   }
 
   const session = await mongoose.startSession();
@@ -129,11 +132,10 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
     if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
+      if (result.wallet) dualWriteWallet(result.wallet.toObject ? result.wallet.toObject() : result.wallet).catch(() => {});
+      dualWriteTransaction(result.transaction).catch(() => {});
     }
-    return result;
+    return result.transaction;
   } finally {
     session.endSession();
   }
@@ -155,7 +157,11 @@ export async function applyWalletDebit(input: WalletMutationInput) {
     })
       .read('primary')
       .session(session);
-    if (existingTx) return existingTx;
+    if (existingTx) {
+      // For idempotent case, we still need the wallet for dual-write
+      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).session(session);
+      return { transaction: existingTx, wallet };
+    }
 
     // Use findOneAndUpdate with optimistic locking (version check)
     const wallet = await WalletModel.findOneAndUpdate(
@@ -202,7 +208,7 @@ export async function applyWalletDebit(input: WalletMutationInput) {
       { session }
     );
 
-    return tx[0];
+    return { transaction: tx[0], wallet };
   };
 
   // If the caller provides an external session, run within it (no new session/transaction).
@@ -211,11 +217,10 @@ export async function applyWalletDebit(input: WalletMutationInput) {
     writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
     if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
+      if (result.wallet) dualWriteWallet(result.wallet.toObject ? result.wallet.toObject() : result.wallet).catch(() => {});
+      dualWriteTransaction(result.transaction).catch(() => {});
     }
-    return result;
+    return result.transaction;
   }
 
   const session = await mongoose.startSession();
@@ -224,11 +229,10 @@ export async function applyWalletDebit(input: WalletMutationInput) {
     writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     // Dual-write wallet & transaction to PG (fire-and-forget)
     if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
+      if (result.wallet) dualWriteWallet(result.wallet.toObject ? result.wallet.toObject() : result.wallet).catch(() => {});
+      dualWriteTransaction(result.transaction).catch(() => {});
     }
-    return result;
+    return result.transaction;
   } finally {
     session.endSession();
   }

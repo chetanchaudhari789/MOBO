@@ -115,6 +115,7 @@ export function mediaRoutes(_env: Env): Router {
           try {
             const redirectTarget = new URL(location, target.toString());
             if (!ALLOWED_PROTOCOLS.has(redirectTarget.protocol) || isPrivateHost(redirectTarget.hostname)) {
+              clearTimeout(timeout);
               res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'unsafe redirect target' } });
               return;
             }
@@ -122,11 +123,13 @@ export function mediaRoutes(_env: Env): Router {
             // Invalid redirect URL
           }
         }
+        clearTimeout(timeout);
         res.status(404).end();
         return;
       }
 
       if (!response.ok || !response.body) {
+        clearTimeout(timeout);
         res.status(404).end();
         return;
       }
@@ -134,23 +137,25 @@ export function mediaRoutes(_env: Env): Router {
       const contentType = response.headers.get('content-type') || 'image/jpeg';
       const contentLength = Number(response.headers.get('content-length') || 0);
       if (contentLength && contentLength > MAX_IMAGE_BYTES) {
+        clearTimeout(timeout);
         res.status(413).end();
         return;
       }
 
       const arrayBuffer = await response.arrayBuffer();
       if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) {
+        clearTimeout(timeout);
         res.status(413).end();
         return;
       }
 
+      clearTimeout(timeout);
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=86400');
       res.send(Buffer.from(arrayBuffer));
     } catch {
-      res.status(404).end();
-    } finally {
       clearTimeout(timeout);
+      res.status(404).end();
     }
   });
 
