@@ -62,7 +62,7 @@ const CONFIDENCE = {
   OCR_ORDER_ID_BONUS: 30,
   OCR_AMOUNT_BONUS: 25,
   OCR_BOTH_BONUS: 10,
-  OCR_MAX_CAP: 85,
+  OCR_MAX_CAP: 95,
   RATING_BASE: 20,
   RATING_FIELD_WEIGHT: 35,
   RETURN_WINDOW_BASE: 15,
@@ -721,8 +721,12 @@ async function verifyProofWithOcr(
 
       let ocrText = (data.text || '').trim();
 
-      // High-contrast fallback for faded/dark screenshots
-      if (ocrText.length < 30) {
+      // High-contrast fallback for faded/dark screenshots OR garbage OCR text
+      // Trigger on: short text, OR low alphanumeric ratio (garbage), OR no digits found
+      const _needsHcFallback = ocrText.length < 50
+        || ((ocrText.match(/[a-zA-Z0-9]/g) || []).length / Math.max(ocrText.length, 1) < 0.4)
+        || !/\d/.test(ocrText);
+      if (_needsHcFallback) {
         let hcWorker: any = null;
         try {
           const hcBuffer = await sharp(imgBuffer)
@@ -738,6 +742,29 @@ async function verifyProofWithOcr(
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
           if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
+        }
+      }
+
+      // Inverted fallback for dark-mode screenshots
+      const _needsInvertFallback = ocrText.length < 50
+        || ((ocrText.match(/[a-zA-Z0-9]/g) || []).length / Math.max(ocrText.length, 1) < 0.4);
+      if (_needsInvertFallback) {
+        let invWorker: any = null;
+        try {
+          const invBuffer = await sharp(imgBuffer)
+            .negate({ alpha: false })
+            .greyscale()
+            .normalize()
+            .sharpen()
+            .toBuffer();
+          invWorker = await acquireOcrWorker();
+          const invResult: any = await withOcrTimeout(invWorker.recognize(invBuffer));
+          await releaseOcrWorker(invWorker);
+          invWorker = null;
+          const invText = (invResult.data.text || '').trim();
+          if (invText.length > ocrText.length) ocrText = invText;
+        } catch {
+          if (invWorker) try { await releaseOcrWorker(invWorker); } catch { /* ignore */ }
         }
       }
 
@@ -786,8 +813,8 @@ async function verifyProofWithOcr(
     }
 
     // Check if expected amount appears in OCR text (allow smart tolerance for OCR errors)
-    // ±₹2 for orders under ₹1000, ±0.5% for higher-value orders (min ₹2)
-    const amountTolerance = Math.max(2, expectedAmount >= 1000 ? Math.ceil(expectedAmount * 0.005) : 2);
+    // ±₹3 for orders under ₹500, ±1% for higher-value orders (min ₹3)
+    const amountTolerance = Math.max(3, expectedAmount >= 500 ? Math.ceil(expectedAmount * 0.01) : 3);
     const amountPatterns = [
       String(expectedAmount),
       expectedAmount.toFixed(2),
@@ -797,6 +824,8 @@ async function verifyProofWithOcr(
       ...(expectedAmount === Math.floor(expectedAmount) ? [String(Math.floor(expectedAmount))] : []),
       // With .00 suffix
       String(expectedAmount) + '.00',
+      // Without trailing zeros: 599.00 → 599
+      ...(expectedAmount % 1 === 0 ? [] : [String(Math.round(expectedAmount))]),
     ];
     let amountMatch = amountPatterns.some((p) => ocrText.includes(p));
 
@@ -806,7 +835,8 @@ async function verifyProofWithOcr(
         if (delta === 0) continue;
         const nearby = expectedAmount + delta;
         if (nearby <= 0) continue;
-        if (ocrText.includes(String(nearby)) || ocrText.includes(nearby.toFixed(2))) {
+        if (ocrText.includes(String(nearby)) || ocrText.includes(nearby.toFixed(2))
+          || ocrText.includes(nearby.toLocaleString('en-IN'))) {
           amountMatch = true;
           break;
         }
@@ -815,8 +845,8 @@ async function verifyProofWithOcr(
 
     // Also try extracting all ₹/Rs amounts from the OCR text and compare numerically
     if (!amountMatch) {
-      // Extended regex handles: ₹, Rs, INR, R5 (Tesseract confusion), and trailing /-
-      const amountRegex = /(?:₹|rs\.?|inr|r[s5$]\.?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
+      // Extended regex handles: ₹, Rs, INR, R5/Ri/RI (Tesseract confusion), Rupees, and trailing /-
+      const amountRegex = /(?:₹|rs\.?|inr|r[s5$iI]\.?|rupees?)\s*\.?\s*([0-9][0-9,\s]*(?:\.[0-9]{1,2})?)(?:\s*\/-)?/gi;
       for (const m of ocrText.matchAll(amountRegex)) {
         const val = Number(m[1].replace(/[,\s]/g, ''));
         if (Number.isFinite(val) && Math.abs(val - expectedAmount) <= amountTolerance) {
@@ -1297,8 +1327,11 @@ async function verifyReturnWindowWithOcr(
       worker = null;
       let ocrText = (data.text || '').trim();
 
-      // High-contrast fallback for faded/dark screenshots
-      if (ocrText.length < 30) {
+      // High-contrast fallback for faded/dark screenshots OR garbage OCR text
+      const _needsHcFallback2 = ocrText.length < 50
+        || ((ocrText.match(/[a-zA-Z0-9]/g) || []).length / Math.max(ocrText.length, 1) < 0.4)
+        || !/\d/.test(ocrText);
+      if (_needsHcFallback2) {
         let hcWorker: any = null;
         try {
           const hcBuffer = await sharp(imgBuffer)
@@ -1314,6 +1347,27 @@ async function verifyReturnWindowWithOcr(
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
           if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
+        }
+      }
+
+      // Inverted fallback for dark-mode screenshots
+      if (ocrText.length < 50 || ((ocrText.match(/[a-zA-Z0-9]/g) || []).length / Math.max(ocrText.length, 1) < 0.4)) {
+        let invWorker: any = null;
+        try {
+          const invBuffer = await sharp(imgBuffer)
+            .negate({ alpha: false })
+            .greyscale()
+            .normalize()
+            .sharpen()
+            .toBuffer();
+          invWorker = await acquireOcrWorker();
+          const invResult: any = await withOcrTimeout(invWorker.recognize(invBuffer));
+          await releaseOcrWorker(invWorker);
+          invWorker = null;
+          const invText = (invResult.data.text || '').trim();
+          if (invText.length > ocrText.length) ocrText = invText;
+        } catch {
+          if (invWorker) try { await releaseOcrWorker(invWorker); } catch { /* ignore */ }
         }
       }
 
@@ -1566,14 +1620,15 @@ export async function extractOrderDetailsWithAi(
     const GENERIC_ID_PATTERN       = '\\b[A-Z][A-Z0-9\\-]{7,}\\b';
 
     // ── Amount patterns (₹, Rs, INR, bare) ──
-    const AMOUNT_LABEL_RE = /(grand\s*total|amount\s*paid|paid\s*amount|you\s*paid|order\s*total|final\s*total|total\s*amount|net\s*amount|payable|item\s*total|subtotal|sub\s*total|bag\s*total|cart\s*value|deal\s*price|offer\s*price|sale\s*price|final\s*price|price|your\s*price|estimated\s*total|total)/i;
+    const AMOUNT_LABEL_RE = /(grand\s*total|amount\s*paid|paid\s*amount|you\s*paid|order\s*total|final\s*total|total\s*amount|net\s*amount|payable|item\s*total|subtotal|sub\s*total|bag\s*total|cart\s*value|deal\s*price|offer\s*price|sale\s*price|final\s*price|price|your\s*price|estimated\s*total|total|amount\s*to\s*pay|pay\s*amount|bill\s*total|order\s*value|net\s*pay|final\s*pay)/i;
     // Priority labels that indicate the FINAL price paid (not MRP)
-    const FINAL_AMOUNT_LABEL_RE = /(grand\s*total|amount\s*paid|paid\s*amount|you\s*paid|order\s*total|final\s*total|total\s*amount|net\s*amount|payable|estimated\s*total|amount\s*payable|total\s*payable|bill\s*amount|invoice\s*total|checkout\s*total|payment\s*total|you\s*pay|to\s*pay|your\s*total|final\s*amount|due\s*amount|total\s*due|total\s*paid|amount\s*due|total\s*price|final\s*price|order\s*amount|purchase\s*total)/i;
+    const FINAL_AMOUNT_LABEL_RE = /(grand\s*total|amount\s*paid|paid\s*amount|you\s*paid|order\s*total|final\s*total|total\s*amount|net\s*amount|payable|estimated\s*total|amount\s*payable|total\s*payable|bill\s*amount|invoice\s*total|checkout\s*total|payment\s*total|you\s*pay|to\s*pay|your\s*total|final\s*amount|due\s*amount|total\s*due|total\s*paid|amount\s*due|total\s*price|final\s*price|order\s*amount|purchase\s*total|amount\s*to\s*pay|pay\s*amount|bill\s*total|order\s*value|net\s*pay|final\s*pay|paid\s*via|paid\s*using|paid\s*by|payment\s*of|deducted|charged|debited)/i;
     // Labels to EXCLUDE — MRP/savings/discount lines should NOT be treated as amounts
-    const EXCLUDED_AMOUNT_LABEL_RE = /(m\.?r\.?p|mrp|maximum\s*retail|retail\s*price|original\s*price|was\s*₹|was\s*rs|savings?|discount|you\s*sav|coupon|cashback|refund|promo|crossed\s*out|list\s*price|compare\s*at|earlier\s*price|regular\s*price|marked?\s*price|cut\s*price|reward\s*points?|loyalty\s*points?|coins?\s*earned|super\s*coins?)/i;
-    const AMOUNT_VALUE_PATTERN = '₹?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
-    // Indian currency: ₹, Rs, Rs., INR, plus Tesseract variants (Rs, R5, R$)
-    const INR_VALUE_PATTERN = '(?:₹|(?:rs|r[5s$])\\.?|inr)\\s*\\.?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
+    const EXCLUDED_AMOUNT_LABEL_RE = /(m\.?r\.?p|mrp|maximum\s*retail|retail\s*price|original\s*price|was\s*₹|was\s*rs|savings?|discount|you\s*sav|coupon|cashback|refund|promo|crossed\s*out|list\s*price|compare\s*at|earlier\s*price|regular\s*price|marked?\s*price|cut\s*price|reward\s*points?|loyalty\s*points?|coins?\s*earned|super\s*coins?|delivery\s*charge|shipping\s*fee|convenience\s*fee|handling\s*fee|gst|tax\s*amount|cgst|sgst|igst|platform\s*fee|packing\s*charge|tip|donation|round\s*off)/i;
+    // Amount with optional ₹ prefix — captures "₹ 599", "₹599", "599.00" etc.
+    const AMOUNT_VALUE_PATTERN = '(?:₹|(?:rs|r[5s$])\\.?|inr)?\\s*\\.?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)';
+    // Indian currency explicit prefix: ₹, Rs, Rs., INR, plus Tesseract variants (R5, R$, Ri, RI)
+    const INR_VALUE_PATTERN = '(?:₹|(?:rs|r[5s$iI])\\.?|inr|(?:rupees?))\\s*\\.?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)(?:\\s*\\/-)?';
     const BARE_AMOUNT_PATTERN = '\\b([0-9]{2,8}(?:\\.[0-9]{1,2})?)\\b';
 
     // ── Compiled regexes ──
@@ -1633,6 +1688,16 @@ export async function extractOrderDetailsWithAi(
             .replace(/ﬁ/g, 'fi')
             .replace(/ﬂ/g, 'fl')
             .replace(/\u00a0/g, ' ')  // non-breaking space
+            .replace(/[\u2018\u2019\u201a\u201b]/g, "'")  // smart single quotes
+            .replace(/[\u201c\u201d\u201e\u201f]/g, '"')  // smart double quotes
+            .replace(/[\u2013\u2014]/g, '-')  // en-dash / em-dash → hyphen
+            .replace(/\u2026/g, '...')  // ellipsis
+            .replace(/\u20b9/g, '₹')     // Indian Rupee sign variant
+            .replace(/\u00d7/g, 'x')     // multiplication sign → x
+            .replace(/\u200b/g, '')       // zero-width space
+            .replace(/\u200c/g, '')       // zero-width non-joiner
+            .replace(/\u200d/g, '')       // zero-width joiner
+            .replace(/\ufeff/g, '')       // BOM
         : '';
 
     const normalizeLine = (line: string) => line.trim();
@@ -1707,8 +1772,8 @@ export async function extractOrderDetailsWithAi(
 
     const extractAmounts = (text: string, detectedOrderId?: string | null) => {
       const lines = text.split('\n').map(normalizeLine).filter(Boolean);
-      const finalAmounts: number[] = [];   // "grand total", "amount paid", etc.
-      const labeledAmounts: number[] = [];  // "total", "price", "subtotal", etc.
+      const finalAmounts: Array<{ value: number; weight: number }> = [];   // "grand total", "amount paid", etc.
+      const labeledAmounts: Array<{ value: number; weight: number }> = [];  // "total", "price", "subtotal", etc.
 
       // Build a set of numeric substrings from the order ID so we can
       // filter them out when they appear as bare amounts.
@@ -1723,9 +1788,9 @@ export async function extractOrderDetailsWithAi(
           const d = seg.replace(/[^0-9]/g, '');
           if (d.length >= 3) orderIdDigitSegments.add(d);
         }
-        // Add contiguous sub-runs of 5+ digits
+        // Add contiguous sub-runs of 4+ digits (lowered from 5 to catch more fragments)
         for (let start = 0; start < digitsOnly.length; start++) {
-          for (let len = 5; len <= digitsOnly.length - start; len++) {
+          for (let len = 4; len <= digitsOnly.length - start; len++) {
             orderIdDigitSegments.add(digitsOnly.slice(start, start + len));
           }
         }
@@ -1736,6 +1801,31 @@ export async function extractOrderDetailsWithAi(
         if (!detectedOrderId || orderIdDigitSegments.size === 0) return false;
         const cleaned = raw.replace(/,/g, '').replace(/\.\d{1,2}$/, '');
         return orderIdDigitSegments.has(cleaned);
+      };
+
+      /** Weight final-amount labels by specificity to prefer "Grand Total" over just "Total" */
+      const getFinalLabelWeight = (line: string): number => {
+        if (/grand\s*total/i.test(line)) return 10;
+        if (/amount\s*paid|paid\s*amount|you\s*paid|you\s*pay/i.test(line)) return 9;
+        if (/to\s*pay|amount\s*to\s*pay/i.test(line)) return 9;
+        if (/total\s*paid|total\s*amount|net\s*amount|payable/i.test(line)) return 8;
+        if (/order\s*total|final\s*total|bill\s*amount|invoice\s*total/i.test(line)) return 8;
+        if (/total\s*price|final\s*price|order\s*amount|purchase\s*total/i.test(line)) return 7;
+        if (/estimated\s*total|checkout\s*total|payment\s*total/i.test(line)) return 7;
+        if (/deducted|charged|debited/i.test(line)) return 6;
+        return 5;
+      };
+
+      const processAmountOnLine = (match: RegExpMatchArray, isFinalLabel: boolean, line: string) => {
+        const value = parseAmountString(match[1]);
+        if (!value) return false;
+        if (isOrderIdFragment(match[1])) return false;
+        // Reject amounts that are clearly too small to be an order total (< ₹1)
+        if (value < 1) return false;
+        const weight = isFinalLabel ? getFinalLabelWeight(line) : 1;
+        if (isFinalLabel) finalAmounts.push({ value, weight });
+        else labeledAmounts.push({ value, weight });
+        return true;
       };
 
       for (let i = 0; i < lines.length; i += 1) {
@@ -1750,32 +1840,32 @@ export async function extractOrderDetailsWithAi(
         if (!isAnyLabel) continue;
 
         let foundOnLine = false;
-        // Look for amounts on the same line
+
+        // Try INR-prefixed patterns FIRST (more specific — ₹599 is better signal than bare 599)
+        INR_VALUE_GLOBAL_RE.lastIndex = 0;
+        const inrMatches = line.matchAll(INR_VALUE_GLOBAL_RE);
+        const seenValues = new Set<number>();
+        for (const match of inrMatches) {
+          const value = parseAmountString(match[1]);
+          if (value && !seenValues.has(value)) {
+            seenValues.add(value);
+            if (processAmountOnLine(match, isFinalLabel, line)) foundOnLine = true;
+          }
+        }
+
+        // Then try generic amount pattern (may not have ₹ prefix)
         const matches = line.matchAll(AMOUNT_VALUE_GLOBAL_RE);
         for (const match of matches) {
           const value = parseAmountString(match[1]);
-          if (!value) continue;
-          if (isOrderIdFragment(match[1])) continue; // Skip order ID digit fragments
-          foundOnLine = true;
-          if (isFinalLabel) finalAmounts.push(value);
-          else labeledAmounts.push(value);
+          if (value && !seenValues.has(value)) {
+            seenValues.add(value);
+            if (processAmountOnLine(match, isFinalLabel, line)) foundOnLine = true;
+          }
         }
 
-        // Also try INR-prefixed patterns on the same line (reuse pre-compiled regex)
-        INR_VALUE_GLOBAL_RE.lastIndex = 0;
-        const inrMatches = line.matchAll(INR_VALUE_GLOBAL_RE);
-        for (const match of inrMatches) {
-          const value = parseAmountString(match[1]);
-          if (!value) continue;
-          if (isOrderIdFragment(match[1])) continue; // Skip order ID digit fragments
-          foundOnLine = true;
-          if (isFinalLabel) finalAmounts.push(value);
-          else labeledAmounts.push(value);
-        }
-
-        // If no amount on this line, check the next 2 lines (label on one line, value below)
+        // If no amount on this line, check the next 3 lines (label on one line, value below)
         if (!foundOnLine) {
-          for (let offset = 1; offset <= 2 && i + offset < lines.length; offset++) {
+          for (let offset = 1; offset <= 3 && i + offset < lines.length; offset++) {
             const nextLine = lines[i + offset];
             // Stop if the next line has its own label
             if (AMOUNT_LABEL_RE.test(nextLine)) break;
@@ -1784,8 +1874,9 @@ export async function extractOrderDetailsWithAi(
               const value = parseAmountString(match[1]);
               if (!value) continue;
               if (isOrderIdFragment(match[1])) continue;
-              if (isFinalLabel) finalAmounts.push(value);
-              else labeledAmounts.push(value);
+              const w = isFinalLabel ? getFinalLabelWeight(lines[i]) : 1;
+              if (isFinalLabel) finalAmounts.push({ value, weight: w });
+              else labeledAmounts.push({ value, weight: w });
             }
             INR_VALUE_GLOBAL_RE.lastIndex = 0;
             const nextInr = nextLine.matchAll(INR_VALUE_GLOBAL_RE);
@@ -1793,17 +1884,26 @@ export async function extractOrderDetailsWithAi(
               const value = parseAmountString(match[1]);
               if (!value) continue;
               if (isOrderIdFragment(match[1])) continue;
-              if (isFinalLabel) finalAmounts.push(value);
-              else labeledAmounts.push(value);
+              const w = isFinalLabel ? getFinalLabelWeight(lines[i]) : 1;
+              if (isFinalLabel) finalAmounts.push({ value, weight: w });
+              else labeledAmounts.push({ value, weight: w });
             }
           }
         }
       }
 
       // Priority: "final" labels (amount paid, grand total) > general labels (total, price)
-      // Use LAST final amount — Grand Total / Amount Paid appears at bottom of receipts
-      if (finalAmounts.length) return finalAmounts[finalAmounts.length - 1];
-      if (labeledAmounts.length) return Math.max(...labeledAmounts);
+      // Sort by weight (specificity of label) descending, then prefer the LAST occurrence among same weight
+      if (finalAmounts.length) {
+        // Sort by weight desc; among equal weights, prefer the last occurrence (bottom of receipt)
+        const sorted = [...finalAmounts].sort((a, b) => b.weight - a.weight);
+        return sorted[0].value;
+      }
+      if (labeledAmounts.length) {
+        // Among labeled amounts, prefer the largest (usually the total, not a line item)
+        const sorted = [...labeledAmounts].sort((a, b) => b.value - a.value);
+        return sorted[0].value;
+      }
 
       // Fallback: any INR-prefixed value in the entire text
       const inrMatches = text.matchAll(INR_VALUE_GLOBAL_RE);
@@ -2370,13 +2470,23 @@ export async function extractOrderDetailsWithAi(
       '- For TABLET screenshots: layout may be a mix of mobile and desktop. Read ALL visible text.',
       '- For MOBILE screenshots: layout is vertical. Read top-to-bottom.',
       '- Handle both light mode and dark mode UIs.',
+      '- Handle both English and Hindi text (Indian e-commerce includes bilingual content).',
       '',
-      'CRITICAL FIELDS TO CAPTURE (extract these with highest priority):',
+      'CRITICAL FIELDS TO CAPTURE WITH HIGHEST PRIORITY:',
       '- Order ID / Order Number (e.g., Amazon: 404-xxx-xxx, Flipkart: OD..., Myntra: MYN...)',
       '- Grand Total / Amount Paid / You Paid / Final Total (the actual amount customer paid)',
-      '- Product Name / Item Title (full name as shown)',
+      '  IMPORTANT: Look for the ₹ symbol followed by a number. Also look for "Rs", "Rs.", "INR" followed by a number.',
+      '  Common formats: ₹599, ₹ 599, Rs. 599, Rs 599.00, ₹1,499, ₹12,499.00',
+      '  The amount is usually near labels like "Grand Total", "Amount Paid", "You Paid", "Order Total", "Total", "Payable".',
+      '- Product Name / Item Title (full name as shown, NOT a URL or web address)',
       '- Sold By / Seller name',
       '- Order Date',
+      '',
+      'AMOUNT EXTRACTION RULES:',
+      '- Read the ₹ sign carefully — OCR often misreads it as "2", "%", "t", or misses it entirely.',
+      '- Indian number format uses commas differently: 1,23,456 (not 123,456). Preserve exactly as shown.',
+      '- If you see a strikethrough/crossed-out price AND a current price, BOTH must be captured. The crossed-out is MRP, the other is the amount paid.',
+      '- Common OCR confusion: ₹ → 2, Rs → R5, ₹ → t, . → ,',
       '',
       'Read every word visible in the image. Do not skip any text, even if partially obscured.',
     ].join('\n');
@@ -2495,7 +2605,7 @@ export async function extractOrderDetailsWithAi(
         ],
         config: {
           temperature: 0,
-          maxOutputTokens: Math.min(env.AI_MAX_OUTPUT_TOKENS_EXTRACT, 1024),
+          maxOutputTokens: Math.min(env.AI_MAX_OUTPUT_TOKENS_EXTRACT, 2048),
           responseMimeType: 'text/plain',
         },
       }));
@@ -3096,7 +3206,7 @@ export async function extractOrderDetailsWithAi(
             ? (() => {
                 const digits = refOrderId.replace(/[^0-9]/g, '');
                 const amtStr = String(Math.round(aiSuggestedAmount));
-                return digits.length >= 10 && amtStr.length >= 5 && digits.includes(amtStr);
+                return digits.length >= 8 && amtStr.length >= 3 && digits.includes(amtStr);
               })()
             : false;
 
@@ -3190,7 +3300,7 @@ export async function extractOrderDetailsWithAi(
               ? (() => {
                   const d = directRefId.replace(/[^0-9]/g, '');
                   const a = String(Math.round(directAmount));
-                  return d.length >= 10 && a.length >= 5 && d.includes(a);
+                  return d.length >= 8 && a.length >= 3 && d.includes(a);
                 })()
               : false;
 
@@ -3236,10 +3346,12 @@ export async function extractOrderDetailsWithAi(
     // ─── POST-PROCESSING SANITY CHECKS ─── //
 
     // 1. If the amount is actually a substring of the order ID digits, reject it
+    //    Lowered threshold from 5 to 3 digits to catch more false positives like "408" from "408-0258263-..."
     if (finalAmount && finalOrderId) {
       const orderDigits = finalOrderId.replace(/[^0-9]/g, '');
       const amountStr = String(Math.round(finalAmount));
-      if (orderDigits.length >= 10 && amountStr.length >= 5 && orderDigits.includes(amountStr)) {
+      // Check: full amount string is a contiguous substring of order ID digits
+      if (orderDigits.length >= 8 && amountStr.length >= 3 && orderDigits.includes(amountStr)) {
         notes.push(`Amount ₹${finalAmount} appears to be digits from Order ID — rejected.`);
         finalAmount = null;
         confidenceScore = Math.max(30, confidenceScore - 20);
