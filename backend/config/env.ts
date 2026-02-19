@@ -22,7 +22,8 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1),
   MONGODB_DBNAME: z.string().trim().min(1).optional(),
 
-  // PostgreSQL (Neon) — used by Prisma for the dual-write migration.
+  // PostgreSQL — used by Prisma for the dual-write migration.
+  // Supports any PostgreSQL server (Neon, standard, etc.).
   // Optional: when not set, Prisma writes are silently skipped.
   DATABASE_URL: z.string().url().optional(),
 
