@@ -13,9 +13,19 @@ export const Explore: React.FC = () => {
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedDealType, setSelectedDealType] = useState('All');
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const silentSyncRef = useRef(false);
+
+  const dealTypes = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of products) {
+      const dt = (p.dealType || '').trim();
+      if (dt) seen.add(dt);
+    }
+    return ['All', ...Array.from(seen).sort()];
+  }, [products]);
 
   const categories = useMemo(() => {
     const seen = new Set<string>();
@@ -75,6 +85,12 @@ export const Explore: React.FC = () => {
   useEffect(() => {
     let result = products;
 
+    // Filter by deal type
+    if (selectedDealType !== 'All') {
+      const dtLower = selectedDealType.toLowerCase();
+      result = result.filter((p) => String(p.dealType || '').toLowerCase() === dtLower);
+    }
+
     if (selectedCategory !== 'All') {
       const selectedLower = selectedCategory.toLowerCase();
       result = result.filter((p) => {
@@ -104,7 +120,7 @@ export const Explore: React.FC = () => {
     }
 
     setFiltered(result);
-  }, [searchTerm, selectedCategory, products]);
+  }, [searchTerm, selectedCategory, selectedDealType, products]);
 
   useEffect(() => {
     if (selectedCategory === 'All') return;
@@ -129,6 +145,28 @@ export const Explore: React.FC = () => {
             leftIcon={<Search size={18} />}
             aria-label="Search deals"
           />
+        </div>
+
+        {/* Deal Type Filter */}
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 mb-2">
+          {dealTypes.map((dt) => {
+            const label = dt === 'Discount' ? 'Order Deal' : dt === 'All' ? 'All Types' : `${dt} Deal`;
+            return (
+              <button
+                key={dt}
+                type="button"
+                onClick={() => setSelectedDealType(dt)}
+                aria-pressed={selectedDealType === dt}
+                className={`px-4 py-2 rounded-full text-xs font-bold transition-all border whitespace-nowrap ${
+                  selectedDealType === dt
+                    ? 'bg-lime-500 text-white border-lime-500 shadow-lg'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-lime-300'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Categories */}

@@ -12,6 +12,8 @@
  * - `post('insertMany')`       → fires on `Model.insertMany()`
  * - `post('findOneAndDelete')` → fires on `findOneAndDelete()` / `findByIdAndDelete()`
  * - `post('deleteOne')`        → hard-deletes from PG via mongoId
+ * - `post('updateOne')`        → safety-net: re-queries doc and syncs to PG
+ * - `post('deleteMany')`       → warning log (use resyncAfterBulkUpdate instead)
  *
  * For bulk ops (`updateMany`, `deleteMany`) the
  * `resyncAfterBulkUpdate()` helper is exported so controllers can call it
@@ -206,7 +208,26 @@ export function registerDualWriteHooks(): void {
         console.error(`[dual-write-hooks][${label}] post-deleteOne failed:`, err?.message ?? err);
       });
     });
+
+    // ── post('updateOne') — safety-net for any remaining Model.updateOne() calls ──
+    // Mongoose query middleware: re-query the document and sync to PG.
+    schema.post('updateOne', { document: false, query: true }, async function (this: any) {
+      try {
+        const filter = this.getFilter();
+        if (!filter) return;
+        const doc = await model.findOne(filter).lean();
+        if (!doc) return;
+        await writer(doc);
+      } catch (err: any) {
+        console.error(`[dual-write-hooks][${label}] post-updateOne failed:`, err?.message ?? err);
+      }
+    });
+
+    // ── post('deleteMany') — re-query is impossible (docs gone); log warning ──
+    schema.post('deleteMany', function (this: any) {
+      console.warn(`[dual-write-hooks][${label}] deleteMany detected — use resyncAfterBulkUpdate() or findOneAndDelete() instead`);
+    });
   }
 
-  console.log('[dual-write-hooks] Registered post-hooks on all 17 models (save, update, insert, delete)');
+  console.log('[dual-write-hooks] Registered post-hooks on all 17 models (save, update, updateOne, insert, delete)');
 }

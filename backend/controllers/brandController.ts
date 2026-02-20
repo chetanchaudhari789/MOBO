@@ -365,8 +365,8 @@ export function makeBrandController() {
           update.$addToSet = { connectedAgencies: agencyCode };
         }
 
-        const updated = await UserModel.updateOne({ _id: brand._id }, update);
-        if (!updated.modifiedCount) {
+        const updated = await UserModel.findOneAndUpdate({ _id: brand._id }, update, { new: true });
+        if (!updated) {
           throw new AppError(409, 'NO_CHANGE', 'No pending request found');
         }
 
@@ -417,16 +417,17 @@ export function makeBrandController() {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can remove agencies');
         }
 
-        const updated = await UserModel.updateOne(
+        const updated = await UserModel.findOneAndUpdate(
           { _id: brand._id },
           {
             $pull: {
               connectedAgencies: body.agencyCode,
               pendingConnections: { agencyCode: body.agencyCode },
             },
-          }
+          },
+          { new: true }
         );
-        if (!updated.modifiedCount) {
+        if (!updated) {
           throw new AppError(404, 'NOT_FOUND', 'Agency connection not found');
         }
 
@@ -508,9 +509,10 @@ export function makeBrandController() {
 
         if (!isPrivileged(roles)) {
           // Auto-connect allowed agencies to the brand to remove friction.
-          await UserModel.updateOne(
+          await UserModel.findOneAndUpdate(
             { _id: userId as any },
-            { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } }
+            { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } },
+            { new: true }
           );
         }
 
@@ -609,9 +611,10 @@ export function makeBrandController() {
             }
 
             // Auto-connect newly assigned agencies.
-            await UserModel.updateOne(
+            await UserModel.findOneAndUpdate(
               { _id: userId as any },
-              { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } }
+              { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } },
+              { new: true }
             );
           }
         }
@@ -650,11 +653,13 @@ export function makeBrandController() {
         if (typeof body.totalSlots !== 'undefined') update.totalSlots = Number(body.totalSlots);
         if (typeof body.allowedAgencies !== 'undefined') update.allowedAgencyCodes = body.allowedAgencies;
 
-        // Economic sanity: payout must not exceed selling price.
+        // Economic sanity: payout must not exceed selling price (skip for Review/Rating deals where price=0).
         const effectivePrice = update.pricePaise ?? (existing as any).pricePaise ?? 0;
         const effectivePayout = update.payoutPaise ?? (existing as any).payoutPaise ?? 0;
         const effectiveOriginalPrice = update.originalPricePaise ?? (existing as any).originalPricePaise ?? effectivePrice;
-        if (effectivePayout > effectivePrice) {
+        const dealType = String(update.dealType ?? (existing as any).dealType ?? '').trim();
+        const skipPayoutGuard = dealType === 'Review' || dealType === 'Rating';
+        if (!skipPayoutGuard && effectivePayout > effectivePrice) {
           throw new AppError(400, 'INVALID_ECONOMICS', 'Payout cannot exceed selling price');
         }
         if (effectiveOriginalPrice < effectivePrice && effectiveOriginalPrice > 0) {
@@ -750,7 +755,7 @@ export function makeBrandController() {
           totalSlots: campaign.totalSlots,
           returnWindowDays: campaign.returnWindowDays,
           usedSlots: 0,
-          status: 'active',
+          status: 'draft',
           allowedAgencyCodes: (campaign as any).allowedAgencyCodes || [],
           assignments: new Map(),
           locked: false,

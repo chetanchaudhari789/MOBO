@@ -427,7 +427,7 @@ export async function generateChatUiResponse(
       const price = typeof p.price === 'number' ? p.price : 0;
       const originalPrice = typeof p.originalPrice === 'number' ? p.originalPrice : price;
       const platform = p.platform ?? 'Unknown';
-      return `[ID: ${id}] ${title} - Price: ₹${price} (MRP: ₹${originalPrice}) on ${platform}`;
+      return `[ID: ${id}] ${title} - Price: ₹${price} (Product Price: ₹${originalPrice}) on ${platform}`;
     })
     .join('\n');
 

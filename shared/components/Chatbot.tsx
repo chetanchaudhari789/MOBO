@@ -93,7 +93,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const placeholders = useMemo(() => [
-    'Find me loot deals...',
+    'Find me deals...',
     'Check my latest order',
     'Where is my cashback?',
     'Navigate to my profile',
@@ -231,7 +231,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           addMessage({
             id: makeMessageId(),
             role: 'model',
-            text: "Sure  let's explore some **Loot Deals**.",
+            text: "Sure  let's explore some **Deals**.",
             timestamp: Date.now(),
           });
         } else if (
@@ -474,13 +474,13 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       const code = String(err?.code || '').toUpperCase();
       const isRate = code === 'RATE_LIMITED' || code === 'DAILY_LIMIT_REACHED' || code === 'TOO_FREQUENT';
       const lowerText = safeText.toLowerCase();
-      if (lowerText.includes('loot deals')) {
+      if (lowerText.includes('deals')) {
         addMessage({
           id: makeMessageId(),
           role: 'model',
           text: productsForAi.length
-            ? 'Here are some **Loot Deals** you might like.'
-            : 'Opening **Loot Deals** for you.',
+            ? 'Here are some **Deals** you might like.'
+            : 'Opening **Deals** for you.',
           timestamp: Date.now(),
           relatedProducts: productsForAi.length ? productsForAi.slice(0, 5) : undefined,
         });
@@ -523,7 +523,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   };
 
   const quickActions = [
-    { emoji: '\u{1F525}', text: 'Loot Deals', command: 'Show me the top 5 loot deals' },
+    { emoji: '\u{1F525}', text: 'Deals', command: 'Show me the top 5 deals' },
     { emoji: '\u{1F4E6}', text: 'Latest Order', command: 'Where is my latest order?' },
     { emoji: '\u{1F39F}\u{FE0F}', text: 'Tickets', command: 'Check status of my support tickets' },
   ];

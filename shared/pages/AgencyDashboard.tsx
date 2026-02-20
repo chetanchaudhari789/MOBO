@@ -410,6 +410,8 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   const [isUpdating, setIsUpdating] = useState(false);
   const [financeSearch, setFinanceSearch] = useState('');
   const [financeStatusFilter, setFinanceStatusFilter] = useState<string>('All');
+  const [financeDealTypeFilter, setFinanceDealTypeFilter] = useState<string>('All');
+  const [financeViewMode, setFinanceViewMode] = useState<'ledger' | 'orders' | 'finance'>('ledger');
 
   const ledger = useMemo(() => {
     let result = allOrders as Order[];
@@ -418,6 +420,11 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         const st = o.affiliateStatus === 'Unchecked' ? o.paymentStatus : o.affiliateStatus;
         return String(st).toLowerCase() === financeStatusFilter.toLowerCase();
       });
+    }
+    if (financeDealTypeFilter !== 'All') {
+      result = result.filter((o: Order) =>
+        String(o.items?.[0]?.dealType || '').toLowerCase() === financeDealTypeFilter.toLowerCase()
+      );
     }
     if (financeSearch.trim()) {
       const q = financeSearch.trim().toLowerCase();
@@ -442,6 +449,8 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   const pendingReviewVolume = ledger
     .filter((o: Order) => o.affiliateStatus === 'Unchecked')
     .reduce((sum: number, o: Order) => sum + o.total, 0);
+  const grossPayableAmount = ledger
+    .reduce((sum: number, o: Order) => sum + (o.items?.[0]?.commission || 0), 0);
 
   const handleUpdate = async () => {
     if (!editingOrder) return;
@@ -678,10 +687,39 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
             <option value="Paid">Paid</option>
             <option value="Rejected_Fraud">Fraud</option>
           </select>
+          <select
+            value={financeDealTypeFilter}
+            onChange={(e) => setFinanceDealTypeFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+          >
+            <option value="All">All Deal Types</option>
+            <option value="Discount">Order Deal</option>
+            <option value="Rating">Rating Deal</option>
+            <option value="Review">Review Deal</option>
+          </select>
           <span className="text-xs text-slate-400 font-bold">{ledger.length} records</span>
         </div>
 
+        {/* View Mode Tabs */}
+        <div className="px-6 py-2 border-b border-slate-100 flex gap-2">
+          {(['ledger', 'orders', 'finance'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setFinanceViewMode(mode)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                financeViewMode === mode
+                  ? 'bg-purple-600 text-white shadow-lg'
+                  : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {mode === 'ledger' ? 'Ledger' : mode === 'orders' ? 'Order Sheet' : 'Finance Sheet'}
+            </button>
+          ))}
+        </div>
+
         <div className="flex-1 overflow-auto p-0 scrollbar-hide">
+          {/* === LEDGER VIEW === */}
+          {financeViewMode === 'ledger' && (<>
           {ledger.length === 0 ? (
             <div className="p-6">
               {loading ? (
@@ -736,10 +774,15 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                     <td className="p-5">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500">
-                          {(o.managerName || '?').charAt(0)}
+                          M
                         </div>
-                        <div className="text-xs font-bold text-slate-700 font-mono">
-                          {o.managerName || 'Unknown'}
+                        <div>
+                          <div className="text-xs font-bold text-slate-700">
+                            {o.managerName || 'Unknown'}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-mono">
+                            {(o as any).mediatorCode || (o as any).managerCode || ''}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -779,6 +822,137 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                 ))}
               </tbody>
             </table>
+          )}
+          </>)}
+
+          {/* === ORDER SHEET VIEW === */}
+          {financeViewMode === 'orders' && (
+            ledger.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center py-20">
+                <div className="text-center">
+                  <FileText size={48} className="mx-auto mb-4 text-slate-200" />
+                  <p className="text-sm text-slate-400">No orders found</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="sticky top-0 bg-gradient-to-r from-slate-50 to-white z-10">
+                    <th className="p-4 pl-8 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Order ID</th>
+                    <th className="p-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Mediator</th>
+                    <th className="p-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Product</th>
+                    <th className="p-4 text-right text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Amount</th>
+                    <th className="p-4 text-right text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Amount Payable</th>
+                    <th className="p-4 pr-8 text-right text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Deal Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledger.map((o: any, i: number) => (
+                    <tr key={o._id || i} className="border-b border-slate-50 hover:bg-purple-50/30 transition-colors">
+                      <td className="p-4 pl-8">
+                        <span className="font-mono text-xs font-bold text-slate-700">{getPrimaryOrderId(o)}</span>
+                        <div className="text-[9px] text-slate-400 mt-0.5">
+                          {new Date(o.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[9px] font-bold text-purple-600">M</div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-700">{o.managerName || 'Unknown'}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">{(o as any).mediatorCode || (o as any).managerCode || ''}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-xs font-semibold text-slate-700 max-w-[150px] truncate">{o.items?.[0]?.productName || 'Product'}</div>
+                        <div className="text-[9px] text-slate-400">Qty: {o.items?.[0]?.qty || 1}</div>
+                      </td>
+                      <td className="p-4 text-right font-mono font-bold text-slate-900">{formatCurrency(o.total)}</td>
+                      <td className="p-4 text-right font-mono font-bold text-lime-600">{formatCurrency(o.commission || 0)}</td>
+                      <td className="p-4 pr-8 text-right">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          o.dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                          o.dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                          'bg-lime-50 text-lime-600'
+                        }`}>
+                          {o.dealType === 'Discount' ? 'Order' : o.dealType || 'Order'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {/* === FINANCE SHEET VIEW === */}
+          {financeViewMode === 'finance' && (
+            ledger.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center py-20">
+                <div className="text-center">
+                  <FileText size={48} className="mx-auto mb-4 text-slate-200" />
+                  <p className="text-sm text-slate-400">No finance records found</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="sticky top-0 bg-gradient-to-r from-slate-50 to-white z-10">
+                    <th className="p-4 pl-8 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest w-12">S.No</th>
+                    <th className="p-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Brand</th>
+                    <th className="p-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Product</th>
+                    <th className="p-4 text-center text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Slots</th>
+                    <th className="p-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Mediator</th>
+                    <th className="p-4 text-right text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Amount Payable</th>
+                    <th className="p-4 pr-8 text-right text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Deal Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledger.map((o: any, i: number) => (
+                    <tr key={o._id || i} className="border-b border-slate-50 hover:bg-purple-50/30 transition-colors">
+                      <td className="p-4 pl-8 text-xs font-mono text-slate-400">{i + 1}</td>
+                      <td className="p-4">
+                        <div className="text-xs font-bold text-slate-700">{o.brandName || o.items?.[0]?.brandName || 'Brand'}</div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-xs font-semibold text-slate-700 max-w-[150px] truncate">{o.items?.[0]?.productName || 'Product'}</div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className="text-xs font-bold text-slate-600">{o.items?.[0]?.qty || 1}</span>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[9px] font-bold text-purple-600">M</div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-700">{o.managerName || 'Unknown'}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">{(o as any).mediatorCode || (o as any).managerCode || ''}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-right font-mono font-bold text-lime-600">{formatCurrency(o.commission || 0)}</td>
+                      <td className="p-4 pr-8 text-right">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          o.dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                          o.dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                          'bg-lime-50 text-lime-600'
+                        }`}>
+                          {o.dealType === 'Discount' ? 'Order' : o.dealType || 'Order'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {/* Gross Payable Footer */}
+                <tfoot>
+                  <tr className="bg-slate-50 border-t-2 border-slate-200">
+                    <td colSpan={5} className="p-4 pl-8 text-xs font-extrabold text-slate-700 uppercase">Gross Payable Amount</td>
+                    <td className="p-4 text-right font-mono font-extrabold text-lg text-lime-600">{formatCurrency(grossPayableAmount)}</td>
+                    <td className="p-4 pr-8"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            )
           )}
         </div>
 
@@ -1522,8 +1696,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       toast.error('Image URL is required');
       return;
     }
-    if (!Number.isFinite(price) || price <= 0) {
-      toast.error('Price must be greater than 0');
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error('Deal price must be 0 or more');
       return;
     }
     if (!Number.isFinite(originalPrice) || originalPrice < 0) {
@@ -2152,7 +2326,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     value={newCampaign.dealType}
                     onChange={(e) => setNewCampaign({ ...newCampaign, dealType: e.target.value })}
                   >
-                    <option value="Discount">Discount Deal</option>
+                    <option value="Discount">Order Deal</option>
                     <option value="Review">Review Deal</option>
                     <option value="Rating">Rating Deal</option>
                     
@@ -2166,7 +2340,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    MRP (₹)
+                    Product Price (₹)
                   </label>
                   <input
                     type="number"

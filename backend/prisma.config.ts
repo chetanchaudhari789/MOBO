@@ -1,4 +1,4 @@
-// Prisma configuration for MOBO backend (PostgreSQL / Neon)
+// Prisma configuration for MOBO backend (PostgreSQL)
 // Uses the same dotenv loader as the rest of the backend to ensure
 // .env files are resolved correctly from both source and dist.
 import "dotenv/config";

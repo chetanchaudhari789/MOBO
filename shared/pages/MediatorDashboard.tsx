@@ -135,6 +135,20 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
     }
   };
 
+  const totalDeals = orders.length;
+  const totalEarnings = orders
+    .filter((o: Order) => {
+      const status = String((o as any).affiliateStatus || '');
+      return status === 'Approved_Settled' || status === 'Pending_Cooling';
+    })
+    .reduce((acc: number, o: Order) => acc + (o.items[0]?.commission || 0), 0);
+  const totalOrderValue = orders.reduce((acc: number, o: Order) => acc + (o.total || 0), 0);
+  const settledOrders = orders.filter((o: Order) => String((o as any).affiliateStatus || '') === 'Approved_Settled');
+  const pendingOrders = orders.filter((o: Order) => {
+    const s = String((o as any).affiliateStatus || '');
+    return s === 'Pending_Cooling' || s === 'Pending_Verification';
+  });
+
   return (
     <div className="space-y-6 animate-enter">
       {/* Header Stats */}
@@ -151,6 +165,15 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
           </div>
         </div>
 
+        <div className="min-w-[120px] bg-white border border-zinc-100 p-4 rounded-[1.5rem] shadow-sm relative overflow-hidden snap-center">
+          <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">
+            Total Deals
+          </p>
+          <h2 className="text-3xl font-black text-zinc-900 tracking-tighter leading-none">
+            {totalDeals}
+          </h2>
+        </div>
+
         <div className="min-w-[130px] bg-white border border-zinc-100 p-4 rounded-[1.5rem] shadow-sm relative overflow-hidden snap-center">
           <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">
             Pending Actions
@@ -158,6 +181,29 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
           <h2 className="text-3xl font-black text-zinc-900 tracking-tighter leading-none">
             {actionRequiredOrders.length + pendingUsers.length}
           </h2>
+        </div>
+      </div>
+
+      {/* Finance Summary Bar */}
+      <div className="bg-white border border-zinc-100 rounded-[1.5rem] p-4 shadow-sm">
+        <h3 className="text-xs font-black uppercase text-zinc-400 tracking-widest mb-3">Finance Overview</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-zinc-50 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Total Earnings</p>
+            <p className="text-lg font-black text-lime-600">{formatCurrency(totalEarnings)}</p>
+          </div>
+          <div className="bg-zinc-50 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Order Value</p>
+            <p className="text-lg font-black text-zinc-900">{formatCurrency(totalOrderValue)}</p>
+          </div>
+          <div className="bg-zinc-50 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Settled</p>
+            <p className="text-lg font-black text-green-600">{settledOrders.length}</p>
+          </div>
+          <div className="bg-zinc-50 rounded-xl p-3 text-center">
+            <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Pending</p>
+            <p className="text-lg font-black text-orange-500">{pendingOrders.length}</p>
+          </div>
         </div>
       </div>
 

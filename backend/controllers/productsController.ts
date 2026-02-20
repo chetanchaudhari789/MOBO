@@ -7,6 +7,7 @@ import { OrderModel } from '../models/Order.js';
 import { CampaignModel } from '../models/Campaign.js';
 import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
+import { publishRealtime } from '../services/realtimeHub.js';
 
 export function makeProductsController() {
   return {
@@ -117,6 +118,17 @@ export function makeProductsController() {
           entityType: 'Order',
           entityId: String((preOrder as any)._id),
           metadata: { dealId, campaignId: String((deal as any).campaignId), mediatorCode },
+        });
+
+        const ts = new Date().toISOString();
+        publishRealtime({
+          type: 'orders.changed',
+          ts,
+          payload: { orderId: String((preOrder as any)._id), dealId },
+          audience: {
+            userIds: [requesterId, String((campaign as any).brandUserId)].filter(Boolean),
+            roles: ['admin', 'ops'],
+          },
         });
 
         res.status(201).json({
