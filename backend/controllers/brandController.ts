@@ -651,9 +651,30 @@ export function makeBrandController() {
         if (typeof body.allowedAgencies !== 'undefined') update.allowedAgencyCodes = body.allowedAgencies;
 
         // Economic sanity: payout must not exceed selling price.
-        const effectivePrice = update.pricePaise ?? (existing as any).pricePaise ?? 0;
-        const effectivePayout = update.payoutPaise ?? (existing as any).payoutPaise ?? 0;
-        const effectiveOriginalPrice = update.originalPricePaise ?? (existing as any).originalPricePaise ?? effectivePrice;
+        // Note: `existing` was loaded with a narrow `.select` that omits economics fields,
+        // so we fetch the necessary fields explicitly to avoid treating missing values as zero.
+        const existingEconomics = (await CampaignModel.findById(id).select({
+          pricePaise: 1,
+          payoutPaise: 1,
+          originalPricePaise: 1
+        })) as any;
+        
+        if (!existingEconomics) {
+          throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        }
+
+        const effectivePrice =
+          update.pricePaise ??
+          existingEconomics.pricePaise ??
+          0;
+        const effectivePayout =
+          update.payoutPaise ??
+          existingEconomics.payoutPaise ??
+          0;
+        const effectiveOriginalPrice =
+          update.originalPricePaise ??
+          existingEconomics.originalPricePaise ??
+          effectivePrice;
         if (effectivePayout > effectivePrice) {
           throw new AppError(400, 'INVALID_ECONOMICS', 'Payout cannot exceed selling price');
         }
