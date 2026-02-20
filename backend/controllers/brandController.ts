@@ -365,8 +365,8 @@ export function makeBrandController() {
           update.$addToSet = { connectedAgencies: agencyCode };
         }
 
-        const updated = await UserModel.updateOne({ _id: brand._id }, update);
-        if (!updated.modifiedCount) {
+        const updated = await UserModel.findOneAndUpdate({ _id: brand._id }, update, { new: true });
+        if (!updated) {
           throw new AppError(409, 'NO_CHANGE', 'No pending request found');
         }
 
@@ -417,16 +417,17 @@ export function makeBrandController() {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can remove agencies');
         }
 
-        const updated = await UserModel.updateOne(
+        const updated = await UserModel.findOneAndUpdate(
           { _id: brand._id },
           {
             $pull: {
               connectedAgencies: body.agencyCode,
               pendingConnections: { agencyCode: body.agencyCode },
             },
-          }
+          },
+          { new: true }
         );
-        if (!updated.modifiedCount) {
+        if (!updated) {
           throw new AppError(404, 'NOT_FOUND', 'Agency connection not found');
         }
 
@@ -508,9 +509,10 @@ export function makeBrandController() {
 
         if (!isPrivileged(roles)) {
           // Auto-connect allowed agencies to the brand to remove friction.
-          await UserModel.updateOne(
+          await UserModel.findOneAndUpdate(
             { _id: userId as any },
-            { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } }
+            { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } },
+            { new: true }
           );
         }
 
@@ -609,9 +611,10 @@ export function makeBrandController() {
             }
 
             // Auto-connect newly assigned agencies.
-            await UserModel.updateOne(
+            await UserModel.findOneAndUpdate(
               { _id: userId as any },
-              { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } }
+              { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } },
+              { new: true }
             );
           }
         }

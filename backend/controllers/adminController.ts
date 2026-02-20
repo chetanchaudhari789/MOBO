@@ -320,17 +320,19 @@ export function makeAdminController() {
 
         const deletedBy = req.auth?.userId as any;
         if (wallet) {
-          await WalletModel.updateOne(
+          await WalletModel.findOneAndUpdate(
             { _id: (wallet as any)._id, deletedAt: null },
-            { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } }
+            { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } },
+            { new: true }
           );
         }
 
-        const updated = await UserModel.updateOne(
+        const updated = await UserModel.findOneAndUpdate(
           { _id: (user as any)._id, deletedAt: null },
-          { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } }
+          { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } },
+          { new: true }
         );
-        if (!updated.modifiedCount) throw new AppError(409, 'USER_ALREADY_DELETED', 'User already deleted');
+        if (!updated) throw new AppError(409, 'USER_ALREADY_DELETED', 'User already deleted');
 
         await writeAuditLog({
           req,
@@ -383,11 +385,12 @@ export function makeAdminController() {
         }
 
         const deletedBy = req.auth?.userId as any;
-        const updated = await WalletModel.updateOne(
+        const updated = await WalletModel.findOneAndUpdate(
           { ownerUserId: userId, deletedAt: null },
-          { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } }
+          { $set: { deletedAt: new Date(), deletedBy, updatedBy: deletedBy } },
+          { new: true }
         );
-        if (!updated.modifiedCount) {
+        if (!updated) {
           throw new AppError(409, 'WALLET_ALREADY_DELETED', 'Wallet already deleted');
         }
 

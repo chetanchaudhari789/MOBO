@@ -163,7 +163,7 @@ export function makeOpsController(env: Env) {
 
         const agencyName = String((requester as any)?.name || 'Agency');
 
-        const updated = await UserModel.updateOne(
+        const updated = await UserModel.findOneAndUpdate(
           {
             _id: brand._id,
             connectedAgencies: { $ne: agencyCode },
@@ -178,10 +178,11 @@ export function makeOpsController(env: Env) {
                 timestamp: new Date(),
               },
             },
-          }
+          },
+          { new: true }
         );
 
-        if (!updated.modifiedCount) {
+        if (!updated) {
           throw new AppError(409, 'ALREADY_REQUESTED', 'Connection already exists or is already pending');
         }
 
@@ -1208,9 +1209,10 @@ export function makeOpsController(env: Env) {
         if (body.type === 'order') {
           const campaignId = order.items?.[0]?.campaignId;
           if (campaignId) {
-            await CampaignModel.updateOne(
+            await CampaignModel.findOneAndUpdate(
               { _id: campaignId, usedSlots: { $gt: 0 } },
               { $inc: { usedSlots: -1 } },
+              { new: true }
             );
           }
         }
@@ -2085,11 +2087,12 @@ export function makeOpsController(env: Env) {
 
         const now = new Date();
         const deletedBy = req.auth?.userId as any;
-        const updated = await CampaignModel.updateOne(
+        const updated = await CampaignModel.findOneAndUpdate(
           { _id: (campaign as any)._id, deletedAt: null },
-          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } }
+          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } },
+          { new: true }
         );
-        if (!updated.modifiedCount) {
+        if (!updated) {
           throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
         }
 
@@ -2740,9 +2743,10 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'NOT_OFFERED', 'This campaign was not offered to your agency');
         }
 
-        await CampaignModel.updateOne(
+        await CampaignModel.findOneAndUpdate(
           { _id: (campaign as any)._id },
-          { $pull: { allowedAgencyCodes: agencyCode } }
+          { $pull: { allowedAgencyCodes: agencyCode } },
+          { new: true }
         );
 
         await writeAuditLog({

@@ -80,14 +80,15 @@ export async function consumeInvite(params: {
   if ((inviteSnapshot as any).expiresAt) {
     const exp = new Date((inviteSnapshot as any).expiresAt);
     if (exp.getTime() <= now.getTime()) {
-      await InviteModel.updateOne(
+      await InviteModel.findOneAndUpdate(
         { _id: (inviteSnapshot as any)._id },
         { $set: { status: 'expired' } },
         // IMPORTANT: this update must not participate in the caller's transaction.
         // If we mark as expired inside the transaction and then throw (as intended),
         // the transaction abort will roll back the status change, leaving the invite
         // incorrectly "active" even though it is expired.
-        { session: undefined }
+        // { new: true } ensures the post-hook receives the updated doc for PG dual-write.
+        { session: undefined, new: true }
       );
       throw new AppError(400, 'INVITE_EXPIRED', 'Invite has expired');
     }

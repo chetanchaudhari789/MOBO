@@ -284,12 +284,12 @@ export function makeAuthController(env: Env) {
         if (!ok) {
           // Increment failed attempts; lock if threshold exceeded.
           // Increment failed attempts atomically with $inc
-          await UserModel.updateOne({ _id: user._id }, {
+          await UserModel.findOneAndUpdate({ _id: user._id }, {
             $inc: { failedLoginAttempts: 1 },
             ...((((user as any).failedLoginAttempts ?? 0) + 1) >= MAX_FAILED_ATTEMPTS
               ? { $set: { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) } }
               : {}),
-          });
+          }, { new: true });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
@@ -301,9 +301,9 @@ export function makeAuthController(env: Env) {
 
         // Reset failed attempts on successful login
         if ((user as any).failedLoginAttempts > 0 || (user as any).lockoutUntil) {
-          await UserModel.updateOne({ _id: user._id }, {
+          await UserModel.findOneAndUpdate({ _id: user._id }, {
             $set: { failedLoginAttempts: 0, lockoutUntil: null },
-          });
+          }, { new: true });
         }
 
         const accessToken = signAccessToken(env, String(user._id), user.roles as any);
