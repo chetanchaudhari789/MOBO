@@ -416,7 +416,7 @@ export function aiRoutes(env: Env): Router {
         if (wantsLoot) {
           const take = count ?? 5;
           res.json({
-            text: `Here are the top ${take} loot deals for you.`,
+            text: `Here are the top ${take} deals for you.`,
             intent: 'search_deals',
             uiType: 'product_card',
             data: effectiveProducts.slice(0, take),

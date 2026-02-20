@@ -7,30 +7,12 @@
  * The client is lazily initialised on first access or by calling `connectPrisma()`.
  * In tests it is skipped when DATABASE_URL is not configured.
  *
- * Supports **any** PostgreSQL server:
- *  - Neon serverless (WebSocket-based via @prisma/adapter-neon)
- *  - Standard PostgreSQL (direct TCP via built-in Prisma driver)
- *
- * Detection is automatic based on the DATABASE_URL hostname.
+ * Uses standard PostgreSQL with connection pooling via @prisma/adapter-pg.
  */
 import { PrismaClient } from '../generated/prisma/client.js';
 
 let _prisma: PrismaClient | null = null;
 let _connecting: Promise<void> | null = null;
-
-// ── Neon detection ───────────────────────────────────────
-// Neon hostnames always end with .neon.tech or neondb.net.
-function isNeonUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return (
-      parsed.hostname.endsWith('.neon.tech') ||
-      parsed.hostname.endsWith('.neondb.net')
-    );
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Whether Prisma/PG is available. Returns false when DATABASE_URL is not set
@@ -56,11 +38,9 @@ export function prisma(): PrismaClient {
 }
 
 /**
- * Connect to PostgreSQL via Prisma. Safe to call multiple times.
+ * Connect to PostgreSQL via Prisma with connection pooling.
+ * Safe to call multiple times.
  * Returns silently when DATABASE_URL is not configured (PG is optional).
- *
- * - For Neon databases: uses the @prisma/adapter-neon WebSocket driver.
- * - For standard PostgreSQL: uses the built-in Prisma TCP driver (no adapter).
  */
 export async function connectPrisma(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -79,21 +59,17 @@ export async function connectPrisma(): Promise<void> {
           ? ['warn', 'error']
           : ['error'];
 
-      let client: PrismaClient;
-
-      if (isNeonUrl(url)) {
-        // Neon serverless — use WebSocket adapter
-        const { PrismaNeon } = await import('@prisma/adapter-neon');
-        const adapter = new PrismaNeon({ connectionString: url });
-        client = new PrismaClient({ adapter, log: logConfig });
-        console.log('[prisma] Using Neon WebSocket adapter');
-      } else {
-        // Standard PostgreSQL — use TCP adapter
-        const { PrismaPg } = await import('@prisma/adapter-pg');
-        const adapter = new PrismaPg({ connectionString: url });
-        client = new PrismaClient({ adapter, log: logConfig });
-        console.log('[prisma] Using standard PostgreSQL adapter');
-      }
+      // Standard PostgreSQL with connection pooling
+      const { PrismaPg } = await import('@prisma/adapter-pg');
+      const poolConfig = {
+        connectionString: url,
+        max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+        idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
+        connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
+      };
+      const adapter = new PrismaPg(poolConfig);
+      const client = new PrismaClient({ adapter, log: logConfig });
+      console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max})`);
 
       // Run a lightweight query to verify connectivity upfront.
       await client.$queryRawUnsafe('SELECT 1');

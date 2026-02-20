@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────────────────
-// MOBO – Prisma Schema (PostgreSQL / Neon)
+// MOBO – Prisma Schema (PostgreSQL)
 // Mirrors all 17 Mongoose models for parallel dual-write migration.
 // MongoDB remains the primary. Prisma/PG is the shadow write target.
 // ──────────────────────────────────────────────────────────

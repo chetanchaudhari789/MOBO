@@ -39,7 +39,7 @@ export const AppSwitchboard: React.FC<{ onSelect: (role: string) => void }> = ({
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 w-full max-w-7xl px-4">
         <SwitchCard
           title="Shopper"
-          desc="Loot deals & Rewards"
+          desc="Deals & Rewards"
           icon={<ShoppingBag size={28} />}
           type="Mobile"
           color="lime"

@@ -2689,7 +2689,7 @@ export function makeOpsController(env: Env) {
           totalSlots: campaign.totalSlots,
           returnWindowDays: campaign.returnWindowDays,
           usedSlots: 0,
-          status: 'active',
+          status: 'draft',
           allowedAgencyCodes: (campaign as any).allowedAgencyCodes || [],
           assignments: new Map(),
           locked: false,

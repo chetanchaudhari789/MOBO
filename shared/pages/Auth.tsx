@@ -132,7 +132,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
             </h1>
 
             <p className="text-gray-400 text-center max-w-[280px] leading-relaxed text-sm font-medium">
-              Smarter shopping starts here. Track orders, find loot deals, and save money.
+              Smarter shopping starts here. Track orders, find deals, and save money.
             </p>
           </div>
 

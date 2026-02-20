@@ -581,6 +581,8 @@ const OrdersView = ({ user }: any) => {
   const [brandIsAnalyzing, setBrandIsAnalyzing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [dealTypeFilter, setDealTypeFilter] = useState<string>('All');
+  const [orderViewMode, setOrderViewMode] = useState<'orders' | 'orderSheet' | 'financeSheet'>('orders');
   const [isLoading, setIsLoading] = useState(true);
   const [sheetsExporting, setSheetsExporting] = useState(false);
   // Audit trail state for proof modal
@@ -689,6 +691,10 @@ const OrdersView = ({ user }: any) => {
     if (statusFilter !== 'All') {
       const st = String(o.affiliateStatus === 'Unchecked' ? o.paymentStatus : o.affiliateStatus || '').toLowerCase();
       if (st !== statusFilter.toLowerCase()) return false;
+    }
+    if (dealTypeFilter !== 'All') {
+      const dt = (o as any).dealType || o.items?.[0]?.dealType || 'Discount';
+      if (dt !== dealTypeFilter) return false;
     }
     return textMatch;
   });
@@ -866,6 +872,16 @@ const OrdersView = ({ user }: any) => {
               <option value="Paid">Paid</option>
               <option value="Rejected_Fraud">Fraud</option>
             </select>
+            <select
+              value={dealTypeFilter}
+              onChange={(e) => setDealTypeFilter(e.target.value)}
+              className="px-4 py-3.5 bg-white border border-zinc-200 rounded-2xl text-sm font-bold outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-100 transition-all shadow-sm text-zinc-900"
+            >
+              <option value="All">All Deal Types</option>
+              <option value="Discount">Order Deal</option>
+              <option value="Rating">Rating Deal</option>
+              <option value="Review">Review Deal</option>
+            </select>
             <button
               onClick={handleExport}
               className="flex items-center gap-2 px-5 py-3.5 bg-zinc-900 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-black transition-all active:scale-95 whitespace-nowrap"
@@ -882,8 +898,28 @@ const OrdersView = ({ user }: any) => {
           </div>
         </div>
 
+        {/* View Mode Tabs */}
+        <div className="flex gap-2 mb-6">
+          {(['orders', 'orderSheet', 'financeSheet'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setOrderViewMode(mode)}
+              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all ${
+                orderViewMode === mode
+                  ? 'bg-zinc-900 text-white shadow-lg'
+                  : 'bg-white text-zinc-400 border border-zinc-200 hover:border-zinc-400'
+              }`}
+            >
+              {mode === 'orders' ? 'Orders' : mode === 'orderSheet' ? 'Order Sheet' : 'Finance Sheet'}
+            </button>
+          ))}
+        </div>
+
         <div className="bg-white rounded-[2.5rem] border border-zinc-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
+
+            {/* === ORDERS VIEW (default) === */}
+            {orderViewMode === 'orders' && (
             <table className="w-full text-left min-w-[800px]">
               <thead className="bg-zinc-50 text-zinc-400 text-xs font-bold uppercase tracking-wider">
                 <tr>
@@ -969,6 +1005,129 @@ const OrdersView = ({ user }: any) => {
                 )}
               </tbody>
             </table>
+            )}
+
+            {/* === ORDER SHEET VIEW === */}
+            {orderViewMode === 'orderSheet' && (
+              filtered.length === 0 ? (
+                <div className="p-16 text-center">
+                  <ShoppingBag size={48} className="mx-auto mb-4 text-zinc-200" />
+                  <p className="text-sm text-zinc-400">No orders found</p>
+                </div>
+              ) : (
+                <table className="w-full text-left min-w-[800px]">
+                  <thead className="bg-zinc-50 text-zinc-400 text-xs font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="p-6">Order ID</th>
+                      <th className="p-6">Date</th>
+                      <th className="p-6">Agency</th>
+                      <th className="p-6">Mediator</th>
+                      <th className="p-6">Product</th>
+                      <th className="p-6 text-right">Amount</th>
+                      <th className="p-6 text-right">Commission</th>
+                      <th className="p-6 text-right">Deal Type</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-50">
+                    {filtered.map((o) => (
+                      <tr key={o.id} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="p-6">
+                          <span className="font-mono text-xs font-bold text-zinc-500">{getPrimaryOrderId(o)}</span>
+                        </td>
+                        <td className="p-6">
+                          <span className="text-xs text-zinc-500">{new Date(o.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                        </td>
+                        <td className="p-6">
+                          <span className="text-xs font-bold bg-zinc-100 text-zinc-600 px-2 py-1 rounded">{o.agencyName || 'Direct'}</span>
+                        </td>
+                        <td className="p-6">
+                          <div className="text-xs font-bold text-zinc-700">{o.managerName || '-'}</div>
+                        </td>
+                        <td className="p-6">
+                          <span className="text-sm font-bold text-zinc-900 line-clamp-1">{o.items?.[0]?.title || 'Product'}</span>
+                          <div className="text-[9px] text-zinc-400">Qty: {o.items?.[0]?.quantity || 1}</div>
+                        </td>
+                        <td className="p-6 text-right font-bold text-zinc-900">{formatCurrency(o.total)}</td>
+                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency((o as any).commission || 0)}</td>
+                        <td className="p-6 text-right">
+                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                            (o as any).dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                            (o as any).dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                            'bg-lime-50 text-lime-600'
+                          }`}>
+                            {(o as any).dealType === 'Discount' ? 'Order' : (o as any).dealType || 'Order'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            )}
+
+            {/* === FINANCE SHEET VIEW === */}
+            {orderViewMode === 'financeSheet' && (
+              filtered.length === 0 ? (
+                <div className="p-16 text-center">
+                  <Wallet size={48} className="mx-auto mb-4 text-zinc-200" />
+                  <p className="text-sm text-zinc-400">No finance records found</p>
+                </div>
+              ) : (
+                <table className="w-full text-left min-w-[900px]">
+                  <thead className="bg-zinc-50 text-zinc-400 text-xs font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="p-6 w-12">S.No</th>
+                      <th className="p-6">Agency</th>
+                      <th className="p-6">Mediator</th>
+                      <th className="p-6">Product</th>
+                      <th className="p-6 text-center">Slots</th>
+                      <th className="p-6 text-right">Order Value</th>
+                      <th className="p-6 text-right">Amount Payable</th>
+                      <th className="p-6 text-right">Deal Type</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-50">
+                    {filtered.map((o, i) => (
+                      <tr key={o.id} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="p-6 text-xs font-mono text-zinc-400">{i + 1}</td>
+                        <td className="p-6">
+                          <span className="text-xs font-bold text-zinc-700">{o.agencyName || 'Direct'}</span>
+                        </td>
+                        <td className="p-6">
+                          <div className="text-xs font-bold text-zinc-700">{o.managerName || '-'}</div>
+                        </td>
+                        <td className="p-6">
+                          <span className="text-sm font-bold text-zinc-900 line-clamp-1">{o.items?.[0]?.title || 'Product'}</span>
+                        </td>
+                        <td className="p-6 text-center">
+                          <span className="text-xs font-bold text-zinc-600">{o.items?.[0]?.quantity || 1}</span>
+                        </td>
+                        <td className="p-6 text-right font-bold text-zinc-900">{formatCurrency(o.total)}</td>
+                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency((o as any).commission || 0)}</td>
+                        <td className="p-6 text-right">
+                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                            (o as any).dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                            (o as any).dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                            'bg-lime-50 text-lime-600'
+                          }`}>
+                            {(o as any).dealType === 'Discount' ? 'Order' : (o as any).dealType || 'Order'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {/* Gross Total Footer */}
+                  <tfoot>
+                    <tr className="bg-zinc-50 border-t-2 border-zinc-200">
+                      <td colSpan={5} className="p-6 text-xs font-extrabold text-zinc-700 uppercase">Total Payable</td>
+                      <td className="p-6 text-right font-mono font-extrabold text-zinc-900">{formatCurrency(filtered.reduce((s, o) => s + (o.total || 0), 0))}</td>
+                      <td className="p-6 text-right font-mono font-extrabold text-lg text-green-600">{formatCurrency(filtered.reduce((s, o) => s + ((o as any).commission || 0), 0))}</td>
+                      <td className="p-6"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )
+            )}
           </div>
         </div>
       </div>
@@ -1563,7 +1722,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div>
                     <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      MRP (₹)
+                      MRP / Product Price (₹)
                     </label>
                     <input
                       type="number"
@@ -1701,7 +1860,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                   <span className="text-indigo-600 font-bold">"{user.name}"</span> Direct Deal.
                 </div>
                 <div className="pt-2 border-t border-zinc-200 border-dashed flex justify-between items-center">
-                  <span>MRP:</span>
+                  <span>Product Price:</span>
                   <span className="text-zinc-900 font-bold decoration-slice line-through">
                     {Number(form.originalPrice).toLocaleString()}
                   </span>
@@ -1709,7 +1868,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
               </div>
 
               <div className="w-full py-3.5 bg-black text-white font-extrabold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2">
-                <LinkIcon size={14} /> GET LOOT LINK
+                <LinkIcon size={14} /> GET DEAL LINK
               </div>
             </div>
 

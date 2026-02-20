@@ -49,6 +49,17 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
         {platformLabel}
       </div>
 
+      {/* Deal Type Badge (Top Left) */}
+      {product.dealType && (
+        <div className={`absolute top-4 left-4 text-[10px] font-bold px-2 py-1 rounded shadow-sm uppercase tracking-wider z-10 ${
+          product.dealType === 'Rating' ? 'bg-orange-500 text-white' :
+          product.dealType === 'Review' ? 'bg-purple-500 text-white' :
+          'bg-lime-500 text-white'
+        }`}>
+          {product.dealType === 'Discount' ? 'Order' : product.dealType}
+        </div>
+      )}
+
       {/* Top Section: Image & Key Info */}
       <div className="flex gap-4 mb-4">
         <div className="w-24 h-24 rounded-2xl bg-gray-50 border border-gray-100 p-2 flex-shrink-0 flex items-center justify-center relative">
@@ -126,7 +137,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
         onClick={handleLinkClick}
         className="w-full py-3.5 bg-black text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-zinc-900/10 active:scale-95 transition-all flex items-center justify-center gap-2 group-hover:bg-zinc-800"
       >
-        <ExternalLink size={14} className="stroke-[3]" /> GET LOOT LINK
+        <ExternalLink size={14} className="stroke-[3]" /> GET DEAL LINK
       </button>
     </div>
   );
