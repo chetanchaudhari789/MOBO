@@ -77,7 +77,7 @@ export async function connectPrisma(): Promise<void> {
       console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'})`);
 
       // Run a lightweight query to verify connectivity upfront.
-      await client.$queryRawUnsafe('SELECT 1');
+      await client.$queryRaw`SELECT 1`;
       _prisma = client;
       console.log('[prisma] Connected to PostgreSQL');
     } catch (err) {
