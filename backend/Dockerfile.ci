@@ -1,0 +1,30 @@
+# CI Dockerfile - uses pre-built artifacts from CI pipeline
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy root package files for workspace setup
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY shared/package.json ./shared/
+
+# Install production dependencies only (ignore scripts - prisma client is pre-built)
+RUN npm ci --workspace=@mobo/backend --omit=dev --ignore-scripts
+
+# Copy pre-built artifacts from CI
+COPY backend/dist ./backend/dist
+COPY backend/prisma ./backend/prisma
+COPY node_modules/.prisma ./node_modules/.prisma
+
+# Copy traineddata for OCR
+COPY backend/eng.traineddata ./backend/
+
+# Set environment
+ENV NODE_ENV=production
+ENV PORT=3000
+
+EXPOSE 3000
+
+WORKDIR /app/backend
+
+CMD ["node", "dist/index.js"]
