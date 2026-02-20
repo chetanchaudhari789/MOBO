@@ -1,6 +1,7 @@
 # Dependencies
 node_modules
 **/node_modules
+!node_modules/.prisma
 
 # Build outputs (except what we need)
 apps/*/dist

@@ -8,13 +8,14 @@ COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY shared/package.json ./shared/
 
-# Install production dependencies only (ignore scripts - prisma client is pre-built)
-RUN npm ci --workspace=@mobo/backend --omit=dev --ignore-scripts
-
-# Copy pre-built artifacts from CI
-COPY backend/dist ./backend/dist
+# Copy prisma schema first (needed for generate)
 COPY backend/prisma ./backend/prisma
-COPY node_modules/.prisma ./node_modules/.prisma
+
+# Install production dependencies (this will run postinstall and generate prisma client)
+RUN npm ci --workspace=@mobo/backend --omit=dev
+
+# Copy pre-built dist from CI
+COPY backend/dist ./backend/dist
 
 # Copy traineddata for OCR
 COPY backend/eng.traineddata ./backend/

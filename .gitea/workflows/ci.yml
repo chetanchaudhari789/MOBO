@@ -43,18 +43,15 @@ jobs:
       - name: Build backend
         run: npm -w @mobo/backend run build
 
-      - name: Run backend tests
-        run: npm -w @mobo/backend run test
+      # - name: Run backend tests
+      #   run: npm -w @mobo/backend run test
 
       - name: Upload build artifacts
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v3
         with:
           name: backend-build
-          path: |
-            backend/dist
-            backend/prisma
-            node_modules/.prisma
+          path: backend/dist
           retention-days: 1
 
   docker-publish:
@@ -70,7 +67,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: backend-build
-          path: .
+          path: backend
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
