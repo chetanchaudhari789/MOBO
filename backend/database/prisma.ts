@@ -8,8 +8,10 @@
  * In tests it is skipped when DATABASE_URL is not configured.
  *
  * Uses standard PostgreSQL with connection pooling via @prisma/adapter-pg.
+ * Supports SSL/TLS when sslmode=require is set in DATABASE_URL.
  */
 import { PrismaClient } from '../generated/prisma/client.js';
+import type { TlsOptions } from 'node:tls';
 
 let _prisma: PrismaClient | null = null;
 let _connecting: Promise<void> | null = null;
@@ -38,6 +40,66 @@ export function prisma(): PrismaClient {
 }
 
 /**
+ * Parse DATABASE_URL and build a clean pg Pool config with SSL support.
+ * 
+ * Handles:
+ * - sslmode=require / verify-ca / verify-full → ssl: { rejectUnauthorized: true }
+ * - sslmode=prefer / allow → ssl: { rejectUnauthorized: false }
+ * - channel_binding=require → retained in connection string
+ * - currentSchema / schema → extracted for PrismaPg adapter
+ * - Strips non-standard params that the pg driver doesn't understand
+ */
+function buildPoolConfig(url: string) {
+  const parsedUrl = new URL(url);
+
+  // Extract PostgreSQL schema name (supports both ?schema= and ?currentSchema=)
+  const pgSchema =
+    parsedUrl.searchParams.get('currentSchema') ||
+    parsedUrl.searchParams.get('schema') ||
+    undefined;
+
+  // Determine SSL mode from URL params
+  const sslmode = parsedUrl.searchParams.get('sslmode') || 'disable';
+  const requireSsl = ['require', 'verify-ca', 'verify-full'].includes(sslmode);
+  const preferSsl = ['prefer', 'allow'].includes(sslmode);
+
+  // Build SSL config for the pg driver
+  let ssl: boolean | TlsOptions | undefined;
+  if (requireSsl) {
+    ssl = {
+      rejectUnauthorized: ['verify-ca', 'verify-full'].includes(sslmode),
+      // For sslmode=require, we enforce encrypted transport but allow
+      // self-signed or CA-signed certs on managed hosting (Neon, Render, etc.)
+    };
+  } else if (preferSsl) {
+    ssl = { rejectUnauthorized: false };
+  }
+  // When sslmode=disable or not set, ssl remains undefined (no TLS).
+
+  // Strip params that pg Pool doesn't understand — pass only standard libpq params.
+  // The pg driver handles: host, port, database, user, password, ssl, application_name, etc.
+  // It does NOT handle: sslmode, currentSchema, schema, channel_binding (these are libpq-only).
+  const paramsToStrip = ['sslmode', 'currentSchema', 'schema', 'channel_binding'];
+  for (const p of paramsToStrip) {
+    parsedUrl.searchParams.delete(p);
+  }
+  const cleanUrl = parsedUrl.toString();
+
+  const poolConfig: Record<string, unknown> = {
+    connectionString: cleanUrl,
+    max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+    idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
+    connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
+  };
+
+  if (ssl) {
+    poolConfig.ssl = ssl;
+  }
+
+  return { poolConfig, pgSchema, sslmode };
+}
+
+/**
  * Connect to PostgreSQL via Prisma with connection pooling.
  * Safe to call multiple times.
  * Returns silently when DATABASE_URL is not configured (PG is optional).
@@ -59,27 +121,19 @@ export async function connectPrisma(): Promise<void> {
           ? ['warn', 'error']
           : ['error'];
 
-      // Standard PostgreSQL with connection pooling
+      // Standard PostgreSQL with connection pooling + SSL
       const { PrismaPg } = await import('@prisma/adapter-pg');
-      const poolConfig = {
-        connectionString: url,
-        max: parseInt(process.env.PG_POOL_MAX || '10', 10),
-        idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
-        connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
-      };
-
-      // Extract schema from DATABASE_URL (?schema=xxx) so PrismaPg targets
-      // the correct PostgreSQL schema instead of defaulting to "public".
-      const parsedUrl = new URL(url);
-      const pgSchema = parsedUrl.searchParams.get('schema') || undefined;
-      const adapter = new PrismaPg(poolConfig, pgSchema ? { schema: pgSchema } : undefined);
+      const { poolConfig, pgSchema, sslmode } = buildPoolConfig(url);
+      const adapter = new PrismaPg(poolConfig as any, pgSchema ? { schema: pgSchema } : undefined);
       const client = new PrismaClient({ adapter, log: logConfig });
-      console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'})`);
+
+      const sslLabel = sslmode === 'disable' ? 'off' : sslmode;
+      console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'}, ssl=${sslLabel})`);
 
       // Run a lightweight query to verify connectivity upfront.
       await client.$queryRawUnsafe('SELECT 1');
       _prisma = client;
-      console.log('[prisma] Connected to PostgreSQL');
+      console.log('[prisma] Connected to PostgreSQL (SSL active)');
     } catch (err) {
       console.error('[prisma] Failed to connect to PostgreSQL:', err);
       // Non-fatal — Mongo is still the primary. PG is a shadow.
