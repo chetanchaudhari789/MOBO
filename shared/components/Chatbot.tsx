@@ -474,7 +474,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
       const code = String(err?.code || '').toUpperCase();
       const isRate = code === 'RATE_LIMITED' || code === 'DAILY_LIMIT_REACHED' || code === 'TOO_FREQUENT';
       const lowerText = safeText.toLowerCase();
-      if (lowerText.includes('loot deals') || lowerText.includes('deals')) {
+      if (lowerText.includes('deals')) {
         addMessage({
           id: makeMessageId(),
           role: 'model',

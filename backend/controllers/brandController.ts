@@ -653,11 +653,13 @@ export function makeBrandController() {
         if (typeof body.totalSlots !== 'undefined') update.totalSlots = Number(body.totalSlots);
         if (typeof body.allowedAgencies !== 'undefined') update.allowedAgencyCodes = body.allowedAgencies;
 
-        // Economic sanity: payout must not exceed selling price.
+        // Economic sanity: payout must not exceed selling price (skip for Review/Rating deals where price=0).
         const effectivePrice = update.pricePaise ?? (existing as any).pricePaise ?? 0;
         const effectivePayout = update.payoutPaise ?? (existing as any).payoutPaise ?? 0;
         const effectiveOriginalPrice = update.originalPricePaise ?? (existing as any).originalPricePaise ?? effectivePrice;
-        if (effectivePayout > effectivePrice) {
+        const dealType = String(update.dealType ?? (existing as any).dealType ?? '').trim();
+        const skipPayoutGuard = dealType === 'Review' || dealType === 'Rating';
+        if (!skipPayoutGuard && effectivePayout > effectivePrice) {
           throw new AppError(400, 'INVALID_ECONOMICS', 'Payout cannot exceed selling price');
         }
         if (effectiveOriginalPrice < effectivePrice && effectiveOriginalPrice > 0) {

@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errors.js';
 import { getRequester } from '../services/authz.js';
 import { PushSubscriptionModel } from '../models/PushSubscription.js';
 import { getVapidPublicKey } from '../services/pushNotifications.js';
+import { writeAuditLog } from '../services/audit.js';
 
 const subscriptionSchema = z.object({
   endpoint: z.string().url(),
@@ -65,6 +66,14 @@ export function makePushNotificationsController(env: Env) {
           { upsert: true, new: true }
         );
 
+        writeAuditLog({
+          req,
+          action: 'PUSH_SUBSCRIBED',
+          entityType: 'PushSubscription',
+          entityId: body.subscription.endpoint,
+          metadata: { app: body.app },
+        });
+
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -79,6 +88,15 @@ export function makePushNotificationsController(env: Env) {
         const body = unsubscribeSchema.parse(req.body || {});
 
         await PushSubscriptionModel.deleteOne({ endpoint: body.endpoint, userId });
+
+        writeAuditLog({
+          req,
+          action: 'PUSH_UNSUBSCRIBED',
+          entityType: 'PushSubscription',
+          entityId: body.endpoint,
+          metadata: {},
+        });
+
         res.status(204).send();
       } catch (err) {
         next(err);

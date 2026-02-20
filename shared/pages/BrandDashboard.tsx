@@ -1520,10 +1520,10 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
     const originalPrice = Number(form.originalPrice);
 
     if (!form.title.trim()) { toast.error('Title is required'); return; }
-    if (!Number.isFinite(price) || price <= 0) { toast.error('Price must be greater than 0'); return; }
+    if (!Number.isFinite(price) || price < 0) { toast.error('Deal price must be 0 or more'); return; }
     if (!Number.isFinite(originalPrice) || originalPrice < 0) { toast.error('Original price must be 0 or more'); return; }
     if (!Number.isFinite(payout) || payout < 0) { toast.error('Payout must be 0 or more'); return; }
-    if (payout > price) { toast.error('Payout cannot exceed price'); return; }
+    if (form.dealType !== 'Review' && form.dealType !== 'Rating' && payout > price) { toast.error('Payout cannot exceed price'); return; }
     if (!Number.isFinite(totalSlots) || totalSlots < 1) { toast.error('Total slots must be at least 1'); return; }
 
     try {
@@ -1722,7 +1722,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div>
                     <label className="text-xs font-bold text-zinc-400 uppercase ml-1 mb-2 block">
-                      MRP / Product Price (₹)
+                      Product Price (₹)
                     </label>
                     <input
                       type="number"

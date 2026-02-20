@@ -1696,8 +1696,8 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       toast.error('Image URL is required');
       return;
     }
-    if (!Number.isFinite(price) || price <= 0) {
-      toast.error('Price must be greater than 0');
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error('Deal price must be 0 or more');
       return;
     }
     if (!Number.isFinite(originalPrice) || originalPrice < 0) {
@@ -2340,7 +2340,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                    MRP / Product Price (₹)
+                    Product Price (₹)
                   </label>
                   <input
                     type="number"

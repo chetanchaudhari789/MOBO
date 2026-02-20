@@ -339,7 +339,7 @@ export function aiRoutes(env: Env): Router {
       const extractCount = () => {
         const topMatch = normalizedMessage.match(/top\s+(\d{1,2})/i);
         if (topMatch?.[1]) return Math.max(1, Math.min(50, Number(topMatch[1])));
-        const countMatch = normalizedMessage.match(/(\d{1,2})\s+(?:deals|loot)/i);
+        const countMatch = normalizedMessage.match(/(\d{1,2})\s+deals/i);
         if (countMatch?.[1]) return Math.max(1, Math.min(50, Number(countMatch[1])));
         return null;
       };
@@ -347,7 +347,7 @@ export function aiRoutes(env: Env): Router {
       if (hasProducts) {
         const count = extractCount();
         const wantsAll = normalizedMessage.includes('all deals') || normalizedMessage.includes('all available deals');
-        const wantsLoot = normalizedMessage.includes('loot deals') || normalizedMessage.includes('deals');
+        const wantsLoot = normalizedMessage.includes('deals');
         const wantsLowest = normalizedMessage.includes('lowest') || normalizedMessage.includes('cheapest');
         const wantsSpecific =
           normalizedMessage.includes('show') ||
