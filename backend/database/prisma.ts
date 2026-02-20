@@ -67,9 +67,14 @@ export async function connectPrisma(): Promise<void> {
         idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
         connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
       };
-      const adapter = new PrismaPg(poolConfig);
+
+      // Extract schema from DATABASE_URL (?schema=xxx) so PrismaPg targets
+      // the correct PostgreSQL schema instead of defaulting to "public".
+      const parsedUrl = new URL(url);
+      const pgSchema = parsedUrl.searchParams.get('schema') || undefined;
+      const adapter = new PrismaPg(poolConfig, pgSchema ? { schema: pgSchema } : undefined);
       const client = new PrismaClient({ adapter, log: logConfig });
-      console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max})`);
+      console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'})`);
 
       // Run a lightweight query to verify connectivity upfront.
       await client.$queryRawUnsafe('SELECT 1');
