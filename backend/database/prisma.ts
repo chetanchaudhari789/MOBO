@@ -43,11 +43,15 @@ export function prisma(): PrismaClient {
  * Parse DATABASE_URL and build a clean pg Pool config with SSL support.
  * 
  * Handles:
- * - sslmode=require / verify-ca / verify-full → ssl: { rejectUnauthorized: true }
- * - sslmode=prefer / allow → ssl: { rejectUnauthorized: false }
- * - channel_binding=require → retained in connection string
+ * - sslmode=require / prefer / allow → ssl: { rejectUnauthorized: false }
+ * - sslmode=verify-ca / verify-full → ssl: { rejectUnauthorized: true }
+ * - channel_binding (libpq-only) → stripped from connection string
  * - currentSchema / schema → extracted for PrismaPg adapter
  * - Strips non-standard params that the pg driver doesn't understand
+ *
+ * Note: sslmode=prefer / allow have "try non-SSL first" semantics in libpq, but
+ * node-postgres does not implement that fallback. These modes are treated the same
+ * as `require` (TLS always on, certificate not verified).
  */
 function buildPoolConfig(url: string) {
   const parsedUrl = new URL(url);
@@ -131,9 +135,9 @@ export async function connectPrisma(): Promise<void> {
       console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'}, ssl=${sslLabel})`);
 
       // Run a lightweight query to verify connectivity upfront.
-      await client.$queryRawUnsafe('SELECT 1');
+      await client.$queryRaw`SELECT 1`;
       _prisma = client;
-      console.log('[prisma] Connected to PostgreSQL (SSL active)');
+      console.log(`[prisma] Connected to PostgreSQL (SSL ${sslLabel})`);
     } catch (err) {
       console.error('[prisma] Failed to connect to PostgreSQL:', err);
       // Non-fatal — Mongo is still the primary. PG is a shadow.
