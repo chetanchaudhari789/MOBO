@@ -3,7 +3,7 @@ import { loadDotenv } from './config/dotenvLoader.js';
 loadDotenv();
 import { loadEnv, type Env } from './config/env.js';
 import { connectMongo, disconnectMongo } from './database/mongo.js';
-import { connectPrisma, disconnectPrisma } from './database/prisma.js';
+import { connectPrisma, disconnectPrisma, isPrismaAvailable } from './database/prisma.js';
 import { registerDualWriteHooks } from './database/dualWriteHooks.js';
 import { createApp } from './app.js';
 import type { Server } from 'node:http';
@@ -99,8 +99,13 @@ async function main() {
 
   await connectMongo(env);
 
-  // Connect PostgreSQL (Prisma) if configured. Non-fatal — degrades gracefully.
+  // Connect PostgreSQL (Prisma) — PRIMARY database.
   await connectPrisma();
+
+  if (!isPrismaAvailable()) {
+    console.error('[FATAL] PostgreSQL connection failed. Cannot start without primary database.');
+    process.exit(1);
+  }
 
   // Register Mongoose post-hooks for dual-write to PG.
   // Hooks fire only when DUAL_WRITE_ENABLED=true AND Prisma is connected.

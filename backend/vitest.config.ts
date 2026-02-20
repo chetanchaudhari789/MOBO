@@ -2,11 +2,11 @@ import { defineConfig } from 'vitest/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
-// On Windows, mongodb-memory-server uses the OS temp directory for downloads and DB files.
-// If the system drive is low on space, mongod can crash (fassert) or downloads can fail (ENOSPC).
-// Point these to a workspace cache directory instead.
+// Load .env so DATABASE_URL (PostgreSQL) is available in tests.
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(rootDir, '.env') });
 
 if (process.platform === 'win32') {
   const cacheDir = path.resolve(rootDir, '../.cache/mongodb-memory-server');
@@ -31,6 +31,7 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/build/**', '**/coverage/**'],
     environment: 'node',
     globals: true,
+    setupFiles: ['./tests/setup.ts'],
     // Tests share a singleton mongoose connection + in-memory mongod instance.
     // Keep a single worker and disable isolation to avoid start/stop races.
     maxWorkers: 1,

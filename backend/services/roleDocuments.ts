@@ -1,43 +1,67 @@
-import type { ClientSession } from 'mongoose';
+import { Types } from 'mongoose';
 
 import { AppError } from '../middleware/errors.js';
-import { AgencyModel } from '../models/Agency.js';
-import { BrandModel } from '../models/Brand.js';
-import { MediatorProfileModel } from '../models/MediatorProfile.js';
-import { ShopperProfileModel } from '../models/ShopperProfile.js';
-import { dualWriteAgency, dualWriteBrand, dualWriteMediatorProfile, dualWriteShopperProfile } from './dualWrite.js';
+import { prisma } from '../database/prisma.js';
+import { isPrismaAvailable } from '../database/prisma.js';
 
 type AnyUser = any;
 
-export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?: ClientSession }) {
+// UUID v4 regex — 8-4-4-4-12 hex with dashes.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?: any; tx?: any }) {
+  // When Prisma/PG is not connected (e.g. test environments without DATABASE_URL), skip silently.
+  if (!args.tx && !isPrismaAvailable()) return;
+
   const user = args.user;
   const roles: string[] = Array.isArray(user?.roles) ? user.roles : [];
   const name = String(user?.name ?? '').trim() || 'User';
-  const userId = user?._id;
-  if (!userId) throw new AppError(500, 'MISSING_USER_ID', 'Cannot ensure role documents: user is missing _id');
+  const db = args.tx ?? prisma();
 
-  const createdBy = user?.createdBy;
-  const sessionOpt = args.session ? { session: args.session } : undefined;
+  // Resolve the PG UUID for this user.
+  // If user.id is already a UUID (from Prisma), use it.
+  // If user.id is a MongoDB ObjectId hex string, look up the PG user by mongoId.
+  let pgUserId = String(user?.id ?? '');
+  if (pgUserId && !UUID_RE.test(pgUserId)) {
+    // user.id looks like a MongoDB ObjectId — resolve to PG UUID via mongoId lookup.
+    const mongoId = user?._id ? String(user._id) : pgUserId;
+    const pgUser = await db.user.findFirst({ where: { mongoId, deletedAt: null }, select: { id: true } });
+    if (!pgUser) {
+      // No PG user exists for this MongoDB user — skip silently (test/migration scenarios).
+      return;
+    }
+    pgUserId = pgUser.id;
+  }
+  if (!pgUserId) throw new AppError(500, 'MISSING_USER_ID', 'Cannot ensure role documents: user is missing id');
+
+  const createdBy = user?.createdBy ? String(user.createdBy) : undefined;
+  // Also resolve createdBy if it's a MongoDB ObjectId.
+  let resolvedCreatedBy = createdBy;
+  if (resolvedCreatedBy && !UUID_RE.test(resolvedCreatedBy)) {
+    const pgCreator = await db.user.findFirst({ where: { mongoId: resolvedCreatedBy, deletedAt: null }, select: { id: true } });
+    resolvedCreatedBy = pgCreator?.id ?? undefined;
+  }
 
   if (roles.includes('agency')) {
     const agencyCode = String(user?.mediatorCode ?? '').trim();
     if (!agencyCode) throw new AppError(409, 'MISSING_AGENCY_CODE', 'Agency user is missing a code');
 
-    const agencyDoc = await AgencyModel.findOneAndUpdate(
-      { agencyCode },
-      {
-        $set: {
-          name,
-          agencyCode,
-          ownerUserId: userId,
-          status: String(user?.status ?? 'active'),
-          updatedBy: user?.updatedBy,
-        },
-        $setOnInsert: { createdBy },
+    await db.agency.upsert({
+      where: { agencyCode },
+      update: {
+        name,
+        ownerUserId: pgUserId,
+        status: String(user?.status ?? 'active'),
       },
-      { upsert: true, new: true, ...(sessionOpt ?? {}) }
-    );
-    if (agencyDoc) dualWriteAgency(agencyDoc).catch(() => {});
+      create: {
+        mongoId: new Types.ObjectId().toString(),
+        agencyCode,
+        name,
+        ownerUserId: pgUserId,
+        status: String(user?.status ?? 'active'),
+        createdBy: resolvedCreatedBy,
+      },
+    });
   }
 
   if (roles.includes('brand')) {
@@ -48,58 +72,67 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
       ? user.connectedAgencies.map((c: unknown) => String(c ?? '').trim()).filter(Boolean)
       : [];
 
-    const brandDoc = await BrandModel.findOneAndUpdate(
-      { brandCode },
-      {
-        $set: {
-          name,
-          brandCode,
-          ownerUserId: userId,
-          status: String(user?.status ?? 'active'),
-          connectedAgencyCodes,
-          updatedBy: user?.updatedBy,
-        },
-        $setOnInsert: { createdBy },
+    await db.brand.upsert({
+      where: { brandCode },
+      update: {
+        name,
+        ownerUserId: pgUserId,
+        status: String(user?.status ?? 'active'),
+        connectedAgencyCodes,
       },
-      { upsert: true, new: true, ...(sessionOpt ?? {}) }
-    );
-    if (brandDoc) dualWriteBrand(brandDoc).catch(() => {});
+      create: {
+        mongoId: new Types.ObjectId().toString(),
+        brandCode,
+        name,
+        ownerUserId: pgUserId,
+        status: String(user?.status ?? 'active'),
+        connectedAgencyCodes,
+        createdBy: resolvedCreatedBy,
+      },
+    });
   }
 
   if (roles.includes('mediator')) {
     const mediatorCode = String(user?.mediatorCode ?? '').trim();
     if (!mediatorCode) throw new AppError(409, 'MISSING_MEDIATOR_CODE', 'Mediator user is missing a code');
 
-    const mediatorDoc = await MediatorProfileModel.findOneAndUpdate(
-      { mediatorCode },
-      {
-        $set: {
-          userId,
-          mediatorCode,
-          parentAgencyCode: String(user?.parentCode ?? '').trim() || undefined,
-          status: String(user?.status ?? 'active'),
-          updatedBy: user?.updatedBy,
-        },
-        $setOnInsert: { createdBy },
+    await db.mediatorProfile.upsert({
+      where: { mediatorCode },
+      update: {
+        userId: pgUserId,
+        parentAgencyCode: String(user?.parentCode ?? '').trim() || null,
+        status: String(user?.status ?? 'active'),
       },
-      { upsert: true, new: true, ...(sessionOpt ?? {}) }
-    );
-    if (mediatorDoc) dualWriteMediatorProfile(mediatorDoc).catch(() => {});
+      create: {
+        mongoId: new Types.ObjectId().toString(),
+        userId: pgUserId,
+        mediatorCode,
+        parentAgencyCode: String(user?.parentCode ?? '').trim() || null,
+        status: String(user?.status ?? 'active'),
+        createdBy: resolvedCreatedBy,
+      },
+    });
   }
 
   if (roles.includes('shopper')) {
-    const shopperDoc = await ShopperProfileModel.findOneAndUpdate(
-      { userId },
-      {
-        $set: {
-          userId,
-          defaultMediatorCode: String(user?.parentCode ?? '').trim() || undefined,
-          updatedBy: user?.updatedBy,
+    // Use a composite unique lookup via userId for shopper profiles
+    const existing = await db.shopperProfile.findFirst({ where: { userId: pgUserId } });
+    if (existing) {
+      await db.shopperProfile.update({
+        where: { id: existing.id },
+        data: {
+          defaultMediatorCode: String(user?.parentCode ?? '').trim() || null,
         },
-        $setOnInsert: { createdBy },
-      },
-      { upsert: true, new: true, ...(sessionOpt ?? {}) }
-    );
-    if (shopperDoc) dualWriteShopperProfile(shopperDoc).catch(() => {});
+      });
+    } else {
+      await db.shopperProfile.create({
+        data: {
+          mongoId: new Types.ObjectId().toString(),
+          userId: pgUserId,
+          defaultMediatorCode: String(user?.parentCode ?? '').trim() || null,
+          createdBy: resolvedCreatedBy,
+        },
+      });
+    }
   }
 }

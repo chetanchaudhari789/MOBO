@@ -1,13 +1,23 @@
-import mongoose from 'mongoose';
-import { WalletModel } from '../models/Wallet.js';
-import { TransactionModel, type TransactionType } from '../models/Transaction.js';
+import { Types } from 'mongoose';
+import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { writeAuditLog } from './audit.js';
-import { dualWriteWallet, dualWriteTransaction } from './dualWrite.js';
+
+/** Re-export the union so callers don't have to change imports. */
+export type TransactionType =
+  | 'brand_deposit' | 'platform_fee'
+  | 'commission_lock' | 'commission_settle'
+  | 'cashback_lock' | 'cashback_settle'
+  | 'order_settlement_debit'
+  | 'commission_reversal' | 'margin_reversal'
+  | 'agency_payout' | 'agency_receipt'
+  | 'payout_request' | 'payout_complete' | 'payout_failed'
+  | 'refund';
 
 export type WalletMutationInput = {
   idempotencyKey: string;
   type: TransactionType;
+  /** PG UUID of the wallet owner */
   ownerUserId: string;
   amountPaise: number;
   fromUserId?: string;
@@ -16,33 +26,34 @@ export type WalletMutationInput = {
   campaignId?: string;
   payoutId?: string;
   metadata?: unknown;
-  /** When provided, the caller owns the transaction session. No new session is created. */
-  session?: mongoose.ClientSession;
+  /** When provided, the caller owns the Prisma interactive transaction. */
+  tx?: any;
 };
 
+/**
+ * Concurrency-safe wallet creation via Prisma upsert.
+ * @param ownerUserId PG UUID of the user
+ */
 export async function ensureWallet(ownerUserId: string) {
-  // Concurrency-safe wallet creation: multiple requests may race during onboarding/settlement.
+  const db = prisma();
   try {
-    return await WalletModel.findOneAndUpdate(
-      { ownerUserId, deletedAt: null },
-      {
-        $setOnInsert: {
-          ownerUserId,
-          currency: 'INR',
-          availablePaise: 0,
-          pendingPaise: 0,
-          lockedPaise: 0,
-          version: 0,
-        },
+    return await db.wallet.upsert({
+      where: { ownerUserId },
+      update: {},
+      create: {
+        mongoId: new Types.ObjectId().toString(),
+        ownerUserId,
+        currency: 'INR',
+        availablePaise: 0,
+        pendingPaise: 0,
+        lockedPaise: 0,
+        version: 0,
       },
-      { upsert: true, new: true }
-    );
+    });
   } catch (err: any) {
-    // In rare races, two upserts may attempt an insert concurrently and one loses with E11000.
-    // If so, just read the wallet that won.
-    const code = Number(err?.code ?? err?.errorResponse?.code);
-    if (code === 11000) {
-      const existing = await WalletModel.findOne({ ownerUserId, deletedAt: null });
+    // Handle P2002 (unique constraint violation) same as MongoDB E11000
+    if (err?.code === 'P2002') {
+      const existing = await db.wallet.findUnique({ where: { ownerUserId } });
       if (existing) return existing;
     }
     throw err;
@@ -53,183 +64,137 @@ export async function applyWalletCredit(input: WalletMutationInput) {
   if (input.amountPaise <= 0) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be positive');
   if (!Number.isInteger(input.amountPaise)) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be an integer (paise)');
 
-  const externalSession = input.session;
-
-  const execute = async (session: mongoose.ClientSession) => {
-    // Use majority readConcern for idempotency to avoid stale reads after failover.
-    // Query by idempotencyKey alone — the key is globally unique (partial unique index)
-    // and already scoped per-operation. Adding $or on fromUserId/toUserId breaks
-    // idempotency when those fields are not set by the caller.
-    const existingTx = await TransactionModel.findOne({
-      idempotencyKey: input.idempotencyKey,
-    })
-      .read('primary')
-      .session(session);
+  const execute = async (tx: any) => {
+    // Idempotency: if a transaction with this key already exists, return it.
+    const existingTx = await tx.transaction.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+    });
     if (existingTx) return existingTx;
 
-    const wallet = await WalletModel.findOneAndUpdate(
-      { ownerUserId: input.ownerUserId, deletedAt: null },
-      {
-        $setOnInsert: {
-          ownerUserId: input.ownerUserId,
-          currency: 'INR',
-          pendingPaise: 0,
-          lockedPaise: 0,
-        },
-        $inc: { availablePaise: input.amountPaise, version: 1 },
+    // Upsert wallet and atomically increment balance
+    const wallet = await tx.wallet.upsert({
+      where: { ownerUserId: input.ownerUserId },
+      update: {
+        availablePaise: { increment: input.amountPaise },
+        version: { increment: 1 },
       },
-      { upsert: true, new: true, session }
-    );
+      create: {
+        mongoId: new Types.ObjectId().toString(),
+        ownerUserId: input.ownerUserId,
+        currency: 'INR',
+        availablePaise: input.amountPaise,
+        pendingPaise: 0,
+        lockedPaise: 0,
+        version: 1,
+      },
+    });
 
-    // Safety: prevent runaway balances (validated in env schema, default 1 crore paise = ₹1,00,000).
+    // Safety: prevent runaway balances (default 1 crore paise = ₹1,00,000).
     const MAX_BALANCE_PAISE = Number(process.env.WALLET_MAX_BALANCE_PAISE) || 1_00_00_000;
-    if (wallet && wallet.availablePaise > MAX_BALANCE_PAISE) {
+    if (wallet.availablePaise > MAX_BALANCE_PAISE) {
       throw new AppError(409, 'BALANCE_LIMIT_EXCEEDED', 'Wallet balance limit exceeded');
     }
 
-    const tx = await TransactionModel.create(
-      [
-        {
-          idempotencyKey: input.idempotencyKey,
-          type: input.type,
-          status: 'completed',
-          amountPaise: input.amountPaise,
-          currency: 'INR',
-          walletId: wallet?._id,
-          fromUserId: input.fromUserId,
-          toUserId: input.toUserId,
-          orderId: input.orderId,
-          campaignId: input.campaignId,
-          payoutId: input.payoutId,
-          metadata: input.metadata,
-        },
-      ],
-      { session }
-    );
+    const txn = await tx.transaction.create({
+      data: {
+        mongoId: new Types.ObjectId().toString(),
+        idempotencyKey: input.idempotencyKey,
+        type: input.type as any,
+        status: 'completed',
+        amountPaise: input.amountPaise,
+        currency: 'INR',
+        walletId: wallet.id,
+        fromUserId: input.fromUserId,
+        toUserId: input.toUserId,
+        orderId: input.orderId,
+        campaignId: input.campaignId,
+        payoutId: input.payoutId,
+        metadata: input.metadata as any,
+      },
+    });
 
-    return tx[0];
+    return txn;
   };
 
-  // If the caller provides an external session, run within it (no new session/transaction).
-  if (externalSession) {
-    const result = await execute(externalSession);
+  // If the caller provides an external tx, run within it (no new transaction).
+  if (input.tx) {
+    const result = await execute(input.tx);
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    // Dual-write wallet & transaction to PG (fire-and-forget)
-    if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
-    }
     return result;
   }
 
-  const session = await mongoose.startSession();
-  try {
-    const result = await session.withTransaction(() => execute(session));
-    writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    // Dual-write wallet & transaction to PG (fire-and-forget)
-    if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
-    }
-    return result;
-  } finally {
-    session.endSession();
-  }
+  const db = prisma();
+  const result = await db.$transaction(async (tx) => execute(tx));
+  writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+  return result;
 }
 
 export async function applyWalletDebit(input: WalletMutationInput) {
   if (input.amountPaise <= 0) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be positive');
   if (!Number.isInteger(input.amountPaise)) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be an integer (paise)');
 
-  const externalSession = input.session;
-
-  const execute = async (session: mongoose.ClientSession) => {
-    // Use majority readConcern for idempotency to avoid stale reads after failover.
-    // Query by idempotencyKey alone — the key is globally unique (partial unique index)
-    // and already scoped per-operation. Adding $or on fromUserId/toUserId breaks
-    // idempotency when those fields are not set by the caller.
-    const existingTx = await TransactionModel.findOne({
-      idempotencyKey: input.idempotencyKey,
-    })
-      .read('primary')
-      .session(session);
+  const execute = async (tx: any) => {
+    // Idempotency: if a transaction with this key already exists, return it.
+    const existingTx = await tx.transaction.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+    });
     if (existingTx) return existingTx;
 
-    // Use findOneAndUpdate with optimistic locking (version check)
-    const wallet = await WalletModel.findOneAndUpdate(
-      {
+    // Atomic debit with balance-floor check via updateMany
+    const updated = await tx.wallet.updateMany({
+      where: {
         ownerUserId: input.ownerUserId,
         deletedAt: null,
-        // Ensure sufficient funds
-        availablePaise: { $gte: input.amountPaise },
+        availablePaise: { gte: input.amountPaise },
       },
-      {
-        $inc: { availablePaise: -input.amountPaise, version: 1 },
+      data: {
+        availablePaise: { decrement: input.amountPaise },
+        version: { increment: 1 },
       },
-      { new: true, session }
-    );
+    });
 
-    if (!wallet) {
-      // Check if wallet exists but has insufficient funds
-      const existing = await WalletModel.findOne({
-        ownerUserId: input.ownerUserId,
-        deletedAt: null,
-      }).session(session);
-
-      if (!existing) throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+    if (updated.count === 0) {
+      // Distinguish wallet-not-found from insufficient-funds
+      const existing = await tx.wallet.findUnique({
+        where: { ownerUserId: input.ownerUserId },
+      });
+      if (!existing || existing.deletedAt) throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
       throw new AppError(409, 'INSUFFICIENT_FUNDS', 'Insufficient available balance');
     }
 
-    const tx = await TransactionModel.create(
-      [
-        {
-          idempotencyKey: input.idempotencyKey,
-          type: input.type,
-          status: 'completed',
-          amountPaise: input.amountPaise,
-          currency: 'INR',
-          walletId: wallet._id,
-          fromUserId: input.fromUserId,
-          toUserId: input.toUserId,
-          orderId: input.orderId,
-          campaignId: input.campaignId,
-          payoutId: input.payoutId,
-          metadata: input.metadata,
-        },
-      ],
-      { session }
-    );
+    // Re-read wallet to get the walletId for the transaction record
+    const wallet = await tx.wallet.findUnique({ where: { ownerUserId: input.ownerUserId } });
 
-    return tx[0];
+    const txn = await tx.transaction.create({
+      data: {
+        mongoId: new Types.ObjectId().toString(),
+        idempotencyKey: input.idempotencyKey,
+        type: input.type as any,
+        status: 'completed',
+        amountPaise: input.amountPaise,
+        currency: 'INR',
+        walletId: wallet?.id,
+        fromUserId: input.fromUserId,
+        toUserId: input.toUserId,
+        orderId: input.orderId,
+        campaignId: input.campaignId,
+        payoutId: input.payoutId,
+        metadata: input.metadata as any,
+      },
+    });
+
+    return txn;
   };
 
-  // If the caller provides an external session, run within it (no new session/transaction).
-  if (externalSession) {
-    const result = await execute(externalSession);
+  // If the caller provides an external tx, run within it (no new transaction).
+  if (input.tx) {
+    const result = await execute(input.tx);
     writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    // Dual-write wallet & transaction to PG (fire-and-forget)
-    if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
-    }
     return result;
   }
 
-  const session = await mongoose.startSession();
-  try {
-    const result = await session.withTransaction(() => execute(session));
-    writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
-    // Dual-write wallet & transaction to PG (fire-and-forget)
-    if (result) {
-      const wallet = await WalletModel.findOne({ ownerUserId: input.ownerUserId, deletedAt: null }).lean();
-      if (wallet) dualWriteWallet(wallet).catch(() => {});
-      dualWriteTransaction(result).catch(() => {});
-    }
-    return result;
-  } finally {
-    session.endSession();
-  }
+  const db = prisma();
+  const result = await db.$transaction(async (tx) => execute(tx));
+  writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
+  return result;
 }

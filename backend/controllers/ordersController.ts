@@ -1,12 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { Env } from '../config/env.js';
-import mongoose from 'mongoose';
+import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
-import { UserModel } from '../models/User.js';
-import { CampaignModel } from '../models/Campaign.js';
-import { DealModel } from '../models/Deal.js';
-import { OrderModel } from '../models/Order.js';
-import type { OrderWorkflowStatus } from '../models/Order.js';
+import { prisma as db } from '../database/prisma.js';
+import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiOrder } from '../utils/uiMappers.js';
@@ -16,6 +13,9 @@ import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { isGeminiConfigured, verifyProofWithAi, verifyRatingScreenshotWithAi, verifyReturnWindowWithAi } from '../services/aiService.js';
+
+// UUID v4 regex — 8-4-4-4-12 hex with dashes.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { writeAuditLog } from '../services/audit.js';
 
 export function makeOrdersController(env: Env) {
@@ -40,10 +40,19 @@ export function makeOrdersController(env: Env) {
     }
   };
   const findOrderForProof = async (orderId: string) => {
-    const byId = await OrderModel.findById(orderId).lean();
-    if (byId && !byId.deletedAt) return byId;
-    const byExternal = await OrderModel.findOne({ externalOrderId: orderId, deletedAt: null }).lean();
-    if (byExternal) return byExternal;
+    const orderWhere = UUID_RE.test(orderId)
+      ? { OR: [{ id: orderId }, { mongoId: orderId }] as any, deletedAt: null }
+      : { mongoId: orderId, deletedAt: null };
+    const byId = await db().order.findFirst({
+      where: orderWhere as any,
+      include: { items: true },
+    });
+    if (byId) return pgOrder(byId);
+    const byExternal = await db().order.findFirst({
+      where: { externalOrderId: orderId, deletedAt: null },
+      include: { items: true },
+    });
+    if (byExternal) return pgOrder(byExternal);
     return null;
   };
   const resolveProofValue = (order: any, proofType: string) => {
@@ -100,12 +109,12 @@ export function makeOrdersController(env: Env) {
             const order = await findOrderForProof(orderId);
             if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-            const { roles, user, userId } = getRequester(req);
+            const { roles, user, userId, pgUserId } = getRequester(req);
             if (!isPrivileged(roles)) {
               let allowed = false;
 
               if (roles.includes('brand')) {
-                const sameBrand = String(order.brandUserId || '') === String(user?._id || userId);
+                const sameBrand = String(order.brandUserId || '') === pgUserId;
                 const brandName = String(order.brandName || '').trim();
                 const sameBrandName = !!brandName && brandName === String(user?.name || '').trim();
                 allowed = sameBrand || sameBrandName;
@@ -117,14 +126,15 @@ export function makeOrdersController(env: Env) {
                 if (agencyName && String(order.agencyName || '').trim() === agencyName) {
                   allowed = true;
                 } else if (agencyCode && String(order.managerName || '').trim()) {
-                  const mediator = await UserModel.findOne({
-                    roles: 'mediator',
-                    mediatorCode: String(order.managerName || '').trim(),
-                    parentCode: agencyCode,
-                    deletedAt: null,
-                  })
-                    .select({ _id: 1 })
-                    .lean();
+                  const mediator = await db().user.findFirst({
+                    where: {
+                      roles: { has: 'mediator' as any },
+                      mediatorCode: String(order.managerName || '').trim(),
+                      parentCode: agencyCode,
+                      deletedAt: null,
+                    },
+                    select: { id: true },
+                  });
                   allowed = !!mediator;
                 }
               }
@@ -135,7 +145,7 @@ export function makeOrdersController(env: Env) {
               }
 
               if (!allowed && roles.includes('shopper')) {
-                allowed = String(order.userId || '') === String(user?._id || userId);
+                allowed = String(order.userId || '') === pgUserId;
               }
 
               if (!allowed) throw new AppError(403, 'FORBIDDEN', 'Not allowed to access proof');
@@ -184,27 +194,33 @@ export function makeOrdersController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot access other user orders');
         }
 
-        const orders = await OrderModel.find({
-          userId,
-          deletedAt: null,
-        })
-          .sort({ createdAt: -1 })
-          .limit(2000)
-          .lean();
+        // Resolve mongoId/UUID → PG UUID for FK query
+        const userWhere = UUID_RE.test(userId)
+          ? { OR: [{ id: userId }, { mongoId: userId }] as any, deletedAt: null }
+          : { mongoId: userId, deletedAt: null };
+        const targetUser = await db().user.findFirst({ where: userWhere as any, select: { id: true } });
+        if (!targetUser) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
-        res.json(orders.map(toUiOrder));
+        const orders = await db().order.findMany({
+          where: { userId: targetUser.id, deletedAt: null },
+          include: { items: true },
+          orderBy: { createdAt: 'desc' },
+          take: 2000,
+        });
+
+        res.json(orders.map((o: any) => toUiOrder(pgOrder(o))));
       } catch (err) {
         next(err);
       }
     },
 
     createOrder: async (req: Request, res: Response, next: NextFunction) => {
-      const session = await mongoose.startSession();
       try {
         const body = createOrderSchema.parse(req.body);
 
         const requesterId = req.auth?.userId;
         const requesterRoles = req.auth?.roles ?? [];
+        const pgUserId = (req.auth as any)?.pgUserId ?? '';
         if (!requesterId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
         if (!requesterRoles.includes('shopper')) {
           throw new AppError(403, 'FORBIDDEN', 'Only buyers can create orders');
@@ -214,16 +230,21 @@ export function makeOrdersController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot create orders for another user');
         }
 
-        const user = await UserModel.findById(body.userId).lean();
-        if (!user || user.deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const userLookupWhere = UUID_RE.test(body.userId)
+          ? { OR: [{ id: body.userId }, { mongoId: body.userId }] as any, deletedAt: null }
+          : { mongoId: body.userId, deletedAt: null };
+        const user = await db().user.findFirst({ where: userLookupWhere as any });
+        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const userPgId = user.id;
+        const userMongoId = user.mongoId!;
 
         // Abuse prevention: basic velocity limits (per buyer).
         const now = new Date();
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
         const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         const [hourly, daily] = await Promise.all([
-          OrderModel.countDocuments({ userId: user._id, createdAt: { $gte: oneHourAgo }, deletedAt: null }),
-          OrderModel.countDocuments({ userId: user._id, createdAt: { $gte: oneDayAgo }, deletedAt: null }),
+          db().order.count({ where: { userId: userPgId, createdAt: { gte: oneHourAgo }, deletedAt: null } }),
+          db().order.count({ where: { userId: userPgId, createdAt: { gte: oneDayAgo }, deletedAt: null } }),
         ]);
         if (hourly >= 10 || daily >= 30) {
           throw new AppError(429, 'VELOCITY_LIMIT', 'Too many orders created. Please try later.');
@@ -233,7 +254,7 @@ export function makeOrdersController(env: Env) {
         const resolvedExternalOrderId = body.externalOrderId || (allowE2eBypass ? `E2E-${Date.now()}` : undefined);
 
         if (resolvedExternalOrderId) {
-          const dup = await OrderModel.exists({ externalOrderId: resolvedExternalOrderId, deletedAt: null });
+          const dup = await db().order.findFirst({ where: { externalOrderId: resolvedExternalOrderId, deletedAt: null } });
           if (dup) {
             throw new AppError(
               409,
@@ -246,17 +267,17 @@ export function makeOrdersController(env: Env) {
         // CRITICAL ANTI-FRAUD: Prevent duplicate orders for the same deal by the same buyer.
         // Important: allow upgrading a redirect-tracked pre-order (preOrderId) into a real order.
         const firstItem = body.items[0];
-        const duplicateQuery: any = {
-          userId: user._id,
-          'items.0.productId': firstItem.productId,
+        const duplicateWhere: any = {
+          userId: userPgId,
           deletedAt: null,
-          workflowStatus: { $nin: ['FAILED', 'REJECTED'] },
+          workflowStatus: { notIn: ['FAILED', 'REJECTED'] },
+          items: { some: { productId: firstItem.productId } },
         };
         if (body.preOrderId) {
-          duplicateQuery._id = { $ne: body.preOrderId };
+          duplicateWhere.mongoId = { not: body.preOrderId };
         }
 
-        const existingDealOrder = await OrderModel.findOne(duplicateQuery);
+        const existingDealOrder = await db().order.findFirst({ where: duplicateWhere });
         if (existingDealOrder) {
           throw new AppError(
             409,
@@ -315,10 +336,12 @@ export function makeOrdersController(env: Env) {
         } else {
           throw new AppError(503, 'AI_NOT_CONFIGURED', 'Proof validation is not configured.');
         }
-        const campaign = await CampaignModel.findOne({
-          _id: item.campaignId,
-          deletedAt: null,
-        }).session(session);
+        const campaignWhere = UUID_RE.test(item.campaignId)
+          ? { OR: [{ id: item.campaignId }, { mongoId: item.campaignId }], deletedAt: null }
+          : { mongoId: item.campaignId, deletedAt: null };
+        const campaign = await db().campaign.findFirst({
+          where: campaignWhere as any,
+        });
         if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
         if (String((campaign as any).status || '').toLowerCase() !== 'active') {
@@ -326,20 +349,19 @@ export function makeOrdersController(env: Env) {
         }
 
         // Non-negotiable isolation: buyer can only place orders for campaigns accessible to their lineage.
-        // Access is granted if either:
-        // - campaign is assigned to the buyer's agency (allowedAgencyCodes), OR
-        // - campaign has an explicit slot assignment for the buyer's mediator (assignments).
-        const mediatorUser = await UserModel.findOne({ roles: 'mediator', mediatorCode: upstreamMediatorCode, deletedAt: null })
-          .select({ parentCode: 1 })
-          .lean();
+        const mediatorUser = await db().user.findFirst({
+          where: { roles: { has: 'mediator' as any }, mediatorCode: upstreamMediatorCode, deletedAt: null },
+          select: { parentCode: true },
+        });
         const upstreamAgencyCode = String((mediatorUser as any)?.parentCode || '').trim();
 
         // Resolve actual agency name for the order record
         let resolvedAgencyName = 'Partner Agency';
         if (upstreamAgencyCode) {
-          const agencyUser = await UserModel.findOne({ roles: 'agency', mediatorCode: upstreamAgencyCode, deletedAt: null })
-            .select({ name: 1 })
-            .lean();
+          const agencyUser = await db().user.findFirst({
+            where: { roles: { has: 'agency' as any }, mediatorCode: upstreamAgencyCode, deletedAt: null },
+            select: { name: true },
+          });
           if (agencyUser?.name) resolvedAgencyName = String(agencyUser.name);
         }
 
@@ -347,10 +369,10 @@ export function makeOrdersController(env: Env) {
           ? ((campaign as any).allowedAgencyCodes as string[]).map((c) => String(c))
           : [];
 
-        const assignmentsObj = campaign.assignments instanceof Map
-          ? campaign.assignments
-          : new Map(Object.entries((campaign as any).assignments ?? {}));
-        const hasMediatorAssignment = upstreamMediatorCode ? assignmentsObj.has(upstreamMediatorCode) : false;
+        const assignmentsRaw = (campaign.assignments && typeof campaign.assignments === 'object' && !Array.isArray(campaign.assignments))
+          ? campaign.assignments as Record<string, any>
+          : {};
+        const hasMediatorAssignment = upstreamMediatorCode ? (upstreamMediatorCode in assignmentsRaw) : false;
         const hasAgencyAccess = upstreamAgencyCode ? allowedAgencyCodes.includes(upstreamAgencyCode) : false;
 
         if (!hasAgencyAccess && !hasMediatorAssignment) {
@@ -362,19 +384,20 @@ export function makeOrdersController(env: Env) {
           throw new AppError(409, 'SOLD_OUT', 'Sold Out Globally');
         }
 
-        // (Reuse assignmentsObj for slot math below)
-        const assignmentRaw = upstreamMediatorCode ? assignmentsObj.get(upstreamMediatorCode) : undefined;
+        const assignmentVal = upstreamMediatorCode ? assignmentsRaw[upstreamMediatorCode] : undefined;
         const assigned = upstreamMediatorCode
-          ? typeof assignmentRaw === 'number'
-            ? assignmentRaw
-            : Number((assignmentRaw as any)?.limit ?? 0)
+          ? typeof assignmentVal === 'number'
+            ? assignmentVal
+            : Number((assignmentVal as any)?.limit ?? 0)
           : 0;
         if (upstreamMediatorCode && assigned > 0) {
-          const mediatorSales = await OrderModel.countDocuments({
-            managerName: upstreamMediatorCode,
-            'items.0.campaignId': campaign._id,
-            status: { $ne: 'Cancelled' },
-            deletedAt: null,
+          const mediatorSales = await db().order.count({
+            where: {
+              managerName: upstreamMediatorCode,
+              items: { some: { campaignId: campaign.id } },
+              status: { not: 'Cancelled' as any },
+              deletedAt: null,
+            },
           });
           if (mediatorSales >= assigned) {
             throw new AppError(
@@ -387,135 +410,74 @@ export function makeOrdersController(env: Env) {
 
         // Commission snapshot: prefer published Deal record if productId is a Deal id.
         let commissionPaise = rupeesToPaise(item.commission);
-        const maybeDeal = await DealModel.findById(item.productId).lean();
-        if (maybeDeal && !maybeDeal.deletedAt) {
+        const dealWhere = UUID_RE.test(item.productId)
+          ? { OR: [{ id: item.productId }, { mongoId: item.productId }] as any, deletedAt: null }
+          : { mongoId: item.productId, deletedAt: null };
+        const maybeDeal = await db().deal.findFirst({ where: dealWhere as any });
+        if (maybeDeal) {
           commissionPaise = maybeDeal.commissionPaise;
         }
 
-        // Helper: atomically claim a slot inside the transaction to prevent overselling
-        const claimSlot = async (txSession: mongoose.ClientSession) => {
-          const claimed = await CampaignModel.findOneAndUpdate(
-            {
-              _id: campaign._id,
-              deletedAt: null,
-              $expr: { $lt: ['$usedSlots', '$totalSlots'] },
-            },
-            { $inc: { usedSlots: 1 } },
-            { session: txSession, new: true },
-          );
-          if (!claimed) {
+        // Atomic slot claim via raw SQL inside transaction to prevent overselling
+        const claimSlot = async (tx: any) => {
+          const claimed: any[] = await tx.$queryRaw`
+            UPDATE campaigns SET "usedSlots" = "usedSlots" + 1
+            WHERE id = ${campaign.id}::uuid AND "usedSlots" < "totalSlots" AND "deletedAt" IS NULL
+            RETURNING id
+          `;
+          if (!claimed.length) {
             throw new AppError(409, 'SOLD_OUT', 'Sold Out — another buyer claimed the last slot');
           }
-          return claimed;
         };
 
-        const created = await session.withTransaction(async () => {
+        const created = await db().$transaction(async (tx) => {
           // If this is an upgrade from a redirect-tracked pre-order, update that order instead of creating a new one.
           if (body.preOrderId) {
-            const existing = await OrderModel.findOne({
-              _id: body.preOrderId,
-              userId: user._id,
-              deletedAt: null,
-            }).session(session);
+            const preOrderWhere = UUID_RE.test(body.preOrderId)
+              ? { OR: [{ id: body.preOrderId }, { mongoId: body.preOrderId }] as any, userId: userPgId, deletedAt: null }
+              : { mongoId: body.preOrderId, userId: userPgId, deletedAt: null };
+            const existing = await tx.order.findFirst({
+              where: preOrderWhere as any,
+              include: { items: true },
+            });
             if (!existing) throw new AppError(404, 'ORDER_NOT_FOUND', 'Pre-order not found');
-            if ((existing as any).frozen) throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-            if (String((existing as any).workflowStatus) !== 'REDIRECTED') {
+            if (existing.frozen) throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
+            if (String(existing.workflowStatus) !== 'REDIRECTED') {
               throw new AppError(409, 'ORDER_STATE_MISMATCH', 'Pre-order is not in REDIRECTED state');
             }
 
             // Slot consumption happens on ORDERED — use atomic claim to prevent overselling.
-            await claimSlot(session);
+            await claimSlot(tx);
 
-            (existing as any).brandUserId = campaign.brandUserId;
-            (existing as any).items = body.items.map((it) => ({
-              productId: it.productId,
-              title: it.title,
-              image: it.image,
-              priceAtPurchasePaise: rupeesToPaise(it.priceAtPurchase),
-              commissionPaise,
-              campaignId: it.campaignId,
-              dealType: it.dealType,
-              quantity: it.quantity,
-              platform: it.platform,
-              brandName: it.brandName,
-            }));
-            (existing as any).totalPaise = body.items.reduce(
-              (acc, it) => acc + rupeesToPaise(it.priceAtPurchase) * it.quantity,
-              0
-            );
-            (existing as any).status = 'Ordered';
-            (existing as any).paymentStatus = 'Pending';
-            (existing as any).affiliateStatus = 'Unchecked';
-            (existing as any).managerName = upstreamMediatorCode;
-            (existing as any).agencyName = resolvedAgencyName;
-            (existing as any).buyerName = user.name;
-            (existing as any).buyerMobile = user.mobile;
-            (existing as any).brandName = item.brandName ?? campaign.brandName;
-            (existing as any).externalOrderId = resolvedExternalOrderId;
-            if (body.reviewerName) (existing as any).reviewerName = body.reviewerName;
-            // Merge screenshots instead of overwriting — preserves any proofs already
-            // attached to the pre-order (e.g. rating/review uploaded before upgrade).
-            (existing as any).screenshots = {
-              ...((existing as any).screenshots ?? {}),
-              ...(body.screenshots ?? {}),
-            };
-            (existing as any).reviewLink = body.reviewLink;
-            if (body.orderDate) {
-              const d = new Date(body.orderDate);
-              if (!isNaN(d.getTime())) (existing as any).orderDate = d;
-            }
-            if (body.soldBy) (existing as any).soldBy = body.soldBy;
-            if (body.extractedProductName) (existing as any).extractedProductName = body.extractedProductName;
-            (existing as any).events = pushOrderEvent((existing as any).events as any, {
-              type: 'ORDERED',
-              at: new Date(),
-              actorUserId: user._id,
-              metadata: { campaignId: String(campaign._id), mediatorCode: upstreamMediatorCode },
-            }) as any;
-            (existing as any).updatedBy = user._id;
-            await (existing as any).save({ session });
+            // Delete old items, then recreate with new data
+            await tx.orderItem.deleteMany({ where: { orderId: existing.id } });
 
-            // State machine: REDIRECTED -> ORDERED
-            const updated = await transitionOrderWorkflow({
-              orderId: String((existing as any)._id),
-              from: 'REDIRECTED',
-              to: 'ORDERED',
-              actorUserId: String(user._id),
-              metadata: { source: 'createOrder(preOrderId)' },
-              session,
-              env,
-            });
-            return updated;
-          }
-
-          // Atomic slot claim to prevent overselling under concurrency
-          await claimSlot(session);
-
-          const order = await OrderModel.create(
-            [
-              {
-                userId: user._id,
+            const existingEvents = Array.isArray(existing.events) ? (existing.events as any[]) : [];
+            const updated = await tx.order.update({
+              where: { id: existing.id },
+              data: {
                 brandUserId: campaign.brandUserId,
-                items: body.items.map((it) => ({
-                  productId: it.productId,
-                  title: it.title,
-                  image: it.image,
-                  priceAtPurchasePaise: rupeesToPaise(it.priceAtPurchase),
-                  commissionPaise,
-                  campaignId: it.campaignId,
-                  dealType: it.dealType,
-                  quantity: it.quantity,
-                  platform: it.platform,
-                  brandName: it.brandName,
-                })),
+                items: {
+                  create: body.items.map((it) => ({
+                    productId: it.productId,
+                    title: it.title,
+                    image: it.image,
+                    priceAtPurchasePaise: rupeesToPaise(it.priceAtPurchase),
+                    commissionPaise,
+                    campaignId: campaign.id,
+                    dealType: it.dealType,
+                    quantity: it.quantity,
+                    platform: it.platform,
+                    brandName: it.brandName,
+                  })),
+                },
                 totalPaise: body.items.reduce(
                   (acc, it) => acc + rupeesToPaise(it.priceAtPurchase) * it.quantity,
                   0
                 ),
-                workflowStatus: 'ORDERED',
-                status: 'Ordered',
-                paymentStatus: 'Pending',
-                affiliateStatus: 'Unchecked',
+                status: 'Ordered' as any,
+                paymentStatus: 'Pending' as any,
+                affiliateStatus: 'Unchecked' as any,
                 managerName: upstreamMediatorCode,
                 agencyName: resolvedAgencyName,
                 buyerName: user.name,
@@ -523,29 +485,104 @@ export function makeOrdersController(env: Env) {
                 brandName: item.brandName ?? campaign.brandName,
                 externalOrderId: resolvedExternalOrderId,
                 ...(body.reviewerName ? { reviewerName: body.reviewerName } : {}),
-                screenshots: body.screenshots ?? {},
+                // Merge screenshots: preserve existing proofs, overlay new ones
+                screenshotOrder: body.screenshots?.order ?? existing.screenshotOrder,
+                screenshotPayment: body.screenshots?.payment ?? existing.screenshotPayment,
+                screenshotRating: body.screenshots?.rating ?? existing.screenshotRating,
+                screenshotReview: body.screenshots?.review ?? existing.screenshotReview,
+                screenshotReturnWindow: body.screenshots?.returnWindow ?? existing.screenshotReturnWindow,
                 reviewLink: body.reviewLink,
                 ...(body.orderDate && !isNaN(new Date(body.orderDate).getTime()) ? { orderDate: new Date(body.orderDate) } : {}),
                 ...(body.soldBy ? { soldBy: body.soldBy } : {}),
                 ...(body.extractedProductName ? { extractedProductName: body.extractedProductName } : {}),
-                events: pushOrderEvent([], {
+                events: pushOrderEvent(existingEvents, {
                   type: 'ORDERED',
                   at: new Date(),
-                  actorUserId: user._id,
-                  metadata: { campaignId: String(campaign._id), mediatorCode: upstreamMediatorCode },
-                }),
-                createdBy: user._id,
+                  actorUserId: userMongoId,
+                  metadata: { campaignId: String(campaign.mongoId ?? campaign.id), mediatorCode: upstreamMediatorCode },
+                }) as any,
+                updatedBy: userPgId,
               },
-            ],
-            { session }
-          );
+              include: { items: true },
+            });
 
-          return order[0];
+            // State machine: REDIRECTED -> ORDERED
+            const transitioned = await transitionOrderWorkflow({
+              orderId: existing.mongoId!,
+              from: 'REDIRECTED' as any,
+              to: 'ORDERED' as any,
+              actorUserId: userMongoId,
+              metadata: { source: 'createOrder(preOrderId)' },
+              tx,
+              env,
+            });
+            return transitioned;
+          }
+
+          // Atomic slot claim to prevent overselling under concurrency
+          await claimSlot(tx);
+
+          const order = await tx.order.create({
+            data: {
+              mongoId: new Types.ObjectId().toString(),
+              userId: userPgId,
+              brandUserId: campaign.brandUserId,
+              items: {
+                create: body.items.map((it) => ({
+                  productId: it.productId,
+                  title: it.title,
+                  image: it.image,
+                  priceAtPurchasePaise: rupeesToPaise(it.priceAtPurchase),
+                  commissionPaise,
+                  campaignId: campaign.id,
+                  dealType: it.dealType,
+                  quantity: it.quantity,
+                  platform: it.platform,
+                  brandName: it.brandName,
+                })),
+              },
+              totalPaise: body.items.reduce(
+                (acc, it) => acc + rupeesToPaise(it.priceAtPurchase) * it.quantity,
+                0
+              ),
+              workflowStatus: 'ORDERED' as any,
+              status: 'Ordered' as any,
+              paymentStatus: 'Pending' as any,
+              affiliateStatus: 'Unchecked' as any,
+              managerName: upstreamMediatorCode,
+              agencyName: resolvedAgencyName,
+              buyerName: user.name,
+              buyerMobile: user.mobile,
+              brandName: item.brandName ?? campaign.brandName,
+              externalOrderId: resolvedExternalOrderId,
+              ...(body.reviewerName ? { reviewerName: body.reviewerName } : {}),
+              screenshotOrder: body.screenshots?.order ?? null,
+              screenshotPayment: body.screenshots?.payment ?? null,
+              screenshotRating: body.screenshots?.rating ?? null,
+              screenshotReview: body.screenshots?.review ?? null,
+              screenshotReturnWindow: body.screenshots?.returnWindow ?? null,
+              reviewLink: body.reviewLink,
+              ...(body.orderDate && !isNaN(new Date(body.orderDate).getTime()) ? { orderDate: new Date(body.orderDate) } : {}),
+              ...(body.soldBy ? { soldBy: body.soldBy } : {}),
+              ...(body.extractedProductName ? { extractedProductName: body.extractedProductName } : {}),
+              events: pushOrderEvent([], {
+                type: 'ORDERED',
+                at: new Date(),
+                actorUserId: userMongoId,
+                metadata: { campaignId: String(campaign.mongoId ?? campaign.id), mediatorCode: upstreamMediatorCode },
+              }) as any,
+              createdBy: userPgId,
+            },
+            include: { items: true },
+          });
+
+          return order;
         });
 
         // UI often submits the initial order screenshot at creation time.
         // If proof is already present, progress the strict workflow so Ops can verify.
         let finalOrder: any = created;
+        const orderMongoId = created?.mongoId ?? '';
         const initialProofTypes: Array<'order' | 'rating' | 'review'> = [];
         if (body.screenshots?.order) initialProofTypes.push('order');
         if (body.screenshots?.rating) initialProofTypes.push('rating');
@@ -553,27 +590,31 @@ export function makeOrdersController(env: Env) {
 
         if (initialProofTypes.length) {
           // Attach an auditable proof-submitted event.
-          (finalOrder as any).events = pushOrderEvent((finalOrder as any).events as any, {
+          const currentEvents = Array.isArray(created?.events) ? (created.events as any[]) : [];
+          const updatedEvents = pushOrderEvent(currentEvents, {
             type: 'PROOF_SUBMITTED',
             at: new Date(),
             actorUserId: requesterId,
             metadata: { type: initialProofTypes[0] },
-          }) as any;
-          await (finalOrder as any).save();
+          });
+          await db().order.update({
+            where: { id: created!.id },
+            data: { events: updatedEvents as any },
+          });
 
           const afterProof = await transitionOrderWorkflow({
-            orderId: String((finalOrder as any)._id),
-            from: ((finalOrder as any).workflowStatus ?? 'ORDERED') as OrderWorkflowStatus,
-            to: 'PROOF_SUBMITTED',
+            orderId: orderMongoId,
+            from: (created?.workflowStatus ?? 'ORDERED') as any,
+            to: 'PROOF_SUBMITTED' as any,
             actorUserId: String(requesterId || ''),
             metadata: { proofType: initialProofTypes[0], source: 'createOrder' },
             env,
           });
 
           finalOrder = await transitionOrderWorkflow({
-            orderId: String((afterProof as any)._id),
-            from: 'PROOF_SUBMITTED',
-            to: 'UNDER_REVIEW',
+            orderId: orderMongoId,
+            from: 'PROOF_SUBMITTED' as any,
+            to: 'UNDER_REVIEW' as any,
             actorUserId: undefined,
             metadata: { system: true, source: 'createOrder' },
             env,
@@ -586,9 +627,9 @@ export function makeOrdersController(env: Env) {
           req,
           action: 'ORDER_CREATED',
           entityType: 'Order',
-          entityId: String((finalOrder as any)._id),
+          entityId: orderMongoId,
           metadata: {
-            campaignId: String((campaign as any)._id),
+            campaignId: String(campaign.mongoId ?? campaign.id),
             total: body.items.reduce((a: number, it: any) => a + (Number(it.priceAtPurchase) || 0) * (Number(it.quantity) || 1), 0),
             externalOrderId: resolvedExternalOrderId,
           },
@@ -596,13 +637,19 @@ export function makeOrdersController(env: Env) {
 
         res
           .status(201)
-          .json(toUiOrder(finalOrder.toObject ? finalOrder.toObject() : (finalOrder as any)));
+          .json(toUiOrder(pgOrder(finalOrder)));
 
         // Notify UIs (buyer/mediator/brand/admin) that order-related views should refresh.
         const privilegedRoles: Role[] = ['admin', 'ops'];
+        // Resolve brand user mongoId for realtime audience
+        let brandMongoId = '';
+        if (campaign.brandUserId) {
+          const brandUser = await db().user.findUnique({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+          brandMongoId = brandUser?.mongoId ?? '';
+        }
         const audience = {
           roles: privilegedRoles,
-          userIds: [String(user._id), String((campaign as any).brandUserId || '')].filter(Boolean),
+          userIds: [userMongoId, brandMongoId].filter(Boolean),
           mediatorCodes: upstreamMediatorCode ? [upstreamMediatorCode] : undefined,
           agencyCodes: upstreamAgencyCode ? [upstreamAgencyCode] : undefined,
         };
@@ -611,25 +658,30 @@ export function makeOrdersController(env: Env) {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
       } catch (err) {
         next(err);
-      } finally {
-        session.endSession();
       }
     },
 
     submitClaim: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = submitClaimSchema.parse(req.body);
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const claimOrderWhere = UUID_RE.test(body.orderId)
+          ? { OR: [{ id: body.orderId }, { mongoId: body.orderId }] as any, deletedAt: null }
+          : { mongoId: body.orderId, deletedAt: null };
+        const order = await db().order.findFirst({
+          where: claimOrderWhere as any,
+          include: { items: true },
+        });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-        if ((order as any).frozen) {
+        if (order.frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
         }
 
         const requesterId = req.auth?.userId;
+        const requesterPgId = (req.auth as any)?.pgUserId ?? '';
         const requesterRoles = req.auth?.roles ?? [];
         const privileged = requesterRoles.includes('admin') || requesterRoles.includes('ops');
-        if (!privileged && String(order.userId) !== String(requesterId)) {
+        if (!privileged && order.userId !== requesterPgId) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot modify other user orders');
         }
 
@@ -637,14 +689,17 @@ export function makeOrdersController(env: Env) {
           throw new AppError(409, 'ORDER_FINALIZED', 'This order is finalized and cannot be modified');
         }
 
-        const wf = String((order as any).workflowStatus || 'CREATED');
+        const wf = String(order.workflowStatus || 'CREATED');
         if (wf !== 'ORDERED' && wf !== 'UNDER_REVIEW' && wf !== 'PROOF_SUBMITTED') {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot submit proof in state ${wf}`);
         }
 
+        // verification is JSONB
+        const verification = (order.verification && typeof order.verification === 'object') ? order.verification as any : {};
+
         // Step-gating: buyer can only upload review/rating AFTER purchase is verified by mediator.
         if (body.type === 'review' || body.type === 'rating') {
-          const purchaseVerified = !!(order as any).verification?.order?.verifiedAt;
+          const purchaseVerified = !!verification?.order?.verifiedAt;
           if (!purchaseVerified) {
             throw new AppError(409, 'PURCHASE_NOT_VERIFIED',
               'Purchase proof must be verified by your mediator before uploading additional proofs.');
@@ -664,7 +719,7 @@ export function makeOrdersController(env: Env) {
 
         // Return window step: gated behind rating verification for Rating/Review deals
         if (body.type === 'returnWindow') {
-          const purchaseVerified = !!(order as any).verification?.order?.verifiedAt;
+          const purchaseVerified = !!verification?.order?.verifiedAt;
           if (!purchaseVerified) {
             throw new AppError(409, 'PURCHASE_NOT_VERIFIED',
               'Purchase proof must be verified before uploading return window proof.');
@@ -673,20 +728,27 @@ export function makeOrdersController(env: Env) {
           const dealTypes = (order.items ?? []).map((it: any) => String(it?.dealType || ''));
           const requiresRating = dealTypes.includes('Rating');
           const requiresReview = dealTypes.includes('Review');
-          if (requiresRating && !(order as any).verification?.rating?.verifiedAt) {
+          if (requiresRating && !verification?.rating?.verifiedAt) {
             throw new AppError(409, 'RATING_NOT_VERIFIED',
               'Rating proof must be verified before uploading return window proof.');
           }
-          if (requiresReview && !(order as any).verification?.review?.verifiedAt) {
+          if (requiresReview && !verification?.review?.verifiedAt) {
             throw new AppError(409, 'REVIEW_NOT_VERIFIED',
               'Review proof must be verified before uploading return window proof.');
           }
         }
 
+        // Build the update payload incrementally
+        const updateData: any = {};
+        let aiOrderVerification: any = null;
+
         if (body.type === 'review') {
-          order.reviewLink = body.data;
-          if ((order as any).rejection?.type === 'review') {
-            (order as any).rejection = undefined;
+          updateData.reviewLink = body.data;
+          if (order.rejectionType === 'review') {
+            updateData.rejectionType = null;
+            updateData.rejectionReason = null;
+            updateData.rejectionAt = null;
+            updateData.rejectionBy = null;
           }
         } else if (body.type === 'rating') {
           assertProofImageSize(body.data, 'Rating proof');
@@ -694,10 +756,13 @@ export function makeOrdersController(env: Env) {
           // AI verification: check account name matches buyer + product name matches
           let ratingAiResult: any = null;
           if (!env.SEED_E2E) {
-            const buyerUser = await UserModel.findById(order.userId).select({ name: 1 }).lean();
-            const buyerName = String(buyerUser?.name || (order as any).buyerName || '').trim();
-            const productName = String((order.items?.[0] as any)?.title || (order as any).extractedProductName || '').trim();
-            const reviewerName = String((order as any).reviewerName || '').trim();
+            const buyerUser = await db().user.findUnique({
+              where: { id: order.userId },
+              select: { name: true },
+            });
+            const buyerName = String(buyerUser?.name || order.buyerName || '').trim();
+            const productName = String((order.items?.[0] as any)?.title || order.extractedProductName || '').trim();
+            const reviewerName = String(order.reviewerName || '').trim();
             if (buyerName && productName) {
               ratingAiResult = await verifyRatingScreenshotWithAi(env, {
                 imageBase64: body.data,
@@ -715,9 +780,9 @@ export function makeOrdersController(env: Env) {
             }
           }
 
-          order.screenshots = { ...(order.screenshots ?? {}), rating: body.data } as any;
+          updateData.screenshotRating = body.data;
           if (ratingAiResult) {
-            (order as any).ratingAiVerification = {
+            updateData.ratingAiVerification = {
               accountNameMatch: ratingAiResult.accountNameMatch,
               productNameMatch: ratingAiResult.productNameMatch,
               detectedAccountName: ratingAiResult.detectedAccountName,
@@ -730,7 +795,7 @@ export function makeOrdersController(env: Env) {
               req,
               action: 'AI_RATING_VERIFICATION',
               entityType: 'Order',
-              entityId: String(order._id),
+              entityId: order.mongoId!,
               metadata: {
                 accountNameMatch: ratingAiResult.accountNameMatch,
                 productNameMatch: ratingAiResult.productNameMatch,
@@ -741,8 +806,11 @@ export function makeOrdersController(env: Env) {
               },
             });
           }
-          if ((order as any).rejection?.type === 'rating') {
-            (order as any).rejection = undefined;
+          if (order.rejectionType === 'rating') {
+            updateData.rejectionType = null;
+            updateData.rejectionReason = null;
+            updateData.rejectionAt = null;
+            updateData.rejectionBy = null;
           }
         } else if (body.type === 'returnWindow') {
           assertProofImageSize(body.data, 'Return window proof');
@@ -752,10 +820,10 @@ export function makeOrdersController(env: Env) {
           if (!env.SEED_E2E) {
             const expectedOrderId = String(order.externalOrderId || '').trim();
             const expectedProductName = String((order.items?.[0] as any)?.title || '').trim();
-            const expectedAmount = ((order as any).items ?? []).reduce(
+            const expectedAmount = (order.items ?? []).reduce(
               (acc: number, it: any) => acc + (Number(it?.priceAtPurchasePaise) || 0) * (Number(it?.quantity) || 1), 0
             ) / 100;
-            const expectedSoldBy = String((order as any).soldBy || '').trim();
+            const expectedSoldBy = String(order.soldBy || '').trim();
             if (expectedOrderId) {
               returnWindowResult = await verifyReturnWindowWithAi(env, {
                 imageBase64: body.data,
@@ -767,15 +835,15 @@ export function makeOrdersController(env: Env) {
             }
           }
 
-          order.screenshots = { ...(order.screenshots ?? {}), returnWindow: body.data } as any;
+          updateData.screenshotReturnWindow = body.data;
           if (returnWindowResult) {
-            order.returnWindowAiVerification = returnWindowResult;
+            updateData.returnWindowAiVerification = returnWindowResult;
             // Audit trail: record AI return-window verification for backtracking
             writeAuditLog({
               req,
               action: 'AI_RETURN_WINDOW_VERIFICATION',
               entityType: 'Order',
-              entityId: String(order._id),
+              entityId: order.mongoId!,
               metadata: {
                 orderIdMatch: returnWindowResult.orderIdMatch,
                 productNameMatch: returnWindowResult.productNameMatch,
@@ -784,25 +852,27 @@ export function makeOrdersController(env: Env) {
               },
             });
           }
-          if (order.rejection?.type === 'returnWindow') {
-            order.rejection = undefined;
+          if (order.rejectionType === 'returnWindow') {
+            updateData.rejectionType = null;
+            updateData.rejectionReason = null;
+            updateData.rejectionAt = null;
+            updateData.rejectionBy = null;
           }
         } else if (body.type === 'order') {
           assertProofImageSize(body.data, 'Order proof');
           const expectedOrderId = String(order.externalOrderId || '').trim();
-          let aiVerification: any = null;
 
           if (env.SEED_E2E) {
             // E2E runs should not rely on external AI services.
           } else if (isGeminiConfigured(env) && expectedOrderId) {
-            const expectedAmount = ((order as any).items ?? []).reduce(
+            const expectedAmount = (order.items ?? []).reduce(
               (acc: number, it: any) => acc + (Number(it?.priceAtPurchasePaise) || 0) * (Number(it?.quantity) || 1), 0
             ) / 100;
             // Guard against NaN/Infinity from corrupted order data
             if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
-              console.warn(`[ordersController] Skipping AI re-upload verification: invalid expectedAmount=${expectedAmount} for order=${order._id}`);
+              console.warn(`[ordersController] Skipping AI re-upload verification: invalid expectedAmount=${expectedAmount} for order=${order.mongoId}`);
             } else {
-              aiVerification = await verifyProofWithAi(env, {
+              aiOrderVerification = await verifyProofWithAi(env, {
                 imageBase64: body.data,
                 expectedOrderId,
                 expectedAmount,
@@ -810,38 +880,39 @@ export function makeOrdersController(env: Env) {
             }
           }
 
-          order.screenshots = { ...(order.screenshots ?? {}), order: body.data } as any;
-          if ((order as any).rejection?.type === 'order') {
-            (order as any).rejection = undefined;
+          updateData.screenshotOrder = body.data;
+          if (order.rejectionType === 'order') {
+            updateData.rejectionType = null;
+            updateData.rejectionReason = null;
+            updateData.rejectionAt = null;
+            updateData.rejectionBy = null;
           }
 
           // Audit trail: record AI purchase proof verification for backtracking
-          if (aiVerification) {
+          if (aiOrderVerification) {
             writeAuditLog({
               req,
               action: 'AI_PURCHASE_PROOF_VERIFICATION',
               entityType: 'Order',
-              entityId: String(order._id),
+              entityId: order.mongoId!,
               metadata: {
-                orderIdMatch: aiVerification.orderIdMatch,
-                amountMatch: aiVerification.amountMatch,
-                confidenceScore: aiVerification.confidenceScore,
+                orderIdMatch: aiOrderVerification.orderIdMatch,
+                amountMatch: aiOrderVerification.amountMatch,
+                confidenceScore: aiOrderVerification.confidenceScore,
               },
             });
           }
-
-          (order as any).__aiOrderVerification = aiVerification || undefined;
         }
 
-        if (Array.isArray((order as any).missingProofRequests)) {
-          (order as any).missingProofRequests = (order as any).missingProofRequests.filter(
-            (r: any) => String(r?.type) !== String(body.type)
-          );
-        }
+        // Filter missingProofRequests
+        const currentMPR = Array.isArray(order.missingProofRequests) ? (order.missingProofRequests as any[]) : [];
+        updateData.missingProofRequests = currentMPR.filter(
+          (r: any) => String(r?.type) !== String(body.type)
+        );
 
         // Persist marketplace reviewer/profile name if provided alongside any proof upload
         if (body.reviewerName) {
-          (order as any).reviewerName = body.reviewerName;
+          updateData.reviewerName = body.reviewerName;
         }
 
         const affiliateStatus = String(order.affiliateStatus || '');
@@ -849,13 +920,12 @@ export function makeOrdersController(env: Env) {
           throw new AppError(409, 'ORDER_FRAUD_FLAGGED', 'This order is flagged for fraud and requires admin review');
         }
         if (affiliateStatus === 'Rejected') {
-          order.affiliateStatus = 'Unchecked';
+          updateData.affiliateStatus = 'Unchecked';
         }
 
-        const aiOrderVerification = (order as any).__aiOrderVerification;
-        if ((order as any).__aiOrderVerification) delete (order as any).__aiOrderVerification;
-
-        order.events = pushOrderEvent(order.events as any, {
+        // Push event
+        const currentEvents = Array.isArray(order.events) ? (order.events as any[]) : [];
+        updateData.events = pushOrderEvent(currentEvents, {
           type: 'PROOF_SUBMITTED',
           at: new Date(),
           actorUserId: requesterId,
@@ -863,50 +933,58 @@ export function makeOrdersController(env: Env) {
             type: body.type,
             ...(body.type === 'order' && aiOrderVerification ? { aiVerification: aiOrderVerification } : {}),
           },
-        }) as any;
+        });
 
-        await order.save();
+        await db().order.update({ where: { id: order.id }, data: updateData });
 
         // Strict state machine progression for first proof submission:
         // ORDERED -> PROOF_SUBMITTED -> UNDER_REVIEW
         // If already UNDER_REVIEW, we just persist the new proof without rewinding workflow.
         if (wf === 'UNDER_REVIEW') {
-          res.json(toUiOrder(order.toObject()));
+          const refreshed = await db().order.findUnique({ where: { id: order.id }, include: { items: true } });
+          res.json(toUiOrder(pgOrder(refreshed)));
           return;
         }
 
         const afterProof = await transitionOrderWorkflow({
-          orderId: String(order._id),
-          from: (order as any).workflowStatus,
-          to: 'PROOF_SUBMITTED',
+          orderId: order.mongoId!,
+          from: order.workflowStatus as any,
+          to: 'PROOF_SUBMITTED' as any,
           actorUserId: String(requesterId || ''),
           metadata: { proofType: body.type },
           env,
         });
 
         const afterReview = await transitionOrderWorkflow({
-          orderId: String(afterProof._id),
-          from: 'PROOF_SUBMITTED',
-          to: 'UNDER_REVIEW',
+          orderId: order.mongoId!,
+          from: 'PROOF_SUBMITTED' as any,
+          to: 'UNDER_REVIEW' as any,
           actorUserId: undefined,
           metadata: { system: true },
           env,
         });
 
-        res.json(toUiOrder(afterReview.toObject()));
+        res.json(toUiOrder(pgOrder(afterReview)));
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
-        const managerCode = String((order as any).managerName || '').trim();
+        const managerCode = String(order.managerName || '').trim();
         const mediatorUser = managerCode
-          ? await UserModel.findOne({ roles: 'mediator', mediatorCode: managerCode, deletedAt: null })
-              .select({ parentCode: 1 })
-              .lean()
+          ? await db().user.findFirst({
+              where: { roles: { has: 'mediator' as any }, mediatorCode: managerCode, deletedAt: null },
+              select: { parentCode: true },
+            })
           : null;
-        const upstreamAgencyCode = String((mediatorUser as any)?.parentCode || '').trim();
+        const upstreamAgencyCode = String(mediatorUser?.parentCode || '').trim();
+
+        // Resolve mongoIds for realtime audience
+        const orderUser = await db().user.findUnique({ where: { id: order.userId }, select: { mongoId: true } });
+        const brandUser = order.brandUserId
+          ? await db().user.findUnique({ where: { id: order.brandUserId }, select: { mongoId: true } })
+          : null;
 
         const audience = {
           roles: privilegedRoles,
-          userIds: [String((order as any).userId || ''), String((order as any).brandUserId || '')].filter(Boolean),
+          userIds: [orderUser?.mongoId ?? '', brandUser?.mongoId ?? ''].filter(Boolean),
           mediatorCodes: managerCode ? [managerCode] : undefined,
           agencyCodes: upstreamAgencyCode ? [upstreamAgencyCode] : undefined,
         };
@@ -917,7 +995,7 @@ export function makeOrdersController(env: Env) {
         // Audit log: proof submission
         await writeAuditLog({
           req, action: 'PROOF_SUBMITTED', entityType: 'Order',
-          entityId: String(order._id),
+          entityId: order.mongoId!,
           metadata: { proofType: body.type },
         }).catch(() => {});
         return;

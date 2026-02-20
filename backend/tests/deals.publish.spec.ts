@@ -3,9 +3,9 @@ import request from 'supertest';
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
+import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 import { CampaignModel } from '../models/Campaign.js';
-import { DealModel } from '../models/Deal.js';
 
 async function login(app: any, mobile: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ mobile, password });
@@ -28,9 +28,10 @@ describe('ops deals: publish', () => {
     });
 
     await connectMongo(env);
-    await seedE2E();
+    const seeded = await seedE2E();
 
     const app = createApp(env);
+    const db = prisma();
 
     const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
     const mediator = await login(app, E2E_ACCOUNTS.mediator.mobile, E2E_ACCOUNTS.mediator.password);
@@ -57,6 +58,30 @@ describe('ops deals: publish', () => {
       createdBy: agency.userId as any,
     });
 
+    // Create PG campaign (controllers query PG only)
+    const pgCampaign = await db.campaign.create({
+      data: {
+        mongoId: String(campaign._id),
+        title: 'Publish Campaign (missing allowedAgencyCodes)',
+        brandUserId: seeded.pgAgency.id,
+        brandName: 'Agency Inventory',
+        platform: 'Amazon',
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/product',
+        originalPricePaise: 1000_00,
+        pricePaise: 900_00,
+        payoutPaise: 100_00,
+        returnWindowDays: 14,
+        dealType: 'Discount',
+        totalSlots: 10,
+        usedSlots: 0,
+        status: 'active',
+        allowedAgencyCodes: [],
+        assignments: { [mediatorCode]: { limit: 3 } },
+        createdBy: seeded.pgAgency.id,
+      },
+    });
+
     const res = await request(app)
       .post('/api/ops/deals/publish')
       .set('Authorization', `Bearer ${mediator.token}`)
@@ -69,9 +94,9 @@ describe('ops deals: publish', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('ok', true);
 
-    const deal = await DealModel.findOne({ campaignId: (campaign as any)._id, mediatorCode, deletedAt: null }).lean();
+    const deal = await db.deal.findFirst({ where: { campaignId: pgCampaign.id, mediatorCode, deletedAt: null } });
     expect(deal).toBeTruthy();
-    expect((deal as any)?.active).toBe(true);
+    expect(deal?.active).toBe(true);
   });
 
   it('allows publishing with commission omitted (defaults to 0)', async () => {
@@ -81,9 +106,10 @@ describe('ops deals: publish', () => {
     });
 
     await connectMongo(env);
-    await seedE2E();
+    const seeded = await seedE2E();
 
     const app = createApp(env);
+    const db = prisma();
 
     const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
     const mediator = await login(app, E2E_ACCOUNTS.mediator.mobile, E2E_ACCOUNTS.mediator.password);
@@ -110,6 +136,30 @@ describe('ops deals: publish', () => {
       createdBy: agency.userId as any,
     });
 
+    // Create PG campaign
+    const pgCampaign = await db.campaign.create({
+      data: {
+        mongoId: String(campaign._id),
+        title: 'Publish Campaign (no commission field)',
+        brandUserId: seeded.pgAgency.id,
+        brandName: 'Agency Inventory',
+        platform: 'Amazon',
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/product',
+        originalPricePaise: 1000_00,
+        pricePaise: 900_00,
+        payoutPaise: 0,
+        returnWindowDays: 14,
+        dealType: 'Discount',
+        totalSlots: 10,
+        usedSlots: 0,
+        status: 'active',
+        allowedAgencyCodes: [],
+        assignments: { [mediatorCode]: { limit: 3 } },
+        createdBy: seeded.pgAgency.id,
+      },
+    });
+
     const res = await request(app)
       .post('/api/ops/deals/publish')
       .set('Authorization', `Bearer ${mediator.token}`)
@@ -121,10 +171,10 @@ describe('ops deals: publish', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('ok', true);
 
-    const deal = await DealModel.findOne({ campaignId: (campaign as any)._id, mediatorCode, deletedAt: null }).lean();
+    const deal = await db.deal.findFirst({ where: { campaignId: pgCampaign.id, mediatorCode, deletedAt: null } });
     expect(deal).toBeTruthy();
-    expect((deal as any)?.commissionPaise).toBe(0);
-    expect((deal as any)?.active).toBe(true);
+    expect(deal?.commissionPaise).toBe(0);
+    expect(deal?.active).toBe(true);
   });
 
   it('rejects publishing when buyer discount exceeds agency commission', async () => {
@@ -134,9 +184,10 @@ describe('ops deals: publish', () => {
     });
 
     await connectMongo(env);
-    await seedE2E();
+    const seeded = await seedE2E();
 
     const app = createApp(env);
+    const db = prisma();
 
     const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
     const mediator = await login(app, E2E_ACCOUNTS.mediator.mobile, E2E_ACCOUNTS.mediator.password);
@@ -163,6 +214,30 @@ describe('ops deals: publish', () => {
       createdBy: agency.userId as any,
     });
 
+    // Create PG campaign
+    const pgCampaign = await db.campaign.create({
+      data: {
+        mongoId: String(campaign._id),
+        title: 'Publish Campaign (negative commission exceeds agency commission)',
+        brandUserId: seeded.pgAgency.id,
+        brandName: 'Agency Inventory',
+        platform: 'Amazon',
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/product',
+        originalPricePaise: 1000_00,
+        pricePaise: 900_00,
+        payoutPaise: 0,
+        returnWindowDays: 14,
+        dealType: 'Discount',
+        totalSlots: 10,
+        usedSlots: 0,
+        status: 'active',
+        allowedAgencyCodes: [],
+        assignments: { [mediatorCode]: { limit: 3, payout: 500 } },
+        createdBy: seeded.pgAgency.id,
+      },
+    });
+
     const res = await request(app)
       .post('/api/ops/deals/publish')
       .set('Authorization', `Bearer ${mediator.token}`)
@@ -176,7 +251,7 @@ describe('ops deals: publish', () => {
     expect(res.status).toBe(400);
     expect(res.body?.error?.code).toBe('INVALID_ECONOMICS');
 
-    const deal = await DealModel.findOne({ campaignId: (campaign as any)._id, mediatorCode, deletedAt: null }).lean();
+    const deal = await db.deal.findFirst({ where: { campaignId: pgCampaign.id, mediatorCode, deletedAt: null } });
     expect(deal).toBeFalsy();
   });
 });

@@ -1,103 +1,105 @@
 import type { NextFunction, Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
-import { UserModel } from '../models/User.js';
-import { CampaignModel } from '../models/Campaign.js';
-import { OrderModel } from '../models/Order.js';
-import { DealModel } from '../models/Deal.js';
+import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
+import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';
 import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchema } from '../validations/brand.js';
-import { TransactionModel } from '../models/Transaction.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
 import { publishRealtime } from '../services/realtimeHub.js';
-import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
+
+function db() { return prisma(); }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function recordManualPayoutLedger(args: {
   idempotencyKey: string;
-  brandId: string;
-  agencyId: string;
+  brandPgId: string;
+  agencyPgId: string;
   amountPaise: number;
   ref: string;
   agencyCode: string;
   agencyName: string;
   brandName: string;
+  brandMongoId: string;
+  agencyMongoId: string;
 }) {
   // Create an immutable ledger record even when wallets are not funded.
-  // This supports "manual" real-world transfers while still keeping an audit trail.
-  // Uses findOneAndUpdate+upsert for atomic idempotency (no TOCTOU race).
-  await TransactionModel.findOneAndUpdate(
-    { idempotencyKey: args.idempotencyKey, deletedAt: null },
-    {
-      $setOnInsert: {
-        idempotencyKey: args.idempotencyKey,
-        type: 'agency_payout',
-        status: 'completed',
-        amountPaise: args.amountPaise,
-        currency: 'INR',
-        fromUserId: args.brandId as any,
-        toUserId: args.agencyId as any,
-        metadata: {
-          ref: args.ref,
-          agencyId: args.agencyId,
-          agencyCode: args.agencyCode,
-          agencyName: args.agencyName,
-          brandId: args.brandId,
-          brandName: args.brandName,
-          mode: 'manual',
-        },
+  // Uses upsert for atomic idempotency (no TOCTOU race).
+  await db().transaction.upsert({
+    where: { idempotencyKey: args.idempotencyKey },
+    update: {},
+    create: {
+      mongoId: new Types.ObjectId().toString(),
+      idempotencyKey: args.idempotencyKey,
+      type: 'agency_payout' as any,
+      status: 'completed' as any,
+      amountPaise: args.amountPaise,
+      currency: 'INR',
+      fromUserId: args.brandPgId,
+      toUserId: args.agencyPgId,
+      metadata: {
+        ref: args.ref,
+        agencyId: args.agencyMongoId,
+        agencyCode: args.agencyCode,
+        agencyName: args.agencyName,
+        brandId: args.brandMongoId,
+        brandName: args.brandName,
+        mode: 'manual',
       },
     },
-    { upsert: true },
-  );
+  });
 
   const creditKey = `${args.idempotencyKey}:credit`;
-  await TransactionModel.findOneAndUpdate(
-    { idempotencyKey: creditKey, deletedAt: null },
-    {
-      $setOnInsert: {
-        idempotencyKey: creditKey,
-        type: 'agency_receipt',
-        status: 'completed',
-        amountPaise: args.amountPaise,
-        currency: 'INR',
-        fromUserId: args.brandId as any,
-        toUserId: args.agencyId as any,
-        metadata: {
-          ref: args.ref,
-          agencyId: args.agencyId,
-          agencyCode: args.agencyCode,
-          agencyName: args.agencyName,
-          brandId: args.brandId,
-          brandName: args.brandName,
-          mode: 'manual',
-        },
+  await db().transaction.upsert({
+    where: { idempotencyKey: creditKey },
+    update: {},
+    create: {
+      mongoId: new Types.ObjectId().toString(),
+      idempotencyKey: creditKey,
+      type: 'agency_receipt' as any,
+      status: 'completed' as any,
+      amountPaise: args.amountPaise,
+      currency: 'INR',
+      fromUserId: args.brandPgId,
+      toUserId: args.agencyPgId,
+      metadata: {
+        ref: args.ref,
+        agencyId: args.agencyMongoId,
+        agencyCode: args.agencyCode,
+        agencyName: args.agencyName,
+        brandId: args.brandMongoId,
+        brandName: args.brandName,
+        mode: 'manual',
       },
     },
-    { upsert: true },
-  );
+  });
 }
 
 export function makeBrandController() {
   return {
     getAgencies: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId } = getRequester(req);
+        const { roles, userId, user } = getRequester(req);
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const query: any = { role: 'agency', deletedAt: null };
+        const where: any = { roles: { has: 'agency' as any }, deletedAt: null };
         if (!isPrivileged(roles)) {
-          const brand = await UserModel.findById(userId).select({ connectedAgencies: 1 }).lean();
-          const connected = Array.isArray((brand as any)?.connectedAgencies)
-            ? (brand as any).connectedAgencies
+          // Re-fetch brand user from DB to get connectedAgencies (not in auth user)
+          const brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+          const connected = Array.isArray((brandUser as any)?.connectedAgencies)
+            ? (brandUser as any).connectedAgencies as string[]
             : [];
-          query.mediatorCode = { $in: connected };
+          where.mediatorCode = { in: connected };
         }
 
-        const agencies = await UserModel.find(query).sort({ createdAt: -1 }).lean();
-        res.json(agencies.map((a) => toUiUser(a, null)));
+        const agencies = await db().user.findMany({ where, orderBy: { createdAt: 'desc' } });
+        res.json(agencies.map((a: any) => toUiUser(pgUser(a), null)));
       } catch (err) {
         next(err);
       }
@@ -107,12 +109,21 @@ export function makeBrandController() {
       try {
         const { roles, userId } = getRequester(req);
         const requested = typeof req.query.brandId === 'string' ? req.query.brandId : '';
-        const brandId = isPrivileged(roles) && requested ? requested : userId;
 
-        const campaigns = await CampaignModel.find({ brandUserId: brandId, deletedAt: null })
-          .sort({ createdAt: -1 })
-          .lean();
-        res.json(campaigns.map(toUiCampaign));
+        let brandPgId: string;
+        if (isPrivileged(roles) && requested) {
+          const brandUser = await db().user.findFirst({ where: { mongoId: requested }, select: { id: true } });
+          if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
+          brandPgId = brandUser.id;
+        } else {
+          brandPgId = (req.auth as any)?.pgUserId;
+        }
+
+        const campaigns = await db().campaign.findMany({
+          where: { brandUserId: brandPgId, deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+        });
+        res.json(campaigns.map((c: any) => toUiCampaign(pgCampaign(c))));
       } catch (err) {
         next(err);
       }
@@ -121,26 +132,29 @@ export function makeBrandController() {
     getOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { roles, userId, user } = getRequester(req);
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const query: any = { deletedAt: null };
+        const where: any = { deletedAt: null };
         if (isPrivileged(roles)) {
           const brandName = typeof req.query.brandName === 'string' ? req.query.brandName : '';
-          if (brandName) query.brandName = brandName;
+          if (brandName) where.brandName = brandName;
         } else {
-          // Prefer strict brand ownership via brandUserId; fallback to brandName for legacy orders.
-          query.$or = [
-            { brandUserId: userId },
-            // Legacy: only match by brandName when the order predates brandUserId.
-            { brandUserId: { $in: [null, undefined] }, brandName: (user as any)?.name },
+          where.OR = [
+            { brandUserId: pgUserId },
+            { brandUserId: null, brandName: (user as any)?.name },
           ];
         }
-        const orders = await OrderModel.find(query).sort({ createdAt: -1 }).limit(5000).lean();
-        // Brands must not see buyer PII or proof artifacts.
+        const orders = await db().order.findMany({
+          where,
+          include: { items: true },
+          orderBy: { createdAt: 'desc' },
+          take: 5000,
+        });
         if (!isPrivileged(roles) && roles.includes('brand')) {
-          res.json(orders.map(toUiOrderForBrand));
+          res.json(orders.map((o: any) => toUiOrderForBrand(pgOrder(o))));
           return;
         }
-        res.json(orders.map(toUiOrder));
+        res.json(orders.map((o: any) => toUiOrder(pgOrder(o))));
       } catch (err) {
         next(err);
       }
@@ -150,39 +164,41 @@ export function makeBrandController() {
       try {
         const { roles, userId } = getRequester(_req);
         const requested = typeof (_req.query as any).brandId === 'string' ? String((_req.query as any).brandId) : '';
-        const brandId = isPrivileged(roles) && requested ? requested : userId;
+
+        let brandPgId: string;
+        if (isPrivileged(roles) && requested) {
+          const brandUser = await db().user.findFirst({ where: { mongoId: requested }, select: { id: true } });
+          if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
+          brandPgId = brandUser.id;
+        } else {
+          brandPgId = (_req.auth as any)?.pgUserId;
+        }
 
         // Brand ledger = outbound agency payouts from this brand.
-        const txns = await TransactionModel.find({
-          deletedAt: null,
-          fromUserId: brandId as any,
-          type: 'agency_payout',
-        })
-          .sort({ createdAt: -1 })
-          .limit(5000)
-          .lean();
+        const txns = await db().transaction.findMany({
+          where: { deletedAt: null, fromUserId: brandPgId, type: 'agency_payout' as any },
+          orderBy: { createdAt: 'desc' },
+          take: 5000,
+        });
 
-        const agencyIds = Array.from(
-          new Set(
-            txns
-              .map((t: any) => String(t.toUserId || ''))
-              .filter(Boolean)
-          )
+        const agencyPgIds = Array.from(
+          new Set(txns.map((t: any) => String(t.toUserId || '')).filter(Boolean))
         );
 
-        const agencies = agencyIds.length
-            ? await UserModel.find({ _id: { $in: agencyIds as any }, deletedAt: null })
-              .select({ name: 1, mediatorCode: 1 })
-              .lean()
+        const agencies = agencyPgIds.length
+          ? await db().user.findMany({
+              where: { id: { in: agencyPgIds }, deletedAt: null },
+              select: { id: true, mongoId: true, name: true, mediatorCode: true },
+            })
           : [];
-        const byId = new Map(agencies.map((a: any) => [String(a._id), a]));
+        const byId = new Map(agencies.map((a: any) => [a.id, a]));
 
         res.json(
           txns.map((t: any) => {
-            const agency = t.toUserId ? byId.get(String(t.toUserId)) : undefined;
+            const agency = t.toUserId ? byId.get(t.toUserId) : undefined;
             const meta = (t.metadata && typeof t.metadata === 'object') ? (t.metadata as any) : {};
             return {
-              id: String(t._id),
+              id: t.mongoId || t.id,
               date: (t.createdAt ?? new Date()).toISOString(),
               agencyName: String(meta.agencyName || agency?.name || 'Agency'),
               amount: Math.round(Number(t.amountPaise ?? 0) / 100),
@@ -200,32 +216,56 @@ export function makeBrandController() {
       try {
         const body = payoutAgencySchema.parse(req.body);
         const { roles, userId, user } = getRequester(req);
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const brandId = isPrivileged(roles) && body.brandId ? String(body.brandId) : userId;
+        // Resolve brand PG UUID
+        let brandPgId: string;
+        let brandMongoId: string;
+        let brandUser: any;
+        if (isPrivileged(roles) && body.brandId) {
+          const brandWhere = UUID_RE.test(body.brandId)
+            ? { OR: [{ id: body.brandId }, { mongoId: body.brandId }], deletedAt: null }
+            : { mongoId: String(body.brandId), deletedAt: null };
+          brandUser = await db().user.findFirst({ where: brandWhere as any });
+          if (!brandUser) throw new AppError(404, 'NOT_FOUND', 'Brand not found');
+          brandPgId = brandUser.id;
+          brandMongoId = brandUser.mongoId || brandUser.id;
+        } else {
+          // Re-fetch full brand user from DB (auth middleware doesn't include connectedAgencies)
+          brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+          if (!brandUser) throw new AppError(404, 'NOT_FOUND', 'Brand user not found');
+          brandPgId = brandUser.id;
+          brandMongoId = brandUser.mongoId || brandUser.id;
+        }
 
-        const brand = await UserModel.findById(brandId).select({ roles: 1, connectedAgencies: 1, name: 1, status: 1, deletedAt: 1 }).lean();
-        if (!brand || (brand as any).deletedAt) throw new AppError(404, 'NOT_FOUND', 'Brand not found');
-        if (!isPrivileged(roles) && !(brand as any).roles?.includes('brand')) {
+        if (!isPrivileged(roles) && !(brandUser as any).roles?.includes('brand')) {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can record payouts');
         }
-        if (String((brand as any).status || '') !== 'active') {
+        if (String((brandUser as any).status || '') !== 'active') {
           throw new AppError(409, 'BRAND_NOT_ACTIVE', 'Brand is not active');
         }
 
-        const agency = await UserModel.findById(body.agencyId).select({ roles: 1, mediatorCode: 1, name: 1, status: 1, deletedAt: 1 }).lean();
-        if (!agency || (agency as any).deletedAt) throw new AppError(404, 'AGENCY_NOT_FOUND', 'Agency not found');
-        if (!(agency as any).roles?.includes('agency')) throw new AppError(404, 'AGENCY_NOT_FOUND', 'Agency not found');
-        if (String((agency as any).status || '') !== 'active') throw new AppError(409, 'AGENCY_NOT_ACTIVE', 'Agency is not active');
+        // Resolve agency
+        const agencyWhere = UUID_RE.test(body.agencyId)
+          ? { OR: [{ id: body.agencyId }, { mongoId: body.agencyId }], deletedAt: null }
+          : { mongoId: body.agencyId, deletedAt: null };
+        const agency = await db().user.findFirst({
+          where: agencyWhere as any,
+          select: { id: true, mongoId: true, roles: true, mediatorCode: true, name: true, status: true },
+        });
+        if (!agency) throw new AppError(404, 'AGENCY_NOT_FOUND', 'Agency not found');
+        if (!(agency.roles as string[])?.includes('agency')) throw new AppError(404, 'AGENCY_NOT_FOUND', 'Agency not found');
+        if (String(agency.status || '') !== 'active') throw new AppError(409, 'AGENCY_NOT_ACTIVE', 'Agency is not active');
 
-        const agencyCode = String((agency as any).mediatorCode || '').trim();
+        const agencyCode = String(agency.mediatorCode || '').trim();
         if (!agencyCode) throw new AppError(409, 'AGENCY_MISSING_CODE', 'Agency is missing a code');
+        const agencyPgId = agency.id;
+        const agencyMongoId = agency.mongoId || agency.id;
 
         if (!isPrivileged(roles)) {
-          const connected = Array.isArray((user as any)?.connectedAgencies)
-            ? ((user as any).connectedAgencies as string[])
-            : Array.isArray((brand as any)?.connectedAgencies)
-              ? ((brand as any).connectedAgencies as string[])
-              : [];
+          const connected = Array.isArray((brandUser as any)?.connectedAgencies)
+            ? ((brandUser as any).connectedAgencies as string[])
+            : [];
           if (!connected.includes(agencyCode)) {
             throw new AppError(403, 'FORBIDDEN', 'Agency is not connected to this brand');
           }
@@ -234,70 +274,57 @@ export function makeBrandController() {
         const amountPaise = rupeesToPaise(Number(body.amount));
         const ref = String(body.ref).trim();
 
-        // Ensure wallets exist.
-        await Promise.all([ensureWallet(String(brandId)), ensureWallet(String(body.agencyId))]);
+        // Ensure wallets exist (takes PG UUIDs).
+        await Promise.all([ensureWallet(brandPgId), ensureWallet(agencyPgId)]);
 
         // Idempotent payout: double-click safe.
-        const idKey = `brand_agency_payout:${brandId}:${body.agencyId}:${ref}`;
+        const idKey = `brand_agency_payout:${brandMongoId}:${agencyMongoId}:${ref}`;
 
-        const brandName = String((brand as any).name || 'Brand');
-        const agencyName = String((agency as any).name || 'Agency');
+        const brandName = String((brandUser as any).name || 'Brand');
+        const agencyName = String(agency.name || 'Agency');
 
-        // Track which mode succeeded — wallet-backed vs manual ledger.
         let payoutMode: 'wallet' | 'manual' = 'wallet';
 
-        // Preferred: wallet-backed payout (enforces sufficient balance).
-        // Fallback: if wallet is not funded, still record a completed manual ledger entry
-        // so the brand can track real-world transfers.
         try {
-          // Atomic payout: wrap debit + credit in a single MongoDB session so that
-          // partial failures (e.g., brand debit succeeds but agency credit fails)
-          // are rolled back automatically, preventing money loss.
-          const payoutSession = await (await import('mongoose')).default.startSession();
-          try {
-            await payoutSession.withTransaction(async () => {
-              // Debit brand first (fails if insufficient funds).
-              await applyWalletDebit({
-                idempotencyKey: idKey,
-                type: 'agency_payout',
-                ownerUserId: String(brandId),
-                fromUserId: String(brandId),
-                toUserId: String(body.agencyId),
-                amountPaise,
-                metadata: { ref, agencyId: String(body.agencyId), agencyCode, agencyName },
-                session: payoutSession,
-              });
-
-              // Credit agency (separate idempotency key to keep both sides independently replay-safe).
-              await applyWalletCredit({
-                idempotencyKey: `${idKey}:credit`,
-                type: 'agency_receipt',
-                ownerUserId: String(body.agencyId),
-                fromUserId: String(brandId),
-                toUserId: String(body.agencyId),
-                amountPaise,
-                metadata: { ref, brandId: String(brandId), brandName },
-                session: payoutSession,
-              });
+          // Atomic payout: wrap debit + credit in a single Prisma transaction.
+          await db().$transaction(async (tx: any) => {
+            await applyWalletDebit({
+              idempotencyKey: idKey,
+              type: 'agency_payout',
+              ownerUserId: brandPgId,
+              fromUserId: brandPgId,
+              toUserId: agencyPgId,
+              amountPaise,
+              metadata: { ref, agencyId: agencyMongoId, agencyCode, agencyName },
+              tx,
             });
-          } finally {
-            payoutSession.endSession();
-          }
+
+            await applyWalletCredit({
+              idempotencyKey: `${idKey}:credit`,
+              type: 'agency_receipt',
+              ownerUserId: agencyPgId,
+              fromUserId: brandPgId,
+              toUserId: agencyPgId,
+              amountPaise,
+              metadata: { ref, brandId: brandMongoId, brandName },
+              tx,
+            });
+          });
         } catch (e: any) {
           const code = String(e?.code || e?.error?.code || '');
           if (code !== 'INSUFFICIENT_FUNDS' && code !== 'WALLET_NOT_FOUND') throw e;
-          // Wallet-backed payout failed — record a manual ledger entry for tracking purposes.
           await recordManualPayoutLedger({
             idempotencyKey: idKey,
-            brandId: String(brandId),
-            agencyId: String(body.agencyId),
+            brandPgId,
+            agencyPgId,
             amountPaise,
             ref,
             agencyCode,
             agencyName,
             brandName,
+            brandMongoId,
+            agencyMongoId,
           });
-          // Indicate in the audit log that this was a manual fallback.
           payoutMode = 'manual';
         }
 
@@ -305,14 +332,14 @@ export function makeBrandController() {
           req,
           action: 'BRAND_AGENCY_PAYOUT_RECORDED',
           entityType: 'User',
-          entityId: String(brandId),
-          metadata: { agencyId: String(body.agencyId), agencyCode, amountPaise, ref, mode: payoutMode },
+          entityId: brandMongoId,
+          metadata: { agencyId: agencyMongoId, agencyCode, amountPaise, ref, mode: payoutMode },
         });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         const audience = {
           roles: privilegedRoles,
-          userIds: [String(brandId), String(body.agencyId)].filter(Boolean),
+          userIds: [brandMongoId, agencyMongoId].filter(Boolean),
         };
         publishRealtime({ type: 'wallets.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
@@ -326,66 +353,67 @@ export function makeBrandController() {
       try {
         const body = resolveBrandConnectionSchema.parse(req.body);
         const { roles, userId } = getRequester(req);
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        let agency: any | null = null;
+        let agency: any = null;
         if (body.agencyId) {
-          agency = await UserModel.findOne({
-            _id: body.agencyId,
-            roles: 'agency',
-            deletedAt: null,
-          })
-            .select({ _id: 1, mediatorCode: 1 })
-            .lean();
+          agency = await db().user.findFirst({
+            where: { mongoId: body.agencyId, roles: { has: 'agency' as any }, deletedAt: null },
+            select: { id: true, mongoId: true, mediatorCode: true },
+          });
         } else if (body.agencyCode) {
-          agency = await UserModel.findOne({ roles: 'agency', mediatorCode: body.agencyCode, deletedAt: null })
-            .select({ _id: 1, mediatorCode: 1 })
-            .lean();
+          agency = await db().user.findFirst({
+            where: { roles: { has: 'agency' as any }, mediatorCode: body.agencyCode, deletedAt: null },
+            select: { id: true, mongoId: true, mediatorCode: true },
+          });
         }
 
         if (!agency) throw new AppError(404, 'AGENCY_NOT_FOUND', 'Agency not found');
 
-        const agencyCode = String((agency as any).mediatorCode || '').trim();
+        const agencyCode = String(agency.mediatorCode || '').trim();
         if (!agencyCode) throw new AppError(409, 'AGENCY_MISSING_CODE', 'Agency is missing a code');
+        const agencyMongoId = agency.mongoId || agency.id;
 
-        const brand = await UserModel.findById(userId);
+        const brand = await db().user.findFirst({
+          where: { id: pgUserId, deletedAt: null },
+        });
         if (!brand) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
-        if (!isPrivileged(roles) && !brand.roles?.includes('brand')) {
+        if (!isPrivileged(roles) && !(brand.roles as string[])?.includes('brand')) {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can approve requests');
         }
 
-        const update: any = {
-          // Be robust: historical data may have either agencyCode formatting differences or only agencyId.
-          $pull: {
-            pendingConnections: {
-              $or: [{ agencyCode }, { agencyId: String((agency as any)?._id) }],
-            },
+        // Remove the pending connection
+        await db().pendingConnection.deleteMany({
+          where: {
+            userId: brand.id,
+            OR: [{ agencyCode }, { agencyId: agencyMongoId }],
           },
-        };
-        if (body.action === 'approve') {
-          update.$addToSet = { connectedAgencies: agencyCode };
-        }
+        });
 
-        const updated = await UserModel.findOneAndUpdate({ _id: brand._id }, update, { new: true });
-        if (!updated) {
-          throw new AppError(409, 'NO_CHANGE', 'No pending request found');
+        if (body.action === 'approve') {
+          // Add to connectedAgencies (addToSet logic)
+          const connected = Array.isArray(brand.connectedAgencies) ? [...brand.connectedAgencies] : [];
+          if (!connected.includes(agencyCode)) {
+            connected.push(agencyCode);
+          }
+          await db().user.update({ where: { id: brand.id }, data: { connectedAgencies: connected } });
         }
 
         await writeAuditLog({
           req,
           action: body.action === 'approve' ? 'BRAND_CONNECTION_APPROVED' : 'BRAND_CONNECTION_REJECTED',
           entityType: 'User',
-          entityId: String(brand._id),
+          entityId: brand.mongoId || brand.id,
           metadata: { agencyCode },
         });
 
-        // Realtime: update both sides' UI state (scoped).
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'users.changed',
           ts,
-          payload: { brandId: String(brand._id), agencyCode, action: body.action },
+          payload: { brandId: brand.mongoId || brand.id, agencyCode, action: body.action },
           audience: {
-            userIds: [String(brand._id)],
+            userIds: [brand.mongoId || brand.id],
             agencyCodes: [agencyCode],
             roles: ['admin', 'ops'],
           },
@@ -395,7 +423,7 @@ export function makeBrandController() {
           ts,
           payload: { source: 'brand.connection.resolved', agencyCode, action: body.action },
           audience: {
-            userIds: [String(brand._id)],
+            userIds: [brand.mongoId || brand.id],
             agencyCodes: [agencyCode],
             roles: ['admin', 'ops'],
           },
@@ -409,59 +437,60 @@ export function makeBrandController() {
     removeAgency: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = removeBrandConnectionSchema.parse(req.body);
-        const { roles, userId } = getRequester(req);
+        const { roles } = getRequester(req);
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const brand = await UserModel.findById(userId);
+        const brand = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
         if (!brand) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
-        if (!isPrivileged(roles) && !brand.roles?.includes('brand')) {
+        if (!isPrivileged(roles) && !(brand.roles as string[])?.includes('brand')) {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can remove agencies');
         }
 
-        const updated = await UserModel.findOneAndUpdate(
-          { _id: brand._id },
-          {
-            $pull: {
-              connectedAgencies: body.agencyCode,
-              pendingConnections: { agencyCode: body.agencyCode },
-            },
-          },
-          { new: true }
-        );
-        if (!updated) {
-          throw new AppError(404, 'NOT_FOUND', 'Agency connection not found');
-        }
+        // Remove from connectedAgencies array
+        const connected = Array.isArray(brand.connectedAgencies) ? [...brand.connectedAgencies] : [];
+        const filtered = connected.filter((c: string) => c !== body.agencyCode);
+        await db().user.update({ where: { id: brand.id }, data: { connectedAgencies: filtered } });
+
+        // Remove pending connections for this agency
+        await db().pendingConnection.deleteMany({
+          where: { userId: brand.id, agencyCode: body.agencyCode },
+        });
 
         await writeAuditLog({
           req,
           action: 'BRAND_CONNECTION_REMOVED',
           entityType: 'User',
-          entityId: String(brand._id),
+          entityId: brand.mongoId || brand.id,
           metadata: { agencyCode: body.agencyCode },
         });
 
         // Cascade: remove the agency from allowedAgencyCodes on all this brand's campaigns.
         const agencyCode = String(body.agencyCode || '').trim();
         if (agencyCode) {
-          const campaignFilter = { brandUserId: brand._id, deletedAt: null, allowedAgencyCodes: agencyCode };
-          const cascadeResult = await CampaignModel.updateMany(campaignFilter, { $pull: { allowedAgencyCodes: agencyCode } });
-          resyncAfterBulkUpdate('Campaign', campaignFilter).catch(() => {});
-          if (cascadeResult.modifiedCount > 0) {
+          const affectedCount = await db().$executeRaw`
+            UPDATE campaigns
+            SET allowed_agency_codes = array_remove(allowed_agency_codes, ${agencyCode})
+            WHERE brand_user_id = ${brand.id}::uuid AND deleted_at IS NULL
+            AND ${agencyCode} = ANY(allowed_agency_codes)
+          `;
+          if (affectedCount > 0) {
             writeAuditLog({
               req,
               action: 'CAMPAIGNS_AGENCY_REMOVED_CASCADE',
               entityType: 'User',
-              entityId: String(brand._id),
-              metadata: { agencyCode, campaignsAffected: cascadeResult.modifiedCount },
+              entityId: brand.mongoId || brand.id,
+              metadata: { agencyCode, campaignsAffected: affectedCount },
             }).catch(() => {});
           }
         }
         const ts = new Date().toISOString();
+        const brandMongoId = brand.mongoId || brand.id;
         publishRealtime({
           type: 'users.changed',
           ts,
-          payload: { brandId: String(brand._id), agencyCode, action: 'removed' },
+          payload: { brandId: brandMongoId, agencyCode, action: 'removed' },
           audience: {
-            userIds: [String(brand._id)],
+            userIds: [brandMongoId],
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
           },
@@ -471,7 +500,7 @@ export function makeBrandController() {
           ts,
           payload: { source: 'brand.connection.removed', agencyCode },
           audience: {
-            userIds: [String(brand._id)],
+            userIds: [brandMongoId],
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
           },
@@ -486,21 +515,33 @@ export function makeBrandController() {
       try {
         const { roles, userId, user } = getRequester(req);
         const body = createBrandCampaignSchema.parse(req.body);
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const brandId = isPrivileged(roles) && body?.brandId ? String(body.brandId) : userId;
+        let brandPgId: string;
+        let brandMongoId: string;
+        if (isPrivileged(roles) && body?.brandId) {
+          const brandUser = await db().user.findFirst({ where: { mongoId: String(body.brandId) }, select: { id: true, mongoId: true } });
+          if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
+          brandPgId = brandUser.id;
+          brandMongoId = brandUser.mongoId || brandUser.id;
+        } else {
+          brandPgId = pgUserId;
+          brandMongoId = userId;
+        }
 
         // Brand must explicitly assign campaigns to specific connected agencies.
         const allowed = body.allowedAgencies;
 
         const normalizedAllowed = allowed.map((c: any) => String(c).trim()).filter(Boolean);
-        const agencies = await UserModel.find({
-          mediatorCode: { $in: normalizedAllowed },
-          roles: 'agency',
-          status: 'active',
-          deletedAt: null,
-        })
-          .select({ mediatorCode: 1 })
-          .lean();
+        const agencies = await db().user.findMany({
+          where: {
+            mediatorCode: { in: normalizedAllowed },
+            roles: { has: 'agency' as any },
+            status: 'active' as any,
+            deletedAt: null,
+          },
+          select: { mediatorCode: true },
+        });
         const found = new Set(agencies.map((a: any) => String(a.mediatorCode)));
         const missing = normalizedAllowed.filter((c: string) => !found.has(c));
         if (missing.length) {
@@ -508,39 +549,47 @@ export function makeBrandController() {
         }
 
         if (!isPrivileged(roles)) {
-          // Auto-connect allowed agencies to the brand to remove friction.
-          await UserModel.findOneAndUpdate(
-            { _id: userId as any },
-            { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } },
-            { new: true }
-          );
+          // Auto-connect allowed agencies to the brand (addToSet logic)
+          const brandUser = await db().user.findFirst({ where: { id: pgUserId }, select: { id: true, connectedAgencies: true } });
+          if (brandUser) {
+            const connected = Array.isArray(brandUser.connectedAgencies) ? [...brandUser.connectedAgencies] : [];
+            const merged = Array.from(new Set([...connected, ...normalizedAllowed]));
+            if (merged.length !== connected.length) {
+              await db().user.update({ where: { id: pgUserId }, data: { connectedAgencies: merged } });
+            }
+          }
         }
 
-        const campaign = await CampaignModel.create({
-          title: body.title,
-          brandUserId: brandId,
-          brandName: isPrivileged(roles) ? (body.brand ?? 'Brand') : String((user as any)?.name || 'Brand'),
-          platform: body.platform,
-          image: body.image,
-          productUrl: body.productUrl,
-          originalPricePaise: rupeesToPaise(Number(body.originalPrice ?? 0)),
-          pricePaise: rupeesToPaise(Number(body.price ?? 0)),
-          payoutPaise: rupeesToPaise(Number(body.payout ?? 0)),
-          totalSlots: Number(body.totalSlots ?? 0),
-          usedSlots: 0,
-          status: 'active',
-          allowedAgencyCodes: normalizedAllowed,
-          dealType: body.dealType,
-          returnWindowDays: Number(body.returnWindowDays ?? 14),
+        const campaign = await db().campaign.create({
+          data: {
+            mongoId: new Types.ObjectId().toString(),
+            title: body.title,
+            brandUserId: brandPgId,
+            brandName: isPrivileged(roles) ? (body.brand ?? 'Brand') : String((user as any)?.name || 'Brand'),
+            platform: body.platform,
+            image: body.image,
+            productUrl: body.productUrl,
+            originalPricePaise: rupeesToPaise(Number(body.originalPrice ?? 0)),
+            pricePaise: rupeesToPaise(Number(body.price ?? 0)),
+            payoutPaise: rupeesToPaise(Number(body.payout ?? 0)),
+            totalSlots: Number(body.totalSlots ?? 0),
+            usedSlots: 0,
+            status: 'active' as any,
+            allowedAgencyCodes: normalizedAllowed,
+            dealType: body.dealType as any,
+            returnWindowDays: Number(body.returnWindowDays ?? 14),
+            assignments: {},
+          },
         });
 
+        const campaignId = campaign.mongoId || campaign.id;
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String((campaign as any)._id), brandId: String(brandId) },
+          payload: { campaignId, brandId: brandMongoId },
           audience: {
-            userIds: [String(brandId)],
+            userIds: [brandMongoId],
             agencyCodes: normalizedAllowed,
             roles: ['admin', 'ops'],
           },
@@ -548,9 +597,9 @@ export function makeBrandController() {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'campaign.created', campaignId: String((campaign as any)._id) },
+          payload: { source: 'campaign.created', campaignId },
           audience: {
-            userIds: [String(brandId)],
+            userIds: [brandMongoId],
             agencyCodes: normalizedAllowed,
             roles: ['admin', 'ops'],
           },
@@ -559,11 +608,11 @@ export function makeBrandController() {
           req,
           action: 'BRAND_CAMPAIGN_CREATED',
           entityType: 'Campaign',
-          entityId: String((campaign as any)._id),
+          entityId: campaignId,
           metadata: { title: body.title, platform: body.platform, totalSlots: body.totalSlots, allowedAgencies: normalizedAllowed },
         });
 
-        res.status(201).json(toUiCampaign(campaign.toObject()));
+        res.status(201).json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
         next(err);
       }
@@ -575,35 +624,38 @@ export function makeBrandController() {
         if (!id) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
 
         const { roles, userId } = getRequester(req);
-        let previousAllowed: string[] = [];
-        let previousBrandUserId: string | null = null;
-        const existing = await CampaignModel.findById(id)
-          .select({ brandUserId: 1, brandName: 1, allowedAgencyCodes: 1, locked: 1 })
-          .lean();
+        const pgUserId = (req.auth as any)?.pgUserId as string;
+
+        const existing = await db().campaign.findFirst({
+          where: { mongoId: id, deletedAt: null },
+        });
         if (!existing) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
-        previousBrandUserId = String((existing as any).brandUserId || '') || null;
-        previousAllowed = Array.isArray((existing as any).allowedAgencyCodes)
-          ? (existing as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+        const previousBrandUserId = existing.brandUserId || null;
+        const previousAllowed = Array.isArray(existing.allowedAgencyCodes)
+          ? (existing.allowedAgencyCodes as string[]).map((c: string) => c.trim()).filter(Boolean)
           : [];
 
         const body = updateBrandCampaignSchema.parse(req.body);
 
         if (!isPrivileged(roles)) {
-          const ok = String((existing as any).brandUserId || '') === String(userId);
-          if (!ok) throw new AppError(403, 'FORBIDDEN', 'Cannot modify campaigns outside your brand');
+          // Resolve brand user mongoId from PG UUID for ownership check
+          const brandOwner = await db().user.findFirst({ where: { id: existing.brandUserId }, select: { mongoId: true } });
+          const ownerMongoId = brandOwner?.mongoId || existing.brandUserId;
+          if (ownerMongoId !== userId) throw new AppError(403, 'FORBIDDEN', 'Cannot modify campaigns outside your brand');
 
           if (typeof body.allowedAgencies !== 'undefined') {
             const allowed = body.allowedAgencies ?? [];
             const normalizedAllowed = allowed.map((c: string) => c.trim()).filter(Boolean);
-            const agencies = await UserModel.find({
-              mediatorCode: { $in: normalizedAllowed },
-              roles: 'agency',
-              status: 'active',
-              deletedAt: null,
-            })
-              .select({ mediatorCode: 1 })
-              .lean();
+            const agencies = await db().user.findMany({
+              where: {
+                mediatorCode: { in: normalizedAllowed },
+                roles: { has: 'agency' as any },
+                status: 'active' as any,
+                deletedAt: null,
+              },
+              select: { mediatorCode: true },
+            });
             const found = new Set(agencies.map((a: any) => String(a.mediatorCode)));
             const missing = normalizedAllowed.filter((c: string) => !found.has(c));
             if (missing.length) {
@@ -611,21 +663,25 @@ export function makeBrandController() {
             }
 
             // Auto-connect newly assigned agencies.
-            await UserModel.findOneAndUpdate(
-              { _id: userId as any },
-              { $addToSet: { connectedAgencies: { $each: normalizedAllowed } } },
-              { new: true }
-            );
+            const brandUser = await db().user.findFirst({ where: { id: pgUserId }, select: { id: true, connectedAgencies: true } });
+            if (brandUser) {
+              const connected = Array.isArray(brandUser.connectedAgencies) ? [...brandUser.connectedAgencies] : [];
+              const merged = Array.from(new Set([...connected, ...normalizedAllowed]));
+              if (merged.length !== connected.length) {
+                await db().user.update({ where: { id: pgUserId }, data: { connectedAgencies: merged } });
+              }
+            }
           }
         }
 
         // Non-negotiable: lock campaign mutability after the first order is created.
-        const hasOrders = await OrderModel.exists({ 'items.campaignId': id, deletedAt: null });
+        const hasOrders = await db().orderItem.findFirst({
+          where: { campaignId: existing.id, order: { deletedAt: null } },
+          select: { id: true },
+        });
         const requestedKeys = Object.keys(body || {});
         const onlyStatus = requestedKeys.length === 1 && requestedKeys[0] === 'status';
 
-        // Campaign economics/capacity become immutable after the first slot assignment.
-        // Allow status-only changes while locked.
         const attemptingLockedTerms =
           typeof body.price !== 'undefined' ||
           typeof body.originalPrice !== 'undefined' ||
@@ -633,7 +689,7 @@ export function makeBrandController() {
           typeof body.totalSlots !== 'undefined' ||
           typeof body.dealType !== 'undefined';
 
-        if ((existing as any).locked && attemptingLockedTerms && !onlyStatus) {
+        if (existing.locked && attemptingLockedTerms && !onlyStatus) {
           throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is locked after slot assignment; create a new campaign to change terms');
         }
 
@@ -653,11 +709,10 @@ export function makeBrandController() {
         if (typeof body.totalSlots !== 'undefined') update.totalSlots = Number(body.totalSlots);
         if (typeof body.allowedAgencies !== 'undefined') update.allowedAgencyCodes = body.allowedAgencies;
 
-        // Economic sanity: payout must not exceed selling price (skip for Review/Rating deals where price=0).
-        const effectivePrice = update.pricePaise ?? (existing as any).pricePaise ?? 0;
-        const effectivePayout = update.payoutPaise ?? (existing as any).payoutPaise ?? 0;
-        const effectiveOriginalPrice = update.originalPricePaise ?? (existing as any).originalPricePaise ?? effectivePrice;
-        const dealType = String(update.dealType ?? (existing as any).dealType ?? '').trim();
+        const effectivePrice = update.pricePaise ?? existing.pricePaise ?? 0;
+        const effectivePayout = update.payoutPaise ?? existing.payoutPaise ?? 0;
+        const effectiveOriginalPrice = update.originalPricePaise ?? existing.originalPricePaise ?? effectivePrice;
+        const dealType = String(update.dealType ?? existing.dealType ?? '').trim();
         const skipPayoutGuard = dealType === 'Review' || dealType === 'Rating';
         if (!skipPayoutGuard && effectivePayout > effectivePrice) {
           throw new AppError(400, 'INVALID_ECONOMICS', 'Payout cannot exceed selling price');
@@ -668,29 +723,34 @@ export function makeBrandController() {
 
         const statusRequested = typeof body.status !== 'undefined';
 
-        const campaign = await CampaignModel.findByIdAndUpdate(id, update, { new: true });
-        if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        const campaign = await db().campaign.update({
+          where: { id: existing.id },
+          data: update,
+        });
 
         if (statusRequested) {
-          const isActive = String((campaign as any).status || '').toLowerCase() === 'active';
-          const dealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
-          await DealModel.updateMany(dealFilter, { $set: { active: isActive } });
-          resyncAfterBulkUpdate('Deal', dealFilter).catch(() => {});
+          const isActive = String(campaign.status || '').toLowerCase() === 'active';
+          await db().deal.updateMany({
+            where: { campaignId: campaign.id, deletedAt: null },
+            data: { active: isActive },
+          });
         }
 
-        const nextAllowed = Array.isArray((campaign as any).allowedAgencyCodes)
-          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+        const nextAllowed = Array.isArray(campaign.allowedAgencyCodes)
+          ? (campaign.allowedAgencyCodes as string[]).map((c: string) => c.trim()).filter(Boolean)
           : [];
 
-        // Notify both newly-added AND removed agencies so their UIs update instantly.
         const allowedUnion = Array.from(new Set([...(previousAllowed || []), ...(nextAllowed || [])])).filter(Boolean);
-        const brandUserIdForAudience = String((campaign as any).brandUserId || previousBrandUserId || userId);
+        // Resolve brand user mongoId for realtime audience
+        const brandOwner = await db().user.findFirst({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+        const brandUserIdForAudience = brandOwner?.mongoId || campaign.brandUserId || userId;
 
+        const campaignMongoId = campaign.mongoId || campaign.id;
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String((campaign as any)._id) },
+          payload: { campaignId: campaignMongoId },
           audience: {
             userIds: [brandUserIdForAudience],
             agencyCodes: allowedUnion,
@@ -700,7 +760,7 @@ export function makeBrandController() {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'campaign.updated', campaignId: String((campaign as any)._id) },
+          payload: { source: 'campaign.updated', campaignId: campaignMongoId },
           audience: {
             userIds: [brandUserIdForAudience],
             agencyCodes: allowedUnion,
@@ -712,11 +772,11 @@ export function makeBrandController() {
           req,
           action: 'CAMPAIGN_UPDATED',
           entityType: 'Campaign',
-          entityId: String((campaign as any)._id),
+          entityId: campaignMongoId,
           metadata: { updatedFields: Object.keys(update) },
         });
 
-        res.json(toUiCampaign(campaign.toObject()));
+        res.json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
         next(err);
       }
@@ -729,65 +789,69 @@ export function makeBrandController() {
           throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
         }
         const { roles, userId } = getRequester(req);
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const campaign = await CampaignModel.findById(id).lean();
-        if (!campaign || (campaign as any).deletedAt) {
+        const campaign = await db().campaign.findFirst({ where: { mongoId: id, deletedAt: null } });
+        if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
 
         // Only brand owner or privileged can copy
-        const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
-        if (!isPrivileged(roles) && !isOwner) {
+        const brandOwner = await db().user.findFirst({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+        const ownerMongoId = brandOwner?.mongoId || campaign.brandUserId;
+        if (!isPrivileged(roles) && ownerMongoId !== userId) {
           throw new AppError(403, 'FORBIDDEN', 'Not authorized to copy this campaign');
         }
 
-        const copyData: any = {
-          title: `${campaign.title} (Copy)`,
-          brandUserId: (campaign as any).brandUserId,
-          brandName: campaign.brandName,
-          platform: campaign.platform,
-          image: campaign.image,
-          productUrl: campaign.productUrl,
-          dealType: (campaign as any).dealType,
-          originalPricePaise: campaign.originalPricePaise,
-          pricePaise: campaign.pricePaise,
-          payoutPaise: campaign.payoutPaise,
-          totalSlots: campaign.totalSlots,
-          returnWindowDays: campaign.returnWindowDays,
-          usedSlots: 0,
-          status: 'draft',
-          allowedAgencyCodes: (campaign as any).allowedAgencyCodes || [],
-          assignments: new Map(),
-          locked: false,
-          createdBy: req.auth?.userId as any,
-        };
+        const newCampaign = await db().campaign.create({
+          data: {
+            mongoId: new Types.ObjectId().toString(),
+            title: `${campaign.title} (Copy)`,
+            brandUserId: campaign.brandUserId,
+            brandName: campaign.brandName,
+            platform: campaign.platform,
+            image: campaign.image,
+            productUrl: campaign.productUrl,
+            dealType: campaign.dealType,
+            originalPricePaise: campaign.originalPricePaise,
+            pricePaise: campaign.pricePaise,
+            payoutPaise: campaign.payoutPaise,
+            totalSlots: campaign.totalSlots,
+            returnWindowDays: campaign.returnWindowDays,
+            usedSlots: 0,
+            status: 'draft' as any,
+            allowedAgencyCodes: (campaign.allowedAgencyCodes as string[]) || [],
+            assignments: {},
+            locked: false,
+            createdBy: pgUserId,
+          },
+        });
 
-        const newCampaign = await CampaignModel.create(copyData);
-
+        const newId = newCampaign.mongoId || newCampaign.id;
         await writeAuditLog({
           req,
           action: 'CAMPAIGN_COPIED',
           entityType: 'Campaign',
-          entityId: String(newCampaign._id),
+          entityId: newId,
           metadata: { sourceCampaignId: id },
         });
 
         const ts = new Date().toISOString();
-        const allowed = Array.isArray(copyData.allowedAgencyCodes)
-          ? copyData.allowedAgencyCodes.map((c: any) => String(c)).filter(Boolean)
+        const allowed = Array.isArray(campaign.allowedAgencyCodes)
+          ? (campaign.allowedAgencyCodes as string[]).filter(Boolean)
           : [];
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String(newCampaign._id), brandId: String((campaign as any).brandUserId) },
+          payload: { campaignId: newId, brandId: ownerMongoId },
           audience: {
-            userIds: [String((campaign as any).brandUserId)],
+            userIds: [ownerMongoId],
             agencyCodes: allowed,
             roles: ['admin', 'ops'],
           },
         });
 
-        res.json({ ok: true, id: String(newCampaign._id) });
+        res.json({ ok: true, id: newId });
       } catch (err) {
         next(err);
       }
@@ -799,58 +863,59 @@ export function makeBrandController() {
         if (!id) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'campaignId required');
 
         const { roles, userId } = getRequester(req);
-        const campaign = await CampaignModel.findById(id)
-          .select({ brandUserId: 1, allowedAgencyCodes: 1, assignments: 1, deletedAt: 1 })
-          .lean();
+        const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        if (!campaign || (campaign as any).deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        const campaign = await db().campaign.findFirst({
+          where: { mongoId: id, deletedAt: null },
+        });
+        if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
-        const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
-        if (!isPrivileged(roles) && !isOwner) {
+        const brandOwner = await db().user.findFirst({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+        const ownerMongoId = brandOwner?.mongoId || campaign.brandUserId;
+        if (!isPrivileged(roles) && ownerMongoId !== userId) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot delete campaigns outside your ownership');
         }
 
-        const hasOrders = await OrderModel.exists({ deletedAt: null, 'items.campaignId': (campaign as any)._id });
+        const hasOrders = await db().orderItem.findFirst({
+          where: { campaignId: campaign.id, order: { deletedAt: null } },
+          select: { id: true },
+        });
         if (hasOrders) throw new AppError(409, 'CAMPAIGN_HAS_ORDERS', 'Cannot delete a campaign with orders');
 
         const now = new Date();
-        const deletedBy = req.auth?.userId as any;
-        const updated = await CampaignModel.updateOne(
-          { _id: (campaign as any)._id, deletedAt: null },
-          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } }
-        );
-        if (!updated.modifiedCount) {
-          throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
-        }
+        await db().campaign.update({
+          where: { id: campaign.id },
+          data: { deletedAt: now, deletedBy: pgUserId, updatedBy: pgUserId },
+        });
 
-        const dealDeleteFilter = { campaignId: (campaign as any)._id, deletedAt: null };
-        await DealModel.updateMany(dealDeleteFilter, { $set: { deletedAt: now, deletedBy, active: false } });
-        resyncAfterBulkUpdate('Deal', { campaignId: (campaign as any)._id }).catch(() => {});
+        await db().deal.updateMany({
+          where: { campaignId: campaign.id, deletedAt: null },
+          data: { deletedAt: now, deletedBy: pgUserId, active: false },
+        });
 
+        const campaignMongoId = campaign.mongoId || campaign.id;
         await writeAuditLog({
           req,
           action: 'CAMPAIGN_DELETED',
           entityType: 'Campaign',
-          entityId: String((campaign as any)._id),
+          entityId: campaignMongoId,
         });
 
-        const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
-          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+        const allowed = Array.isArray(campaign.allowedAgencyCodes)
+          ? (campaign.allowedAgencyCodes as string[]).filter(Boolean)
           : [];
-        const assignments = (campaign as any).assignments;
-        const assignmentCodes = assignments instanceof Map
-          ? Array.from(assignments.keys())
-          : assignments && typeof assignments === 'object'
-            ? Object.keys(assignments)
-            : [];
+        const assignments = campaign.assignments;
+        const assignmentCodes = assignments && typeof assignments === 'object' && !Array.isArray(assignments)
+          ? Object.keys(assignments as Record<string, unknown>)
+          : [];
 
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String((campaign as any)._id) },
+          payload: { campaignId: campaignMongoId },
           audience: {
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [ownerMongoId].filter(Boolean),
             agencyCodes: allowed,
             mediatorCodes: assignmentCodes,
             roles: ['admin', 'ops'],
@@ -859,9 +924,9 @@ export function makeBrandController() {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'campaign.deleted', campaignId: String((campaign as any)._id) },
+          payload: { source: 'campaign.deleted', campaignId: campaignMongoId },
           audience: {
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [ownerMongoId].filter(Boolean),
             agencyCodes: allowed,
             mediatorCodes: assignmentCodes,
             roles: ['admin', 'ops'],

@@ -1,13 +1,16 @@
 import type { Request, Response, NextFunction } from 'express';
-import { InviteModel } from '../models/Invite.js';
+import { Types } from 'mongoose';
+import { prisma } from '../database/prisma.js';
 import { createInviteSchema, opsGenerateInviteSchema, revokeInviteSchema } from '../validations/invites.js';
 import { generateHumanCode } from '../services/codes.js';
 import { AppError } from '../middleware/errors.js';
-import { UserModel } from '../models/User.js';
 import { writeAuditLog } from '../services/audit.js';
 import { revokeInvite } from '../services/invites.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
+import { pgInvite } from '../utils/pgMappers.js';
+
+function db() { return prisma(); }
 
 export function makeInviteController() {
   return {
@@ -21,29 +24,37 @@ export function makeInviteController() {
         let code = generateHumanCode('INV');
         for (let i = 0; i < 5; i += 1) {
           // eslint-disable-next-line no-await-in-loop
-          const exists = await InviteModel.exists({ code });
+          const exists = await db().invite.findFirst({ where: { code }, select: { id: true } });
           if (!exists) break;
           code = generateHumanCode('INV');
         }
 
-        const createdBy = req.auth?.userId ? req.auth.userId : undefined;
+        // Resolve createdBy: need PG UUID, not mongoId
+        let createdByUuid: string | undefined;
+        if (req.auth?.userId) {
+          const actor = await db().user.findFirst({ where: { mongoId: req.auth.userId, deletedAt: null }, select: { id: true } });
+          createdByUuid = actor?.id;
+        }
 
-        const invite = await InviteModel.create({
-          code,
-          role: body.role,
-          label: body.label,
-          parentUserId: body.parentUserId,
-          parentCode: body.parentCode,
-          maxUses: body.maxUses ?? 1,
-          expiresAt,
-          createdBy,
+        const invite = await db().invite.create({
+          data: {
+            mongoId: new Types.ObjectId().toString(),
+            code,
+            role: body.role as any,
+            label: body.label,
+            parentUserId: body.parentUserId ? undefined : undefined,
+            parentCode: body.parentCode,
+            maxUses: body.maxUses ?? 1,
+            expiresAt,
+            createdBy: createdByUuid,
+          },
         });
 
         await writeAuditLog({
           req,
           action: 'INVITE_CREATED',
           entityType: 'Invite',
-          entityId: String(invite._id),
+          entityId: invite.mongoId!,
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
@@ -64,10 +75,17 @@ export function makeInviteController() {
     adminRevokeInvite: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = revokeInviteSchema.parse(req.body);
-        const revokedBy = req.auth?.userId;
-        if (!revokedBy) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
+        // Resolve PG UUID for revokedBy (req.auth.userId is MongoDB ObjectId)
+        let revokedByUuid: string | undefined;
+        if (req.auth?.pgUserId) {
+          revokedByUuid = req.auth.pgUserId;
+        } else if (req.auth?.userId) {
+          const actor = await db().user.findFirst({ where: { mongoId: req.auth.userId, deletedAt: null }, select: { id: true } });
+          revokedByUuid = actor?.id;
+        }
+        if (!revokedByUuid) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
 
-        const invite = await revokeInvite({ code: body.code, revokedByUserId: revokedBy, reason: body.reason });
+        const invite = await revokeInvite({ code: body.code, revokedByUserId: revokedByUuid, reason: body.reason });
 
         await writeAuditLog({
           req,
@@ -87,8 +105,8 @@ export function makeInviteController() {
 
     adminListInvites: async (_req: Request, res: Response, next: NextFunction) => {
       try {
-        const invites = await InviteModel.find({}).sort({ createdAt: -1 }).limit(500).lean();
-        res.json(invites);
+        const invites = await db().invite.findMany({ orderBy: { createdAt: 'desc' }, take: 500 });
+        res.json(invites.map(pgInvite));
       } catch (err) {
         next(err);
       }
@@ -99,16 +117,16 @@ export function makeInviteController() {
         const code = String(req.params.code || '').trim();
         if (!code) throw new AppError(400, 'INVALID_INVITE_CODE', 'Invite code required');
 
-        const invite = await InviteModel.findOne({ code });
+        const invite = await db().invite.findFirst({ where: { code } });
         if (!invite) throw new AppError(404, 'INVITE_NOT_FOUND', 'Invite not found');
 
         if (invite.status !== 'active') {
           throw new AppError(409, 'INVITE_NOT_ACTIVE', 'Invite is not active');
         }
 
-        const useCount = Number((invite as any).useCount ?? 0);
-        const usesLen = Array.isArray((invite as any).uses) ? (invite as any).uses.length : 0;
-        if (useCount > 0 || usesLen > 0 || (invite as any).usedBy) {
+        const useCount = Number(invite.useCount ?? 0);
+        const usesArr = Array.isArray(invite.uses) ? invite.uses : [];
+        if (useCount > 0 || usesArr.length > 0 || invite.usedBy) {
           throw new AppError(409, 'INVITE_ALREADY_USED', 'Cannot delete an invite that has been used');
         }
 
@@ -116,11 +134,11 @@ export function makeInviteController() {
           req,
           action: 'INVITE_DELETED',
           entityType: 'Invite',
-          entityId: String(invite._id),
+          entityId: invite.mongoId!,
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
-        await invite.deleteOne();
+        await db().invite.delete({ where: { id: invite.id } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
@@ -137,50 +155,54 @@ export function makeInviteController() {
         const requesterId = req.auth?.userId;
         if (!requesterId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
 
-        const requester = await UserModel.findById(requesterId);
+        const requester = await db().user.findFirst({ where: { mongoId: requesterId, deletedAt: null } });
         if (!requester) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
 
         // Allow agencies to generate mediator invites for themselves. Admin/Ops can generate for any agency.
         const isAgencySelf =
-          requester.roles?.includes('agency') && String(requester._id) === body.agencyId;
-        const isPrivileged = requester.roles?.includes('admin') || requester.roles?.includes('ops');
+          (requester.roles as string[])?.includes('agency') && requester.mongoId === body.agencyId;
+        const isPrivileged = (requester.roles as string[])?.includes('admin') || (requester.roles as string[])?.includes('ops');
         if (!isAgencySelf && !isPrivileged) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot generate invites for this agency');
         }
 
-        const agency = await UserModel.findById(body.agencyId);
-        if (!agency || !agency.roles?.includes('agency')) {
+        const agency = await db().user.findFirst({ where: { mongoId: body.agencyId, deletedAt: null } });
+        if (!agency || !(agency.roles as string[])?.includes('agency')) {
           throw new AppError(404, 'AGENCY_NOT_FOUND', 'Agency not found');
         }
 
         // Ensure agency has a stable code.
         if (!agency.mediatorCode) {
-          agency.mediatorCode = generateHumanCode('AGY');
-          await agency.save();
+          const newCode = generateHumanCode('AGY');
+          await db().user.update({ where: { id: agency.id }, data: { mediatorCode: newCode } });
+          agency.mediatorCode = newCode;
         }
 
         let code = generateHumanCode('INV');
         for (let i = 0; i < 5; i += 1) {
           // eslint-disable-next-line no-await-in-loop
-          const exists = await InviteModel.exists({ code });
+          const exists = await db().invite.findFirst({ where: { code }, select: { id: true } });
           if (!exists) break;
           code = generateHumanCode('INV');
         }
 
-        const invite = await InviteModel.create({
-          code,
-          role: 'mediator',
-          parentUserId: agency._id,
-          parentCode: agency.mediatorCode,
-          createdBy: requester._id,
-          expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
+        const invite = await db().invite.create({
+          data: {
+            mongoId: new Types.ObjectId().toString(),
+            code,
+            role: 'mediator' as any,
+            parentUserId: agency.id,
+            parentCode: agency.mediatorCode,
+            createdBy: requester.id,
+            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
+          },
         });
 
         await writeAuditLog({
           req,
           action: 'INVITE_CREATED',
           entityType: 'Invite',
-          entityId: String(invite._id),
+          entityId: invite.mongoId!,
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 
@@ -200,17 +222,17 @@ export function makeInviteController() {
         const requesterId = req.auth?.userId;
         if (!requesterId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
 
-        const requester = await UserModel.findById(requesterId);
+        const requester = await db().user.findFirst({ where: { mongoId: requesterId, deletedAt: null } });
         if (!requester) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
 
-        const isMediatorSelf = requester.roles?.includes('mediator') && String(requester._id) === mediatorId;
-        const isPrivileged = requester.roles?.includes('admin') || requester.roles?.includes('ops');
+        const isMediatorSelf = (requester.roles as string[])?.includes('mediator') && requester.mongoId === mediatorId;
+        const isPrivileged = (requester.roles as string[])?.includes('admin') || (requester.roles as string[])?.includes('ops');
         if (!isMediatorSelf && !isPrivileged) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot generate buyer invites for this mediator');
         }
 
-        const mediator = await UserModel.findById(mediatorId);
-        if (!mediator || !mediator.roles?.includes('mediator')) {
+        const mediator = await db().user.findFirst({ where: { mongoId: mediatorId, deletedAt: null } });
+        if (!mediator || !(mediator.roles as string[])?.includes('mediator')) {
           throw new AppError(404, 'MEDIATOR_NOT_FOUND', 'Mediator not found');
         }
         if (!mediator.mediatorCode) {
@@ -220,25 +242,28 @@ export function makeInviteController() {
         let code = generateHumanCode('INV');
         for (let i = 0; i < 5; i += 1) {
           // eslint-disable-next-line no-await-in-loop
-          const exists = await InviteModel.exists({ code });
+          const exists = await db().invite.findFirst({ where: { code }, select: { id: true } });
           if (!exists) break;
           code = generateHumanCode('INV');
         }
 
-        const invite = await InviteModel.create({
-          code,
-          role: 'shopper',
-          parentUserId: mediator._id,
-          parentCode: mediator.mediatorCode,
-          createdBy: requester._id,
-          expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
+        const invite = await db().invite.create({
+          data: {
+            mongoId: new Types.ObjectId().toString(),
+            code,
+            role: 'shopper' as any,
+            parentUserId: mediator.id,
+            parentCode: mediator.mediatorCode,
+            createdBy: requester.id,
+            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
+          },
         });
 
         await writeAuditLog({
           req,
           action: 'INVITE_CREATED',
           entityType: 'Invite',
-          entityId: String(invite._id),
+          entityId: invite.mongoId!,
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
 

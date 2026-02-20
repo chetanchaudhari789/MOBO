@@ -39,6 +39,7 @@ export const createOrderSchema = z
       payment: z.string().optional(),
       review: z.string().optional(),
       rating: z.string().optional(),
+      returnWindow: z.string().optional(),
     })
     .optional(),
   externalOrderId: z.string().min(1).max(128).optional(),

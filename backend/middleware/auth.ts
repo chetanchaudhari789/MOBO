@@ -1,21 +1,28 @@
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import type { Types } from 'mongoose';
 import type { Env } from '../config/env.js';
 import { AppError } from './errors.js';
-import { UserModel, type UserDoc } from '../models/User.js';
+import { prisma } from '../database/prisma.js';
 
 export type Role = 'shopper' | 'mediator' | 'agency' | 'brand' | 'admin' | 'ops';
 
-export type AuthUser = Pick<
-  UserDoc,
-  'status' | 'roles' | 'role' | 'parentCode' | 'mediatorCode' | 'brandCode' | 'deletedAt' | 'mobile' | 'name'
-> & {
-  _id: Types.ObjectId;
+export type AuthUser = {
+  _id: string;
+  status: string;
+  roles: string[];
+  role: string;
+  parentCode?: string | null;
+  mediatorCode?: string | null;
+  brandCode?: string | null;
+  deletedAt?: Date | null;
+  mobile: string;
+  name: string;
 };
 
 export type AuthContext = {
   userId: string;
+  /** PG UUID – use for foreign-key references in Prisma queries. */
+  pgUserId: string;
   roles: Role[];
   user?: AuthUser;
 };
@@ -37,13 +44,20 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
     throw new AppError(401, 'UNAUTHENTICATED', 'Invalid token');
   }
 
+  const db = prisma();
+
   // Zero-trust: do not trust roles/status embedded in the JWT.
   // Fetch from DB so suspensions and role changes take effect immediately.
-  const user = await UserModel.findById(userId)
-    .select({ status: 1, roles: 1, role: 1, parentCode: 1, mediatorCode: 1, brandCode: 1, deletedAt: 1, mobile: 1, name: 1 })
-    .lean();
+  const user = await db.user.findUnique({
+    where: { mongoId: userId },
+    select: {
+      id: true, mongoId: true, status: true, roles: true, role: true,
+      parentCode: true, mediatorCode: true, brandCode: true,
+      deletedAt: true, mobile: true, name: true,
+    },
+  });
 
-  if (!user || (user as any).deletedAt) {
+  if (!user || user.deletedAt) {
     throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
   }
 
@@ -56,17 +70,18 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
   // Upstream suspension enforcement (non-negotiable):
   // - Buyer loses access immediately when their mediator or agency is suspended.
   // - Mediator loses access immediately when their agency is suspended.
-  const parentCode = String((user as any).parentCode || '').trim();
+  const parentCode = String(user.parentCode || '').trim();
 
   if (roles.includes('mediator')) {
     if (parentCode) {
-      const agency = await UserModel.findOne({
-        mediatorCode: parentCode,
-        roles: 'agency',
-        deletedAt: null,
-      })
-        .select({ status: 1 })
-        .lean();
+      const agency = await db.user.findFirst({
+        where: {
+          mediatorCode: parentCode,
+          roles: { has: 'agency' as any },
+          deletedAt: null,
+        },
+        select: { status: true },
+      });
       if (!agency || agency.status !== 'active') {
         throw new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream agency is not active');
       }
@@ -75,26 +90,28 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
 
   if (roles.includes('shopper')) {
     if (parentCode) {
-      const mediator = await UserModel.findOne({
-        mediatorCode: parentCode,
-        roles: 'mediator',
-        deletedAt: null,
-      })
-        .select({ status: 1, parentCode: 1 })
-        .lean();
+      const mediator = await db.user.findFirst({
+        where: {
+          mediatorCode: parentCode,
+          roles: { has: 'mediator' as any },
+          deletedAt: null,
+        },
+        select: { status: true, parentCode: true },
+      });
       if (!mediator || mediator.status !== 'active') {
         throw new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream mediator is not active');
       }
 
-      const agencyCode = String((mediator as any).parentCode || '').trim();
+      const agencyCode = String(mediator.parentCode || '').trim();
       if (agencyCode) {
-        const agency = await UserModel.findOne({
-          mediatorCode: agencyCode,
-          roles: 'agency',
-          deletedAt: null,
-        })
-          .select({ status: 1 })
-          .lean();
+        const agency = await db.user.findFirst({
+          where: {
+            mediatorCode: agencyCode,
+            roles: { has: 'agency' as any },
+            deletedAt: null,
+          },
+          select: { status: true },
+        });
         if (!agency || agency.status !== 'active') {
           throw new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream agency is not active');
         }
@@ -102,7 +119,20 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
     }
   }
 
-  return { userId, roles, user: user as any };
+  const authUser: AuthUser = {
+    _id: user.mongoId ?? userId,
+    status: user.status,
+    roles: user.roles as string[],
+    role: user.role as string,
+    parentCode: user.parentCode,
+    mediatorCode: user.mediatorCode,
+    brandCode: user.brandCode,
+    deletedAt: user.deletedAt,
+    mobile: user.mobile,
+    name: user.name,
+  };
+
+  return { userId, pgUserId: user.id, roles, user: authUser };
 }
 
 export function requireAuth(env: Env) {

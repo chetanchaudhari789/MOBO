@@ -3,13 +3,36 @@ import request from 'supertest';
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
+import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 import { InviteModel } from '../models/Invite.js';
-import { UserModel } from '../models/User.js';
-import { AgencyModel } from '../models/Agency.js';
-import { BrandModel } from '../models/Brand.js';
-import { MediatorProfileModel } from '../models/MediatorProfile.js';
-import { ShopperProfileModel } from '../models/ShopperProfile.js';
+
+/**
+ * Helper: create an invite in BOTH MongoDB (legacy) and PostgreSQL (primary).
+ * Controllers only query PG, so the PG record is what matters.
+ */
+async function createInvite(
+  mongoFields: Record<string, unknown>,
+  pgOverrides: { parentUserId?: string; createdBy?: string } = {},
+) {
+  const mongoInvite = await InviteModel.create(mongoFields);
+  const db = prisma();
+  await db.invite.create({
+    data: {
+      mongoId: String(mongoInvite._id),
+      code: String(mongoFields.code),
+      role: String(mongoFields.role) as any,
+      status: String(mongoFields.status ?? 'active') as any,
+      parentUserId: pgOverrides.parentUserId ?? null,
+      parentCode: mongoFields.parentCode ? String(mongoFields.parentCode) : null,
+      createdBy: pgOverrides.createdBy ?? null,
+      maxUses: Number(mongoFields.maxUses ?? 1),
+      useCount: Number(mongoFields.useCount ?? 0),
+      expiresAt: mongoFields.expiresAt ? new Date(mongoFields.expiresAt as any) : null,
+    },
+  });
+  return mongoInvite;
+}
 
 async function setup() {
   const env = loadEnv({
@@ -31,19 +54,23 @@ describe('auth registration + invites', () => {
 
   it('registers a shopper via invite and consumes the invite', async () => {
     const { app, seeded } = await setup();
+    const db = prisma();
 
     const inviteCode = 'INV_SHOPPER_1';
-    await InviteModel.create({
-      code: inviteCode,
-      role: 'shopper',
-      status: 'active',
-      parentUserId: seeded.mediator._id,
-      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      createdBy: seeded.admin._id,
-      maxUses: 1,
-      useCount: 0,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+    await createInvite(
+      {
+        code: inviteCode,
+        role: 'shopper',
+        status: 'active',
+        parentUserId: seeded.mediator._id,
+        parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+        createdBy: seeded.admin._id,
+        maxUses: 1,
+        useCount: 0,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      { parentUserId: seeded.pgMediator.id, createdBy: seeded.pgAdmin.id },
+    );
 
     const mobile = '9111111111';
     const res = await request(app).post('/api/auth/register').send({
@@ -62,36 +89,42 @@ describe('auth registration + invites', () => {
     expect(res.body).toHaveProperty('tokens');
     expect(typeof res.body.tokens?.accessToken).toBe('string');
 
-    const invite = await InviteModel.findOne({ code: inviteCode }).lean();
+    // Verify invite was consumed (PG)
+    const invite = await db.invite.findFirst({ where: { code: inviteCode } });
     expect(invite).toBeTruthy();
     expect(invite?.status).toBe('used');
     expect(invite?.useCount).toBe(1);
-    expect((invite as any)?.usedBy).toBeTruthy();
-    expect(Array.isArray((invite as any)?.uses)).toBe(true);
-    expect(((invite as any)?.uses ?? []).length).toBe(1);
+    expect(invite?.usedBy).toBeTruthy();
+    expect(Array.isArray(invite?.uses)).toBe(true);
+    expect(((invite?.uses as any[]) ?? []).length).toBe(1);
 
-    const created = await UserModel.findOne({ mobile, deletedAt: null }).lean();
+    // Verify user was created (PG)
+    const created = await db.user.findFirst({ where: { mobile, deletedAt: null } });
     expect(created).toBeTruthy();
-    const shopperProfile = await ShopperProfileModel.findOne({ userId: (created as any)._id }).lean();
+    const shopperProfile = await db.shopperProfile.findFirst({ where: { userId: created!.id } });
     expect(shopperProfile).toBeTruthy();
-    expect((shopperProfile as any)?.defaultMediatorCode).toBe(E2E_ACCOUNTS.mediator.mediatorCode);
+    expect(shopperProfile?.defaultMediatorCode).toBe(E2E_ACCOUNTS.mediator.mediatorCode);
   });
 
   it('registers a mediator via invite and consumes the invite', async () => {
     const { app, seeded } = await setup();
+    const db = prisma();
 
     const inviteCode = 'INV_MEDIATOR_1';
-    await InviteModel.create({
-      code: inviteCode,
-      role: 'mediator',
-      status: 'active',
-      parentUserId: seeded.agency._id,
-      parentCode: E2E_ACCOUNTS.agency.agencyCode,
-      createdBy: seeded.admin._id,
-      maxUses: 1,
-      useCount: 0,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+    await createInvite(
+      {
+        code: inviteCode,
+        role: 'mediator',
+        status: 'active',
+        parentUserId: seeded.agency._id,
+        parentCode: E2E_ACCOUNTS.agency.agencyCode,
+        createdBy: seeded.admin._id,
+        maxUses: 1,
+        useCount: 0,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      { parentUserId: seeded.pgAgency.id, createdBy: seeded.pgAdmin.id },
+    );
 
     const mobile = '9222222222';
     const res = await request(app).post('/api/auth/register-ops').send({
@@ -111,20 +144,23 @@ describe('auth registration + invites', () => {
     expect(res.body).toHaveProperty('tokens');
     expect(typeof res.body.tokens?.accessToken).toBe('string');
 
-    const invite = await InviteModel.findOne({ code: inviteCode }).lean();
+    // Verify invite consumed (PG)
+    const invite = await db.invite.findFirst({ where: { code: inviteCode } });
     expect(invite?.status).toBe('used');
     expect(invite?.useCount).toBe(1);
 
-    const created = await UserModel.findOne({ mobile, deletedAt: null }).lean();
+    // Verify user + profile created (PG)
+    const created = await db.user.findFirst({ where: { mobile, deletedAt: null } });
     expect(created).toBeTruthy();
-    const profile = await MediatorProfileModel.findOne({ mediatorCode: (created as any)?.mediatorCode }).lean();
+    const profile = await db.mediatorProfile.findFirst({ where: { mediatorCode: created!.mediatorCode! } });
     expect(profile).toBeTruthy();
-    expect(String((profile as any)?.userId)).toBe(String((created as any)?._id));
-    expect((profile as any)?.parentAgencyCode).toBe(E2E_ACCOUNTS.agency.agencyCode);
+    expect(profile?.userId).toBe(created!.id);
+    expect(profile?.parentAgencyCode).toBe(E2E_ACCOUNTS.agency.agencyCode);
   });
 
   it('registers a mediator via agency code when invite is not found', async () => {
     const { app } = await setup();
+    const db = prisma();
 
     const mobile = '9222000000';
     const res = await request(app).post('/api/auth/register-ops').send({
@@ -141,27 +177,32 @@ describe('auth registration + invites', () => {
     expect(res.body).toHaveProperty('message');
     expect(res.body.tokens).toBeUndefined(); // No tokens until approved
 
-    const created = await UserModel.findOne({ mobile, deletedAt: null }).lean();
+    // Verify user created as pending (PG)
+    const created = await db.user.findFirst({ where: { mobile, deletedAt: null } });
     expect(created).toBeTruthy();
-    expect((created as any)?.status).toBe('pending'); // User is pending approval
-    const profile = await MediatorProfileModel.findOne({ mediatorCode: (created as any)?.mediatorCode }).lean();
+    expect(created?.status).toBe('pending');
+    const profile = await db.mediatorProfile.findFirst({ where: { mediatorCode: created!.mediatorCode! } });
     expect(profile).toBeTruthy();
-    expect((profile as any)?.parentAgencyCode).toBe(E2E_ACCOUNTS.agency.agencyCode);
+    expect(profile?.parentAgencyCode).toBe(E2E_ACCOUNTS.agency.agencyCode);
   });
 
   it('registers a brand via invite and consumes the invite', async () => {
     const { app, seeded } = await setup();
+    const db = prisma();
 
     const inviteCode = 'INV_BRAND_1';
-    await InviteModel.create({
-      code: inviteCode,
-      role: 'brand',
-      status: 'active',
-      createdBy: seeded.admin._id,
-      maxUses: 1,
-      useCount: 0,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+    await createInvite(
+      {
+        code: inviteCode,
+        role: 'brand',
+        status: 'active',
+        createdBy: seeded.admin._id,
+        maxUses: 1,
+        useCount: 0,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      { createdBy: seeded.pgAdmin.id },
+    );
 
     const mobile = '9333333333';
     const res = await request(app).post('/api/auth/register-brand').send({
@@ -177,21 +218,25 @@ describe('auth registration + invites', () => {
     expect(res.body.user).toHaveProperty('role', 'brand');
     expect(typeof res.body.user?.brandCode).toBe('string');
 
-    const created = await UserModel.findOne({ mobile }).lean();
+    // Verify user created (PG)
+    const created = await db.user.findFirst({ where: { mobile } });
     expect(created).toBeTruthy();
-    expect(String((created as any)?.createdBy)).toBe(String(seeded.admin._id));
+    expect(created?.createdBy).toBe(seeded.pgAdmin.id);
 
-    const invite = await InviteModel.findOne({ code: inviteCode }).lean();
+    // Verify invite consumed (PG)
+    const invite = await db.invite.findFirst({ where: { code: inviteCode } });
     expect(invite?.status).toBe('used');
     expect(invite?.useCount).toBe(1);
 
-    const brandDoc = await BrandModel.findOne({ brandCode: (created as any)?.brandCode }).lean();
+    // Verify brand doc (PG)
+    const brandDoc = await db.brand.findFirst({ where: { brandCode: created!.brandCode! } });
     expect(brandDoc).toBeTruthy();
-    expect(String((brandDoc as any)?.ownerUserId)).toBe(String((created as any)?._id));
+    expect(brandDoc?.ownerUserId).toBe(created!.id);
   });
 
   it('registers a shopper via mediator code when invite is not found', async () => {
     const { app } = await setup();
+    const db = prisma();
 
     const mobile = '9111000000';
     const res = await request(app).post('/api/auth/register').send({
@@ -210,26 +255,31 @@ describe('auth registration + invites', () => {
     expect(res.body).toHaveProperty('tokens');
     expect(typeof res.body.tokens?.accessToken).toBe('string');
 
-    const created = await UserModel.findOne({ mobile, deletedAt: null }).lean();
+    // Verify user + profile (PG)
+    const created = await db.user.findFirst({ where: { mobile, deletedAt: null } });
     expect(created).toBeTruthy();
-    const shopperProfile = await ShopperProfileModel.findOne({ userId: (created as any)._id }).lean();
+    const shopperProfile = await db.shopperProfile.findFirst({ where: { userId: created!.id } });
     expect(shopperProfile).toBeTruthy();
-    expect((shopperProfile as any)?.defaultMediatorCode).toBe(E2E_ACCOUNTS.mediator.mediatorCode);
+    expect(shopperProfile?.defaultMediatorCode).toBe(E2E_ACCOUNTS.mediator.mediatorCode);
   });
 
   it('registers an agency via invite and creates an Agency record', async () => {
     const { app, seeded } = await setup();
+    const db = prisma();
 
     const inviteCode = 'INV_AGENCY_1';
-    await InviteModel.create({
-      code: inviteCode,
-      role: 'agency',
-      status: 'active',
-      createdBy: seeded.admin._id,
-      maxUses: 1,
-      useCount: 0,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+    await createInvite(
+      {
+        code: inviteCode,
+        role: 'agency',
+        status: 'active',
+        createdBy: seeded.admin._id,
+        maxUses: 1,
+        useCount: 0,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      { createdBy: seeded.pgAdmin.id },
+    );
 
     const mobile = '9777777777';
     const res = await request(app).post('/api/auth/register-ops').send({
@@ -242,31 +292,37 @@ describe('auth registration + invites', () => {
 
     expect(res.status).toBe(201);
 
-    const created = await UserModel.findOne({ mobile, deletedAt: null }).lean();
+    // Verify user (PG)
+    const created = await db.user.findFirst({ where: { mobile, deletedAt: null } });
     expect(created).toBeTruthy();
-    expect((created as any)?.roles).toContain('agency');
+    expect((created?.roles as string[]) ?? []).toContain('agency');
 
-    const agencyCode = String((created as any)?.mediatorCode || '');
+    const agencyCode = String(created?.mediatorCode || '');
     expect(agencyCode).toMatch(/^AGY_/);
 
-    const agencyDoc = await AgencyModel.findOne({ agencyCode }).lean();
+    // Verify agency doc (PG)
+    const agencyDoc = await db.agency.findFirst({ where: { agencyCode } });
     expect(agencyDoc).toBeTruthy();
-    expect(String((agencyDoc as any)?.ownerUserId)).toBe(String((created as any)?._id));
+    expect(agencyDoc?.ownerUserId).toBe(created!.id);
   });
 
   it('rejects expired invites and does not create a user', async () => {
     const { app, seeded } = await setup();
+    const db = prisma();
 
     const inviteCode = 'INV_EXPIRED_1';
-    await InviteModel.create({
-      code: inviteCode,
-      role: 'agency',
-      status: 'active',
-      createdBy: seeded.admin._id,
-      maxUses: 1,
-      useCount: 0,
-      expiresAt: new Date(Date.now() - 60_000),
-    });
+    await createInvite(
+      {
+        code: inviteCode,
+        role: 'agency',
+        status: 'active',
+        createdBy: seeded.admin._id,
+        maxUses: 1,
+        useCount: 0,
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+      { createdBy: seeded.pgAdmin.id },
+    );
 
     const mobile = '9444444444';
     const res = await request(app).post('/api/auth/register-ops').send({
@@ -281,26 +337,32 @@ describe('auth registration + invites', () => {
     expect(res.body).toHaveProperty('error');
     expect(res.body.error).toHaveProperty('code', 'INVITE_EXPIRED');
 
-    const user = await UserModel.findOne({ mobile }).lean();
+    // Verify no user created (PG)
+    const user = await db.user.findFirst({ where: { mobile } });
     expect(user).toBeNull();
 
-    const invite = await InviteModel.findOne({ code: inviteCode }).lean();
+    // Verify invite marked expired (PG)
+    const invite = await db.invite.findFirst({ where: { code: inviteCode } });
     expect(invite?.status).toBe('expired');
   });
 
   it('enforces maxUses (replay-safe): second registration fails and user is not created', async () => {
     const { app, seeded } = await setup();
+    const db = prisma();
 
     const inviteCode = 'INV_ONCE_1';
-    await InviteModel.create({
-      code: inviteCode,
-      role: 'agency',
-      status: 'active',
-      createdBy: seeded.admin._id,
-      maxUses: 1,
-      useCount: 0,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+    await createInvite(
+      {
+        code: inviteCode,
+        role: 'agency',
+        status: 'active',
+        createdBy: seeded.admin._id,
+        maxUses: 1,
+        useCount: 0,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      { createdBy: seeded.pgAdmin.id },
+    );
 
     const firstMobile = '9555555555';
     const first = await request(app).post('/api/auth/register-ops').send({
@@ -324,7 +386,8 @@ describe('auth registration + invites', () => {
     expect(second.body).toHaveProperty('error');
     expect(second.body.error).toHaveProperty('code', 'INVALID_INVITE');
 
-    const user2 = await UserModel.findOne({ mobile: secondMobile }).lean();
+    // Verify second user was NOT created (PG)
+    const user2 = await db.user.findFirst({ where: { mobile: secondMobile } });
     expect(user2).toBeNull();
   });
 });

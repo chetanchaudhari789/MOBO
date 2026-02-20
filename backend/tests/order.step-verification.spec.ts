@@ -4,7 +4,7 @@ import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
-import { OrderModel } from '../models/Order.js';
+import { prisma } from '../database/prisma.js';
 
 async function login(app: any, mobile: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ mobile, password });
@@ -93,10 +93,10 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(Array.isArray(verifyPurchaseRes.body.missingProofs)).toBe(true);
     expect(verifyPurchaseRes.body.missingProofs).toContain('review');
 
-    const afterPurchase = await OrderModel.findById(orderId).lean();
+    const afterPurchase = await prisma().order.findFirst({ where: { mongoId: orderId } });
     expect(afterPurchase).toBeTruthy();
-    expect(String((afterPurchase as any).workflowStatus)).toBe('UNDER_REVIEW');
-    expect(!!(afterPurchase as any).verification?.order?.verifiedAt).toBe(true);
+    expect(afterPurchase?.workflowStatus).toBe('UNDER_REVIEW');
+    expect(!!(afterPurchase?.verification as any)?.order?.verifiedAt).toBe(true);
 
     const submitReviewRes = await request(app)
       .post('/api/orders/claim')
@@ -133,12 +133,12 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
     expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
-    const finalOrder = await OrderModel.findById(orderId).lean();
+    const finalOrder = await prisma().order.findFirst({ where: { mongoId: orderId } });
     expect(finalOrder).toBeTruthy();
-    expect(String((finalOrder as any).workflowStatus)).toBe('APPROVED');
-    expect(String((finalOrder as any).affiliateStatus)).toBe('Pending_Cooling');
-    expect(!!(finalOrder as any).verification?.review?.verifiedAt).toBe(true);
-    expect(!!(finalOrder as any).verification?.returnWindow?.verifiedAt).toBe(true);
+    expect(finalOrder?.workflowStatus).toBe('APPROVED');
+    expect(finalOrder?.affiliateStatus).toBe('Pending_Cooling');
+    expect(!!(finalOrder?.verification as any)?.review?.verifiedAt).toBe(true);
+    expect(!!(finalOrder?.verification as any)?.returnWindow?.verifiedAt).toBe(true);
   });
 
   it('keeps order UNDER_REVIEW when purchase verified but rating proof missing, then approves after rating verified', async () => {
@@ -238,11 +238,11 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
     expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
-    const finalOrder = await OrderModel.findById(orderId).lean();
+    const finalOrder = await prisma().order.findFirst({ where: { mongoId: orderId } });
     expect(finalOrder).toBeTruthy();
-    expect(String((finalOrder as any).workflowStatus)).toBe('APPROVED');
-    expect(String((finalOrder as any).affiliateStatus)).toBe('Pending_Cooling');
-    expect(!!(finalOrder as any).verification?.rating?.verifiedAt).toBe(true);
-    expect(!!(finalOrder as any).verification?.returnWindow?.verifiedAt).toBe(true);
+    expect(finalOrder?.workflowStatus).toBe('APPROVED');
+    expect(finalOrder?.affiliateStatus).toBe('Pending_Cooling');
+    expect(!!(finalOrder?.verification as any)?.rating?.verifiedAt).toBe(true);
+    expect(!!(finalOrder?.verification as any)?.returnWindow?.verifiedAt).toBe(true);
   });
 });
