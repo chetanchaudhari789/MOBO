@@ -236,7 +236,7 @@
 
 ### What's Done Right ✓
 
-- **Idempotency keys** on all wallet operations (`applyWalletCredit`/`applyWalletDebit`). Keys are scoped per-user (unique partial index on `(idempotencyKey, ownerUserId)`) — retries are safe.
+- **Idempotency keys** on all wallet operations (`applyWalletCredit`/`applyWalletDebit`). Keys are globally unique (unique partial index on `idempotencyKey`) — retries are safe.
 - **MongoDB transactions** wrap all multi-wallet operations (settlement debits brand + credits buyer + credits mediator atomically).
 - **Balance guard** on debit: `findOneAndUpdate` with `availablePaise: { $gte: amountPaise }` — atomic, no TOCTOU race.
 - **Balance ceiling**: configurable max wallet balance (default ₹1,00,000) prevents accumulation.

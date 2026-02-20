@@ -52,6 +52,7 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   await orderIdInput.fill('E2E-ORDER-1234');
 
   const amountInput = claimModal.locator('input[placeholder="e.g. 1299"]');
+  await expect(amountInput).toBeVisible({ timeout: 30_000 });
   await amountInput.fill('999');
 
   // Submit claim

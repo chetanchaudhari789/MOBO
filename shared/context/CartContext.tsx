@@ -27,13 +27,18 @@ function getCartStorageKey(): string {
     const raw = window.localStorage.getItem('mobo_tokens_v1');
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Use a hash of the token to scope without storing sensitive data
+      // Extract the sub (user ID) from the JWT payload and use it to scope the cart
       if (parsed?.accessToken) {
         // Extract the sub (user id) from the JWT payload if possible
         const parts = String(parsed.accessToken).split('.');
         if (parts.length === 3) {
           try {
-            const payload = JSON.parse(atob(parts[1]));
+            // JWTs use base64url encoding (- and _ instead of + and /, no padding)
+            // Convert to standard base64 before decoding
+            const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            // Pad if necessary
+            const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+            const payload = JSON.parse(atob(padded));
             if (payload?.sub) return `${CART_STORAGE_PREFIX}_${payload.sub}`;
           } catch { /* fall through */ }
         }
