@@ -96,28 +96,26 @@ export async function consumeInvite(params: {
     await enforceInviteIssuerAndUpstreamActive(invite);
   }
 
-  // Atomic consume: use updateMany with conditions to prevent races
-  const newUseCount = (invite.useCount ?? 0) + 1;
-  const newStatus = newUseCount >= (invite.maxUses ?? 1) ? 'used' : 'active';
-  const existingUses = Array.isArray(invite.uses) ? (invite.uses as any[]) : [];
+  // Truly atomic consume: use $executeRaw so use_count increment, uses JSONB append,
+  // and status transition all happen in one SQL statement, preventing lost increments
+  // or clobbered uses entries under concurrent consumption.
+  const newUseEntry = JSON.stringify({ usedBy: params.usedByUserId, usedAt: now.toISOString() });
+  const affected = await db.$executeRaw`
+    UPDATE invites
+    SET
+      "useCount"  = "useCount" + 1,
+      "usedBy"    = ${params.usedByUserId},
+      "usedAt"    = ${now},
+      uses        = COALESCE(uses, '[]'::jsonb) || ${newUseEntry}::jsonb,
+      status      = CASE WHEN "useCount" + 1 >= "maxUses" THEN 'used' ELSE 'active' END
+    WHERE
+      code        = ${params.code}
+      AND status  = 'active'
+      AND "useCount" < "maxUses"
+      AND ("expiresAt" IS NULL OR "expiresAt" > ${now})
+  `;
 
-  const updated = await db.invite.updateMany({
-    where: {
-      code: params.code,
-      status: 'active',
-      useCount: { lt: invite.maxUses ?? 1 },
-      ...(invite.expiresAt ? { expiresAt: { gt: now } } : {}),
-    },
-    data: {
-      useCount: newUseCount,
-      usedBy: params.usedByUserId,
-      usedAt: now,
-      uses: [...existingUses, { usedBy: params.usedByUserId, usedAt: now.toISOString() }],
-      status: newStatus,
-    },
-  });
-
-  if (updated.count === 0) {
+  if (affected === 0) {
     throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
   }
 

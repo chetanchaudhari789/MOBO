@@ -1,4 +1,4 @@
-﻿import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
@@ -14,14 +14,14 @@ import { writeAuditLog } from '../services/audit.js';
 async function buildTicketAudience(ticket: any) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
   const userIds = new Set<string>();
-  const ticketOwnerMongoId = String(ticket?._id || ticket?.mongoId || '').trim();
 
   let mediatorCodes: string[] | undefined;
   let agencyCodes: string[] | undefined;
 
+  const db = prisma();
+
   const orderId = String(ticket?.orderId || '').trim();
   if (orderId) {
-    const db = prisma();
     const order = await db.order.findFirst({
       where: { mongoId: orderId, deletedAt: null },
       select: {
@@ -42,8 +42,12 @@ async function buildTicketAudience(ticket: any) {
     }
   }
 
-  // Add ticket owner's mongoId for realtime targeting
-  if (ticketOwnerMongoId) userIds.add(ticketOwnerMongoId);
+  // Resolve ticket owner's user mongoId (ticket.userId is a PG UUID, not a user mongoId)
+  const ticketUserId = String(ticket?.userId || '').trim();
+  if (ticketUserId) {
+    const owner = await db.user.findUnique({ where: { id: ticketUserId }, select: { mongoId: true } });
+    if (owner?.mongoId) userIds.add(owner.mongoId);
+  }
 
   return { roles: privilegedRoles, userIds: Array.from(userIds), mediatorCodes, agencyCodes };
 }

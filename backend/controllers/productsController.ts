@@ -101,7 +101,7 @@ export function makeProductsController() {
             brandName: String(deal.brandName ?? campaign.brandName ?? ''),
             events: pushOrderEvent([], {
               type: 'WORKFLOW_TRANSITION',
-              at: new Date(),
+              at: new Date().toISOString(),
               actorUserId: requesterId,
               metadata: { from: 'CREATED', to: 'REDIRECTED', dealId, campaignId: deal.campaignId },
             }),
