@@ -71,7 +71,7 @@ export async function sendPushToUser(params: {
   configureWebPush(params.env);
 
   // Read push subscriptions from PostgreSQL (primary)
-  let subscriptions: Array<{ endpoint: string; keysP256dh: string | null; keysAuth: string | null; expirationTime: Date | number | null }> = [];
+  let subscriptions: Array<{ endpoint: string; keysP256dh: string; keysAuth: string; expirationTime: number | null }> = [];
   if (isPrismaAvailable()) {
     const db = prisma();
     // Resolve userId (could be mongoId or PG UUID)
