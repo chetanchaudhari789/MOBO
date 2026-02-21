@@ -5,7 +5,7 @@ import type { Role } from '../middleware/auth.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
-import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
+import { pgUser, pgOrder, pgCampaign, pgDeal as _pgDeal } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';
@@ -85,7 +85,7 @@ export function makeBrandController() {
   return {
     getAgencies: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId, user } = getRequester(req);
+        const { roles, userId: _userId, user: _user } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         const where: any = { roles: { has: 'agency' as any }, deletedAt: null };
@@ -107,7 +107,7 @@ export function makeBrandController() {
 
     getCampaigns: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId } = getRequester(req);
+        const { roles, userId: _userId } = getRequester(req);
         const requested = typeof req.query.brandId === 'string' ? req.query.brandId : '';
 
         let brandPgId: string;
@@ -131,7 +131,7 @@ export function makeBrandController() {
 
     getOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId, user } = getRequester(req);
+        const { roles, userId: _userId, user } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         const where: any = { deletedAt: null };
@@ -162,7 +162,7 @@ export function makeBrandController() {
 
     getTransactions: async (_req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId } = getRequester(_req);
+        const { roles, userId: _userId } = getRequester(_req);
         const requested = typeof (_req.query as any).brandId === 'string' ? String((_req.query as any).brandId) : '';
 
         let brandPgId: string;
@@ -215,7 +215,7 @@ export function makeBrandController() {
     payoutAgency: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = payoutAgencySchema.parse(req.body);
-        const { roles, userId, user } = getRequester(req);
+        const { roles, userId: _userId, user: _user } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         // Resolve brand PG UUID
@@ -352,7 +352,7 @@ export function makeBrandController() {
     resolveRequest: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = resolveBrandConnectionSchema.parse(req.body);
-        const { roles, userId } = getRequester(req);
+        const { roles, userId: _userId } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         let agency: any = null;
@@ -468,10 +468,10 @@ export function makeBrandController() {
         const agencyCode = String(body.agencyCode || '').trim();
         if (agencyCode) {
           const affectedCount = await db().$executeRaw`
-            UPDATE campaigns
-            SET allowed_agency_codes = array_remove(allowed_agency_codes, ${agencyCode})
-            WHERE brand_user_id = ${brand.id}::uuid AND deleted_at IS NULL
-            AND ${agencyCode} = ANY(allowed_agency_codes)
+            UPDATE "campaigns"
+            SET "allowedAgencyCodes" = array_remove("allowedAgencyCodes", ${agencyCode})
+            WHERE "brandUserId" = ${brand.id}::uuid AND "deletedAt" IS NULL
+            AND ${agencyCode} = ANY("allowedAgencyCodes")
           `;
           if (affectedCount > 0) {
             writeAuditLog({
@@ -631,7 +631,7 @@ export function makeBrandController() {
         });
         if (!existing) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
-        const previousBrandUserId = existing.brandUserId || null;
+        const _previousBrandUserId = existing.brandUserId || null;
         const previousAllowed = Array.isArray(existing.allowedAgencyCodes)
           ? (existing.allowedAgencyCodes as string[]).map((c: string) => c.trim()).filter(Boolean)
           : [];

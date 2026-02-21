@@ -109,7 +109,7 @@ export function makeOrdersController(env: Env) {
             const order = await findOrderForProof(orderId);
             if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-            const { roles, user, userId, pgUserId } = getRequester(req);
+            const { roles, user, userId: _userId, pgUserId } = getRequester(req);
             if (!isPrivileged(roles)) {
               let allowed = false;
 
@@ -220,7 +220,7 @@ export function makeOrdersController(env: Env) {
 
         const requesterId = req.auth?.userId;
         const requesterRoles = req.auth?.roles ?? [];
-        const pgUserId = (req.auth as any)?.pgUserId ?? '';
+        const _pgUserId = (req.auth as any)?.pgUserId ?? '';
         if (!requesterId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
         if (!requesterRoles.includes('shopper')) {
           throw new AppError(403, 'FORBIDDEN', 'Only buyers can create orders');
@@ -453,7 +453,7 @@ export function makeOrdersController(env: Env) {
             await tx.orderItem.deleteMany({ where: { orderId: existing.id } });
 
             const existingEvents = Array.isArray(existing.events) ? (existing.events as any[]) : [];
-            const updated = await tx.order.update({
+            const _updated = await tx.order.update({
               where: { id: existing.id },
               data: {
                 brandUserId: campaign.brandUserId,
@@ -602,7 +602,7 @@ export function makeOrdersController(env: Env) {
             data: { events: updatedEvents as any },
           });
 
-          const afterProof = await transitionOrderWorkflow({
+          const _afterProof = await transitionOrderWorkflow({
             orderId: orderMongoId,
             from: (created?.workflowStatus ?? 'ORDERED') as any,
             to: 'PROOF_SUBMITTED' as any,
@@ -946,7 +946,7 @@ export function makeOrdersController(env: Env) {
           return;
         }
 
-        const afterProof = await transitionOrderWorkflow({
+        const _afterProof = await transitionOrderWorkflow({
           orderId: order.mongoId!,
           from: order.workflowStatus as any,
           to: 'PROOF_SUBMITTED' as any,

@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import { Types as _Types } from 'mongoose';
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 

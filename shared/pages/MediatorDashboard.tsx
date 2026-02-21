@@ -1252,8 +1252,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
       setUtr('');
       onRefresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to settle';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to settle'));
     }
   };
 
@@ -1263,8 +1262,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
         await api.ops.unsettleOrderPayment(orderId);
         onRefresh();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to revert settlement';
-        toast.error(msg);
+        toast.error(formatErrorMessage(err, 'Failed to revert settlement'));
       }
     }
   };
@@ -2440,8 +2438,7 @@ export const MediatorDashboard: React.FC = () => {
                     toast.success('Buyer notified to upload missing proof.');
                     await loadData();
                   } catch (err) {
-                    const msg = err instanceof Error ? err.message : 'Failed to request missing proof';
-                    toast.error(msg);
+                    toast.error(formatErrorMessage(err, 'Failed to request missing proof'));
                   }
                 }}
                 className="flex-1 py-4 bg-amber-500/20 text-amber-200 font-bold text-sm rounded-[1.2rem] hover:bg-amber-500/30 transition-colors"
@@ -2499,8 +2496,7 @@ export const MediatorDashboard: React.FC = () => {
                       setProofModal(null);
                     }
                   } catch (err) {
-                    const msg = err instanceof Error ? err.message : 'Failed to verify purchase';
-                    toast.error(msg);
+                    toast.error(formatErrorMessage(err, 'Failed to verify purchase'));
                   }
                 }}
                 className="flex-[2] py-4 bg-[#CCF381] text-black font-black text-sm rounded-[1.2rem] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -2530,8 +2526,7 @@ export const MediatorDashboard: React.FC = () => {
                           setProofModal(null);
                         }
                       } catch (err) {
-                        const msg = err instanceof Error ? err.message : 'Failed to verify deal';
-                        toast.error(msg);
+                        toast.error(formatErrorMessage(err, 'Failed to verify deal'));
                       }
                     }}
                     disabled={!!(proofModal?.requirements?.missingProofs as string[] ?? []).length}
@@ -2624,8 +2619,7 @@ export const MediatorDashboard: React.FC = () => {
                     setProofModal(null);
                     await loadData();
                   } catch (err) {
-                    const msg = err instanceof Error ? err.message : 'Failed to reject proof';
-                    toast.error(msg);
+                    toast.error(formatErrorMessage(err, 'Failed to reject proof'));
                   }
                 }}
                 className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold"

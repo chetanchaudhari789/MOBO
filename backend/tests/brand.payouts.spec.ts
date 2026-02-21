@@ -25,7 +25,7 @@ describe('brand payouts + ledger', () => {
     });
 
     await connectMongo(env);
-    const seeded = await seedE2E();
+    const _seeded = await seedE2E();
 
     const app = createApp(env);
     const db = prisma();

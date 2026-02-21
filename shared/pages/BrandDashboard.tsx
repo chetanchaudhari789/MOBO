@@ -194,7 +194,7 @@ const BrandProfileView = () => {
       setIsEditing(false);
       toast.success('Profile updated');
     } catch (e) {
-      toast.error(String((e as any)?.message || 'Failed to update profile.'));
+      toast.error(formatErrorMessage(e, 'Failed to update profile.'));
     } finally {
       setLoading(false);
     }
@@ -1604,7 +1604,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
       toast.success('Campaign deleted');
       onRefresh();
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to delete campaign');
+      toast.error(formatErrorMessage(err, 'Failed to delete campaign'));
     } finally {
       setDeletingId(null);
     }
@@ -2214,7 +2214,7 @@ export const BrandDashboard: React.FC = () => {
       setSelectedAgency(null);
       fetchData();
     } catch (e) {
-      toast.error(String((e as any)?.message || 'Payment failed'));
+      toast.error(formatErrorMessage(e, 'Payment failed'));
     } finally {
       setIsProcessing(false);
     }
@@ -2500,7 +2500,7 @@ export const BrandDashboard: React.FC = () => {
                         e.stopPropagation();
                         if (!user) return;
                         if (await confirmDialog({ message: 'Disconnect this Agency?', confirmLabel: 'Disconnect', variant: 'destructive' })) {
-                          api.brand.removeAgency(user.id, ag.mediatorCode!).then(fetchData).catch((err: any) => toast.error(err?.message || 'Failed to disconnect agency'));
+                          api.brand.removeAgency(user.id, ag.mediatorCode!).then(fetchData).catch((err: any) => toast.error(formatErrorMessage(err, 'Failed to disconnect agency')));
                         }
                       }}
                       className="w-10 h-10 rounded-full border border-zinc-100 flex items-center justify-center text-zinc-300 hover:text-red-500 hover:border-red-100 hover:bg-red-50 transition-colors absolute top-6 right-6"

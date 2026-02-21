@@ -529,7 +529,7 @@ export function makeOpsController(env: Env) {
 
     getLedger: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId, pgUserId, user } = getRequester(req);
+        const { roles, userId: _userId, pgUserId, user } = getRequester(req);
 
         const payoutWhere: any = { deletedAt: null };
 
@@ -605,7 +605,7 @@ export function makeOpsController(env: Env) {
         if (!canApprove) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot approve mediators outside your network');
         }
-        const user = await db().user.update({
+        const _user = await db().user.update({
           where: { id: mediator.id },
           data: { kycStatus: 'verified', status: 'active' },
         });
@@ -656,7 +656,7 @@ export function makeOpsController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot reject mediators outside your network');
         }
 
-        const user = await db().user.update({
+        const _user = await db().user.update({
           where: { id: mediator.id },
           data: { kycStatus: 'rejected', status: 'suspended' },
         });
@@ -1231,7 +1231,7 @@ export function makeOpsController(env: Env) {
         if (body.type === 'order') {
           const campaignId = order.items?.[0]?.campaignId;
           if (campaignId) {
-            await db().$executeRaw`UPDATE campaigns SET used_slots = GREATEST(used_slots - 1, 0) WHERE id = ${campaignId}::uuid AND deleted_at IS NULL`;
+            await db().$executeRaw`UPDATE "campaigns" SET "usedSlots" = GREATEST("usedSlots" - 1, 0) WHERE id = ${campaignId}::uuid AND "deletedAt" IS NULL`;
           }
         }
 
