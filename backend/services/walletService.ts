@@ -39,7 +39,11 @@ export async function ensureWallet(ownerUserId: string) {
   try {
     return await db.wallet.upsert({
       where: { ownerUserId },
-      update: {},
+      update: {
+        // Revive a soft-deleted wallet so ensureWallet always returns an active wallet
+        deletedAt: null,
+        deletedBy: null,
+      },
       create: {
         mongoId: new Types.ObjectId().toString(),
         ownerUserId,
@@ -71,7 +75,11 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     });
     if (existingTx) return existingTx;
 
-    // Upsert wallet and atomically increment balance
+    // Upsert wallet and atomically increment balance; refuse credits to soft-deleted wallets
+    const existing = await tx.wallet.findUnique({ where: { ownerUserId: input.ownerUserId } });
+    if (existing?.deletedAt != null) {
+      throw new AppError(409, 'WALLET_DELETED', 'Cannot apply credit to a deleted wallet');
+    }
     const wallet = await tx.wallet.upsert({
       where: { ownerUserId: input.ownerUserId },
       update: {

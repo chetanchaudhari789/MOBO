@@ -125,28 +125,51 @@ export async function freezeOrders(params: {
   const client = params.tx ?? prisma();
   const now = new Date();
 
-  const res = await client.order.updateMany({
-    where: {
-      ...params.query,
-      deletedAt: null,
-      frozen: false,
-      workflowStatus: { notIn: Array.from(TERMINAL) as any },
-    },
-    data: {
-      frozen: true,
-      frozenAt: now,
-      frozenReason: params.reason,
-    },
+  const freezeWhere = {
+    ...params.query,
+    deletedAt: null,
+    frozen: false,
+    workflowStatus: { notIn: Array.from(TERMINAL) as any },
+  };
+
+  // Collect the IDs and current events before updating so we can append atomically
+  const ordersToFreeze = await client.order.findMany({
+    where: freezeWhere,
+    select: { id: true },
   });
+
+  if (ordersToFreeze.length === 0) {
+    return { count: 0 };
+  }
+
+  const newEventJson = JSON.stringify({
+    type: 'WORKFLOW_FROZEN',
+    at: now.toISOString(),
+    actorUserId: params.actorUserId,
+    metadata: { reason: params.reason },
+  });
+
+  const ids: string[] = ordersToFreeze.map((o: { id: string }) => o.id);
+
+  // Atomically freeze and append WORKFLOW_FROZEN event in one SQL statement
+  const affected = await client.$executeRaw`
+    UPDATE orders
+    SET
+      frozen = true,
+      "frozenAt" = ${now},
+      "frozenReason" = ${params.reason},
+      events = COALESCE(events, '[]'::jsonb) || ${newEventJson}::jsonb
+    WHERE id = ANY(${ids}::uuid[])
+  `;
 
   writeAuditLog({
     action: 'ORDERS_FROZEN',
     entityType: 'Order',
     entityId: 'bulk',
-    metadata: { reason: params.reason, actorUserId: params.actorUserId, matchedCount: res.count, modifiedCount: res.count },
+    metadata: { reason: params.reason, actorUserId: params.actorUserId, matchedCount: affected, modifiedCount: affected },
   });
 
-  return res;
+  return { count: affected };
 }
 
 export async function reactivateOrder(params: { orderId: string; actorUserId: string; reason?: string; tx?: any }) {

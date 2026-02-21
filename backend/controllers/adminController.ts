@@ -119,10 +119,10 @@ export function makeAdminController() {
       try {
         const [roleCounts, orderStats] = await Promise.all([
           db().$queryRaw<Array<{ role: string; count: number }>>`
-            SELECT r AS role, COUNT(*)::int AS count
-            FROM users, UNNEST(roles) AS r
+            SELECT "role" AS role, COUNT(*)::int AS count
+            FROM users
             WHERE "deletedAt" IS NULL
-            GROUP BY r`,
+            GROUP BY "role"`,
           db().$queryRaw<Array<{ total_orders: number; total_revenue_paise: number; pending_revenue_paise: number; risk_orders: number }>>`
             SELECT
               COUNT(*)::int AS total_orders,

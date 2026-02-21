@@ -10,6 +10,8 @@ import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgInvite } from '../utils/pgMappers.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function db() { return prisma(); }
 
 export function makeInviteController() {
@@ -36,13 +38,23 @@ export function makeInviteController() {
           createdByUuid = actor?.id;
         }
 
+        // Resolve parentUserId: support either UUID input or mongoId → PG UUID
+        let parentUserUuid: string | null = null;
+        if (body.parentUserId) {
+          const where = UUID_RE.test(body.parentUserId)
+            ? { id: body.parentUserId, deletedAt: null }
+            : { mongoId: body.parentUserId, deletedAt: null };
+          const parentUser = await db().user.findFirst({ where: where as any, select: { id: true } });
+          parentUserUuid = parentUser?.id ?? null;
+        }
+
         const invite = await db().invite.create({
           data: {
             mongoId: new Types.ObjectId().toString(),
             code,
             role: body.role as any,
             label: body.label,
-            parentUserId: body.parentUserId ? undefined : undefined,
+            parentUserId: parentUserUuid,
             parentCode: body.parentCode,
             maxUses: body.maxUses ?? 1,
             expiresAt,

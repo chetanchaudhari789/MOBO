@@ -98,6 +98,10 @@ function buildPoolConfig(url: string) {
 
   // Set search_path so $queryRaw calls resolve unqualified table names correctly.
   if (pgSchema) {
+    // Validate schema name to prevent injection via malformed DATABASE_URL
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(pgSchema)) {
+      throw new Error(`[prisma] Invalid schema name in DATABASE_URL: "${pgSchema}"`);
+    }
     poolConfig.options = `-c search_path=${pgSchema},public`;
   }
 
