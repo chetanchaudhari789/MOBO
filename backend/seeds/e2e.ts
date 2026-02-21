@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { Prisma } from '@prisma/client';
 
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
@@ -113,7 +114,7 @@ async function wipeCollections() {
         'shopper_profiles', 'mediator_profiles', 'brands', 'agencies',
         'pending_connections', 'system_configs', 'migration_sync', 'users',
       ];
-      await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
+      await db.$executeRaw(Prisma.sql`TRUNCATE TABLE ${Prisma.raw(tables.join(', '))} CASCADE`);
     }
     return;
   }
@@ -123,9 +124,25 @@ async function wipeCollections() {
   const mongoIds = mongoE2eUsers.map((u) => u._id);
 
   if (mongoIds.length > 0) {
+    // Resolve wallets owned by E2E users so we can scope transactions/payouts.
+    const mongoE2eWallets = await WalletModel.find({ ownerUserId: { $in: mongoIds } });
+    const walletIds = mongoE2eWallets.map((w) => w._id);
+
     await Promise.allSettled([
-      TransactionModel.deleteMany({}), // E2E-only transactions
-      PayoutModel.deleteMany({}),
+      TransactionModel.deleteMany({
+        $or: [
+          { fromUserId: { $in: mongoIds } },
+          { toUserId: { $in: mongoIds } },
+          { createdBy: { $in: mongoIds } },
+          { walletId: { $in: walletIds } },
+        ],
+      }),
+      PayoutModel.deleteMany({
+        $or: [
+          { beneficiaryUserId: { $in: mongoIds } },
+          { walletId: { $in: walletIds } },
+        ],
+      }),
       OrderModel.deleteMany({ userId: { $in: mongoIds } }),
       DealModel.deleteMany({ createdBy: { $in: mongoIds } }),
       CampaignModel.deleteMany({
