@@ -42,7 +42,7 @@ async function hasE2EUsers(): Promise<boolean> {
 export function healthRoutes(env: Env): Router {
   const router = Router();
 
-  router.get('/health', (_req, res) => {
+  router.get('/health', async (_req, res) => {
     const mongoState = mongoose.connection.readyState;
     const dbStatusMap: Record<number, string> = {
       0: 'disconnected',
@@ -52,11 +52,11 @@ export function healthRoutes(env: Env): Router {
     };
     const mongoStatus = dbStatusMap[mongoState] || 'unknown';
 
-    // Check PostgreSQL health
+    // Check PostgreSQL health via actual connectivity check
     let pgOk = false;
     if (isPrismaAvailable()) {
       try {
-        // Prisma client exists, consider connected
+        await prisma().$queryRaw`SELECT 1`;
         pgOk = true;
       } catch {
         pgOk = false;
