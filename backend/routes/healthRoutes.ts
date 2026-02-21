@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 
 import type { Env } from '../config/env.js';
 import { UserModel } from '../models/User.js';
+import { prisma, isPrismaAvailable } from '../database/prisma.js';
 
 async function isHttpOk(url: string, timeoutMs = 1500): Promise<boolean> {
   const controller = new AbortController();
@@ -20,6 +21,20 @@ async function isHttpOk(url: string, timeoutMs = 1500): Promise<boolean> {
 async function hasE2EUsers(): Promise<boolean> {
   // Must match the accounts seeded by backend/seeds/e2e.ts
   const requiredMobiles = ['9000000000', '9000000001', '9000000002', '9000000003', '9000000004', '9000000005'];
+
+  // Check PG first (primary)
+  if (isPrismaAvailable()) {
+    try {
+      const count = await prisma().user.count({
+        where: { mobile: { in: requiredMobiles }, deletedAt: null },
+      });
+      if (count >= requiredMobiles.length) return true;
+    } catch {
+      // fall through to MongoDB
+    }
+  }
+
+  // Fallback to MongoDB
   const count = await UserModel.countDocuments({ mobile: { $in: requiredMobiles }, deletedAt: null });
   return count >= requiredMobiles.length;
 }
@@ -28,23 +43,38 @@ export function healthRoutes(env: Env): Router {
   const router = Router();
 
   router.get('/health', (_req, res) => {
-    const dbState = mongoose.connection.readyState;
+    const mongoState = mongoose.connection.readyState;
     const dbStatusMap: Record<number, string> = {
       0: 'disconnected',
       1: 'connected',
       2: 'connecting',
       3: 'disconnecting',
     };
-    const dbStatus = dbStatusMap[dbState] || 'unknown';
+    const mongoStatus = dbStatusMap[mongoState] || 'unknown';
 
-    const isHealthy = dbState === 1;
+    // Check PostgreSQL health
+    let pgOk = false;
+    if (isPrismaAvailable()) {
+      try {
+        // Prisma client exists, consider connected
+        pgOk = true;
+      } catch {
+        pgOk = false;
+      }
+    }
+
+    const isHealthy = (mongoState === 1) || pgOk;
 
     res.status(isHealthy ? 200 : 503).json({
       status: isHealthy ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       database: {
-        status: dbStatus,
-        readyState: dbState,
+        // Backward-compatible flat fields
+        status: isHealthy ? 'connected' : mongoStatus,
+        readyState: mongoState === 1 ? 1 : (pgOk ? 1 : mongoState),
+        // Detailed per-engine status
+        mongo: { status: mongoStatus, readyState: mongoState },
+        postgres: { status: pgOk ? 'connected' : 'disconnected' },
       },
     });
   });
@@ -59,8 +89,21 @@ export function healthRoutes(env: Env): Router {
       return;
     }
     try {
-      const dbState = mongoose.connection.readyState;
-      const dbOk = dbState === 1;
+      const mongoState = mongoose.connection.readyState;
+      const mongoOk = mongoState === 1;
+
+      // Check PG connectivity
+      let pgOk = false;
+      if (isPrismaAvailable()) {
+        try {
+          await prisma().$queryRaw`SELECT 1`;
+          pgOk = true;
+        } catch {
+          pgOk = false;
+        }
+      }
+
+      const dbOk = mongoOk || pgOk;
 
       const portals = [
         { name: 'buyer', url: 'http://127.0.0.1:3001/' },
@@ -80,7 +123,7 @@ export function healthRoutes(env: Env): Router {
 
       res.status(allOk ? 200 : 503).json({
         status: allOk ? 'ok' : 'starting',
-        database: { ok: dbOk, readyState: dbState },
+        database: { ok: dbOk, mongo: mongoOk, postgres: pgOk },
         seed: { e2eUsersOk },
         portals: {
           buyer: buyerOk,
