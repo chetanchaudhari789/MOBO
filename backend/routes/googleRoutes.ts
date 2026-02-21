@@ -228,9 +228,10 @@ export function googleRoutes(env: Env): Router {
       // Read from PG (primary), fall back to MongoDB
       let connected = false;
       let googleEmail: string | null = null;
+      let pgUser: { googleRefreshToken: string | null; googleEmail: string | null } | null = null;
       if (isPrismaAvailable()) {
         const db = prisma();
-        const pgUser = await db.user.findFirst({
+        pgUser = await db.user.findFirst({
           where: idWhere(userId),
           select: { googleRefreshToken: true, googleEmail: true },
         });
@@ -239,8 +240,8 @@ export function googleRoutes(env: Env): Router {
           googleEmail = pgUser.googleEmail || null;
         }
       }
-      if (!connected) {
-        // Fallback to MongoDB
+      if (!pgUser) {
+        // Fallback to MongoDB only when user not found in PG
         const user = await UserModel.findById(userId).select('+googleRefreshToken googleEmail').lean();
         connected = !!(user as any)?.googleRefreshToken;
         googleEmail = (user as any)?.googleEmail || null;

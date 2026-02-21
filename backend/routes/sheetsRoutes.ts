@@ -61,6 +61,7 @@ export function sheetsRoutes(env: Env): Router {
           // Read from PG (primary), fall back to MongoDB
           let refreshToken: string | null = null;
           let pgUserId: string | null = null;
+          let pgUserFound = false;
           if (isPrismaAvailable()) {
             const db = prisma();
             const pgUser = await db.user.findFirst({
@@ -68,13 +69,14 @@ export function sheetsRoutes(env: Env): Router {
               select: { id: true, googleRefreshToken: true, googleEmail: true, email: true },
             });
             if (pgUser) {
+              pgUserFound = true;
               refreshToken = pgUser.googleRefreshToken || null;
               sharingEmail = pgUser.googleEmail || pgUser.email || null;
               pgUserId = pgUser.id;
             }
           }
-          if (!refreshToken) {
-            // Fallback to MongoDB
+          if (!pgUserFound) {
+            // Fallback to MongoDB only when user not found in PG
             const userDoc = await UserModel.findById(userId).select('+googleRefreshToken googleEmail email').lean();
             refreshToken = (userDoc as any)?.googleRefreshToken || null;
             sharingEmail = sharingEmail || (userDoc as any)?.googleEmail || (userDoc as any)?.email || null;
