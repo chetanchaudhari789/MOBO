@@ -4,8 +4,7 @@ import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
-import { WalletModel } from '../models/Wallet.js';
-import { DealModel } from '../models/Deal.js';
+import { prisma } from '../database/prisma.js';
 
 async function login(app: any, mobile: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ mobile, password });
@@ -39,9 +38,10 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     });
 
     await connectMongo(env);
-    await seedE2E();
+    const seeded = await seedE2E();
 
     const app = createApp(env);
+    const db = prisma();
 
     const shopper = await login(app, E2E_ACCOUNTS.shopper.mobile, E2E_ACCOUNTS.shopper.password);
     const admin = await loginAdmin(app, E2E_ACCOUNTS.admin.username, E2E_ACCOUNTS.admin.password);
@@ -60,14 +60,14 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     const dealId = String(productsRes.body[0].id || productsRes.body[0]._id || '');
     expect(dealId).toBeTruthy();
 
-    const deal = await DealModel.findById(dealId).lean();
+    const deal = await db.deal.findFirst({ where: { mongoId: dealId, deletedAt: null } });
     expect(deal).toBeTruthy();
-    const payoutPaise = Number((deal as any).payoutPaise ?? 0);
+    const payoutPaise = Number(deal?.payoutPaise ?? 0);
     expect(payoutPaise).toBeGreaterThan(0);
 
-    const brandWalletBefore = await WalletModel.findOne({ ownerUserId: brand.userId, deletedAt: null }).lean();
+    const brandWalletBefore = await db.wallet.findFirst({ where: { ownerUserId: seeded.pgBrand.id, deletedAt: null } });
     expect(brandWalletBefore).toBeTruthy();
-    const brandAvailableBefore = Number((brandWalletBefore as any).availablePaise ?? 0);
+    const brandAvailableBefore = Number(brandWalletBefore?.availablePaise ?? 0);
     // Redirect tracking creates a pre-order
     const redirectRes = await request(app)
       .post(`/api/deals/${dealId}/redirect`)
@@ -137,9 +137,9 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(settleRes.status).toBe(200);
     expect(settleRes.body).toHaveProperty('ok', true);
 
-    const brandWalletAfter = await WalletModel.findOne({ ownerUserId: brand.userId, deletedAt: null }).lean();
+    const brandWalletAfter = await db.wallet.findFirst({ where: { ownerUserId: seeded.pgBrand.id, deletedAt: null } });
     expect(brandWalletAfter).toBeTruthy();
-    const brandAvailableAfter = Number((brandWalletAfter as any).availablePaise ?? 0);
+    const brandAvailableAfter = Number(brandWalletAfter?.availablePaise ?? 0);
 
     expect(brandAvailableAfter).toBe(brandAvailableBefore - payoutPaise);
     // Shopper can fetch own orders

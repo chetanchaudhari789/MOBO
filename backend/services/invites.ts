@@ -1,55 +1,59 @@
-import type { ClientSession } from 'mongoose';
-import { InviteModel } from '../models/Invite.js';
-import { UserModel } from '../models/User.js';
+import { Types as _Types } from 'mongoose';
+import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 
-async function ensureActiveUserById(userId: any, session?: ClientSession) {
-  const user = await UserModel.findById(userId).session(session ?? null).lean();
+// UUID v4 regex — 8-4-4-4-12 hex with dashes.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function ensureActiveUserByMongoId(idOrUuid: string) {
+  const db = prisma();
+  // If the value looks like a UUID, look up by PG id; otherwise by mongoId.
+  const where = UUID_RE.test(idOrUuid)
+    ? { id: idOrUuid, deletedAt: null }
+    : { mongoId: idOrUuid, deletedAt: null };
+  const user = await db.user.findFirst({ where: where as any });
   if (!user) throw new AppError(400, 'INVITE_ISSUER_NOT_FOUND', 'Invite issuer not found');
-  if ((user as any).deletedAt) {
+  if (user.status !== 'active') {
     throw new AppError(400, 'INVITE_ISSUER_NOT_ACTIVE', 'Invite issuer is not active');
   }
-  if ((user as any).status !== 'active') {
-    throw new AppError(400, 'INVITE_ISSUER_NOT_ACTIVE', 'Invite issuer is not active');
-  }
-  return user as any;
+  return user;
 }
 
-async function ensureActiveUserByCode(params: { code: string; role: string }, session?: ClientSession) {
-  const user = await UserModel.findOne({
-    mediatorCode: params.code,
-    roles: params.role,
-    status: 'active',
-    deletedAt: null,
-  })
-    .session(session ?? null)
-    .lean();
+async function ensureActiveUserByCode(params: { code: string; role: string }) {
+  const db = prisma();
+  const user = await db.user.findFirst({
+    where: {
+      mediatorCode: params.code,
+      roles: { has: params.role as any },
+      status: 'active',
+      deletedAt: null,
+    },
+  });
   if (!user) throw new AppError(400, 'INVITE_UPSTREAM_NOT_ACTIVE', 'Invite upstream is not active');
-  return user as any;
+  return user;
 }
 
-async function enforceInviteIssuerAndUpstreamActive(invite: any, session?: ClientSession) {
+async function enforceInviteIssuerAndUpstreamActive(invite: any) {
   if (invite.createdBy) {
-    await ensureActiveUserById(invite.createdBy, session);
+    await ensureActiveUserByMongoId(invite.createdBy);
   }
 
   if (invite.parentUserId) {
-    const parent = await ensureActiveUserById(invite.parentUserId, session);
+    const parent = await ensureActiveUserByMongoId(invite.parentUserId);
 
-    // Enforce upstream lineage depending on invite type.
     if (invite.role === 'shopper') {
-      if (!parent.roles?.includes('mediator') || !parent.mediatorCode) {
+      if (!parent.roles?.includes('mediator' as any) || !parent.mediatorCode) {
         throw new AppError(400, 'INVITE_PARENT_NOT_ACTIVE', 'Invite parent is not valid');
       }
       const agencyCode = String(parent.parentCode || '').trim();
       if (!agencyCode) {
         throw new AppError(400, 'INVITE_UPSTREAM_NOT_ACTIVE', 'Invite upstream is not valid');
       }
-      await ensureActiveUserByCode({ code: agencyCode, role: 'agency' }, session);
+      await ensureActiveUserByCode({ code: agencyCode, role: 'agency' });
     }
 
     if (invite.role === 'mediator') {
-      if (!parent.roles?.includes('agency') || !parent.mediatorCode) {
+      if (!parent.roles?.includes('agency' as any) || !parent.mediatorCode) {
         throw new AppError(400, 'INVITE_PARENT_NOT_ACTIVE', 'Invite parent is not valid');
       }
     }
@@ -60,97 +64,85 @@ export async function consumeInvite(params: {
   code: string;
   role: string;
   usedByUserId: string;
-  session?: ClientSession;
+  session?: any; // kept for API compat, unused in PG path
+  tx?: any; // Prisma transaction client
   requireActiveIssuer?: boolean;
 }): Promise<any> {
   const now = new Date();
+  const db = params.tx ?? prisma();
 
-  const inviteSnapshot = await InviteModel.findOne({ code: params.code })
-    .session(params.session ?? null)
-    .lean();
-  if (!inviteSnapshot) {
+  const invite = await db.invite.findFirst({ where: { code: params.code } });
+  if (!invite) {
     throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
   }
-  if (String((inviteSnapshot as any).role) !== String(params.role)) {
+  if (String(invite.role) !== String(params.role)) {
     throw new AppError(400, 'INVITE_ROLE_MISMATCH', 'Invite role mismatch');
   }
-  if ((inviteSnapshot as any).status !== 'active') {
+  if (invite.status !== 'active') {
     throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
   }
-  if ((inviteSnapshot as any).expiresAt) {
-    const exp = new Date((inviteSnapshot as any).expiresAt);
-    if (exp.getTime() <= now.getTime()) {
-      await InviteModel.findOneAndUpdate(
-        { _id: (inviteSnapshot as any)._id },
-        { $set: { status: 'expired' } },
-        // IMPORTANT: this update must not participate in the caller's transaction.
-        // If we mark as expired inside the transaction and then throw (as intended),
-        // the transaction abort will roll back the status change, leaving the invite
-        // incorrectly "active" even though it is expired.
-        // { new: true } ensures the post-hook receives the updated doc for PG dual-write.
-        { session: undefined, new: true }
-      );
+  if (invite.expiresAt) {
+    if (invite.expiresAt.getTime() <= now.getTime()) {
+      // Mark expired outside any wrapping transaction so the status change persists.
+      await prisma().invite.update({ where: { id: invite.id }, data: { status: 'expired' } });
       throw new AppError(400, 'INVITE_EXPIRED', 'Invite has expired');
     }
   }
-  if (Number((inviteSnapshot as any).useCount ?? 0) >= Number((inviteSnapshot as any).maxUses ?? 1)) {
+  if ((invite.useCount ?? 0) >= (invite.maxUses ?? 1)) {
     throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
   }
 
   if (params.requireActiveIssuer !== false) {
-    await enforceInviteIssuerAndUpstreamActive(inviteSnapshot as any, params.session);
+    await enforceInviteIssuerAndUpstreamActive(invite);
   }
 
-  const invite = await InviteModel.findOneAndUpdate(
-    {
-      code: params.code,
-      role: params.role,
-      status: 'active',
-      $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }],
-      $expr: { $lt: ['$useCount', '$maxUses'] },
-    } as any,
-    [
-      {
-        $set: {
-          useCount: { $add: ['$useCount', 1] },
-          usedBy: params.usedByUserId as any,
-          usedAt: now,
-          uses: {
-            $concatArrays: [
-              { $ifNull: ['$uses', []] },
-              [{ usedBy: params.usedByUserId as any, usedAt: now }],
-            ],
-          },
-          status: {
-            $cond: [
-              { $gte: [{ $add: ['$useCount', 1] }, '$maxUses'] },
-              'used',
-              'active',
-            ],
-          },
-        },
-      },
-    ] as any,
-    { new: true, updatePipeline: true, session: params.session } as any
-  );
+  // Atomic consume: use updateMany with conditions to prevent races
+  const newUseCount = (invite.useCount ?? 0) + 1;
+  const newStatus = newUseCount >= (invite.maxUses ?? 1) ? 'used' : 'active';
+  const existingUses = Array.isArray(invite.uses) ? (invite.uses as any[]) : [];
 
-  if (!invite) {
-    // Could be revoked/expired/used due to a race.
+  const updated = await db.invite.updateMany({
+    where: {
+      code: params.code,
+      status: 'active',
+      useCount: { lt: invite.maxUses ?? 1 },
+      ...(invite.expiresAt ? { expiresAt: { gt: now } } : {}),
+    },
+    data: {
+      useCount: newUseCount,
+      usedBy: params.usedByUserId,
+      usedAt: now,
+      uses: [...existingUses, { usedBy: params.usedByUserId, usedAt: now.toISOString() }],
+      status: newStatus,
+    },
+  });
+
+  if (updated.count === 0) {
     throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
   }
 
-  return invite;
+  // Re-fetch updated invite
+  const result = await db.invite.findFirst({ where: { code: params.code } });
+  if (!result) throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
+
+  // Return with _id = mongoId for backward compat
+  return { ...result, _id: result.mongoId };
 }
 
 export async function revokeInvite(params: { code: string; revokedByUserId: string; reason?: string }) {
-  const invite = await InviteModel.findOne({ code: params.code });
+  const db = prisma();
+  const invite = await db.invite.findFirst({ where: { code: params.code } });
   if (!invite) throw new AppError(404, 'INVITE_NOT_FOUND', 'Invite not found');
   if (invite.status !== 'active') throw new AppError(409, 'INVITE_NOT_ACTIVE', 'Invite is not active');
 
-  invite.status = 'revoked';
-  (invite as any).revokedBy = params.revokedByUserId as any;
-  (invite as any).revokedAt = new Date();
-  await invite.save();
+  const updated = await db.invite.update({
+    where: { id: invite.id },
+    data: {
+      status: 'revoked',
+      revokedBy: params.revokedByUserId,
+      revokedAt: new Date(),
+    },
+  });
 
-  return invite;
+  return { ...updated, _id: updated.mongoId };
 }

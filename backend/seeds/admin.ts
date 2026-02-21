@@ -1,5 +1,6 @@
 import { UserModel } from '../models/User.js';
 import { hashPassword } from '../services/passwords.js';
+import { isPrismaAvailable, prisma } from '../database/prisma.js';
 
 export type SeedAdminArgs = {
   mobile?: string;
@@ -88,5 +89,35 @@ export async function seedAdminOnly(args: SeedAdminArgs = {}) {
   }
 
   await user.save();
+
+  // Also upsert the admin user in PostgreSQL so PG-primary controllers can find them.
+  if (isPrismaAvailable()) {
+    const db = prisma();
+    // Remove any stale PG user with conflicting mobile (from a previous seed/test run).
+    await db.user.deleteMany({ where: { mobile: user.mobile, mongoId: { not: String(user._id) } } });
+    await db.user.upsert({
+      where: { mongoId: String(user._id) },
+      update: {
+        name: user.name,
+        username: user.username ?? undefined,
+        mobile: user.mobile,
+        passwordHash: user.passwordHash,
+        role: 'admin' as any,
+        roles: Array.from(new Set(['admin', ...((user as any).roles ?? [])])) as any,
+        status: 'active' as any,
+      },
+      create: {
+        mongoId: String(user._id),
+        name: user.name,
+        username: user.username ?? undefined,
+        mobile: user.mobile,
+        passwordHash: user.passwordHash,
+        role: 'admin' as any,
+        roles: Array.from(new Set(['admin', ...((user as any).roles ?? [])])) as any,
+        status: 'active' as any,
+      },
+    });
+  }
+
   return user;
 }

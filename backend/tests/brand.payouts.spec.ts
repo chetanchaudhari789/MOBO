@@ -4,7 +4,7 @@ import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
-import { UserModel } from '../models/User.js';
+import { prisma } from '../database/prisma.js';
 import { applyWalletCredit } from '../services/walletService.js';
 
 async function login(app: any, mobile: string, password: string) {
@@ -25,28 +25,29 @@ describe('brand payouts + ledger', () => {
     });
 
     await connectMongo(env);
-    await seedE2E();
+    const _seeded = await seedE2E();
 
     const app = createApp(env);
+    const db = prisma();
 
     const brandToken = await login(app, E2E_ACCOUNTS.brand.mobile, E2E_ACCOUNTS.brand.password);
 
-    const brand = await UserModel.findOne({ mobile: E2E_ACCOUNTS.brand.mobile }).lean();
-    const agency = await UserModel.findOne({ mobile: E2E_ACCOUNTS.agency.mobile }).lean();
+    const brand = await db.user.findFirst({ where: { mobile: E2E_ACCOUNTS.brand.mobile, deletedAt: null } });
+    const agency = await db.user.findFirst({ where: { mobile: E2E_ACCOUNTS.agency.mobile, deletedAt: null } });
     expect(brand).toBeTruthy();
     expect(agency).toBeTruthy();
 
-    // Connect brand -> agency (required for non-privileged payout).
-    await UserModel.updateOne(
-      { _id: (brand as any)._id },
-      { $addToSet: { connectedAgencies: E2E_ACCOUNTS.agency.agencyCode } }
-    );
+    // Connect brand -> agency in PG (required for non-privileged payout).
+    await db.user.update({
+      where: { id: brand!.id },
+      data: { connectedAgencies: { push: E2E_ACCOUNTS.agency.agencyCode } },
+    });
 
-    // Fund brand wallet so debit succeeds.
+    // Fund brand wallet so debit succeeds (ownerUserId must be PG UUID).
     await applyWalletCredit({
       idempotencyKey: 'test-brand-fund',
       type: 'brand_deposit',
-      ownerUserId: String((brand as any)._id),
+      ownerUserId: brand!.id,
       amountPaise: 500_00, // ₹500
       metadata: { test: true },
     });
@@ -55,8 +56,8 @@ describe('brand payouts + ledger', () => {
       .post('/api/brand/payout')
       .set('Authorization', `Bearer ${brandToken}`)
       .send({
-        brandId: String((brand as any)._id),
-        agencyId: String((agency as any)._id),
+        brandId: brand!.mongoId || brand!.id,
+        agencyId: agency!.mongoId || agency!.id,
         amount: 123,
         ref: 'UTR123',
       });
@@ -65,7 +66,7 @@ describe('brand payouts + ledger', () => {
     expect(payoutRes.body).toMatchObject({ ok: true });
 
     const ledgerRes = await request(app)
-      .get(`/api/brand/transactions?brandId=${String((brand as any)._id)}`)
+      .get(`/api/brand/transactions?brandId=${brand!.mongoId || brand!.id}`)
       .set('Authorization', `Bearer ${brandToken}`);
 
     expect(ledgerRes.status).toBe(200);

@@ -1,10 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
-import { UserModel } from '../models/User.js';
-import { OrderModel } from '../models/Order.js';
-import { PayoutModel } from '../models/Payout.js';
+import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { paiseToRupees } from '../utils/money.js';
 import { getRequester } from '../services/authz.js';
+
+function db() { return prisma(); }
 
 type UiNotification = {
   id: string;
@@ -18,7 +18,7 @@ type UiNotification = {
 function safeOrderShortId(order: any): string {
   const external = String(order?.externalOrderId || '').trim();
   if (external) return external.length > 20 ? external.slice(-20) : external;
-  const s = String(order?._id || order || '').trim();
+  const s = String(order?.mongoId || order?.id || order || '').trim();
   return s.length > 6 ? s.slice(-6) : s || 'Pending';
 }
 
@@ -30,7 +30,7 @@ export function makeNotificationsController() {
   return {
     list: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { userId, roles, user } = getRequester(req);
+        const { userId, pgUserId, roles, user } = getRequester(req);
         if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
 
         const isShopper = roles.includes('shopper');
@@ -38,57 +38,47 @@ export function makeNotificationsController() {
         const notifications: UiNotification[] = [];
 
         if (isShopper) {
-          const orders = await OrderModel.find({ userId, deletedAt: null })
-            .select({
-              _id: 1,
-              items: 1,
-              workflowStatus: 1,
-              paymentStatus: 1,
-              affiliateStatus: 1,
-              screenshots: 1,
-              reviewLink: 1,
-              verification: 1,
-              rejection: 1,
-              missingProofRequests: 1,
-              createdAt: 1,
-              updatedAt: 1,
-            })
-            .sort({ updatedAt: -1 })
-            .limit(100)
-            .lean();
+          const orders = await db().order.findMany({
+            where: { userId: pgUserId, deletedAt: null },
+            include: { items: true },
+            orderBy: { updatedAt: 'desc' },
+            take: 100,
+          });
 
           for (const o of orders) {
             const shortId = safeOrderShortId(o);
-            const wf = String((o as any).workflowStatus || '').trim();
-            const pay = String((o as any).paymentStatus || '').trim();
-            const aff = String((o as any).affiliateStatus || '').trim();
-            const hasPurchaseProof = !!(o as any)?.screenshots?.order;
-            const ts = (o as any).updatedAt ? new Date((o as any).updatedAt).toISOString() : nowIso();
+            const wf = String(o.workflowStatus || '').trim();
+            const pay = String(o.paymentStatus || '').trim();
+            const aff = String(o.affiliateStatus || '').trim();
+            const hasPurchaseProof = !!o.screenshotOrder;
+            const ts = o.updatedAt ? new Date(o.updatedAt).toISOString() : nowIso();
 
-            const dealTypes = Array.isArray((o as any).items)
-              ? (o as any).items.map((it: any) => String(it?.dealType || '')).filter(Boolean)
+            const dealTypes = Array.isArray(o.items)
+              ? o.items.map((it: any) => String(it?.dealType || '')).filter(Boolean)
               : [];
             const requiresReview = dealTypes.includes('Review');
             const requiresRating = dealTypes.includes('Rating');
-            const hasReviewProof = !!((o as any).reviewLink || (o as any)?.screenshots?.review);
-            const hasRatingProof = !!(o as any)?.screenshots?.rating;
-            const orderVerifiedAt = (o as any)?.verification?.order?.verifiedAt
-              ? new Date((o as any).verification.order.verifiedAt)
+            const hasReviewProof = !!(o.reviewLink || o.screenshotReview);
+            const hasRatingProof = !!o.screenshotRating;
+            const verification = o.verification as any;
+            const orderVerifiedAt = verification?.order?.verifiedAt
+              ? new Date(verification.order.verifiedAt)
               : null;
-            const rejection = (o as any)?.rejection;
+            const rejectionReason = o.rejectionReason;
             const missingSteps: string[] = [];
             if (requiresReview && !hasReviewProof) missingSteps.push('review');
             if (requiresRating && !hasRatingProof) missingSteps.push('rating');
 
-            const requestedMissing = Array.isArray((o as any).missingProofRequests)
-              ? (o as any).missingProofRequests
-                  .map((r: any) => String(r?.type || '').trim())
-                  .filter((t: string) => (t === 'review' || t === 'rating') && missingSteps.includes(t))
-              : [];
+            const missingProofRequests = Array.isArray(o.missingProofRequests) ? o.missingProofRequests : [];
+            const requestedMissing = missingProofRequests
+              .map((r: any) => String(r?.type || '').trim())
+              .filter((t: string) => (t === 'review' || t === 'rating') && missingSteps.includes(t));
+
+            const oid = o.mongoId || o.id;
 
             if (!hasPurchaseProof && (wf === 'ORDERED' || wf === 'REDIRECTED' || wf === 'CREATED')) {
               notifications.push({
-                id: `order:${String(o._id)}:need-proof`,
+                id: `order:${oid}:need-proof`,
                 type: 'alert',
                 title: 'Upload purchase proof',
                 message: `Upload your purchase screenshot for order #${shortId} to start verification.`,
@@ -97,12 +87,12 @@ export function makeNotificationsController() {
               continue;
             }
 
-            if (rejection?.reason) {
+            if (rejectionReason) {
               notifications.push({
-                id: `order:${String(o._id)}:rejected:${ts}`,
+                id: `order:${oid}:rejected:${ts}`,
                 type: 'alert',
                 title: 'Proof rejected',
-                message: rejection.reason || `Your proof for order #${shortId} was rejected.`,
+                message: rejectionReason || `Your proof for order #${shortId} was rejected.`,
                 createdAt: ts,
                 action: { label: 'Fix now', href: '/orders' },
               });
@@ -112,7 +102,7 @@ export function makeNotificationsController() {
             if (requestedMissing.length > 0) {
               const label = requestedMissing.length === 2 ? 'review & rating' : requestedMissing[0];
               notifications.push({
-                id: `order:${String(o._id)}:requested:${requestedMissing.slice().sort().join(',')}:${ts}`,
+                id: `order:${oid}:requested:${requestedMissing.slice().sort().join(',')}:${ts}`,
                 type: 'alert',
                 title: 'Action requested by mediator',
                 message: `Please submit your ${label} proof for order #${shortId}.`,
@@ -126,7 +116,7 @@ export function makeNotificationsController() {
             if (orderVerifiedAt && missingSteps.length > 0) {
               const label = missingSteps.length === 2 ? 'review & rating' : missingSteps[0];
               notifications.push({
-                id: `order:${String(o._id)}:missing:${missingSteps.slice().sort().join(',')}:${ts}`,
+                id: `order:${oid}:missing:${missingSteps.slice().sort().join(',')}:${ts}`,
                 type: 'alert',
                 title: 'Action required to unlock cashback',
                 message: `Please submit your ${label} proof for order #${shortId}.`,
@@ -137,7 +127,7 @@ export function makeNotificationsController() {
 
             if (wf === 'UNDER_REVIEW' || wf === 'PROOF_SUBMITTED') {
               notifications.push({
-                id: `order:${String(o._id)}:under-review:${ts}`,
+                id: `order:${oid}:under-review:${ts}`,
                 type: 'info',
                 title: 'Verification in progress',
                 message: `Your order #${shortId} is under review.`,
@@ -148,7 +138,7 @@ export function makeNotificationsController() {
 
             if (pay === 'Paid' || wf === 'COMPLETED' || aff === 'Approved_Settled') {
               notifications.push({
-                id: `order:${String(o._id)}:paid:${ts}`,
+                id: `order:${oid}:paid:${ts}`,
                 type: 'success',
                 title: 'Cashback sent',
                 message: `Cashback for order #${shortId} has been processed.`,
@@ -159,7 +149,7 @@ export function makeNotificationsController() {
 
             if (wf === 'REJECTED' || wf === 'FAILED' || aff === 'Rejected' || aff === 'Fraud_Alert' || aff === 'Frozen_Disputed' || aff === 'Cap_Exceeded') {
               notifications.push({
-                id: `order:${String(o._id)}:issue:${ts}`,
+                id: `order:${oid}:issue:${ts}`,
                 type: 'alert',
                 title: 'Order needs attention',
                 message: `There is an issue with order #${shortId} (${wf || aff || pay}).`,
@@ -184,8 +174,8 @@ export function makeNotificationsController() {
           const mediatorCode = String((user as any)?.mediatorCode || '').trim();
           if (mediatorCode) {
             const [pendingUsers, pendingOrders] = await Promise.all([
-              UserModel.countDocuments({ parentCode: mediatorCode, roles: 'shopper', isVerifiedByMediator: false, deletedAt: null }),
-              OrderModel.countDocuments({ managerName: mediatorCode, workflowStatus: 'UNDER_REVIEW', deletedAt: null }),
+              db().user.count({ where: { parentCode: mediatorCode, roles: { has: 'shopper' as any }, isVerifiedByMediator: false, deletedAt: null } }),
+              db().order.count({ where: { managerName: mediatorCode, workflowStatus: 'UNDER_REVIEW' as any, deletedAt: null } }),
             ]);
 
             if (pendingUsers > 0) {
@@ -210,22 +200,23 @@ export function makeNotificationsController() {
           }
 
           // Recent payouts recorded to this mediator.
-          const payouts = await PayoutModel.find({ beneficiaryUserId: userId as any, deletedAt: null })
-            .select({ _id: 1, amountPaise: 1, status: 1, processedAt: 1, createdAt: 1 })
-            .sort({ createdAt: -1 })
-            .limit(10)
-            .lean();
+          const payouts = await db().payout.findMany({
+            where: { beneficiaryUserId: pgUserId, deletedAt: null },
+            select: { id: true, mongoId: true, amountPaise: true, status: true, processedAt: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          });
 
           for (const p of payouts) {
-            const createdAt = (p as any).processedAt
-              ? new Date((p as any).processedAt).toISOString()
-              : new Date((p as any).createdAt ?? Date.now()).toISOString();
-            const amount = paiseToRupees(Number((p as any).amountPaise ?? 0));
+            const createdAt = p.processedAt
+              ? new Date(p.processedAt).toISOString()
+              : new Date(p.createdAt ?? Date.now()).toISOString();
+            const amount = paiseToRupees(Number(p.amountPaise ?? 0));
             notifications.push({
-              id: `payout:${String((p as any)._id)}`,
-              type: (p as any).status === 'paid' ? 'success' : 'info',
+              id: `payout:${p.mongoId || p.id}`,
+              type: p.status === 'paid' ? 'success' : 'info',
               title: 'Payout recorded',
-              message: `₹${amount} payout has been recorded (${String((p as any).status || 'requested')}).`,
+              message: `₹${amount} payout has been recorded (${String(p.status || 'requested')}).`,
               createdAt,
             });
           }

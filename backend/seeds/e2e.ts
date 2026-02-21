@@ -16,6 +16,7 @@ import { PayoutModel } from '../models/Payout.js';
 
 import { hashPassword } from '../services/passwords.js';
 import { ensureRoleDocumentsForUser } from '../services/roleDocuments.js';
+import { connectPrisma, prisma, isPrismaAvailable } from '../database/prisma.js';
 
 export const E2E_ACCOUNTS = {
   admin: {
@@ -61,6 +62,12 @@ export type SeededE2E = {
   brand: any;
   shopper: any;
   shopper2: any;
+  pgAdmin: any;
+  pgAgency: any;
+  pgMediator: any;
+  pgBrand: any;
+  pgShopper: any;
+  pgShopper2: any;
 };
 
 async function wipeCollections() {
@@ -83,6 +90,31 @@ async function wipeCollections() {
   deletions.push(PayoutModel.deleteMany({}));
 
   await Promise.allSettled(deletions);
+
+  // Also wipe PostgreSQL tables (FK-safe order: children first).
+  if (isPrismaAvailable()) {
+    const db = prisma();
+    await db.auditLog.deleteMany({});
+    await db.transaction.deleteMany({});
+    await db.payout.deleteMany({});
+    await db.wallet.deleteMany({});
+    await db.orderItem.deleteMany({});
+    await db.order.deleteMany({});
+    await db.deal.deleteMany({});
+    await db.campaign.deleteMany({});
+    await db.invite.deleteMany({});
+    await db.ticket.deleteMany({});
+    await db.pushSubscription.deleteMany({});
+    await db.suspension.deleteMany({});
+    await db.shopperProfile.deleteMany({});
+    await db.mediatorProfile.deleteMany({});
+    await db.brand.deleteMany({});
+    await db.agency.deleteMany({});
+    await db.pendingConnection.deleteMany({});
+    await db.systemConfig.deleteMany({});
+    await db.migrationSync.deleteMany({});
+    await db.user.deleteMany({});
+  }
 }
 
 export async function seedE2E(): Promise<SeededE2E> {
@@ -90,7 +122,12 @@ export async function seedE2E(): Promise<SeededE2E> {
     throw new Error('seedE2E() requires an active Mongo connection');
   }
 
+  // Ensure PostgreSQL (Prisma) is connected for controllers that use PG as primary.
+  await connectPrisma();
+
   await wipeCollections();
+
+  const db = prisma();
 
   const adminPasswordHash = await hashPassword(E2E_ACCOUNTS.admin.password);
   const admin = await UserModel.create({
@@ -101,6 +138,20 @@ export async function seedE2E(): Promise<SeededE2E> {
     role: 'admin',
     roles: ['admin', 'ops'],
     status: 'active',
+  });
+
+  // Create corresponding PG user
+  const pgAdmin = await db.user.create({
+    data: {
+      mongoId: String(admin._id),
+      name: E2E_ACCOUNTS.admin.name,
+      mobile: E2E_ACCOUNTS.admin.mobile,
+      username: E2E_ACCOUNTS.admin.username,
+      passwordHash: adminPasswordHash,
+      role: 'admin' as any,
+      roles: ['admin', 'ops'] as any,
+      status: 'active' as any,
+    },
   });
 
   const agencyPasswordHash = await hashPassword(E2E_ACCOUNTS.agency.password);
@@ -118,6 +169,20 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
+  const pgAgency = await db.user.create({
+    data: {
+      mongoId: String(agency._id),
+      name: E2E_ACCOUNTS.agency.name,
+      mobile: E2E_ACCOUNTS.agency.mobile,
+      passwordHash: agencyPasswordHash,
+      role: 'agency' as any,
+      roles: ['agency'] as any,
+      status: 'active' as any,
+      mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
+      createdBy: pgAdmin.id,
+    },
+  });
+
   const mediatorPasswordHash = await hashPassword(E2E_ACCOUNTS.mediator.password);
   const mediator = await UserModel.create({
     name: E2E_ACCOUNTS.mediator.name,
@@ -133,6 +198,21 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
+  const pgMediator = await db.user.create({
+    data: {
+      mongoId: String(mediator._id),
+      name: E2E_ACCOUNTS.mediator.name,
+      mobile: E2E_ACCOUNTS.mediator.mobile,
+      passwordHash: mediatorPasswordHash,
+      role: 'mediator' as any,
+      roles: ['mediator'] as any,
+      status: 'active' as any,
+      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      parentCode: E2E_ACCOUNTS.agency.agencyCode,
+      createdBy: pgAdmin.id,
+    },
+  });
+
   const brandPasswordHash = await hashPassword(E2E_ACCOUNTS.brand.password);
   const brand = await UserModel.create({
     name: E2E_ACCOUNTS.brand.name,
@@ -145,6 +225,20 @@ export async function seedE2E(): Promise<SeededE2E> {
     brandCode: E2E_ACCOUNTS.brand.brandCode,
 
     createdBy: admin._id,
+  });
+
+  const pgBrand = await db.user.create({
+    data: {
+      mongoId: String(brand._id),
+      name: E2E_ACCOUNTS.brand.name,
+      mobile: E2E_ACCOUNTS.brand.mobile,
+      passwordHash: brandPasswordHash,
+      role: 'brand' as any,
+      roles: ['brand'] as any,
+      status: 'active' as any,
+      brandCode: E2E_ACCOUNTS.brand.brandCode,
+      createdBy: pgAdmin.id,
+    },
   });
 
   const shopperPasswordHash = await hashPassword(E2E_ACCOUNTS.shopper.password);
@@ -165,6 +259,21 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
+  const pgShopper = await db.user.create({
+    data: {
+      mongoId: String(shopper._id),
+      name: E2E_ACCOUNTS.shopper.name,
+      mobile: E2E_ACCOUNTS.shopper.mobile,
+      passwordHash: shopperPasswordHash,
+      role: 'shopper' as any,
+      roles: ['shopper'] as any,
+      status: 'active' as any,
+      isVerifiedByMediator: true,
+      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      createdBy: pgAdmin.id,
+    },
+  });
+
   const shopper2PasswordHash = await hashPassword(E2E_ACCOUNTS.shopper2.password);
   const shopper2 = await UserModel.create({
     name: E2E_ACCOUNTS.shopper2.name,
@@ -181,12 +290,27 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
-  // Ensure role documents (Agency/Brand/MediatorProfile/ShopperProfile) exist.
-  await ensureRoleDocumentsForUser({ user: agency });
-  await ensureRoleDocumentsForUser({ user: mediator });
-  await ensureRoleDocumentsForUser({ user: brand });
-  await ensureRoleDocumentsForUser({ user: shopper });
-  await ensureRoleDocumentsForUser({ user: shopper2 });
+  const pgShopper2 = await db.user.create({
+    data: {
+      mongoId: String(shopper2._id),
+      name: E2E_ACCOUNTS.shopper2.name,
+      mobile: E2E_ACCOUNTS.shopper2.mobile,
+      passwordHash: shopper2PasswordHash,
+      role: 'shopper' as any,
+      roles: ['shopper'] as any,
+      status: 'active' as any,
+      isVerifiedByMediator: true,
+      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      createdBy: pgAdmin.id,
+    },
+  });
+
+  // Ensure role documents (Agency/Brand/MediatorProfile/ShopperProfile) exist — pass PG users.
+  await ensureRoleDocumentsForUser({ user: pgAgency });
+  await ensureRoleDocumentsForUser({ user: pgMediator });
+  await ensureRoleDocumentsForUser({ user: pgBrand });
+  await ensureRoleDocumentsForUser({ user: pgShopper });
+  await ensureRoleDocumentsForUser({ user: pgShopper2 });
 
   // Pre-fund brand wallet so ops settlement flows can debit it.
   await WalletModel.findOneAndUpdate(
@@ -205,6 +329,20 @@ export async function seedE2E(): Promise<SeededE2E> {
     },
     { upsert: true, new: true }
   );
+
+  // Also create PG wallet for brand with pre-funded balance.
+  await db.wallet.create({
+    data: {
+      mongoId: new mongoose.Types.ObjectId().toString(),
+      ownerUserId: pgBrand.id,
+      currency: 'INR' as any,
+      availablePaise: 50_000_00,
+      pendingPaise: 0,
+      lockedPaise: 0,
+      version: 0,
+      createdBy: pgAdmin.id,
+    },
+  });
 
   // Minimal campaign + deal so shoppers can list products and create orders.
   const campaign = await CampaignModel.create({
@@ -231,6 +369,30 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
+  // Create PG campaign.
+  const pgCampaign = await db.campaign.create({
+    data: {
+      mongoId: String(campaign._id),
+      title: 'E2E Campaign',
+      brandUserId: pgBrand.id,
+      brandName: E2E_ACCOUNTS.brand.name,
+      platform: 'Amazon',
+      image: 'https://placehold.co/600x400',
+      productUrl: 'https://example.com/product',
+      originalPricePaise: 1200_00,
+      pricePaise: 999_00,
+      payoutPaise: 100_00,
+      returnWindowDays: 14,
+      dealType: 'Discount' as any,
+      totalSlots: 100,
+      usedSlots: 0,
+      status: 'active' as any,
+      allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
+      assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
+      createdBy: pgAdmin.id,
+    },
+  });
+
   await DealModel.create({
     campaignId: campaign._id,
     mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
@@ -251,5 +413,32 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
-  return { admin, agency, mediator, brand, shopper, shopper2 };
+  // Create PG deal.
+  await db.deal.create({
+    data: {
+      mongoId: new mongoose.Types.ObjectId().toString(),
+      campaignId: pgCampaign.id,
+      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      title: 'E2E Deal',
+      description: 'Exclusive',
+      image: 'https://placehold.co/600x400',
+      productUrl: 'https://example.com/product',
+      platform: 'Amazon',
+      brandName: E2E_ACCOUNTS.brand.name,
+      dealType: 'Discount' as any,
+      originalPricePaise: 1200_00,
+      pricePaise: 999_00,
+      commissionPaise: 50_00,
+      payoutPaise: 100_00,
+      rating: 5,
+      category: 'General',
+      active: true,
+      createdBy: pgAdmin.id,
+    },
+  });
+
+  return {
+    admin, agency, mediator, brand, shopper, shopper2,
+    pgAdmin, pgAgency, pgMediator, pgBrand, pgShopper, pgShopper2,
+  };
 }

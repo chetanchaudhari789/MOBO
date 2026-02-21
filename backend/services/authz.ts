@@ -3,10 +3,11 @@ import { AppError } from '../middleware/errors.js';
 
 export function getRequester(req: Request) {
   const userId = req.auth?.userId;
+  const pgUserId = (req.auth as any)?.pgUserId ?? '';
   const roles = req.auth?.roles ?? [];
   const user = req.auth?.user;
   if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
-  return { userId, roles, user };
+  return { userId, pgUserId: pgUserId as string, roles, user };
 }
 
 export function isPrivileged(roles: string[]) {

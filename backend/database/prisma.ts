@@ -96,6 +96,11 @@ function buildPoolConfig(url: string) {
     poolConfig.ssl = ssl;
   }
 
+  // Set search_path so $queryRaw calls resolve unqualified table names correctly.
+  if (pgSchema) {
+    poolConfig.options = `-c search_path=${pgSchema},public`;
+  }
+
   return { poolConfig, pgSchema, sslmode };
 }
 

@@ -1098,8 +1098,7 @@ const PayoutsView = ({ payouts, loading, onRefresh }: any) => {
       toast.success('Payout deleted');
       onRefresh?.();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete payout';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to delete payout'));
     } finally {
       setDeletingId(null);
     }
@@ -1670,8 +1669,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       setMediatorPayouts({});
       onRefresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to distribute inventory';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to distribute inventory'));
     }
   };
 
@@ -1739,8 +1737,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       });
       onRefresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create campaign';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to create campaign'));
     }
   };
 
@@ -1798,8 +1795,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       toast.success(next === 'paused' ? 'Campaign paused' : 'Campaign resumed');
       onRefresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to update campaign status';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to update campaign status'));
     } finally {
       setStatusUpdatingId(null);
     }
@@ -1816,8 +1812,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
       toast.success('Campaign deleted');
       onRefresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete campaign';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to delete campaign'));
     } finally {
       setDeletingId(null);
     }
@@ -2222,8 +2217,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                             toast.success('Offer declined');
                             onRefresh();
                           } catch (err) {
-                            const msg = err instanceof Error ? err.message : 'Failed to decline offer';
-                            toast.error(msg);
+                            toast.error(formatErrorMessage(err, 'Failed to decline offer'));
                           } finally {
                             setDecliningId(null);
                           }
@@ -2893,8 +2887,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
       else await api.ops.rejectMediator(id);
       onRefresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to update mediator request';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to update mediator request'));
     }
   };
 
@@ -2913,8 +2906,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
       onRefresh();
       setSelectedMediator(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to payout mediator';
-      toast.error(msg);
+      toast.error(formatErrorMessage(err, 'Failed to payout mediator'));
     }
   };
 

@@ -3,8 +3,7 @@ import request from 'supertest';
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
-import { UserModel } from '../models/User.js';
-import { MediatorProfileModel } from '../models/MediatorProfile.js';
+import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 
 async function setup() {
@@ -27,6 +26,7 @@ describe('mediator pending approval flow', () => {
 
   it('mediator joins via agency code → pending → agency approves → mediator can login', async () => {
     const { app, seeded: _seeded } = await setup();
+    const db = prisma();
 
     // 1. Mediator registers using agency code
     const mediatorMobile = '9111222333';
@@ -45,17 +45,17 @@ describe('mediator pending approval flow', () => {
     expect(registerRes.body).toHaveProperty('message');
     expect(registerRes.body.tokens).toBeUndefined();
 
-    // 2. Verify mediator is created with pending status
-    const pendingMediator = await UserModel.findOne({ mobile: mediatorMobile, deletedAt: null }).lean();
+    // 2. Verify mediator is created with pending status (PG)
+    const pendingMediator = await db.user.findFirst({ where: { mobile: mediatorMobile, deletedAt: null } });
     expect(pendingMediator).toBeTruthy();
-    expect((pendingMediator as any)?.status).toBe('pending');
-    expect((pendingMediator as any)?.kycStatus).toBe('pending');
-    const mediatorCode = (pendingMediator as any)?.mediatorCode;
+    expect(pendingMediator?.status).toBe('pending');
+    expect(pendingMediator?.kycStatus).toBe('pending');
+    const mediatorCode = pendingMediator?.mediatorCode;
     expect(typeof mediatorCode).toBe('string');
 
-    const profile = await MediatorProfileModel.findOne({ mediatorCode, deletedAt: null }).lean();
+    const profile = await db.mediatorProfile.findFirst({ where: { mediatorCode: mediatorCode!, deletedAt: null } });
     expect(profile).toBeTruthy();
-    expect((profile as any)?.parentAgencyCode).toBe(E2E_ACCOUNTS.agency.agencyCode);
+    expect(profile?.parentAgencyCode).toBe(E2E_ACCOUNTS.agency.agencyCode);
 
     // 3. Mediator cannot login yet
     const loginBeforeApproval = await request(app).post('/api/auth/login').send({
@@ -82,17 +82,17 @@ describe('mediator pending approval flow', () => {
     );
     expect(pendingInList).toBeTruthy();
 
-    // 6. Agency approves the mediator
+    // 6. Agency approves the mediator (uses mongoId since controller looks up by mongoId)
     const approveRes = await request(app)
       .post('/api/ops/mediators/approve')
       .set('Authorization', `Bearer ${agencyToken}`)
-      .send({ id: String((pendingMediator as any)?._id) });
+      .send({ id: pendingMediator!.mongoId });
     expect(approveRes.status).toBe(200);
 
-    // 7. Verify mediator is now active
-    const approvedMediator = await UserModel.findById((pendingMediator as any)?._id).lean();
-    expect((approvedMediator as any)?.status).toBe('active');
-    expect((approvedMediator as any)?.kycStatus).toBe('verified');
+    // 7. Verify mediator is now active (PG)
+    const approvedMediator = await db.user.findUnique({ where: { id: pendingMediator!.id } });
+    expect(approvedMediator?.status).toBe('active');
+    expect(approvedMediator?.kycStatus).toBe('verified');
 
     // 8. Mediator can now login
     const loginAfterApproval = await request(app).post('/api/auth/login').send({
@@ -107,6 +107,7 @@ describe('mediator pending approval flow', () => {
 
   it('prevents non-parent agencies from approving mediators', async () => {
     const { app, seeded: _seeded } = await setup();
+    const db = prisma();
 
     // Create a mediator under the first agency
     const mediatorMobile = '9111444555';
@@ -119,8 +120,9 @@ describe('mediator pending approval flow', () => {
     });
     expect(registerRes.status).toBe(202);
 
-    const pendingMediator = await UserModel.findOne({ mobile: mediatorMobile }).lean();
-    const mediatorId = String((pendingMediator as any)?._id);
+    // Look up pending mediator in PG (controller uses { mongoId: body.id })
+    const pendingMediator = await db.user.findFirst({ where: { mobile: mediatorMobile, deletedAt: null } });
+    const mediatorId = pendingMediator?.mongoId;
 
     // Create a second agency (via admin invite) to ensure its code differs.
     const adminLoginRes = await request(app)

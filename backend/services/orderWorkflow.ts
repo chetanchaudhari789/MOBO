@@ -1,12 +1,12 @@
-import mongoose, { type ClientSession } from 'mongoose';
+import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import type { Env } from '../config/env.js';
-import { OrderModel, type OrderWorkflowStatus } from '../models/Order.js';
-import { pushOrderEvent } from './orderEvents.js';
+import type { OrderWorkflowStatus } from '../models/Order.js';
+import { pushOrderEvent as _pushOrderEvent } from './orderEvents.js';
 import { notifyOrderWorkflowPush } from './pushNotifications.js';
 import { writeAuditLog } from './audit.js';
-import { dualWriteOrder } from './dualWrite.js';
-import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const TERMINAL: ReadonlySet<OrderWorkflowStatus> = new Set(['COMPLETED', 'FAILED']);
 
@@ -36,67 +36,71 @@ export async function transitionOrderWorkflow(params: {
   to: OrderWorkflowStatus;
   actorUserId?: string;
   metadata?: any;
-  session?: ClientSession;
+  tx?: any;
   env?: Env;
 }) {
   assertTransition(params.from, params.to);
 
-  // Validate actorUserId is a valid ObjectId to prevent BSONError
-  if (params.actorUserId && !mongoose.Types.ObjectId.isValid(params.actorUserId)) {
-    throw new AppError(400, 'INVALID_ACTOR_ID', 'Invalid actorUserId format');
+  const client = params.tx ?? prisma();
+
+  // Read current order (need events array for append)
+  const orderWhere = UUID_RE.test(params.orderId)
+    ? { OR: [{ id: params.orderId }, { mongoId: params.orderId }], deletedAt: null }
+    : { mongoId: params.orderId, deletedAt: null };
+  const current = await client.order.findFirst({
+    where: orderWhere as any,
+    select: { id: true, mongoId: true, events: true, frozen: true, workflowStatus: true },
+  });
+
+  if (!current || current.deletedAt) {
+    throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
   }
-
-  const update: any = {
-    $set: {
-      workflowStatus: params.to,
-    },
-  };
-
-  if (params.actorUserId) {
-    update.$set.updatedBy = new mongoose.Types.ObjectId(params.actorUserId);
+  if (current.frozen) {
+    throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
   }
-
-  update.$push = {
-    events: {
-      $each: pushOrderEvent([], {
-        type: 'WORKFLOW_TRANSITION',
-        at: new Date(),
-        actorUserId: params.actorUserId,
-        metadata: {
-          from: params.from,
-          to: params.to,
-          ...(params.metadata ?? {}),
-        },
-      }),
-    },
-  };
-
-  const order = await OrderModel.findOneAndUpdate(
-    {
-      _id: params.orderId,
-      deletedAt: null,
-      frozen: { $ne: true },
-      workflowStatus: params.from,
-    } as any,
-    update,
-    { new: true, session: params.session }
-  );
-
-  if (!order) {
-    const existing = await OrderModel.findById(params.orderId).select({ workflowStatus: 1, frozen: 1, deletedAt: 1 }).lean();
-    if (!existing || (existing as any).deletedAt) {
-      throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
-    }
-    if ((existing as any).frozen) {
-      throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-    }
+  if (current.workflowStatus !== params.from) {
     throw new AppError(409, 'ORDER_STATE_MISMATCH', 'Order state mismatch');
   }
 
-  if (params.env) {
+  const currentEvents = Array.isArray(current.events) ? (current.events as any[]) : [];
+  const newEvent = {
+    type: 'WORKFLOW_TRANSITION',
+    at: new Date().toISOString(),
+    actorUserId: params.actorUserId,
+    metadata: {
+      from: params.from,
+      to: params.to,
+      ...(params.metadata ?? {}),
+    },
+  };
+
+  // Atomic conditional update — if another request changed workflowStatus, count=0
+  const updatedByVal = params.actorUserId && UUID_RE.test(params.actorUserId) ? params.actorUserId : undefined;
+  const updated = await client.order.updateMany({
+    where: {
+      id: current.id,
+      workflowStatus: params.from as any,
+      frozen: false,
+      deletedAt: null,
+    },
+    data: {
+      workflowStatus: params.to as any,
+      ...(updatedByVal ? { updatedBy: updatedByVal } : {}),
+      events: [...currentEvents, newEvent] as any,
+    },
+  });
+
+  if (updated.count === 0) {
+    throw new AppError(409, 'ORDER_STATE_MISMATCH', 'Order state changed concurrently');
+  }
+
+  // Re-read full order to return
+  const order = await client.order.findUnique({ where: { id: current.id }, include: { items: true } });
+
+  if (params.env && order) {
     notifyOrderWorkflowPush({
       env: params.env,
-      order,
+      order: { ...order, _id: order.mongoId } as any,
       from: params.from,
       to: params.to,
     }).catch((err) => console.warn('[orderWorkflow] push notification failed:', err?.message || err));
@@ -109,9 +113,6 @@ export async function transitionOrderWorkflow(params: {
     metadata: { from: params.from, to: params.to, actorUserId: params.actorUserId },
   });
 
-  // Dual-write updated order to PG
-  dualWriteOrder(order).catch(() => {});
-
   return order;
 }
 
@@ -119,82 +120,71 @@ export async function freezeOrders(params: {
   query: any;
   reason: string;
   actorUserId?: string;
-  session?: ClientSession;
+  tx?: any;
 }) {
+  const client = params.tx ?? prisma();
   const now = new Date();
-  const res = await OrderModel.updateMany(
-    {
+
+  const res = await client.order.updateMany({
+    where: {
       ...params.query,
       deletedAt: null,
-      frozen: { $ne: true },
-      workflowStatus: { $nin: Array.from(TERMINAL) },
+      frozen: false,
+      workflowStatus: { notIn: Array.from(TERMINAL) as any },
     },
-    {
-      $set: {
-        frozen: true,
-        frozenAt: now,
-        frozenReason: params.reason,
-      },
-      $push: {
-        events: {
-          type: 'WORKFLOW_FROZEN',
-          at: now,
-          actorUserId: params.actorUserId as any,
-          metadata: { reason: params.reason },
-        },
-      },
+    data: {
+      frozen: true,
+      frozenAt: now,
+      frozenReason: params.reason,
     },
-    { session: params.session }
-  );
-
-  // Fire-and-forget: resync frozen orders to PG
-  resyncAfterBulkUpdate('Order', {
-    ...params.query,
-    deletedAt: null,
-    frozen: true,
-  }).catch(() => {});
+  });
 
   writeAuditLog({
     action: 'ORDERS_FROZEN',
     entityType: 'Order',
     entityId: 'bulk',
-    metadata: { reason: params.reason, actorUserId: params.actorUserId, matchedCount: res.matchedCount, modifiedCount: res.modifiedCount },
+    metadata: { reason: params.reason, actorUserId: params.actorUserId, matchedCount: res.count, modifiedCount: res.count },
   });
 
   return res;
 }
 
-export async function reactivateOrder(params: { orderId: string; actorUserId: string; reason?: string; session?: ClientSession }) {
+export async function reactivateOrder(params: { orderId: string; actorUserId: string; reason?: string; tx?: any }) {
+  const client = params.tx ?? prisma();
   const now = new Date();
 
-  const order = await OrderModel.findOneAndUpdate(
-    {
-      _id: params.orderId,
+  // Read current order to append event
+  const current = await client.order.findFirst({
+    where: {
+      mongoId: params.orderId,
       deletedAt: null,
       frozen: true,
-      workflowStatus: { $nin: Array.from(TERMINAL) },
-    } as any,
-    {
-      $set: {
-        frozen: false,
-        reactivatedAt: now,
-        reactivatedBy: params.actorUserId as any,
-        frozenReason: null,
-        frozenAt: null,
-      },
-      $push: {
-        events: {
-          type: 'WORKFLOW_REACTIVATED',
-          at: now,
-          actorUserId: params.actorUserId as any,
-          metadata: { reason: params.reason },
-        },
-      },
+      workflowStatus: { notIn: Array.from(TERMINAL) as any },
     },
-    { new: true, session: params.session }
-  );
+    select: { id: true, events: true },
+  });
 
-  if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found or not frozen');
+  if (!current) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found or not frozen');
+
+  const currentEvents = Array.isArray(current.events) ? (current.events as any[]) : [];
+  const newEvent = {
+    type: 'WORKFLOW_REACTIVATED',
+    at: now.toISOString(),
+    actorUserId: params.actorUserId,
+    metadata: { reason: params.reason },
+  };
+
+  const order = await client.order.update({
+    where: { id: current.id },
+    data: {
+      frozen: false,
+      reactivatedAt: now,
+      reactivatedBy: params.actorUserId,
+      frozenReason: null,
+      frozenAt: null,
+      events: [...currentEvents, newEvent] as any,
+    },
+  });
 
   writeAuditLog({
     action: 'ORDER_REACTIVATED',

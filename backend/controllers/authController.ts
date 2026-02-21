@@ -1,8 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import mongoose, { type ClientSession } from 'mongoose';
+import { Types } from 'mongoose';
+import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
-import { UserModel } from '../models/User.js';
 import { hashPassword, verifyPassword } from '../services/passwords.js';
 import type { Env } from '../config/env.js';
 import { signAccessToken, signRefreshToken } from '../services/tokens.js';
@@ -14,29 +14,18 @@ import {
   refreshSchema,
   updateProfileSchema,
 } from '../validations/auth.js';
-import { InviteModel } from '../models/Invite.js';
 import { generateHumanCode } from '../services/codes.js';
 import { writeAuditLog } from '../services/audit.js';
 import { consumeInvite } from '../services/invites.js';
 import { ensureWallet } from '../services/walletService.js';
 import { toUiUser } from '../utils/uiMappers.js';
+import { pgUser, pgWallet } from '../utils/pgMappers.js';
 import { ensureRoleDocumentsForUser } from '../services/roleDocuments.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getAgencyCodeForMediatorCode } from '../services/lineage.js';
 
 export function makeAuthController(env: Env) {
-  async function withTransaction<T>(fn: (session: ClientSession) => Promise<T>): Promise<T> {
-    const session = await mongoose.startSession();
-    try {
-      let out!: T;
-      await session.withTransaction(async () => {
-        out = await fn(session);
-      });
-      return out;
-    } finally {
-      session.endSession();
-    }
-  }
+  const db = () => prisma();
 
   return {
     me: async (req: Request, res: Response, next: NextFunction) => {
@@ -46,15 +35,13 @@ export function makeAuthController(env: Env) {
           throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
         }
 
-        const user = await UserModel.findById(userId);
-        if (!user || (user as any).deletedAt) {
+        const user = await db().user.findFirst({ where: { mongoId: userId, deletedAt: null } });
+        if (!user) {
           throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         }
 
-        // `requireAuth` already enforces active status + upstream suspension.
-
-        const wallet = await ensureWallet(String((user as any)._id));
-        res.json({ user: toUiUser(user, wallet) });
+        const wallet = await ensureWallet(user.id);
+        res.json({ user: toUiUser(pgUser(user), pgWallet(wallet)) });
       } catch (err) {
         next(err);
       }
@@ -64,7 +51,7 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerSchema.parse(req.body);
 
-        const existing = await UserModel.findOne({ mobile: body.mobile, deletedAt: null }).lean();
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
@@ -72,26 +59,24 @@ export function makeAuthController(env: Env) {
         const passwordHash = await hashPassword(body.password);
 
         // Atomic: validate + create user + (optional) consume invite.
-        const { user, consumed } = await withTransaction(async (session) => {
+        const { user, consumed } = await db().$transaction(async (tx) => {
           // Preferred: invite-based registration.
-          const invite = await InviteModel.findOne({ code: body.mediatorCode, status: 'active' })
-            .session(session)
-            .lean();
+          const invite = await tx.invite.findFirst({ where: { code: body.mediatorCode, status: 'active' } });
 
           let upstreamMediatorCode = '';
           let consume: null | { code: string; role: string } = null;
 
           if (invite) {
-            if (String((invite as any).role) !== 'shopper') {
+            if (String(invite.role) !== 'shopper') {
               throw new AppError(400, 'INVITE_ROLE_MISMATCH', 'Invite role mismatch');
             }
-            const maxUses = Number((invite as any).maxUses ?? 1);
-            const useCount = Number((invite as any).useCount ?? 0);
+            const maxUses = Number(invite.maxUses ?? 1);
+            const useCount = Number(invite.useCount ?? 0);
             if (useCount >= maxUses) {
               throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
             }
 
-            upstreamMediatorCode = String((invite as any).parentCode || '').trim();
+            upstreamMediatorCode = String(invite.parentCode || '').trim();
             if (!upstreamMediatorCode) {
               throw new AppError(400, 'INVALID_INVITE', 'Invite missing parent mediator code');
             }
@@ -105,44 +90,42 @@ export function makeAuthController(env: Env) {
           }
 
           // Parent mediator must be active.
-          const mediator = await UserModel.findOne({
-            mediatorCode: upstreamMediatorCode,
-            roles: 'mediator',
-            status: 'active',
-            deletedAt: null,
-          })
-            .session(session)
-            .lean();
+          const mediator = await tx.user.findFirst({
+            where: {
+              mediatorCode: upstreamMediatorCode,
+              roles: { has: 'mediator' as any },
+              status: 'active',
+              deletedAt: null,
+            },
+          });
           if (!mediator) {
             throw new AppError(400, 'INVALID_INVITE_PARENT', 'Invite parent mediator is not valid');
           }
 
-          const created = await UserModel.create(
-            [
-              {
-                name: body.name,
-                mobile: body.mobile,
-                email: body.email,
-                passwordHash,
-                role: 'shopper',
-                roles: ['shopper'],
-                status: 'active',
-                parentCode: upstreamMediatorCode,
-                isVerifiedByMediator: false,
-              },
-            ],
-            { session }
-          );
+          const mongoId = new Types.ObjectId().toString();
+          const newUser = await tx.user.create({
+            data: {
+              mongoId,
+              name: body.name,
+              mobile: body.mobile,
+              email: body.email,
+              passwordHash,
+              role: 'shopper',
+              roles: ['shopper'] as any,
+              status: 'active',
+              parentCode: upstreamMediatorCode,
+              isVerifiedByMediator: false,
+            },
+          });
 
-          const newUser = created[0];
-          await ensureRoleDocumentsForUser({ user: newUser, session });
+          await ensureRoleDocumentsForUser({ user: newUser, tx });
 
           const consumedInvite = consume
             ? await consumeInvite({
                 code: consume.code,
                 role: consume.role,
-                usedByUserId: String(newUser._id),
-                session,
+                usedByUserId: newUser.id,
+                tx,
               })
             : null;
 
@@ -155,11 +138,9 @@ export function makeAuthController(env: Env) {
             action: 'INVITE_USED',
             entityType: 'Invite',
             entityId: String(consumed._id),
-            metadata: { code: consumed.code, role: consumed.role, usedBy: String(user._id) },
+            metadata: { code: consumed.code, role: consumed.role, usedBy: user.mongoId },
           });
 
-          // Realtime: keep admin invite list accurate (status/useCount/usedAt).
-          // Do not broadcast invite codes; scope to privileged roles.
           publishRealtime({
             type: 'invites.changed',
             ts: new Date().toISOString(),
@@ -167,30 +148,27 @@ export function makeAuthController(env: Env) {
           });
         }
 
-        const accessToken = signAccessToken(env, String(user._id), user.roles as any);
-        const refreshToken = signRefreshToken(env, String(user._id), user.roles as any);
+        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
 
-        const wallet = await ensureWallet(String(user._id));
+        const wallet = await ensureWallet(user.id);
 
-        // Audit trail: record buyer registration for complete backtracking
         await writeAuditLog({
           req,
           action: 'USER_REGISTERED',
           entityType: 'User',
-          entityId: String(user._id),
-          metadata: { role: 'shopper', mobile: (user as any).mobile, parentCode: String((user as any).parentCode || '') },
+          entityId: user.mongoId!,
+          metadata: { role: 'shopper', mobile: user.mobile, parentCode: String(user.parentCode || '') },
         }).catch(() => {});
 
-        // Realtime: a buyer created via a mediator code must show up immediately in the mediator portal
-        // for approve/reject workflows (and in the upstream agency view).
-        const upstreamMediatorCode = String((user as any)?.parentCode || '').trim();
+        const upstreamMediatorCode = String(user.parentCode || '').trim();
         if (upstreamMediatorCode) {
           const agencyCode = (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '';
           const ts = new Date().toISOString();
           publishRealtime({
             type: 'users.changed',
             ts,
-            payload: { userId: String(user._id), kind: 'buyer', mediatorCode: upstreamMediatorCode },
+            payload: { userId: user.mongoId, kind: 'buyer', mediatorCode: upstreamMediatorCode },
             audience: {
               mediatorCodes: [upstreamMediatorCode],
               ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
@@ -200,7 +178,7 @@ export function makeAuthController(env: Env) {
           publishRealtime({
             type: 'notifications.changed',
             ts,
-            payload: { source: 'buyer.registered', userId: String(user._id) },
+            payload: { source: 'buyer.registered', userId: user.mongoId },
             audience: {
               mediatorCodes: [upstreamMediatorCode],
               ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
@@ -209,7 +187,7 @@ export function makeAuthController(env: Env) {
           });
         }
         res.status(201).json({
-          user: toUiUser(user, wallet),
+          user: toUiUser(pgUser(user), pgWallet(wallet)),
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
@@ -229,8 +207,8 @@ export function makeAuthController(env: Env) {
         const username = usernameRaw ? usernameRaw.toLowerCase() : '';
 
         const user = mobile
-          ? await UserModel.findOne({ mobile, deletedAt: null })
-          : await UserModel.findOne({ username, role: { $in: ['admin', 'ops'] }, deletedAt: null });
+          ? await db().user.findFirst({ where: { mobile, deletedAt: null } })
+          : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null } });
         if (!user) {
           await writeAuditLog({
             req,
@@ -242,14 +220,14 @@ export function makeAuthController(env: Env) {
 
         // Admin/ops must use username login (mobile is not accepted for these roles).
         if (mobile) {
-          const primaryRole = String((user as any).role || '').toLowerCase();
-          const roles = Array.isArray((user as any).roles) ? (user as any).roles.map((r: any) => String(r).toLowerCase()) : [];
+          const primaryRole = String(user.role || '').toLowerCase();
+          const roles = Array.isArray(user.roles) ? user.roles.map((r: any) => String(r).toLowerCase()) : [];
           const isAdminOrOps = primaryRole === 'admin' || primaryRole === 'ops' || roles.includes('admin') || roles.includes('ops');
           if (isAdminOrOps) {
             await writeAuditLog({
               req,
               action: 'AUTH_LOGIN_FAILED',
-              actorUserId: String(user._id),
+              actorUserId: user.mongoId!,
               metadata: { reason: 'username_required' },
             });
             throw new AppError(400, 'USERNAME_REQUIRED', 'Admin login requires username and password');
@@ -259,7 +237,7 @@ export function makeAuthController(env: Env) {
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: String(user._id),
+            actorUserId: user.mongoId!,
             metadata: { reason: 'user_not_active', status: user.status },
           });
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
@@ -268,13 +246,13 @@ export function makeAuthController(env: Env) {
         // --- Account lockout enforcement ---
         const MAX_FAILED_ATTEMPTS = 7;
         const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
-        const lockoutUntil = (user as any).lockoutUntil ? new Date((user as any).lockoutUntil) : null;
+        const lockoutUntil = user.lockoutUntil ? new Date(user.lockoutUntil) : null;
         if (lockoutUntil && lockoutUntil.getTime() > Date.now()) {
           const minutesLeft = Math.ceil((lockoutUntil.getTime() - Date.now()) / 60_000);
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: String(user._id),
+            actorUserId: user.mongoId!,
             metadata: { reason: 'account_locked', lockoutUntil: lockoutUntil.toISOString() },
           });
           throw new AppError(429, 'ACCOUNT_LOCKED', `Account locked. Try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`);
@@ -282,45 +260,48 @@ export function makeAuthController(env: Env) {
 
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
-          // Increment failed attempts; lock if threshold exceeded.
-          // Increment failed attempts atomically with $inc
-          await UserModel.findOneAndUpdate({ _id: user._id }, {
-            $inc: { failedLoginAttempts: 1 },
-            ...((((user as any).failedLoginAttempts ?? 0) + 1) >= MAX_FAILED_ATTEMPTS
-              ? { $set: { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) } }
-              : {}),
-          }, { new: true });
+          const newAttempts = (user.failedLoginAttempts ?? 0) + 1;
+          await db().user.update({
+            where: { id: user.id },
+            data: {
+              failedLoginAttempts: { increment: 1 },
+              ...(newAttempts >= MAX_FAILED_ATTEMPTS
+                ? { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) }
+                : {}),
+            },
+          });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: String(user._id),
+            actorUserId: user.mongoId!,
             metadata: { reason: 'invalid_password' },
           });
           throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
         }
 
         // Reset failed attempts on successful login
-        if ((user as any).failedLoginAttempts > 0 || (user as any).lockoutUntil) {
-          await UserModel.findOneAndUpdate({ _id: user._id }, {
-            $set: { failedLoginAttempts: 0, lockoutUntil: null },
-          }, { new: true });
+        if ((user.failedLoginAttempts ?? 0) > 0 || user.lockoutUntil) {
+          await db().user.update({
+            where: { id: user.id },
+            data: { failedLoginAttempts: 0, lockoutUntil: null },
+          });
         }
 
-        const accessToken = signAccessToken(env, String(user._id), user.roles as any);
-        const refreshToken = signRefreshToken(env, String(user._id), user.roles as any);
+        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
 
-        const wallet = await ensureWallet(String(user._id));
+        const wallet = await ensureWallet(user.id);
 
         await writeAuditLog({
           req,
           action: 'AUTH_LOGIN_SUCCESS',
-          actorUserId: String(user._id),
+          actorUserId: user.mongoId!,
           actorRoles: user.roles as any,
           metadata: { role: user.role },
         });
 
         res.json({
-          user: toUiUser(user, wallet),
+          user: toUiUser(pgUser(user), pgWallet(wallet)),
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
@@ -348,20 +329,20 @@ export function makeAuthController(env: Env) {
         const userId = String(decoded.sub || '').trim();
         if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Invalid refresh token');
 
-        const user = await UserModel.findById(userId).lean();
-        if (!user || (user as any).deletedAt) {
+        const user = await db().user.findFirst({ where: { mongoId: userId, deletedAt: null } });
+        if (!user) {
           throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         }
         if (user.status !== 'active') {
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
         }
 
-        const accessToken = signAccessToken(env, String(user._id), user.roles as any);
-        const newRefreshToken = signRefreshToken(env, String(user._id), user.roles as any);
-        const wallet = await ensureWallet(String(user._id));
+        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
+        const newRefreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const wallet = await ensureWallet(user.id);
 
         res.json({
-          user: toUiUser(user, wallet),
+          user: toUiUser(pgUser(user), pgWallet(wallet)),
           tokens: { accessToken, refreshToken: newRefreshToken },
         });
       } catch (err) {
@@ -373,20 +354,18 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerOpsSchema.parse(req.body);
 
-        const existing = await UserModel.findOne({ mobile: body.mobile, deletedAt: null }).lean();
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
 
         const passwordHash = await hashPassword(body.password);
 
-        const { user, consumed, pendingApproval } = await withTransaction(async (session) => {
+        const { user, consumed, pendingApproval } = await db().$transaction(async (tx) => {
           const isMediatorJoin = body.role === 'mediator';
 
           // Preferred: invite-based.
-          const invite = await InviteModel.findOne({ code: body.code, status: 'active' })
-            .session(session)
-            .lean();
+          const invite = await tx.invite.findFirst({ where: { code: body.code, status: 'active' } });
 
           let parentCode: string | undefined;
           let createdBy: any | undefined;
@@ -394,17 +373,17 @@ export function makeAuthController(env: Env) {
           let pendingApproval = false;
 
           if (invite) {
-            if (String((invite as any).role) !== String(body.role)) {
+            if (String(invite.role) !== String(body.role)) {
               throw new AppError(400, 'INVITE_ROLE_MISMATCH', 'Invite role mismatch');
             }
-            const maxUses = Number((invite as any).maxUses ?? 1);
-            const useCount = Number((invite as any).useCount ?? 0);
+            const maxUses = Number(invite.maxUses ?? 1);
+            const useCount = Number(invite.useCount ?? 0);
             if (useCount >= maxUses) {
               throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
             }
 
-            parentCode = (invite as any).parentCode ?? undefined;
-            createdBy = (invite as any).createdBy;
+            parentCode = invite.parentCode ?? undefined;
+            createdBy = invite.createdBy;
             consume = { code: body.code, role: body.role };
           } else {
             // Fallback: allow a mediator to join an agency using the agency's code.
@@ -412,8 +391,6 @@ export function makeAuthController(env: Env) {
               throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
             }
 
-            // This flow must NOT auto-activate the mediator. It should create a pending request
-            // that the agency can approve/reject.
             pendingApproval = true;
 
             const agencyCode = String(body.code || '').trim();
@@ -421,19 +398,19 @@ export function makeAuthController(env: Env) {
               throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
             }
 
-            const agency = await UserModel.findOne({
-              mediatorCode: agencyCode,
-              roles: 'agency',
-              status: 'active',
-              deletedAt: null,
-            })
-              .session(session)
-              .lean();
+            const agency = await tx.user.findFirst({
+              where: {
+                mediatorCode: agencyCode,
+                roles: { has: 'agency' as any },
+                status: 'active',
+                deletedAt: null,
+              },
+            });
             if (!agency) {
               throw new AppError(400, 'INVALID_INVITE_PARENT', 'Invite parent agency is not valid');
             }
 
-            const agencyParentCode = String((agency as any).mediatorCode || '').trim();
+            const agencyParentCode = String(agency.mediatorCode || '').trim();
             if (!agencyParentCode) {
               throw new AppError(400, 'INVALID_INVITE_PARENT', 'Invite parent agency is not valid');
             }
@@ -446,57 +423,54 @@ export function makeAuthController(env: Env) {
               throw new AppError(400, 'INVALID_INVITE', 'Mediator join requires an agency code');
             }
 
-            const agency = await UserModel.findOne({
-              mediatorCode: agencyCode,
-              roles: 'agency',
-              status: 'active',
-              deletedAt: null,
-            })
-              .session(session)
-              .lean();
+            const agency = await tx.user.findFirst({
+              where: {
+                mediatorCode: agencyCode,
+                roles: { has: 'agency' as any },
+                status: 'active',
+                deletedAt: null,
+              },
+            });
             if (!agency) {
               throw new AppError(400, 'INVALID_INVITE_PARENT', 'Invite parent agency is not valid');
             }
           }
 
-          const roles = body.role === 'agency' ? (['agency'] as const) : (['mediator'] as const);
+          const roles = body.role === 'agency' ? ['agency'] : ['mediator'];
           const mediatorCodePrefix = body.role === 'agency' ? 'AGY' : 'MED';
           let mediatorCode = generateHumanCode(mediatorCodePrefix);
           for (let i = 0; i < 5; i += 1) {
             // eslint-disable-next-line no-await-in-loop
-            const codeExists = await UserModel.exists({ mediatorCode }).session(session);
+            const codeExists = await tx.user.findFirst({ where: { mediatorCode }, select: { id: true } });
             if (!codeExists) break;
             mediatorCode = generateHumanCode(mediatorCodePrefix);
           }
 
-          const created = await UserModel.create(
-            [
-              {
-                name: body.name,
-                mobile: body.mobile,
-                passwordHash,
-                role: body.role,
-                roles: [...roles],
-                status: pendingApproval ? 'pending' : 'active',
-                mediatorCode,
-                parentCode: parentCode,
-                kycStatus: 'pending',
-                createdBy,
-              },
-            ],
-            { session }
-          );
+          const mongoId = new Types.ObjectId().toString();
+          const newUser = await tx.user.create({
+            data: {
+              mongoId,
+              name: body.name,
+              mobile: body.mobile,
+              passwordHash,
+              role: body.role,
+              roles: [...roles] as any,
+              status: pendingApproval ? 'pending' : 'active',
+              mediatorCode,
+              parentCode: parentCode,
+              kycStatus: 'pending',
+              createdBy,
+            },
+          });
 
-          const newUser = created[0];
-
-          await ensureRoleDocumentsForUser({ user: newUser, session });
+          await ensureRoleDocumentsForUser({ user: newUser, tx });
 
           const consumedInvite = consume
             ? await consumeInvite({
                 code: consume.code,
                 role: consume.role,
-                usedByUserId: String(newUser._id),
-                session,
+                usedByUserId: newUser.id,
+                tx,
               })
             : null;
 
@@ -509,7 +483,7 @@ export function makeAuthController(env: Env) {
             action: 'INVITE_USED',
             entityType: 'Invite',
             entityId: String(consumed._id),
-            metadata: { code: consumed.code, role: consumed.role, usedBy: String(user._id) },
+            metadata: { code: consumed.code, role: consumed.role, usedBy: user.mongoId },
           });
 
           publishRealtime({
@@ -523,26 +497,25 @@ export function makeAuthController(env: Env) {
           req,
           action: 'USER_REGISTERED',
           entityType: 'User',
-          entityId: String(user._id),
+          entityId: user.mongoId!,
           metadata: { role: user.role, mobile: user.mobile, pendingApproval },
         }).catch(() => {});
 
         // If mediator joined via agency code, the account is pending and must be approved by agency.
         if (pendingApproval) {
-          // Realtime: agency portal must see mediator join requests instantly.
-          const agencyCode = String((user as any)?.parentCode || '').trim();
+          const agencyCode = String(user.parentCode || '').trim();
           if (agencyCode) {
             const ts = new Date().toISOString();
             publishRealtime({
               type: 'users.changed',
               ts,
-              payload: { userId: String(user._id), kind: 'mediator', status: 'pending', agencyCode },
+              payload: { userId: user.mongoId, kind: 'mediator', status: 'pending', agencyCode },
               audience: { agencyCodes: [agencyCode], roles: ['admin', 'ops'] },
             });
             publishRealtime({
               type: 'notifications.changed',
               ts,
-              payload: { source: 'mediator.join.requested', userId: String(user._id), agencyCode },
+              payload: { source: 'mediator.join.requested', userId: user.mongoId, agencyCode },
               audience: { agencyCodes: [agencyCode], roles: ['admin', 'ops'] },
             });
           }
@@ -553,11 +526,11 @@ export function makeAuthController(env: Env) {
           return;
         }
 
-        const accessToken = signAccessToken(env, String(user._id), user.roles as any);
-        const refreshToken = signRefreshToken(env, String(user._id), user.roles as any);
+        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
 
-        const wallet = await ensureWallet(String(user._id));
-        res.status(201).json({ user: toUiUser(user, wallet), tokens: { accessToken, refreshToken } });
+        const wallet = await ensureWallet(user.id);
+        res.status(201).json({ user: toUiUser(pgUser(user), pgWallet(wallet)), tokens: { accessToken, refreshToken } });
       } catch (err) {
         next(err);
       }
@@ -567,25 +540,22 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerBrandSchema.parse(req.body);
 
-        const existing = await UserModel.findOne({ mobile: body.mobile, deletedAt: null }).lean();
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
 
         const passwordHash = await hashPassword(body.password);
 
-        const { user, consumed } = await withTransaction(async (session) => {
+        const { user, consumed } = await db().$transaction(async (tx) => {
           // Brand registration MUST be invite-based.
-          // The UI field is currently named `brandCode` but must contain an invite code.
-          const invite = await InviteModel.findOne({ code: body.brandCode, status: 'active' })
-            .session(session)
-            .lean();
+          const invite = await tx.invite.findFirst({ where: { code: body.brandCode, status: 'active' } });
           if (!invite) throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
-          if (String((invite as any).role) !== 'brand') {
+          if (String(invite.role) !== 'brand') {
             throw new AppError(400, 'INVITE_ROLE_MISMATCH', 'Invite role mismatch');
           }
-          const maxUses = Number((invite as any).maxUses ?? 1);
-          const useCount = Number((invite as any).useCount ?? 0);
+          const maxUses = Number(invite.maxUses ?? 1);
+          const useCount = Number(invite.useCount ?? 0);
           if (useCount >= maxUses) {
             throw new AppError(400, 'INVALID_INVITE', 'Invalid or inactive invite code');
           }
@@ -594,35 +564,32 @@ export function makeAuthController(env: Env) {
           let brandCode = generateHumanCode('BRD');
           for (let i = 0; i < 5; i += 1) {
             // eslint-disable-next-line no-await-in-loop
-            const exists = await UserModel.exists({ brandCode }).session(session);
+            const exists = await tx.user.findFirst({ where: { brandCode }, select: { id: true } });
             if (!exists) break;
             brandCode = generateHumanCode('BRD');
           }
 
-          const created = await UserModel.create(
-            [
-              {
-                name: body.name,
-                mobile: body.mobile,
-                passwordHash,
-                role: 'brand',
-                roles: ['brand'],
-                status: 'active',
-                brandCode,
-                createdBy: (invite as any).createdBy,
-              },
-            ],
-            { session }
-          );
+          const mongoId = new Types.ObjectId().toString();
+          const newUser = await tx.user.create({
+            data: {
+              mongoId,
+              name: body.name,
+              mobile: body.mobile,
+              passwordHash,
+              role: 'brand',
+              roles: ['brand'] as any,
+              status: 'active',
+              brandCode,
+              createdBy: invite.createdBy,
+            },
+          });
 
-          const newUser = created[0];
-
-          await ensureRoleDocumentsForUser({ user: newUser, session });
+          await ensureRoleDocumentsForUser({ user: newUser, tx });
           const consumedInvite = await consumeInvite({
             code: body.brandCode,
             role: 'brand',
-            usedByUserId: String(newUser._id),
-            session,
+            usedByUserId: newUser.id,
+            tx,
           });
 
           return { user: newUser, consumed: consumedInvite };
@@ -633,14 +600,14 @@ export function makeAuthController(env: Env) {
           action: 'INVITE_USED',
           entityType: 'Invite',
           entityId: String(consumed._id),
-          metadata: { code: consumed.code, role: consumed.role, usedBy: String(user._id) },
+          metadata: { code: consumed.code, role: consumed.role, usedBy: user.mongoId },
         });
 
         writeAuditLog({
           req,
           action: 'USER_REGISTERED',
           entityType: 'User',
-          entityId: String(user._id),
+          entityId: user.mongoId!,
           metadata: { role: 'brand', mobile: user.mobile },
         }).catch(() => {});
 
@@ -649,13 +616,13 @@ export function makeAuthController(env: Env) {
           ts: new Date().toISOString(),
           audience: { roles: ['admin', 'ops'] },
         });
-        const accessToken = signAccessToken(env, String(user._id), user.roles as any);
-        const refreshToken = signRefreshToken(env, String(user._id), user.roles as any);
+        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
 
-        const wallet = await ensureWallet(String(user._id));
+        const wallet = await ensureWallet(user.id);
 
         res.status(201).json({
-          user: toUiUser(user, wallet),
+          user: toUiUser(pgUser(user), pgWallet(wallet)),
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
@@ -671,15 +638,20 @@ export function makeAuthController(env: Env) {
           throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
         }
 
-        const targetUserId = body.userId ?? requesterId;
-        const requester = await UserModel.findById(requesterId);
+        const targetMongoId = body.userId ?? requesterId;
+        const requester = await db().user.findFirst({ where: { mongoId: requesterId, deletedAt: null } });
         if (!requester) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
 
-        const isSelf = String(targetUserId) === String(requesterId);
-        const isAdmin = requester.roles?.includes('admin') || requester.roles?.includes('ops');
+        const isSelf = String(targetMongoId) === String(requesterId);
+        const isAdmin = requester.roles?.includes('admin' as any) || requester.roles?.includes('ops' as any);
         if (!isSelf && !isAdmin) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot update other user profile');
         }
+
+        const targetUser = isSelf
+          ? requester
+          : await db().user.findFirst({ where: { mongoId: targetMongoId, deletedAt: null } });
+        if (!targetUser) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         const update: any = {};
 
@@ -693,44 +665,47 @@ export function makeAuthController(env: Env) {
         if (typeof (body as any).bankDetails !== 'undefined') {
           const raw = (body as any).bankDetails as any;
           if (raw && typeof raw === 'object') {
-            const cleaned: any = {};
-            for (const k of ['accountNumber', 'ifsc', 'bankName', 'holderName'] as const) {
+            for (const [k, col] of [
+              ['accountNumber', 'bankAccountNumber'],
+              ['ifsc', 'bankIfsc'],
+              ['bankName', 'bankName'],
+              ['holderName', 'bankHolderName'],
+            ] as const) {
               const v = raw[k];
               if (typeof v === 'undefined') continue;
               if (typeof v === 'string' && v.trim() === '') continue;
-              cleaned[k] = v;
+              update[col] = v;
             }
-            if (Object.keys(cleaned).length) update.bankDetails = cleaned;
           }
         }
 
-        const user = await UserModel.findByIdAndUpdate(targetUserId, update, { new: true });
-        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const user = await db().user.update({
+          where: { id: targetUser.id },
+          data: update,
+        });
 
         // Keep role-specific collections consistent with the canonical User record.
         await ensureRoleDocumentsForUser({ user });
 
-        // Audit trail for profile changes (important for backtracking data modifications)
         await writeAuditLog({
           req,
           action: 'PROFILE_UPDATED',
           entityType: 'User',
-          entityId: String(user._id),
+          entityId: user.mongoId!,
           metadata: {
             updatedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
             updatedBy: isSelf ? 'self' : 'admin',
           },
         });
 
-        // Realtime: reflect profile changes on other devices/sessions.
         publishRealtime({
           type: 'users.changed',
           ts: new Date().toISOString(),
-          payload: { userId: String(user._id) },
-          audience: { roles: ['admin', 'ops'], userIds: [String(user._id)] },
+          payload: { userId: user.mongoId },
+          audience: { roles: ['admin', 'ops'], userIds: [user.mongoId!] },
         });
-        const wallet = await ensureWallet(String(user._id));
-        res.json({ user: toUiUser(user, wallet) });
+        const wallet = await ensureWallet(user.id);
+        res.json({ user: toUiUser(pgUser(user), pgWallet(wallet)) });
       } catch (err) {
         next(err);
       }

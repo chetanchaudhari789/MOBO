@@ -1,16 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
-import mongoose from 'mongoose';
 import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
-import { UserModel } from '../models/User.js';
-import { WalletModel } from '../models/Wallet.js';
-import { CampaignModel } from '../models/Campaign.js';
-import { OrderModel } from '../models/Order.js';
-import { TicketModel } from '../models/Ticket.js';
-import { DealModel } from '../models/Deal.js';
-import { PayoutModel } from '../models/Payout.js';
-import { TransactionModel } from '../models/Transaction.js';
+import { prisma as db } from '../database/prisma.js';
+import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
 import {
   approveByIdSchema,
   assignSlotsSchema,
@@ -42,28 +35,34 @@ import { requestBrandConnectionSchema } from '../validations/connections.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { sendPushToUser } from '../services/pushNotifications.js';
-import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
-import { resyncAfterBulkUpdate } from '../database/dualWriteHooks.js';
+import { normalizeMediatorCode } from '../utils/mediatorCode.js';
 
-function buildOrderAudience(order: any, agencyCode?: string) {
+async function buildOrderAudience(order: any, agencyCode?: string) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
   const managerCode = String(order?.managerName || '').trim();
-  const brandUserId = String(order?.brandUserId || '').trim();
-  const buyerUserId = String(order?.userId || '').trim();
   const normalizedAgencyCode = String(agencyCode || '').trim();
+
+  // Resolve PG UUIDs → mongoIds for realtime (frontend matches by JWT sub = mongoId)
+  const [buyerUser, brandUser] = await Promise.all([
+    order?.userId ? db().user.findUnique({ where: { id: order.userId }, select: { mongoId: true } }) : null,
+    order?.brandUserId ? db().user.findUnique({ where: { id: order.brandUserId }, select: { mongoId: true } }) : null,
+  ]);
+  const buyerMongoId = buyerUser?.mongoId ?? '';
+  const brandMongoId = brandUser?.mongoId ?? '';
 
   return {
     roles: privilegedRoles,
-    userIds: [buyerUserId, brandUserId].filter(Boolean),
+    userIds: [buyerMongoId, brandMongoId].filter(Boolean),
     mediatorCodes: managerCode ? [managerCode] : undefined,
     agencyCodes: normalizedAgencyCode ? [normalizedAgencyCode] : undefined,
+    buyerMongoId,
   };
 }
 
 function mapUsersWithWallets(users: any[], wallets: any[]) {
   const byUserId = new Map<string, any>();
   for (const w of wallets) byUserId.set(String(w.ownerUserId), w);
-  return users.map((u) => toUiUser(u, byUserId.get(String(u._id))));
+  return users.map((u) => toUiUser(pgUser(u), byUserId.get(String(u.id))));
 }
 
 function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'returnWindow'> {
@@ -72,7 +71,6 @@ function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'retu
     .filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
-  // Return window is required for Rating/Review deals (not Discount-only deals)
   const requiresReturnWindow = requiresReview || requiresRating;
   return [
     ...(requiresReview ? (['review'] as const) : []),
@@ -82,24 +80,25 @@ function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'retu
 }
 
 function hasProofForRequirement(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
-  if (type === 'review') return !!(order.reviewLink || order.screenshots?.review);
-  if (type === 'returnWindow') return !!order.screenshots?.returnWindow;
-  return !!order.screenshots?.rating;
+  if (type === 'review') return !!(order.reviewLink || order.screenshotReview);
+  if (type === 'returnWindow') return !!order.screenshotReturnWindow;
+  return !!order.screenshotRating;
 }
 
 function isRequirementVerified(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
-  return !!order.verification?.[type]?.verifiedAt;
+  const v = (order.verification && typeof order.verification === 'object') ? order.verification as any : {};
+  return !!v[type]?.verifiedAt;
 }
 
 async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env) {
   const wf = String(order.workflowStatus || 'CREATED');
   if (wf !== 'UNDER_REVIEW') return { approved: false, reason: 'NOT_UNDER_REVIEW' };
 
-  if (!order.verification?.order?.verifiedAt) {
+  const verification = (order.verification && typeof order.verification === 'object') ? order.verification as any : {};
+  if (!verification.order?.verifiedAt) {
     return { approved: false, reason: 'PURCHASE_NOT_VERIFIED' };
   }
 
-  // Guard: orders with no items should never auto-approve
   if (!Array.isArray(order.items) || order.items.length === 0) {
     return { approved: false, reason: 'NO_ITEMS' };
   }
@@ -113,22 +112,27 @@ async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env
     return { approved: false, reason: 'MISSING_VERIFICATIONS', missingVerifications };
   }
 
-  order.affiliateStatus = 'Pending_Cooling';
   const COOLING_PERIOD_DAYS = 14;
   const settleDate = new Date();
   settleDate.setDate(settleDate.getDate() + COOLING_PERIOD_DAYS);
-  order.expectedSettlementDate = settleDate;
-  order.events = pushOrderEvent(order.events as any, {
-    type: 'VERIFIED',
-    at: new Date(),
-    actorUserId,
-    metadata: { step: 'finalize' },
-  }) as any;
+  const currentEvents = Array.isArray(order.events) ? (order.events as any[]) : [];
 
-  await order.save();
+  await db().order.update({
+    where: { id: order.id },
+    data: {
+      affiliateStatus: 'Pending_Cooling',
+      expectedSettlementDate: settleDate,
+      events: pushOrderEvent(currentEvents, {
+        type: 'VERIFIED',
+        at: new Date(),
+        actorUserId,
+        metadata: { step: 'finalize' },
+      }),
+    },
+  });
 
   await transitionOrderWorkflow({
-    orderId: String(order._id),
+    orderId: order.mongoId!,
     from: 'UNDER_REVIEW',
     to: 'APPROVED',
     actorUserId: String(actorUserId || ''),
@@ -151,61 +155,61 @@ export function makeOpsController(env: Env) {
         const agencyCode = String((requester as any)?.mediatorCode || '').trim();
         if (!agencyCode) throw new AppError(409, 'MISSING_AGENCY_CODE', 'Agency is missing a code');
 
-        const brand = await UserModel.findOne({ brandCode: body.brandCode, roles: 'brand', deletedAt: null });
+        const brand = await db().user.findFirst({
+          where: { brandCode: body.brandCode, roles: { has: 'brand' as any }, deletedAt: null },
+        });
         if (!brand) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
         if (brand.status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
 
-        // Guard against unbounded pendingConnections growth
-        const pendingCount = Array.isArray((brand as any).pendingConnections) ? (brand as any).pendingConnections.length : 0;
+        const pendingCount = await db().pendingConnection.count({ where: { userId: brand.id } });
         if (pendingCount >= 100) {
           throw new AppError(409, 'TOO_MANY_PENDING', 'Brand has too many pending connection requests');
         }
 
         const agencyName = String((requester as any)?.name || 'Agency');
 
-        const updated = await UserModel.findOneAndUpdate(
-          {
-            _id: brand._id,
-            connectedAgencies: { $ne: agencyCode },
-            'pendingConnections.agencyCode': { $ne: agencyCode },
-          },
-          {
-            $push: {
-              pendingConnections: {
-                agencyId: String((requester as any)?._id),
-                agencyName,
-                agencyCode,
-                timestamp: new Date(),
-              },
-            },
-          },
-          { new: true }
-        );
-
-        if (!updated) {
+        // Check if already connected or pending
+        if (Array.isArray(brand.connectedAgencies) && brand.connectedAgencies.includes(agencyCode)) {
           throw new AppError(409, 'ALREADY_REQUESTED', 'Connection already exists or is already pending');
         }
+        const existingPending = await db().pendingConnection.findFirst({
+          where: { userId: brand.id, agencyCode },
+        });
+        if (existingPending) {
+          throw new AppError(409, 'ALREADY_REQUESTED', 'Connection already exists or is already pending');
+        }
+
+        const requesterMongoId = String((requester as any)?._id || '');
+        await db().pendingConnection.create({
+          data: {
+            userId: brand.id,
+            agencyId: requesterMongoId,
+            agencyName,
+            agencyCode,
+            timestamp: new Date(),
+          },
+        });
 
         await writeAuditLog({
           req,
           action: 'BRAND_CONNECTION_REQUESTED',
           entityType: 'User',
-          entityId: String(brand._id),
+          entityId: brand.mongoId!,
           metadata: { agencyCode, brandCode: body.brandCode },
         });
 
-        // Realtime: let the brand (and agency) UIs update without refresh.
         const privilegedRoles: Role[] = ['admin', 'ops'];
+        const brandMongoId = brand.mongoId ?? '';
         const audience = {
           roles: privilegedRoles,
-          userIds: [String(brand._id), String((requester as any)?._id || '')].filter(Boolean),
+          userIds: [brandMongoId, requesterMongoId].filter(Boolean),
           agencyCodes: agencyCode ? [agencyCode] : undefined,
         };
-        publishRealtime({ type: 'users.changed', ts: new Date().toISOString(), payload: { userId: String(brand._id) }, audience });
+        publishRealtime({ type: 'users.changed', ts: new Date().toISOString(), payload: { userId: brandMongoId }, audience });
         publishRealtime({
           type: 'users.changed',
           ts: new Date().toISOString(),
-          payload: { userId: String((requester as any)?._id || '') },
+          payload: { userId: requesterMongoId },
           audience,
         });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
@@ -224,28 +228,34 @@ export function makeOpsController(env: Env) {
         if (!agencyCode) throw new AppError(400, 'INVALID_AGENCY_CODE', 'agencyCode required');
         if (!isPrivileged(roles)) requireAnyRole(roles, 'agency');
 
-        const mQuery: any = {
-          roles: 'mediator',
+        const where: any = {
+          roles: { has: 'mediator' as any },
           parentCode: agencyCode,
           deletedAt: null,
         };
         if (queryParams.search) {
-          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const regex = { $regex: escaped, $options: 'i' };
-          mQuery.$or = [{ name: regex }, { mobile: regex }, { mediatorCode: regex }];
+          const search = queryParams.search;
+          where.OR = [
+            { name: { contains: search, mode: 'insensitive' } },
+            { mobile: { contains: search, mode: 'insensitive' } },
+            { mediatorCode: { contains: search, mode: 'insensitive' } },
+          ];
         }
 
         const page = queryParams.page ?? 1;
         const limit = queryParams.limit ?? 200;
         const skip = (page - 1) * limit;
 
-        const mediators = await UserModel.find(mQuery)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .lean();
+        const mediators = await db().user.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        });
 
-        const wallets = await WalletModel.find({ ownerUserId: { $in: mediators.map((m) => m._id) } }).lean();
+        const wallets = await db().wallet.findMany({
+          where: { ownerUserId: { in: mediators.map((m: any) => m.id) } },
+        });
         res.json(mapUsersWithWallets(mediators, wallets));
       } catch (err) {
         next(err);
@@ -257,45 +267,71 @@ export function makeOpsController(env: Env) {
         const { roles, user } = getRequester(req);
         const queryParams = opsCampaignsQuerySchema.parse(req.query);
         const requested = queryParams.mediatorCode || undefined;
-
-        // Scope campaigns by requester unless admin/ops.
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
-
-        const query: any = { deletedAt: null };
-        if (queryParams.status && queryParams.status !== 'all') {
-          query.status = queryParams.status;
-        }
-        if (code) {
-          // Agency visibility must include campaigns assigned to any of its sub-mediators.
-          // Otherwise, ops/admin assigning slots directly to mediator codes makes the campaign
-          // invisible to the parent agency portal.
-          if (!isPrivileged(roles) && roles.includes('agency')) {
-            const mediatorCodes = await listMediatorCodesForAgency(code);
-            const assignmentOr = mediatorCodes
-              .filter(Boolean)
-              .map((mc) => ({ [`assignments.${mc}`]: { $exists: true } }));
-
-            query.$or = [{ allowedAgencyCodes: code }, ...assignmentOr];
-          } else {
-            query.$or = [{ allowedAgencyCodes: code }, { [`assignments.${code}`]: { $exists: true } }];
-          }
-        }
 
         const cPage = queryParams.page ?? 1;
         const cLimit = queryParams.limit ?? 200;
-        const campaigns = await CampaignModel.find(query)
-          .sort({ createdAt: -1 })
-          .skip((cPage - 1) * cLimit)
-          .limit(cLimit)
-          .lean();
+        const statusFilter = queryParams.status && queryParams.status !== 'all' ? queryParams.status : null;
+
+        let campaigns: any[];
+        if (code) {
+          // Use raw SQL for JSONB key-exists check (assignments ? code)
+          let matchingIds: string[];
+          if (!isPrivileged(roles) && roles.includes('agency')) {
+            const mediatorCodes = await listMediatorCodesForAgency(code);
+            const allCodes = [code, ...mediatorCodes].filter(Boolean);
+            const rows = statusFilter
+              ? await db().$queryRaw<{ id: string }[]>`
+                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL AND status = ${statusFilter}
+                  AND (${code} = ANY("allowedAgencyCodes")
+                       OR EXISTS (SELECT 1 FROM unnest(${allCodes}::text[]) AS mc WHERE jsonb_exists(assignments, mc)))
+                `
+              : await db().$queryRaw<{ id: string }[]>`
+                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL
+                  AND (${code} = ANY("allowedAgencyCodes")
+                       OR EXISTS (SELECT 1 FROM unnest(${allCodes}::text[]) AS mc WHERE jsonb_exists(assignments, mc)))
+                `;
+            matchingIds = rows.map((r) => r.id);
+          } else {
+            const rows = statusFilter
+              ? await db().$queryRaw<{ id: string }[]>`
+                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL AND status = ${statusFilter}
+                  AND (${code} = ANY("allowedAgencyCodes") OR jsonb_exists(assignments, ${code}))
+                `
+              : await db().$queryRaw<{ id: string }[]>`
+                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL
+                  AND (${code} = ANY("allowedAgencyCodes") OR jsonb_exists(assignments, ${code}))
+                `;
+            matchingIds = rows.map((r) => r.id);
+          }
+
+          campaigns = matchingIds.length
+            ? await db().campaign.findMany({
+                where: { id: { in: matchingIds } },
+                orderBy: { createdAt: 'desc' },
+                skip: (cPage - 1) * cLimit,
+                take: cLimit,
+              })
+            : [];
+        } else {
+          campaigns = await db().campaign.findMany({
+            where: {
+              deletedAt: null,
+              ...(statusFilter ? { status: statusFilter as any } : {}),
+            },
+            orderBy: { createdAt: 'desc' },
+            skip: (cPage - 1) * cLimit,
+            take: cLimit,
+          });
+        }
+
         const requesterMediatorCode = roles.includes('mediator') ? String((user as any)?.mediatorCode || '').trim() : '';
 
         const normalizeCode = (v: unknown) => String(v || '').trim();
         const findAssignmentForMediator = (assignments: any, mediatorCode: string) => {
           const target = normalizeCode(mediatorCode);
           if (!target) return null;
-          const obj = assignments instanceof Map ? Object.fromEntries(assignments) : assignments;
-          if (!obj || typeof obj !== 'object') return null;
+          const obj = assignments && typeof assignments === 'object' ? assignments : {};
           if (Object.prototype.hasOwnProperty.call(obj, target)) return (obj as any)[target] ?? null;
           const targetLower = target.toLowerCase();
           for (const [k, v] of Object.entries(obj)) {
@@ -305,13 +341,11 @@ export function makeOpsController(env: Env) {
         };
 
         const ui = campaigns.map((c: any) => {
-          const mapped = toUiCampaign(c);
+          const mapped = toUiCampaign(pgCampaign(c));
           if (requesterMediatorCode) {
             const assignment = findAssignmentForMediator(c.assignments, requesterMediatorCode);
             const commissionPaise = Number((assignment as any)?.commissionPaise ?? 0);
             (mapped as any).assignmentCommission = Math.round(commissionPaise) / 100;
-            // Expose the per-assignment payout override (in rupees) so the mediator UI
-            // can show the correct payout in the Net Earnings panel.
             const assignmentPayoutPaise = Number((assignment as any)?.payout ?? c.payoutPaise ?? 0);
             (mapped as any).assignmentPayout = Math.round(assignmentPayoutPaise) / 100;
           }
@@ -352,26 +386,19 @@ export function makeOpsController(env: Env) {
           return;
         }
 
-        const mediatorRegexes = mediatorCodes
-          .map((code) => buildMediatorCodeRegex(code))
-          .filter((rx): rx is RegExp => Boolean(rx));
-        if (!mediatorRegexes.length) {
-          res.json([]);
-          return;
-        }
-
         const dPage = queryParams.page ?? 1;
         const dLimit = queryParams.limit ?? 200;
-        const deals = await DealModel.find({
-          mediatorCode: { $in: mediatorRegexes },
-          deletedAt: null,
-        })
-          .sort({ createdAt: -1 })
-          .skip((dPage - 1) * dLimit)
-          .limit(dLimit)
-          .lean();
+        const deals = await db().deal.findMany({
+          where: {
+            mediatorCode: { in: mediatorCodes },
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (dPage - 1) * dLimit,
+          take: dLimit,
+        });
 
-        res.json(deals.map(toUiDeal));
+        res.json(deals.map((d: any) => toUiDeal(pgDeal(d))));
       } catch (err) {
         next(err);
       }
@@ -407,16 +434,18 @@ export function makeOpsController(env: Env) {
 
         const oPage = queryParams.page ?? 1;
         const oLimit = queryParams.limit ?? 200;
-        const orders = await OrderModel.find({
-          managerName: { $in: managerCodes },
-          deletedAt: null,
-        })
-          .sort({ createdAt: -1 })
-          .skip((oPage - 1) * oLimit)
-          .limit(oLimit)
-          .lean();
+        const orders = await db().order.findMany({
+          where: {
+            managerName: { in: managerCodes },
+            deletedAt: null,
+          },
+          include: { items: true },
+          orderBy: { createdAt: 'desc' },
+          skip: (oPage - 1) * oLimit,
+          take: oLimit,
+        });
 
-        res.json(orders.map(toUiOrder));
+        res.json(orders.map((o: any) => toUiOrder(pgOrder(o))));
       } catch (err) {
         next(err);
       }
@@ -430,27 +459,30 @@ export function makeOpsController(env: Env) {
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
         if (!code) throw new AppError(400, 'INVALID_CODE', 'code required');
 
-        const pQuery: any = {
+        const where: any = {
           role: 'shopper',
           parentCode: code,
           isVerifiedByMediator: false,
           deletedAt: null,
         };
         if (queryParams.search) {
-          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const regex = { $regex: escaped, $options: 'i' };
-          pQuery.$or = [{ name: regex }, { mobile: regex }];
+          const search = queryParams.search;
+          where.OR = [
+            { name: { contains: search, mode: 'insensitive' } },
+            { mobile: { contains: search, mode: 'insensitive' } },
+          ];
         }
 
         const puPage = queryParams.page ?? 1;
         const puLimit = queryParams.limit ?? 200;
-        const users = await UserModel.find(pQuery)
-          .sort({ createdAt: -1 })
-          .skip((puPage - 1) * puLimit)
-          .limit(puLimit)
-          .lean();
+        const users = await db().user.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (puPage - 1) * puLimit,
+          take: puLimit,
+        });
 
-        const wallets = await WalletModel.find({ ownerUserId: { $in: users.map((u) => u._id) } }).lean();
+        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map((u: any) => u.id) } } });
         res.json(mapUsersWithWallets(users, wallets));
       } catch (err) {
         next(err);
@@ -465,27 +497,30 @@ export function makeOpsController(env: Env) {
         const code = isPrivileged(roles) ? requested : String((user as any)?.mediatorCode || '');
         if (!code) throw new AppError(400, 'INVALID_CODE', 'code required');
 
-        const vQuery: any = {
+        const where: any = {
           role: 'shopper',
           parentCode: code,
           isVerifiedByMediator: true,
           deletedAt: null,
         };
         if (queryParams.search) {
-          const escaped = queryParams.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const regex = { $regex: escaped, $options: 'i' };
-          vQuery.$or = [{ name: regex }, { mobile: regex }];
+          const search = queryParams.search;
+          where.OR = [
+            { name: { contains: search, mode: 'insensitive' } },
+            { mobile: { contains: search, mode: 'insensitive' } },
+          ];
         }
 
         const vuPage = queryParams.page ?? 1;
         const vuLimit = queryParams.limit ?? 200;
-        const users = await UserModel.find(vQuery)
-          .sort({ createdAt: -1 })
-          .skip((vuPage - 1) * vuLimit)
-          .limit(vuLimit)
-          .lean();
+        const users = await db().user.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (vuPage - 1) * vuLimit,
+          take: vuLimit,
+        });
 
-        const wallets = await WalletModel.find({ ownerUserId: { $in: users.map((u) => u._id) } }).lean();
+        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map((u: any) => u.id) } } });
         res.json(mapUsersWithWallets(users, wallets));
       } catch (err) {
         next(err);
@@ -494,13 +529,13 @@ export function makeOpsController(env: Env) {
 
     getLedger: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId, user } = getRequester(req);
+        const { roles, userId: _userId, pgUserId, user } = getRequester(req);
 
-        const payoutQuery: any = { deletedAt: null };
+        const payoutWhere: any = { deletedAt: null };
 
         if (!isPrivileged(roles)) {
           if (roles.includes('mediator')) {
-            payoutQuery.beneficiaryUserId = userId;
+            payoutWhere.beneficiaryUserId = pgUserId;
           } else if (roles.includes('agency')) {
             const agencyCode = String((user as any)?.mediatorCode || '').trim();
             if (!agencyCode) {
@@ -512,27 +547,34 @@ export function makeOpsController(env: Env) {
               res.json([]);
               return;
             }
-            const mediators = await UserModel.find({ roles: 'mediator', mediatorCode: { $in: mediatorCodes }, deletedAt: null })
-              .select({ _id: 1 })
-              .lean();
-            payoutQuery.beneficiaryUserId = { $in: mediators.map((m) => m._id) };
+            const mediators = await db().user.findMany({
+              where: { roles: { has: 'mediator' as any }, mediatorCode: { in: mediatorCodes }, deletedAt: null },
+              select: { id: true },
+            });
+            payoutWhere.beneficiaryUserId = { in: mediators.map((m: any) => m.id) };
           } else {
             throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
           }
         }
 
-        const payouts = await PayoutModel.find(payoutQuery).sort({ requestedAt: -1 }).limit(2000).lean();
+        const payouts = await db().payout.findMany({
+          where: payoutWhere,
+          orderBy: { requestedAt: 'desc' },
+          take: 2000,
+        });
 
-        const users = await UserModel.find({ _id: { $in: payouts.map((p) => p.beneficiaryUserId) } })
-          .select({ name: 1, mediatorCode: 1 })
-          .lean();
-        const byId = new Map(users.map((u) => [String(u._id), u]));
+        const beneficiaryIds = payouts.map((p: any) => p.beneficiaryUserId).filter(Boolean);
+        const users = await db().user.findMany({
+          where: { id: { in: beneficiaryIds } },
+          select: { id: true, mongoId: true, name: true, mediatorCode: true },
+        });
+        const byId = new Map(users.map((u: any) => [String(u.id), u]));
 
         res.json(
-          payouts.map((p) => {
+          payouts.map((p: any) => {
             const u = byId.get(String(p.beneficiaryUserId));
             return {
-              id: String(p._id),
+              id: p.mongoId ?? p.id,
               mediatorName: u?.name ?? 'Mediator',
               mediatorCode: u?.mediatorCode,
               amount: Math.round((p.amountPaise ?? 0) / 100),
@@ -551,35 +593,32 @@ export function makeOpsController(env: Env) {
         const { roles, user: requester } = getRequester(req);
         const body = approveByIdSchema.parse(req.body);
         
-        const mediator = await UserModel.findById(body.id).lean();
-        if (!mediator || (mediator as any).deletedAt) {
+        const mediator = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
 
-        // Allow admin/ops OR parent agency to approve
         const canApprove = 
           isPrivileged(roles) || 
-          (roles.includes('agency') && String((mediator as any).parentCode) === String((requester as any)?.mediatorCode));
+          (roles.includes('agency') && String(mediator.parentCode) === String((requester as any)?.mediatorCode));
 
         if (!canApprove) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot approve mediators outside your network');
         }
-        const user = await UserModel.findByIdAndUpdate(
-          body.id,
-          { kycStatus: 'verified', status: 'active' },
-          { new: true }
-        );
-        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const _user = await db().user.update({
+          where: { id: mediator.id },
+          data: { kycStatus: 'verified', status: 'active' },
+        });
 
-        await writeAuditLog({ req, action: 'MEDIATOR_APPROVED', entityType: 'User', entityId: String(user._id) });
+        await writeAuditLog({ req, action: 'MEDIATOR_APPROVED', entityType: 'User', entityId: mediator.mongoId! });
 
-        // Realtime: update agency (who owns the mediator), admin/ops, and any UI that lists pending mediators.
-        const agencyCode = String((mediator as any)?.parentCode || '').trim();
+        const agencyCode = String(mediator.parentCode || '').trim();
+        const mediatorMongoId = mediator.mongoId ?? '';
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'users.changed',
           ts,
-          payload: { userId: String(user._id), kind: 'mediator', status: 'active', agencyCode },
+          payload: { userId: mediatorMongoId, kind: 'mediator', status: 'active', agencyCode },
           audience: {
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
@@ -588,7 +627,7 @@ export function makeOpsController(env: Env) {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'mediator.approved', userId: String(user._id), agencyCode },
+          payload: { source: 'mediator.approved', userId: mediatorMongoId, agencyCode },
           audience: {
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
@@ -605,34 +644,32 @@ export function makeOpsController(env: Env) {
         const { roles, user: requester } = getRequester(req);
         const body = rejectByIdSchema.parse(req.body);
 
-        const mediator = await UserModel.findById(body.id).lean();
-        if (!mediator || (mediator as any).deletedAt) {
+        const mediator = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
 
-        // Allow admin/ops OR parent agency to reject
         const canReject =
           isPrivileged(roles) ||
-          (roles.includes('agency') && String((mediator as any).parentCode) === String((requester as any)?.mediatorCode));
+          (roles.includes('agency') && String(mediator.parentCode) === String((requester as any)?.mediatorCode));
         if (!canReject) {
           throw new AppError(403, 'FORBIDDEN', 'Cannot reject mediators outside your network');
         }
 
-        const user = await UserModel.findByIdAndUpdate(
-          body.id,
-          { kycStatus: 'rejected', status: 'suspended' },
-          { new: true }
-        );
-        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const _user = await db().user.update({
+          where: { id: mediator.id },
+          data: { kycStatus: 'rejected', status: 'suspended' },
+        });
 
-        await writeAuditLog({ req, action: 'MEDIATOR_REJECTED', entityType: 'User', entityId: String(user._id) });
+        await writeAuditLog({ req, action: 'MEDIATOR_REJECTED', entityType: 'User', entityId: mediator.mongoId! });
 
-        const agencyCode = String((mediator as any)?.parentCode || '').trim();
+        const agencyCode = String(mediator.parentCode || '').trim();
+        const mediatorMongoId = mediator.mongoId ?? '';
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'users.changed',
           ts,
-          payload: { userId: String(user._id), kind: 'mediator', status: 'suspended', agencyCode },
+          payload: { userId: mediatorMongoId, kind: 'mediator', status: 'suspended', agencyCode },
           audience: {
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
@@ -641,7 +678,7 @@ export function makeOpsController(env: Env) {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'mediator.rejected', userId: String(user._id), agencyCode },
+          payload: { source: 'mediator.rejected', userId: mediatorMongoId, agencyCode },
           audience: {
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
@@ -659,18 +696,16 @@ export function makeOpsController(env: Env) {
         const body = approveByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const buyerBefore = await UserModel.findById(body.id).select({ parentCode: 1, deletedAt: 1 }).lean();
-        if (!buyerBefore || (buyerBefore as any).deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
-        const upstreamMediatorCode = String((buyerBefore as any).parentCode || '').trim();
+        const buyerBefore = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        if (!buyerBefore) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const upstreamMediatorCode = String(buyerBefore.parentCode || '').trim();
 
-        // Mediators can only approve their own buyers.
         if (roles.includes('mediator') && !isPrivileged(roles)) {
           if (String(upstreamMediatorCode) !== String((requester as any)?.mediatorCode)) {
             throw new AppError(403, 'FORBIDDEN', 'Cannot approve users outside your network');
           }
         }
 
-        // Agencies can only approve buyers whose mediator is within their sub-mediator network.
         if (roles.includes('agency') && !isPrivileged(roles) && !roles.includes('mediator')) {
           const agencyCode = String((requester as any)?.mediatorCode || '').trim();
           if (!agencyCode) throw new AppError(403, 'FORBIDDEN', 'Agency code not found');
@@ -680,19 +715,22 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const user = await UserModel.findByIdAndUpdate(body.id, { isVerifiedByMediator: true }, { new: true });
-        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const user = await db().user.update({
+          where: { id: buyerBefore.id },
+          data: { isVerifiedByMediator: true },
+        });
 
-        await writeAuditLog({ req, action: 'BUYER_APPROVED', entityType: 'User', entityId: String(user._id) });
+        const userMongoId = user.mongoId ?? '';
+        await writeAuditLog({ req, action: 'BUYER_APPROVED', entityType: 'User', entityId: userMongoId });
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'users.changed',
           ts,
-          payload: { userId: String(user._id), kind: 'buyer', status: 'approved', mediatorCode: upstreamMediatorCode },
+          payload: { userId: userMongoId, kind: 'buyer', status: 'approved', mediatorCode: upstreamMediatorCode },
           audience: {
-            userIds: [String(user._id)],
+            userIds: [userMongoId],
             ...(upstreamMediatorCode ? { mediatorCodes: [upstreamMediatorCode] } : {}),
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
@@ -701,7 +739,7 @@ export function makeOpsController(env: Env) {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'buyer.approved', userId: String(user._id), mediatorCode: upstreamMediatorCode },
+          payload: { source: 'buyer.approved', userId: userMongoId, mediatorCode: upstreamMediatorCode },
           audience: {
             ...(upstreamMediatorCode ? { mediatorCodes: [upstreamMediatorCode] } : {}),
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
@@ -719,9 +757,9 @@ export function makeOpsController(env: Env) {
         const body = rejectByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const buyerBefore = await UserModel.findById(body.id).select({ parentCode: 1, deletedAt: 1 }).lean();
-        if (!buyerBefore || (buyerBefore as any).deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
-        const upstreamMediatorCode = String((buyerBefore as any).parentCode || '').trim();
+        const buyerBefore = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        if (!buyerBefore) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const upstreamMediatorCode = String(buyerBefore.parentCode || '').trim();
 
         if (roles.includes('mediator') && !isPrivileged(roles)) {
           if (String(upstreamMediatorCode) !== String((requester as any)?.mediatorCode)) {
@@ -729,7 +767,6 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        // Agencies can only reject buyers whose mediator is within their sub-mediator network.
         if (roles.includes('agency') && !isPrivileged(roles) && !roles.includes('mediator')) {
           const agencyCode = String((requester as any)?.mediatorCode || '').trim();
           if (!agencyCode) throw new AppError(403, 'FORBIDDEN', 'Agency code not found');
@@ -739,19 +776,22 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const user = await UserModel.findByIdAndUpdate(body.id, { status: 'suspended' }, { new: true });
-        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const user = await db().user.update({
+          where: { id: buyerBefore.id },
+          data: { status: 'suspended' },
+        });
 
-        await writeAuditLog({ req, action: 'USER_REJECTED', entityType: 'User', entityId: String(user._id) });
+        const userMongoId = user.mongoId ?? '';
+        await writeAuditLog({ req, action: 'USER_REJECTED', entityType: 'User', entityId: userMongoId });
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'users.changed',
           ts,
-          payload: { userId: String(user._id), kind: 'buyer', status: 'rejected', mediatorCode: upstreamMediatorCode },
+          payload: { userId: userMongoId, kind: 'buyer', status: 'rejected', mediatorCode: upstreamMediatorCode },
           audience: {
-            userIds: [String(user._id)],
+            userIds: [userMongoId],
             ...(upstreamMediatorCode ? { mediatorCodes: [upstreamMediatorCode] } : {}),
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
@@ -760,7 +800,7 @@ export function makeOpsController(env: Env) {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'buyer.rejected', userId: String(user._id), mediatorCode: upstreamMediatorCode },
+          payload: { source: 'buyer.rejected', userId: userMongoId, mediatorCode: upstreamMediatorCode },
           audience: {
             ...(upstreamMediatorCode ? { mediatorCodes: [upstreamMediatorCode] } : {}),
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
@@ -777,8 +817,8 @@ export function makeOpsController(env: Env) {
       try {
         const body = verifyOrderSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -799,7 +839,6 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        // Freeze verification if upstream is suspended.
         const managerCode = String(order.managerName || '');
         if (!(await isMediatorActive(managerCode))) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
@@ -809,50 +848,48 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
         }
 
-        // Strict workflow: must be UNDER_REVIEW to approve.
         const wf = String((order as any).workflowStatus || 'CREATED');
         if (wf !== 'UNDER_REVIEW') {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot verify in state ${wf}`);
         }
 
-        // Idempotency: skip if already verified
-        if ((order as any).verification?.order?.verifiedAt) {
-          const refreshed = await OrderModel.findById(order._id);
+        const pgMapped = pgOrder(order);
+        const v = (order.verification && typeof order.verification === 'object') ? { ...(order.verification as any) } : {} as any;
+
+        if (v.order?.verifiedAt) {
+          const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
           return res.json({
             ok: true,
             approved: false,
             reason: 'ALREADY_VERIFIED',
-            order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+            order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
           });
         }
 
-        // Step 1: mark purchase proof verified (even if review/rating is still pending).
-        (order as any).verification = (order as any).verification ?? {};
-        (order as any).verification.order = (order as any).verification.order ?? {};
-        (order as any).verification.order.verifiedAt = new Date();
-        (order as any).verification.order.verifiedBy = req.auth?.userId;
+        v.order = v.order ?? {};
+        v.order.verifiedAt = new Date().toISOString();
+        v.order.verifiedBy = req.auth?.userId;
 
-        const required = getRequiredStepsForOrder(order);
-        const missingProofs = required.filter((t) => !hasProofForRequirement(order, t));
-        order.events = pushOrderEvent(order.events as any, {
+        const required = getRequiredStepsForOrder(pgMapped);
+        const missingProofs = required.filter((t) => !hasProofForRequirement(pgMapped, t));
+        const newEvents = pushOrderEvent(order.events as any, {
           type: 'VERIFIED',
           at: new Date(),
           actorUserId: req.auth?.userId,
           metadata: { step: 'order', missingProofs },
-        }) as any;
-        await order.save();
+        });
+        await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any } });
 
-        // Only finalize approval when *all* required steps are present and verified.
-        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''), env);
+        const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
 
-        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
+        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
 
-        const audience = buildOrderAudience(order, agencyCode);
+        const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
-        // Send push notification to buyer about verification status
-        const buyerId = String((order as any).userId || '').trim();
+        const buyerId = audience.buyerMongoId;
         if (buyerId) {
           const finResult = finalize as any;
           let pushBody = 'Your purchase proof has been verified.';
@@ -867,13 +904,12 @@ export function makeOpsController(env: Env) {
           }).catch(() => {});
         }
 
-        // Return refreshed order for UI update
-        const refreshed = await OrderModel.findById(order._id);
+        const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
         res.json({
           ok: true,
           approved: (finalize as any).approved,
           ...(finalize as any),
-          order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+          order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
         });
       } catch (err) {
         next(err);
@@ -885,8 +921,8 @@ export function makeOpsController(env: Env) {
         const body = verifyOrderRequirementSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -907,7 +943,6 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        // Freeze verification if upstream is suspended.
         const managerCode = String(order.managerName || '');
         if (!(await isMediatorActive(managerCode))) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
@@ -922,52 +957,53 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot verify in state ${wf}`);
         }
 
-        if (!order.verification?.order?.verifiedAt) {
+        const pgMapped = pgOrder(order);
+        const v = (order.verification && typeof order.verification === 'object') ? { ...(order.verification as any) } : {} as any;
+
+        if (!v.order?.verifiedAt) {
           throw new AppError(409, 'PURCHASE_NOT_VERIFIED', 'Purchase proof must be verified first');
         }
 
-        const required = getRequiredStepsForOrder(order);
+        const required = getRequiredStepsForOrder(pgMapped);
         if (!required.includes(body.type)) {
           throw new AppError(409, 'NOT_REQUIRED', `This order does not require ${body.type} verification`);
         }
 
-        if (!hasProofForRequirement(order, body.type)) {
+        if (!hasProofForRequirement(pgMapped, body.type)) {
           throw new AppError(409, 'MISSING_PROOF', `Missing ${body.type} proof`);
         }
 
-        // Idempotency: skip if already verified
-        if (isRequirementVerified(order, body.type)) {
-          const refreshed = await OrderModel.findById(order._id);
+        if (isRequirementVerified(pgMapped, body.type)) {
+          const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
           return res.json({
             ok: true,
             approved: false,
             reason: 'ALREADY_VERIFIED',
-            order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+            order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
           });
         }
 
-        (order as any).verification = (order as any).verification ?? {};
-        (order as any).verification[body.type] = (order as any).verification[body.type] ?? {};
-        (order as any).verification[body.type].verifiedAt = new Date();
-        (order as any).verification[body.type].verifiedBy = req.auth?.userId;
+        v[body.type] = v[body.type] ?? {};
+        v[body.type].verifiedAt = new Date().toISOString();
+        v[body.type].verifiedBy = req.auth?.userId;
 
-        order.events = pushOrderEvent(order.events as any, {
+        const newEvents = pushOrderEvent(order.events as any, {
           type: 'VERIFIED',
           at: new Date(),
           actorUserId: req.auth?.userId,
           metadata: { step: body.type },
-        }) as any;
-        await order.save();
+        });
+        await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any } });
 
-        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''), env);
-        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
+        const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
+        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
 
-        const audience = buildOrderAudience(order, agencyCode);
+        const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
-        // Notify buyer of step verification
-        const buyerId = String((order as any).userId || '').trim();
+        const buyerId = audience.buyerMongoId;
         if (buyerId) {
           const finResult = finalize as any;
           let pushBody = `Your ${body.type} proof has been verified.`;
@@ -980,12 +1016,12 @@ export function makeOpsController(env: Env) {
           }).catch(() => {});
         }
 
-        const refreshed = await OrderModel.findById(order._id);
+        const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
         res.json({
           ok: true,
           approved: (finalize as any).approved,
           ...(finalize as any),
-          order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+          order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
         });
       } catch (err) {
         next(err);
@@ -1001,8 +1037,8 @@ export function makeOpsController(env: Env) {
       try {
         const body = verifyOrderSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -1037,52 +1073,53 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot verify in state ${wf}`);
         }
 
-        const required = getRequiredStepsForOrder(order);
-        const missingProofs = required.filter((t) => !hasProofForRequirement(order, t));
+        const pgMapped = pgOrder(order);
+        const required = getRequiredStepsForOrder(pgMapped);
+        const missingProofs = required.filter((t) => !hasProofForRequirement(pgMapped, t));
         if (missingProofs.length) {
           throw new AppError(409, 'MISSING_PROOFS', `Missing proofs: ${missingProofs.join(', ')}`);
         }
 
-        // Step 1: Verify purchase proof if not already verified
-        if (!order.verification?.order?.verifiedAt) {
-          (order as any).verification = (order as any).verification ?? {};
-          (order as any).verification.order = (order as any).verification.order ?? {};
-          (order as any).verification.order.verifiedAt = new Date();
-          (order as any).verification.order.verifiedBy = req.auth?.userId;
-          order.events = pushOrderEvent(order.events as any, {
+        const v = (order.verification && typeof order.verification === 'object') ? { ...(order.verification as any) } : {} as any;
+        let evts = order.events as any;
+
+        if (!v.order?.verifiedAt) {
+          v.order = v.order ?? {};
+          v.order.verifiedAt = new Date().toISOString();
+          v.order.verifiedBy = req.auth?.userId;
+          evts = pushOrderEvent(evts, {
             type: 'VERIFIED',
             at: new Date(),
             actorUserId: req.auth?.userId,
             metadata: { step: 'order' },
-          }) as any;
+          });
         }
 
-        // Step 2: Verify each required step
         for (const type of required) {
-          if (!isRequirementVerified(order, type)) {
-            (order as any).verification[type] = (order as any).verification[type] ?? {};
-            (order as any).verification[type].verifiedAt = new Date();
-            (order as any).verification[type].verifiedBy = req.auth?.userId;
-            order.events = pushOrderEvent(order.events as any, {
+          if (!isRequirementVerified(pgMapped, type)) {
+            v[type] = v[type] ?? {};
+            v[type].verifiedAt = new Date().toISOString();
+            v[type].verifiedBy = req.auth?.userId;
+            evts = pushOrderEvent(evts, {
               type: 'VERIFIED',
               at: new Date(),
               actorUserId: req.auth?.userId,
               metadata: { step: type },
-            }) as any;
+            });
           }
         }
 
-        await order.save();
+        await db().order.update({ where: { id: order.id }, data: { verification: v, events: evts as any } });
 
-        // Finalize — all steps are verified, should move to cooling
-        const finalize = await finalizeApprovalIfReady(order, String(req.auth?.userId || ''), env);
-        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: String(order._id) });
+        const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
+        await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
 
-        const audience = buildOrderAudience(order, agencyCode);
+        const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
-        const buyerId = String((order as any).userId || '').trim();
+        const buyerId = audience.buyerMongoId;
         if (buyerId) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
@@ -1090,12 +1127,12 @@ export function makeOpsController(env: Env) {
           }).catch(() => {});
         }
 
-        const refreshed = await OrderModel.findById(order._id);
+        const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
         res.json({
           ok: true,
           approved: (finalize as any).approved,
           ...(finalize as any),
-          order: refreshed ? toUiOrder(refreshed.toObject()) : undefined,
+          order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
         });
       } catch (err) {
         next(err);
@@ -1107,8 +1144,8 @@ export function makeOpsController(env: Env) {
         const body = rejectOrderProofSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -1143,97 +1180,78 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'INVALID_WORKFLOW_STATE', `Cannot reject in state ${wf}`);
         }
 
+        const pgMapped = pgOrder(order);
+        const v = (order.verification && typeof order.verification === 'object') ? { ...(order.verification as any) } : {} as any;
+        const updateData: any = {};
+
         if (body.type === 'order') {
-          if (!order.screenshots?.order) {
+          if (!order.screenshotOrder) {
             throw new AppError(409, 'MISSING_PROOF', 'Missing order proof');
           }
-          if ((order as any).verification?.order?.verifiedAt) {
+          if (v.order?.verifiedAt) {
             throw new AppError(409, 'ALREADY_VERIFIED', 'Order proof already verified');
           }
-          (order as any).screenshots = { ...(order as any).screenshots, order: undefined } as any;
-          if ((order as any).verification?.order) {
-            (order as any).verification.order = undefined;
-          }
+          updateData.screenshotOrder = null;
+          if (v.order) { v.order = undefined; }
         } else {
-          if (!(order as any).verification?.order?.verifiedAt) {
+          if (!v.order?.verifiedAt) {
             throw new AppError(409, 'PURCHASE_NOT_VERIFIED', 'Purchase proof must be verified first');
           }
-          const required = getRequiredStepsForOrder(order);
+          const required = getRequiredStepsForOrder(pgMapped);
           if (!required.includes(body.type)) {
             throw new AppError(409, 'NOT_REQUIRED', `This order does not require ${body.type} verification`);
           }
-          if (!hasProofForRequirement(order, body.type)) {
+          if (!hasProofForRequirement(pgMapped, body.type)) {
             throw new AppError(409, 'MISSING_PROOF', `Missing ${body.type} proof`);
           }
           if (body.type === 'review') {
-            (order as any).reviewLink = undefined;
-            if ((order as any).screenshots?.review) {
-              (order as any).screenshots.review = undefined;
-            }
-            if ((order as any).verification?.review) {
-              (order as any).verification.review = undefined;
-            }
+            updateData.reviewLink = null;
+            updateData.screenshotReview = null;
+            if (v.review) { v.review = undefined; }
           }
           if (body.type === 'rating') {
-            if ((order as any).screenshots?.rating) {
-              (order as any).screenshots.rating = undefined;
-            }
-            if ((order as any).verification?.rating) {
-              (order as any).verification.rating = undefined;
-            }
-            // Also clear ratingAiVerification when rating is rejected
-            if ((order as any).ratingAiVerification) {
-              (order as any).ratingAiVerification = undefined;
-            }
+            updateData.screenshotRating = null;
+            if (v.rating) { v.rating = undefined; }
+            updateData.ratingAiVerification = null;
           }
           if (body.type === 'returnWindow') {
-            if ((order as any).screenshots?.returnWindow) {
-              (order as any).screenshots.returnWindow = undefined;
-            }
-            if ((order as any).verification?.returnWindow) {
-              (order as any).verification.returnWindow = undefined;
-            }
+            updateData.screenshotReturnWindow = null;
+            if (v.returnWindow) { v.returnWindow = undefined; }
           }
         }
 
-        (order as any).rejection = {
-          type: body.type,
-          reason: body.reason,
-          rejectedAt: new Date(),
-          rejectedBy: req.auth?.userId,
-        };
-        (order as any).affiliateStatus = 'Rejected';
+        updateData.rejectionType = body.type;
+        updateData.rejectionReason = body.reason;
+        updateData.rejectedAt = new Date();
+        updateData.rejectedBy = req.auth?.userId;
+        updateData.affiliateStatus = 'Rejected';
+        updateData.verification = v;
 
-        // Release campaign slot when order proof (purchase) is rejected,
-        // so the campaign doesn't permanently show "sold out" for rejected orders.
+        // Release campaign slot when order proof (purchase) is rejected
         if (body.type === 'order') {
           const campaignId = order.items?.[0]?.campaignId;
           if (campaignId) {
-            await CampaignModel.findOneAndUpdate(
-              { _id: campaignId, usedSlots: { $gt: 0 } },
-              { $inc: { usedSlots: -1 } },
-              { new: true }
-            );
+            await db().$executeRaw`UPDATE "campaigns" SET "usedSlots" = GREATEST("usedSlots" - 1, 0) WHERE id = ${campaignId}::uuid AND "deletedAt" IS NULL`;
           }
         }
 
-        order.events = pushOrderEvent(order.events as any, {
+        const newEvents = pushOrderEvent(order.events as any, {
           type: 'REJECTED',
           at: new Date(),
           actorUserId: req.auth?.userId,
           metadata: { step: body.type, reason: body.reason },
-        }) as any;
+        });
+        updateData.events = newEvents;
 
-        await order.save();
+        await db().order.update({ where: { id: order.id }, data: updateData });
         await writeAuditLog({
           req,
           action: 'ORDER_REJECTED',
           entityType: 'Order',
-          entityId: String(order._id),
+          entityId: order.mongoId!,
           metadata: { proofType: body.type, reason: body.reason },
         });
 
-        // Audit slot release separately for campaign backtracking
         if (body.type === 'order') {
           const campaignId = order.items?.[0]?.campaignId;
           if (campaignId) {
@@ -1242,16 +1260,16 @@ export function makeOpsController(env: Env) {
               action: 'CAMPAIGN_SLOT_RELEASED',
               entityType: 'Campaign',
               entityId: String(campaignId),
-              metadata: { orderId: String(order._id), reason: 'proof_rejected' },
+              metadata: { orderId: order.mongoId!, reason: 'proof_rejected' },
             }).catch(() => {});
           }
         }
 
-        const audience = buildOrderAudience(order, agencyCode);
+        const audience = await buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
-        const buyerId = String((order as any).userId || '').trim();
+        const buyerId = audience.buyerMongoId;
         if (buyerId) {
           await sendPushToUser({
             env,
@@ -1276,8 +1294,8 @@ export function makeOpsController(env: Env) {
         const body = requestMissingProofSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -1307,39 +1325,43 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
         }
 
-        const required = getRequiredStepsForOrder(order);
+        const pgMapped = pgOrder(order);
+        const required = getRequiredStepsForOrder(pgMapped);
         if (!required.includes(body.type)) {
           throw new AppError(409, 'NOT_REQUIRED', `This order does not require ${body.type} proof`);
         }
-        if (hasProofForRequirement(order, body.type)) {
+        if (hasProofForRequirement(pgMapped, body.type)) {
           res.json({ ok: true, alreadySatisfied: true });
           return;
         }
 
-        (order as any).missingProofRequests = Array.isArray((order as any).missingProofRequests)
+        const existingRequests = Array.isArray((order as any).missingProofRequests)
           ? (order as any).missingProofRequests
           : [];
 
-        const alreadyRequested = (order as any).missingProofRequests.some(
+        const alreadyRequested = existingRequests.some(
           (r: any) => String(r?.type) === body.type
         );
         if (!alreadyRequested) {
-          (order as any).missingProofRequests.push({
+          const newRequests = [...existingRequests, {
             type: body.type,
             note: body.note,
-            requestedAt: new Date(),
+            requestedAt: new Date().toISOString(),
             requestedBy: req.auth?.userId,
-          });
-          order.events = pushOrderEvent(order.events as any, {
+          }];
+          const newEvents = pushOrderEvent(order.events as any, {
             type: 'MISSING_PROOF_REQUESTED',
             at: new Date(),
             actorUserId: req.auth?.userId,
             metadata: { requestMissing: body.type, note: body.note },
-          }) as any;
-          await order.save();
+          });
+          await db().order.update({
+            where: { id: order.id },
+            data: { missingProofRequests: newRequests as any, events: newEvents as any },
+          });
         }
 
-        const audience = buildOrderAudience(order, agencyCode);
+        const audience = await buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
@@ -1347,11 +1369,11 @@ export function makeOpsController(env: Env) {
           req,
           action: 'MISSING_PROOF_REQUESTED',
           entityType: 'Order',
-          entityId: String(order._id),
+          entityId: order.mongoId!,
           metadata: { proofType: body.type, note: body.note },
         });
 
-        const buyerId = String((order as any).userId || '').trim();
+        const buyerId = audience.buyerMongoId;
         if (buyerId) {
           await sendPushToUser({
             env,
@@ -1359,7 +1381,7 @@ export function makeOpsController(env: Env) {
             app: 'buyer',
             payload: {
               title: 'Action required',
-              body: `Please upload your ${body.type} proof for order #${String(order._id).slice(-6)}.`,
+              body: `Please upload your ${body.type} proof for order #${(order.mongoId || order.id).slice(-6)}.`,
               url: '/orders',
             },
           });
@@ -1376,8 +1398,6 @@ export function makeOpsController(env: Env) {
         const { roles, user } = getRequester(req);
         const settlementMode = (body as any).settlementMode === 'external' ? 'external' : 'wallet';
 
-        // Privileged: may settle any order.
-        // Non-privileged: may settle only within their scope.
         const requesterMediatorCode = String((user as any)?.mediatorCode || '').trim();
         const canSettleAny = isPrivileged(roles);
         const canSettleScoped = roles.includes('mediator') || roles.includes('agency');
@@ -1385,8 +1405,8 @@ export function makeOpsController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
         }
 
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if (!canSettleAny) {
           const orderManagerCode = String(order.managerName || '').trim();
@@ -1421,31 +1441,32 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; payouts are blocked');
         }
 
-        // Buyer must also be active to receive settlement credits.
-        const buyer = await UserModel.findById(order.userId).select({ status: 1, deletedAt: 1 }).lean();
-        if (!buyer || (buyer as any).deletedAt || buyer.status !== 'active') {
+        // Buyer must also be active — order.userId is PG UUID
+        const buyer = await db().user.findUnique({ where: { id: order.userId } });
+        if (!buyer || buyer.deletedAt || buyer.status !== 'active') {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Buyer is not active; settlement is blocked');
         }
 
-        const hasOpenDispute = await TicketModel.exists({
-          orderId: String(order._id),
-          status: 'Open',
-          deletedAt: null,
+        const hasOpenDispute = await db().ticket.findFirst({
+          where: { orderId: order.mongoId!, status: 'Open', deletedAt: null },
+          select: { id: true },
         });
         if (hasOpenDispute) {
-          order.affiliateStatus = 'Frozen_Disputed';
-          order.events = pushOrderEvent(order.events as any, {
+          const newEvents = pushOrderEvent(order.events as any, {
             type: 'FROZEN_DISPUTED',
             at: new Date(),
             actorUserId: req.auth?.userId,
             metadata: { reason: 'open_ticket' },
-          }) as any;
-          await order.save();
+          });
+          await db().order.update({
+            where: { id: order.id },
+            data: { affiliateStatus: 'Frozen_Disputed', events: newEvents as any },
+          });
           await writeAuditLog({
             req,
             action: 'ORDER_FROZEN_DISPUTED',
             entityType: 'Order',
-            entityId: String(order._id),
+            entityId: order.mongoId!,
             metadata: { reason: 'open_ticket' },
           });
           throw new AppError(409, 'FROZEN_DISPUTE', 'This transaction is frozen due to an open ticket.');
@@ -1460,46 +1481,45 @@ export function makeOpsController(env: Env) {
         const productId = String(order.items?.[0]?.productId || '').trim();
         const mediatorCode = String(order.managerName || '').trim();
 
-        const campaign = campaignId ? await CampaignModel.findById(campaignId).lean() : null;
+        const campaign = campaignId ? await db().campaign.findFirst({ where: { id: campaignId, deletedAt: null } }) : null;
 
         let isOverLimit = false;
         if (campaignId && mediatorCode) {
           if (campaign) {
-            const assignmentsObj = campaign.assignments instanceof Map
-              ? Object.fromEntries(campaign.assignments)
-              : (campaign.assignments as any);
+            const assignmentsObj = campaign.assignments && typeof campaign.assignments === 'object'
+              ? campaign.assignments as any
+              : {};
             const rawAssigned = assignmentsObj?.[mediatorCode];
             const assignedLimit =
               typeof rawAssigned === 'number' ? rawAssigned : Number(rawAssigned?.limit ?? 0);
 
             if (assignedLimit > 0) {
-              const settledCount = await OrderModel.countDocuments({
-                managerName: mediatorCode,
-                'items.0.campaignId': campaignId,
-                $or: [{ affiliateStatus: 'Approved_Settled' }, { paymentStatus: 'Paid' }],
-                _id: { $ne: order._id },
-                deletedAt: null,
+              const settledCount = await db().order.count({
+                where: {
+                  managerName: mediatorCode,
+                  items: { some: { campaignId } },
+                  OR: [{ affiliateStatus: 'Approved_Settled' }, { paymentStatus: 'Paid' }],
+                  id: { not: order.id },
+                  deletedAt: null,
+                },
               });
               if (settledCount >= assignedLimit) isOverLimit = true;
             }
           }
         }
 
-        // Money movements (wallet mode only): enforce conservation on successful settlements.
-        // - Debit brand wallet by the Deal payout
-        // - Credit buyer commission and mediator margin (payout - commission)
-        // Idempotency keys prevent double-moves on retries.
+        // Money movements (wallet mode only)
         if (!isOverLimit && settlementMode === 'wallet') {
           if (!productId) {
             throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
           }
 
-          const deal = await DealModel.findById(productId).lean();
-          if (!deal || (deal as any).deletedAt) {
+          const deal = await db().deal.findFirst({ where: { mongoId: productId, deletedAt: null } });
+          if (!deal) {
             throw new AppError(409, 'DEAL_NOT_FOUND', 'Cannot settle: deal not found');
           }
 
-          const payoutPaise = Number((deal as any).payoutPaise ?? 0);
+          const payoutPaise = Number(deal.payoutPaise ?? 0);
           const buyerCommissionPaise = Number(order.items?.[0]?.commissionPaise ?? 0);
           if (payoutPaise <= 0) {
             throw new AppError(409, 'INVALID_PAYOUT', 'Cannot settle: deal payout is invalid');
@@ -1511,91 +1531,74 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'INVALID_ECONOMICS', 'Cannot settle: commission exceeds payout');
           }
 
-          const buyerUserId = String(order.userId);
-          if (!buyerUserId || buyerUserId === 'undefined') {
+          // order.userId and order.brandUserId are PG UUIDs
+          const buyerUserId = order.userId;
+          if (!buyerUserId) {
             throw new AppError(409, 'MISSING_BUYER', 'Cannot settle: order is missing buyer userId');
           }
-          const brandId = String((order as any).brandUserId || (campaign as any)?.brandUserId || '').trim();
+          const brandId = String(order.brandUserId || campaign?.brandUserId || '').trim();
           if (!brandId) {
             throw new AppError(409, 'MISSING_BRAND', 'Cannot settle: missing brand ownership');
           }
 
-          // Pre-create wallets outside the transaction — ensureWallet is idempotent
-          // and runs upserts that would conflict with the transaction session.
           await ensureWallet(brandId);
           await ensureWallet(buyerUserId);
 
-          // Look up mediator for margin credit (done outside txn to avoid read conflicts).
           const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
           let mediatorUserId: string | null = null;
           if (mediatorMarginPaise > 0 && mediatorCode) {
-            const mediator = await UserModel.findOne({ mediatorCode }).lean();
-            if (mediator && !(mediator as any).deletedAt) {
-              mediatorUserId = String((mediator as any)._id);
+            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null } });
+            if (mediator) {
+              mediatorUserId = mediator.id;
               await ensureWallet(mediatorUserId);
             }
           }
 
-          // Atomic settlement: wrap all wallet mutations in a single MongoDB session
-          // so that partial failures (e.g., brand debit succeeds but buyer credit fails)
-          // are rolled back automatically, preventing money creation/destruction.
-          const settlementSession = await mongoose.startSession();
-          try {
-            await settlementSession.withTransaction(async () => {
-              await applyWalletDebit({
-                idempotencyKey: `order-settlement-debit-${order._id}`,
-                type: 'order_settlement_debit',
-                ownerUserId: brandId,
-                fromUserId: brandId,
-                toUserId: buyerUserId,
-                amountPaise: payoutPaise,
-                orderId: String(order._id),
-                campaignId: campaignId ? String(campaignId) : undefined,
-                metadata: { reason: 'ORDER_PAYOUT', dealId: productId, mediatorCode },
-                session: settlementSession,
-              });
-
-              // Credit buyer commission.
-              if (buyerCommissionPaise > 0) {
-                await applyWalletCredit({
-                  idempotencyKey: `order-commission-${order._id}`,
-                  type: 'commission_settle',
-                  ownerUserId: buyerUserId,
-                  amountPaise: buyerCommissionPaise,
-                  orderId: String(order._id),
-                  campaignId: campaignId ? String(campaignId) : undefined,
-                  metadata: { reason: 'ORDER_COMMISSION', dealId: productId },
-                  session: settlementSession,
-                });
-              }
-
-              // Credit mediator margin (payout - commission).
-              if (mediatorUserId && mediatorMarginPaise > 0) {
-                await applyWalletCredit({
-                  idempotencyKey: `order-margin-${order._id}`,
-                  type: 'commission_settle',
-                  ownerUserId: mediatorUserId,
-                  amountPaise: mediatorMarginPaise,
-                  orderId: String(order._id),
-                  campaignId: campaignId ? String(campaignId) : undefined,
-                  metadata: { reason: 'ORDER_MARGIN', dealId: productId, mediatorCode },
-                  session: settlementSession,
-                });
-              }
+          // Atomic settlement using Prisma transaction
+          await db().$transaction(async (tx: any) => {
+            await applyWalletDebit({
+              idempotencyKey: `order-settlement-debit-${order.mongoId}`,
+              type: 'order_settlement_debit',
+              ownerUserId: brandId,
+              fromUserId: brandId,
+              toUserId: buyerUserId,
+              amountPaise: payoutPaise,
+              orderId: order.mongoId!,
+              campaignId: campaignId ? String(campaignId) : undefined,
+              metadata: { reason: 'ORDER_PAYOUT', dealId: productId, mediatorCode },
+              tx,
             });
-          } finally {
-            settlementSession.endSession();
-          }
+
+            if (buyerCommissionPaise > 0) {
+              await applyWalletCredit({
+                idempotencyKey: `order-commission-${order.mongoId}`,
+                type: 'commission_settle',
+                ownerUserId: buyerUserId,
+                amountPaise: buyerCommissionPaise,
+                orderId: order.mongoId!,
+                campaignId: campaignId ? String(campaignId) : undefined,
+                metadata: { reason: 'ORDER_COMMISSION', dealId: productId },
+                tx,
+              });
+            }
+
+            if (mediatorUserId && mediatorMarginPaise > 0) {
+              await applyWalletCredit({
+                idempotencyKey: `order-margin-${order.mongoId}`,
+                type: 'commission_settle',
+                ownerUserId: mediatorUserId,
+                amountPaise: mediatorMarginPaise,
+                orderId: order.mongoId!,
+                campaignId: campaignId ? String(campaignId) : undefined,
+                metadata: { reason: 'ORDER_MARGIN', dealId: productId, mediatorCode },
+                tx,
+              });
+            }
+          });
         }
-        // Wrap order status update AND workflow transitions in a single session
-        // to prevent split-brain (money moved but order stuck in wrong state).
-        order.paymentStatus = isOverLimit ? 'Failed' : 'Paid';
-        order.affiliateStatus = isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled';
-        (order as any).settlementMode = settlementMode;
-        if (body.settlementRef) {
-          (order as any).settlementRef = body.settlementRef;
-        }
-        order.events = pushOrderEvent(order.events as any, {
+
+        // Update order status + workflow transitions
+        const newEvents1 = pushOrderEvent(order.events as any, {
           type: isOverLimit ? 'CAP_EXCEEDED' : 'SETTLED',
           at: new Date(),
           actorUserId: req.auth?.userId,
@@ -1603,42 +1606,41 @@ export function makeOpsController(env: Env) {
             ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
             settlementMode,
           },
-        }) as any;
+        });
 
-        // Strict workflow: APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
-        // order.save() + both transitions in a single session for atomicity.
-        const wfSession = await mongoose.startSession();
-        try {
-          await wfSession.withTransaction(async () => {
-            await order.save({ session: wfSession });
+        await db().order.update({
+          where: { id: order.id },
+          data: {
+            paymentStatus: isOverLimit ? 'Failed' : 'Paid',
+            affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled',
+            settlementMode,
+            ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
+            events: newEvents1 as any,
+          },
+        });
 
-            await transitionOrderWorkflow({
-              orderId: String(order._id),
-              from: 'APPROVED',
-              to: 'REWARD_PENDING',
-              actorUserId: String(req.auth?.userId || ''),
-              metadata: { source: 'settleOrderPayment' },
-              env,
-              session: wfSession,
-            });
+        // Workflow transitions: APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
+        await transitionOrderWorkflow({
+          orderId: order.mongoId!,
+          from: 'APPROVED',
+          to: 'REWARD_PENDING',
+          actorUserId: String(req.auth?.userId || ''),
+          metadata: { source: 'settleOrderPayment' },
+          env,
+        });
 
-            await transitionOrderWorkflow({
-              orderId: String(order._id),
-              from: 'REWARD_PENDING',
-              to: isOverLimit ? 'FAILED' : 'COMPLETED',
-              actorUserId: String(req.auth?.userId || ''),
-              metadata: { affiliateStatus: order.affiliateStatus },
-              env,
-              session: wfSession,
-            });
-          });
-        } finally {
-          wfSession.endSession();
-        }
+        await transitionOrderWorkflow({
+          orderId: order.mongoId!,
+          from: 'REWARD_PENDING',
+          to: isOverLimit ? 'FAILED' : 'COMPLETED',
+          actorUserId: String(req.auth?.userId || ''),
+          metadata: { affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled' },
+          env,
+        });
 
-        await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: String(order._id), metadata: { affiliateStatus: order.affiliateStatus } });
+        await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: order.mongoId!, metadata: { affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled' } });
 
-        const audience = buildOrderAudience(order, agencyCode);
+        const audience = await buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         if (settlementMode === 'wallet') {
@@ -1655,15 +1657,13 @@ export function makeOpsController(env: Env) {
         const body = unsettleOrderSchema.parse(req.body);
         const { roles, user } = getRequester(req);
 
-        // Same permission model as settlement: privileged can revert anything,
-        // non-privileged can revert only within their scope.
         const requesterCode = String((user as any)?.mediatorCode || '').trim();
         const canAny = isPrivileged(roles);
         const canScoped = roles.includes('mediator') || roles.includes('agency');
         if (!canAny && !canScoped) throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
 
-        const order = await OrderModel.findById(body.orderId);
-        if (!order || order.deletedAt) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
           throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -1699,136 +1699,20 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'NOT_SETTLED', 'Order is not settled');
         }
 
-        // Reverse money movements if this was a wallet settlement.
-        // If CAP_EXCEEDED path was used, no money movement occurred; reversal is a no-op.
-        // If settlementMode=external, reversal is a no-op.
         const productId = String(order.items?.[0]?.productId || '').trim();
         const campaignId = order.items?.[0]?.campaignId;
         const mediatorCode = String(order.managerName || '').trim();
 
-        const campaign = campaignId ? await CampaignModel.findById(campaignId).lean() : null;
-        const brandId = String((order as any).brandUserId || (campaign as any)?.brandUserId || '').trim();
+        const campaign = campaignId ? await db().campaign.findFirst({ where: { id: campaignId, deletedAt: null } }) : null;
+        const brandId = String(order.brandUserId || campaign?.brandUserId || '').trim();
 
         const isCapExceeded = String(order.affiliateStatus) === 'Cap_Exceeded';
         const settlementMode = String((order as any).settlementMode || 'wallet');
 
-        if (!isCapExceeded && settlementMode !== 'external') {
-          if (!productId) throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
-          const deal = await DealModel.findById(productId).lean();
-          if (!deal || (deal as any).deletedAt) throw new AppError(409, 'DEAL_NOT_FOUND', 'Cannot revert: deal not found');
-
-          const payoutPaise = Number((deal as any).payoutPaise ?? 0);
-          const buyerCommissionPaise = Number(order.items?.[0]?.commissionPaise ?? 0);
-          const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
-
-          const buyerUserId = String(order.userId);
-          if (!buyerUserId || buyerUserId === 'undefined') {
-            throw new AppError(409, 'MISSING_BUYER', 'Cannot revert: order is missing buyer userId');
-          }
-          if (!brandId) throw new AppError(409, 'MISSING_BRAND', 'Cannot revert: missing brand ownership');
-
-          // Atomic unsettlement: wrap all wallet mutations in a single MongoDB session
-          // so that partial failures are rolled back, preventing inconsistent ledger states.
-          // Pre-create wallets and resolve mediator outside the transaction.
-          await ensureWallet(brandId);
-
-          let unsettleMediatorUserId: string | null = null;
-          if (mediatorMarginPaise > 0 && mediatorCode) {
-            const mediator = await UserModel.findOne({ mediatorCode }).lean();
-            if (mediator && !(mediator as any).deletedAt) {
-              unsettleMediatorUserId = String((mediator as any)._id);
-            }
-          }
-
-          const unsettleSession = await mongoose.startSession();
-          try {
-            await unsettleSession.withTransaction(async () => {
-              // Credit brand back first.
-              await applyWalletCredit({
-                idempotencyKey: `order-unsettle-credit-brand-${order._id}`,
-                type: 'refund',
-                ownerUserId: brandId,
-                fromUserId: buyerUserId,
-                toUserId: brandId,
-                amountPaise: payoutPaise,
-                orderId: String(order._id),
-                campaignId: campaignId ? String(campaignId) : undefined,
-                metadata: { reason: 'ORDER_UNSETTLE', dealId: productId, mediatorCode },
-                session: unsettleSession,
-              });
-
-              // Then debit buyer commission back.
-              if (buyerCommissionPaise > 0) {
-                await applyWalletDebit({
-                  idempotencyKey: `order-unsettle-debit-buyer-${order._id}`,
-                  type: 'commission_reversal',
-                  ownerUserId: buyerUserId,
-                  fromUserId: buyerUserId,
-                  toUserId: brandId,
-                  amountPaise: buyerCommissionPaise,
-                  orderId: String(order._id),
-                  campaignId: campaignId ? String(campaignId) : undefined,
-                  metadata: { reason: 'ORDER_UNSETTLE_COMMISSION', dealId: productId },
-                  session: unsettleSession,
-                });
-              }
-
-              // Then debit mediator margin back.
-              if (unsettleMediatorUserId && mediatorMarginPaise > 0) {
-                await applyWalletDebit({
-                  idempotencyKey: `order-unsettle-debit-mediator-${order._id}`,
-                  type: 'margin_reversal',
-                  ownerUserId: unsettleMediatorUserId,
-                  fromUserId: unsettleMediatorUserId,
-                  toUserId: brandId,
-                  amountPaise: mediatorMarginPaise,
-                  orderId: String(order._id),
-                  campaignId: campaignId ? String(campaignId) : undefined,
-                  metadata: { reason: 'ORDER_UNSETTLE_MARGIN', dealId: productId, mediatorCode },
-                  session: unsettleSession,
-                });
-              }
-
-              // Include order state reset inside the same transaction to ensure atomicity
-              // between wallet reversals and order status update.
-              (order as any).workflowStatus = 'APPROVED';
-              order.paymentStatus = 'Pending';
-              order.affiliateStatus = 'Pending_Cooling';
-              (order as any).settlementRef = undefined;
-              (order as any).settlementMode = 'wallet';
-
-              order.events = pushOrderEvent(order.events as any, {
-                type: 'UNSETTLED',
-                at: new Date(),
-                actorUserId: req.auth?.userId,
-                metadata: {
-                  reason: 'UNSETTLE',
-                  paymentStatus: { from: 'Paid', to: 'Pending' },
-                  affiliateStatus: { from: prevAffiliateStatus, to: 'Pending_Cooling' },
-                },
-              }) as any;
-
-              order.events = pushOrderEvent(order.events as any, {
-                type: 'WORKFLOW_TRANSITION',
-                at: new Date(),
-                actorUserId: req.auth?.userId,
-                metadata: { from: wf, to: 'APPROVED', forced: true, source: 'unsettleOrderPayment' },
-              }) as any;
-
-              await order.save({ session: unsettleSession });
-            });
-          } finally {
-            unsettleSession.endSession();
-          }
-        } else {
-          // Non-wallet path (cap exceeded or external settlement): no session needed.
-          (order as any).workflowStatus = 'APPROVED';
-          order.paymentStatus = 'Pending';
-          order.affiliateStatus = 'Pending_Cooling';
-          (order as any).settlementRef = undefined;
-          (order as any).settlementMode = 'wallet';
-
-          order.events = pushOrderEvent(order.events as any, {
+        // Build the common order update data for both paths
+        const buildUnsettleData = () => {
+          let evts = order.events as any;
+          evts = pushOrderEvent(evts, {
             type: 'UNSETTLED',
             at: new Date(),
             actorUserId: req.auth?.userId,
@@ -1837,29 +1721,111 @@ export function makeOpsController(env: Env) {
               paymentStatus: { from: 'Paid', to: 'Pending' },
               affiliateStatus: { from: prevAffiliateStatus, to: 'Pending_Cooling' },
             },
-          }) as any;
-
-          order.events = pushOrderEvent(order.events as any, {
+          });
+          evts = pushOrderEvent(evts, {
             type: 'WORKFLOW_TRANSITION',
             at: new Date(),
             actorUserId: req.auth?.userId,
             metadata: { from: wf, to: 'APPROVED', forced: true, source: 'unsettleOrderPayment' },
-          }) as any;
+          });
+          return {
+            workflowStatus: 'APPROVED',
+            paymentStatus: 'Pending',
+            affiliateStatus: 'Pending_Cooling',
+            settlementRef: null,
+            settlementMode: 'wallet',
+            events: evts,
+          } as any;
+        };
 
-          await order.save();
+        if (!isCapExceeded && settlementMode !== 'external') {
+          if (!productId) throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
+          const deal = await db().deal.findFirst({ where: { mongoId: productId, deletedAt: null } });
+          if (!deal) throw new AppError(409, 'DEAL_NOT_FOUND', 'Cannot revert: deal not found');
+
+          const payoutPaise = Number(deal.payoutPaise ?? 0);
+          const buyerCommissionPaise = Number(order.items?.[0]?.commissionPaise ?? 0);
+          const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
+
+          const buyerUserId = order.userId;
+          if (!buyerUserId) {
+            throw new AppError(409, 'MISSING_BUYER', 'Cannot revert: order is missing buyer userId');
+          }
+          if (!brandId) throw new AppError(409, 'MISSING_BRAND', 'Cannot revert: missing brand ownership');
+
+          await ensureWallet(brandId);
+
+          let unsettleMediatorUserId: string | null = null;
+          if (mediatorMarginPaise > 0 && mediatorCode) {
+            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null } });
+            if (mediator) {
+              unsettleMediatorUserId = mediator.id;
+            }
+          }
+
+          // Atomic unsettlement using Prisma transaction
+          await db().$transaction(async (tx: any) => {
+            await applyWalletCredit({
+              idempotencyKey: `order-unsettle-credit-brand-${order.mongoId}`,
+              type: 'refund',
+              ownerUserId: brandId,
+              fromUserId: buyerUserId,
+              toUserId: brandId,
+              amountPaise: payoutPaise,
+              orderId: order.mongoId!,
+              campaignId: campaignId ? String(campaignId) : undefined,
+              metadata: { reason: 'ORDER_UNSETTLE', dealId: productId, mediatorCode },
+              tx,
+            });
+
+            if (buyerCommissionPaise > 0) {
+              await applyWalletDebit({
+                idempotencyKey: `order-unsettle-debit-buyer-${order.mongoId}`,
+                type: 'commission_reversal',
+                ownerUserId: buyerUserId,
+                fromUserId: buyerUserId,
+                toUserId: brandId,
+                amountPaise: buyerCommissionPaise,
+                orderId: order.mongoId!,
+                campaignId: campaignId ? String(campaignId) : undefined,
+                metadata: { reason: 'ORDER_UNSETTLE_COMMISSION', dealId: productId },
+                tx,
+              });
+            }
+
+            if (unsettleMediatorUserId && mediatorMarginPaise > 0) {
+              await applyWalletDebit({
+                idempotencyKey: `order-unsettle-debit-mediator-${order.mongoId}`,
+                type: 'margin_reversal',
+                ownerUserId: unsettleMediatorUserId,
+                fromUserId: unsettleMediatorUserId,
+                toUserId: brandId,
+                amountPaise: mediatorMarginPaise,
+                orderId: order.mongoId!,
+                campaignId: campaignId ? String(campaignId) : undefined,
+                metadata: { reason: 'ORDER_UNSETTLE_MARGIN', dealId: productId, mediatorCode },
+                tx,
+              });
+            }
+
+            await tx.order.update({ where: { id: order.id }, data: buildUnsettleData() });
+          });
+        } else {
+          // Non-wallet path (cap exceeded or external settlement): no transaction needed.
+          await db().order.update({ where: { id: order.id }, data: buildUnsettleData() });
         }
 
         await writeAuditLog({
           req,
           action: 'ORDER_UNSETTLED',
           entityType: 'Order',
-          entityId: String(order._id),
+          entityId: order.mongoId!,
           metadata: { previousWorkflow: wf, previousAffiliateStatus: prevAffiliateStatus },
         });
 
         const managerCode = String(order.managerName || '').trim();
         const agencyCode = managerCode ? ((await getAgencyCodeForMediatorCode(managerCode)) || '') : '';
-        const audience = buildOrderAudience(order, agencyCode);
+        const audience = await buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         if (settlementMode !== 'external') {
@@ -1874,7 +1840,7 @@ export function makeOpsController(env: Env) {
     createCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = createCampaignSchema.parse(req.body);
-        const { roles, userId, user: requester } = getRequester(req);
+        const { roles, pgUserId, user: requester } = getRequester(req);
 
         const allowed = Array.isArray(body.allowedAgencies) ? body.allowedAgencies : [];
 
@@ -1883,48 +1849,50 @@ export function makeOpsController(env: Env) {
           const brandUserId = String(body.brandUserId || '').trim();
           if (!brandUserId) throw new AppError(400, 'MISSING_BRAND_USER_ID', 'brandUserId is required');
 
-          const brand = await UserModel.findById(brandUserId).lean();
-          if (!brand || (brand as any).deletedAt) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
-          if (!((brand as any).roles || []).includes('brand')) throw new AppError(400, 'INVALID_BRAND', 'Invalid brand');
-          if ((brand as any).status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
+          const brand = await db().user.findFirst({ where: { mongoId: brandUserId, deletedAt: null } });
+          if (!brand) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
+          if (!(Array.isArray(brand.roles) ? brand.roles : []).includes('brand')) throw new AppError(400, 'INVALID_BRAND', 'Invalid brand');
+          if (brand.status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
 
-          const connected = Array.isArray((brand as any).connectedAgencies) ? (brand as any).connectedAgencies : [];
+          const connected = Array.isArray(brand.connectedAgencies) ? brand.connectedAgencies : [];
           if (allowed.length && !allowed.every((c) => connected.includes(String(c)))) {
             throw new AppError(400, 'INVALID_ALLOWED_AGENCIES', 'allowedAgencies must be connected to brand');
           }
 
-          const campaign = await CampaignModel.create({
-            title: body.title,
-            brandUserId: (brand as any)._id,
-            brandName: String((brand as any).name || 'Brand'),
-            platform: body.platform,
-            image: body.image,
-            productUrl: body.productUrl,
-            originalPricePaise: rupeesToPaise(body.originalPrice),
-            pricePaise: rupeesToPaise(body.price),
-            payoutPaise: rupeesToPaise(body.payout),
-            totalSlots: body.totalSlots,
-            usedSlots: 0,
-            status: 'active',
-            allowedAgencyCodes: allowed,
-            dealType: body.dealType,
-            returnWindowDays: body.returnWindowDays ?? 14,
-            createdBy: req.auth?.userId as any,
+          const campaign = await db().campaign.create({
+            data: {
+              title: body.title,
+              brandUserId: brand.id,
+              brandName: String(brand.name || 'Brand'),
+              platform: body.platform,
+              image: body.image,
+              productUrl: body.productUrl,
+              originalPricePaise: rupeesToPaise(body.originalPrice),
+              pricePaise: rupeesToPaise(body.price),
+              payoutPaise: rupeesToPaise(body.payout),
+              totalSlots: body.totalSlots,
+              usedSlots: 0,
+              status: 'active',
+              allowedAgencyCodes: allowed,
+              dealType: body.dealType,
+              returnWindowDays: body.returnWindowDays ?? 14,
+              createdBy: pgUserId || undefined,
+            },
           });
 
-          await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: String((campaign as any)._id) });
+          await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
           const ts = new Date().toISOString();
           publishRealtime({
             type: 'deals.changed',
             ts,
-            payload: { campaignId: String((campaign as any)._id) },
+            payload: { campaignId: campaign.mongoId ?? campaign.id },
             audience: {
-              userIds: [String((brand as any)._id)],
+              userIds: [brand.mongoId!],
               agencyCodes: allowed.map((c) => String(c).trim()).filter(Boolean),
               roles: ['admin', 'ops'],
             },
           });
-          res.status(201).json(toUiCampaign((campaign as any).toObject ? (campaign as any).toObject() : (campaign as any)));
+          res.status(201).json(toUiCampaign(pgCampaign(campaign)));
           return;
         }
 
@@ -1942,39 +1910,40 @@ export function makeOpsController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Non-privileged users can only create campaigns for their own code');
         }
 
-        const campaign = await CampaignModel.create({
-          title: body.title,
-          brandUserId: userId as any,
-          brandName: body.brandName?.trim() || String((requester as any).name || 'Inventory'),
-          platform: body.platform,
-          image: body.image,
-          productUrl: body.productUrl,
-          originalPricePaise: rupeesToPaise(body.originalPrice),
-          pricePaise: rupeesToPaise(body.price),
-          payoutPaise: rupeesToPaise(body.payout),
-          totalSlots: body.totalSlots,
-          usedSlots: 0,
-          status: 'active',
-          allowedAgencyCodes: normalizedAllowed,
-          dealType: body.dealType,
-          returnWindowDays: body.returnWindowDays ?? 14,
-          createdBy: req.auth?.userId as any,
+        const campaign = await db().campaign.create({
+          data: {
+            title: body.title,
+            brandUserId: pgUserId,
+            brandName: body.brandName?.trim() || String((requester as any).name || 'Inventory'),
+            platform: body.platform,
+            image: body.image,
+            productUrl: body.productUrl,
+            originalPricePaise: rupeesToPaise(body.originalPrice),
+            pricePaise: rupeesToPaise(body.price),
+            payoutPaise: rupeesToPaise(body.payout),
+            totalSlots: body.totalSlots,
+            usedSlots: 0,
+            status: 'active',
+            allowedAgencyCodes: normalizedAllowed,
+            dealType: body.dealType,
+            returnWindowDays: body.returnWindowDays ?? 14,
+            createdBy: pgUserId || undefined,
+          },
         });
 
-        await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: String((campaign as any)._id) });
+        await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String((campaign as any)._id) },
+          payload: { campaignId: campaign.mongoId ?? campaign.id },
           audience: {
-            // Cover both agency-owned and mediator-owned inventory campaigns.
             agencyCodes: normalizedAllowed,
             mediatorCodes: normalizedAllowed,
             roles: ['admin', 'ops'],
           },
         });
-        res.status(201).json(toUiCampaign((campaign as any).toObject ? (campaign as any).toObject() : (campaign as any)));
+        res.status(201).json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
         next(err);
       }
@@ -1983,7 +1952,7 @@ export function makeOpsController(env: Env) {
     updateCampaignStatus: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const campaignId = String(req.params.campaignId || '').trim();
-        if (!campaignId || !mongoose.Types.ObjectId.isValid(campaignId)) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'Valid campaignId required');
+        if (!campaignId) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'Valid campaignId required');
 
         const body = updateCampaignStatusSchema.parse(req.body);
         const nextStatus = String(body.status || '').toLowerCase();
@@ -1991,9 +1960,9 @@ export function makeOpsController(env: Env) {
           throw new AppError(400, 'INVALID_STATUS', 'Invalid status');
         }
 
-        const { roles, userId, user: requester } = getRequester(req);
-        const campaign = await CampaignModel.findById(campaignId);
-        if (!campaign || (campaign as any).deletedAt) {
+        const { roles, pgUserId, user: requester } = getRequester(req);
+        const campaign = await db().campaign.findFirst({ where: { mongoId: campaignId, deletedAt: null } });
+        if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
 
@@ -2002,37 +1971,42 @@ export function makeOpsController(env: Env) {
             throw new AppError(403, 'FORBIDDEN', 'Only agencies can update campaign status');
           }
           const requesterCode = String((requester as any)?.mediatorCode || '').trim();
-          const allowedCodes = Array.isArray((campaign as any).allowedAgencyCodes)
-            ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+          const allowedCodes = Array.isArray(campaign.allowedAgencyCodes)
+            ? campaign.allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
             : [];
           const isAllowedAgency = requesterCode && allowedCodes.includes(requesterCode);
-          const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
+          const isOwner = String(campaign.brandUserId || '') === String(pgUserId || '');
           if (!isAllowedAgency && !isOwner) {
             throw new AppError(403, 'FORBIDDEN', 'Cannot update campaigns outside your network');
           }
         }
 
-        const previousStatus = String((campaign as any).status || '').toLowerCase();
-        (campaign as any).status = nextStatus;
-        (campaign as any).updatedBy = req.auth?.userId as any;
-        await campaign.save();
+        const previousStatus = String(campaign.status || '').toLowerCase();
+
+        const updated = await db().campaign.update({
+          where: { id: campaign.id },
+          data: { status: nextStatus as any, updatedBy: pgUserId || undefined },
+        });
 
         if (previousStatus !== nextStatus) {
-          const dealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
-          await DealModel.updateMany(dealFilter, { $set: { active: nextStatus === 'active' } });
-          resyncAfterBulkUpdate('Deal', dealFilter).catch(() => {});
+          await db().deal.updateMany({
+            where: { campaignId: campaign.id, deletedAt: null },
+            data: { active: nextStatus === 'active' },
+          });
         }
 
-        const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
-          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+        const allowed = Array.isArray(campaign.allowedAgencyCodes)
+          ? campaign.allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
           : [];
+        const brandMongoId = await db().user.findUnique({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+        const brandUserMongoId = brandMongoId?.mongoId || '';
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String((campaign as any)._id), status: nextStatus },
+          payload: { campaignId: campaign.mongoId ?? campaign.id, status: nextStatus },
           audience: {
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [brandUserMongoId].filter(Boolean),
             agencyCodes: allowed,
             roles: ['admin', 'ops'],
           },
@@ -2040,9 +2014,9 @@ export function makeOpsController(env: Env) {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'campaign.status', campaignId: String((campaign as any)._id), status: nextStatus },
+          payload: { source: 'campaign.status', campaignId: campaign.mongoId ?? campaign.id, status: nextStatus },
           audience: {
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [brandUserMongoId].filter(Boolean),
             agencyCodes: allowed,
             roles: ['admin', 'ops'],
           },
@@ -2052,11 +2026,11 @@ export function makeOpsController(env: Env) {
           req,
           action: 'CAMPAIGN_STATUS_CHANGED',
           entityType: 'Campaign',
-          entityId: String((campaign as any)._id),
+          entityId: campaign.mongoId ?? campaign.id,
           metadata: { previousStatus, newStatus: nextStatus },
         });
 
-        res.json(toUiCampaign((campaign as any).toObject ? (campaign as any).toObject() : (campaign as any)));
+        res.json(toUiCampaign(pgCampaign(updated)));
       } catch (err) {
         next(err);
       }
@@ -2065,65 +2039,68 @@ export function makeOpsController(env: Env) {
     deleteCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const campaignId = String(req.params.campaignId || '').trim();
-        if (!campaignId || !mongoose.Types.ObjectId.isValid(campaignId)) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'Valid campaignId required');
+        if (!campaignId) throw new AppError(400, 'INVALID_CAMPAIGN_ID', 'Valid campaignId required');
 
-        const { roles, userId } = getRequester(req);
+        const { roles, pgUserId } = getRequester(req);
 
-        const campaign = await CampaignModel.findById(campaignId)
-          .select({ brandUserId: 1, allowedAgencyCodes: 1, assignments: 1, deletedAt: 1 })
-          .lean();
-        if (!campaign || (campaign as any).deletedAt) {
+        const campaign = await db().campaign.findFirst({ where: { mongoId: campaignId, deletedAt: null } });
+        if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
 
-        const isOwner = String((campaign as any).brandUserId || '') === String(userId || '');
+        const isOwner = String(campaign.brandUserId || '') === String(pgUserId || '');
         const canDelete = isPrivileged(roles) || (isOwner && (roles.includes('agency') || roles.includes('mediator')));
         if (!canDelete) {
           throw new AppError(403, 'FORBIDDEN', 'Not allowed to delete this campaign');
         }
 
-        const hasOrders = await OrderModel.exists({ deletedAt: null, 'items.campaignId': (campaign as any)._id });
+        const hasOrders = await db().orderItem.findFirst({
+          where: { campaignId: campaign.id, order: { deletedAt: null } },
+          select: { id: true },
+        });
         if (hasOrders) throw new AppError(409, 'CAMPAIGN_HAS_ORDERS', 'Cannot delete a campaign with orders');
 
         const now = new Date();
-        const deletedBy = req.auth?.userId as any;
-        const updated = await CampaignModel.findOneAndUpdate(
-          { _id: (campaign as any)._id, deletedAt: null },
-          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } },
-          { new: true }
-        );
-        if (!updated) {
+        try {
+          await db().campaign.update({
+            where: { id: campaign.id, deletedAt: null },
+            data: { deletedAt: now, deletedBy: pgUserId || undefined, updatedBy: pgUserId || undefined },
+          });
+        } catch {
           throw new AppError(409, 'CAMPAIGN_ALREADY_DELETED', 'Campaign already deleted');
         }
 
-        const opsDeleteDealFilter = { campaignId: (campaign as any)._id, deletedAt: null };
-        await DealModel.updateMany(opsDeleteDealFilter, { $set: { deletedAt: now, deletedBy, active: false } });
-        resyncAfterBulkUpdate('Deal', { campaignId: (campaign as any)._id }).catch(() => {});
+        await db().deal.updateMany({
+          where: { campaignId: campaign.id, deletedAt: null },
+          data: { deletedAt: now, deletedBy: pgUserId || undefined, active: false },
+        });
 
         await writeAuditLog({
           req,
           action: 'CAMPAIGN_DELETED',
           entityType: 'Campaign',
-          entityId: String((campaign as any)._id),
+          entityId: campaign.mongoId ?? campaign.id,
         });
 
-        const allowed = Array.isArray((campaign as any).allowedAgencyCodes)
-          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
+        const allowed = Array.isArray(campaign.allowedAgencyCodes)
+          ? campaign.allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
           : [];
-        const assignments = (campaign as any).assignments;
-        const assignmentCodes = assignments instanceof Map
-          ? Array.from(assignments.keys())
-          : assignments && typeof assignments === 'object'
-            ? Object.keys(assignments)
-            : [];
+        const assignments = campaign.assignments;
+        const assignmentCodes = assignments && typeof assignments === 'object' && !Array.isArray(assignments)
+          ? Object.keys(assignments)
+          : [];
+
+        // Resolve brandUserId (PG UUID) → mongoId for realtime audience
+        const brandUser = await db().user.findUnique({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+        const brandMongoId = brandUser?.mongoId || '';
 
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String((campaign as any)._id) },
+          payload: { campaignId: campaign.mongoId ?? campaign.id },
           audience: {
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [brandMongoId].filter(Boolean),
             agencyCodes: allowed,
             mediatorCodes: assignmentCodes,
             roles: ['admin', 'ops'],
@@ -2132,9 +2109,9 @@ export function makeOpsController(env: Env) {
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'campaign.deleted', campaignId: String((campaign as any)._id) },
+          payload: { source: 'campaign.deleted', campaignId: campaign.mongoId ?? campaign.id },
           audience: {
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [brandMongoId].filter(Boolean),
             agencyCodes: allowed,
             mediatorCodes: assignmentCodes,
             roles: ['admin', 'ops'],
@@ -2151,18 +2128,15 @@ export function makeOpsController(env: Env) {
       try {
         const body = assignSlotsSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const campaign = await CampaignModel.findById(body.id);
-        if (!campaign || campaign.deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        const campaign = await db().campaign.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
         // Campaign must be active to accept new assignments.
-        if (String((campaign as any).status || '').toLowerCase() !== 'active') {
+        if (String(campaign.status || '').toLowerCase() !== 'active') {
           throw new AppError(409, 'CAMPAIGN_NOT_ACTIVE', 'Campaign must be active to assign slots');
         }
 
-        // Campaign terms become immutable after the first real slot assignment.
-        // Only structural changes (dealType, price) are locked.
-        // Per-assignment overrides (payout, commission) can always be updated.
-        if ((campaign as any).locked) {
+        if (campaign.locked) {
           const attemptingTermChange =
             typeof (body as any).dealType !== 'undefined' ||
             typeof (body as any).price !== 'undefined';
@@ -2171,12 +2145,14 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const hasOrders = await OrderModel.exists({ 'items.campaignId': campaign._id, deletedAt: null });
+        const hasOrders = await db().orderItem.findFirst({
+          where: { campaignId: campaign.id, order: { deletedAt: null } },
+          select: { id: true },
+        });
         if (hasOrders) {
           throw new AppError(409, 'CAMPAIGN_LOCKED', 'Campaign is locked after first order; create a new campaign to change terms');
         }
 
-        // Agency can only assign slots for campaigns explicitly allowed for that agency.
         const agencyCode = roles.includes('agency') && !isPrivileged(roles)
           ? String((requester as any)?.mediatorCode || '').trim()
           : '';
@@ -2188,7 +2164,6 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        // Filter down to only meaningful assignments (limit > 0).
         const positiveEntries = Object.entries(body.assignments || {}).filter(([, assignment]) => {
           if (typeof assignment === 'number') return assignment > 0;
           const limit = Number((assignment as any)?.limit ?? 0);
@@ -2201,15 +2176,16 @@ export function makeOpsController(env: Env) {
         // Security: agency can only assign to active mediators under its own code.
         if (agencyCode) {
           const assignmentCodes = positiveEntries.map(([code]) => String(code).trim()).filter(Boolean);
-          const mediators = await UserModel.find({
-            roles: 'mediator',
-            mediatorCode: { $in: assignmentCodes },
-            parentCode: agencyCode,
-            status: 'active',
-            deletedAt: null,
-          })
-            .select({ mediatorCode: 1 })
-            .lean();
+          const mediators = await db().user.findMany({
+            where: {
+              roles: { has: 'mediator' },
+              mediatorCode: { in: assignmentCodes },
+              parentCode: agencyCode,
+              status: 'active',
+              deletedAt: null,
+            },
+            select: { mediatorCode: true },
+          });
           const allowedCodes = new Set(mediators.map((m: any) => String(m.mediatorCode || '').trim()).filter(Boolean));
           const invalid = assignmentCodes.filter((c) => !allowedCodes.has(String(c).trim()));
           if (invalid.length) {
@@ -2220,19 +2196,19 @@ export function makeOpsController(env: Env) {
         const commissionPaise =
           typeof body.commission !== 'undefined' ? rupeesToPaise(body.commission) : undefined;
 
-        // Payout override from body.payout (agency sets this as "Commission to Mediator").
         const payoutOverridePaise =
           typeof body.payout !== 'undefined' ? rupeesToPaise(body.payout) : undefined;
 
-        // NEW SCHEMA: assignments is Map<string, { limit: number, payout?: number, commissionPaise?: number }>
-        const current = campaign.assignments instanceof Map ? campaign.assignments : new Map();
+        // assignments is JSONB object in PG (not a Map)
+        const current: Record<string, any> = campaign.assignments && typeof campaign.assignments === 'object' && !Array.isArray(campaign.assignments)
+          ? { ...(campaign.assignments as any) }
+          : {};
+
         for (const [code, assignment] of positiveEntries) {
-          // Support both old format (number) and new format ({ limit, payout })
           const assignmentObj = typeof assignment === 'number'
             ? { limit: assignment, payout: payoutOverridePaise ?? campaign.payoutPaise }
             : {
                 limit: (assignment as any).limit,
-                // API payloads use rupees like the rest of ops endpoints; store payout in paise.
                 payout:
                   typeof (assignment as any).payout === 'number'
                     ? rupeesToPaise((assignment as any).payout)
@@ -2241,12 +2217,12 @@ export function makeOpsController(env: Env) {
           if (typeof commissionPaise !== 'undefined') {
             (assignmentObj as any).commissionPaise = commissionPaise;
           }
-          current.set(code, assignmentObj as any);
+          current[code] = assignmentObj;
         }
 
-        // Enforce totalSlots: sum of all assignment limits must not exceed campaign totalSlots.
-        const totalAssigned = Array.from(current.values()).reduce(
-          (sum, a) => sum + Number(typeof a === 'number' ? a : (a as any)?.limit ?? 0),
+        // Enforce totalSlots
+        const totalAssigned = Object.values(current).reduce(
+          (sum: number, a: any) => sum + Number(typeof a === 'number' ? a : a?.limit ?? 0),
           0
         );
         if (totalAssigned > (campaign.totalSlots ?? 0)) {
@@ -2257,36 +2233,33 @@ export function makeOpsController(env: Env) {
           );
         }
 
-        campaign.assignments = current as any;
+        const updateData: any = {
+          assignments: current,
+        };
 
-        if (body.dealType) campaign.dealType = body.dealType as any;
-        if (typeof body.price !== 'undefined') campaign.pricePaise = rupeesToPaise(body.price);
-        // Note: body.payout is used for per-assignment payout override (already applied above).
-        // Do NOT update campaign.payoutPaise — that is the brand's campaign-level payout.
+        if (body.dealType) updateData.dealType = body.dealType;
+        if (typeof body.price !== 'undefined') updateData.pricePaise = rupeesToPaise(body.price);
 
-        // Once we have at least one real assignment, lock the campaign terms.
-        if (!(campaign as any).locked) {
-          (campaign as any).locked = true;
-          (campaign as any).lockedAt = new Date();
-          (campaign as any).lockedReason = 'SLOT_ASSIGNMENT';
+        if (!campaign.locked) {
+          updateData.locked = true;
+          updateData.lockedAt = new Date();
+          updateData.lockedReason = 'SLOT_ASSIGNMENT';
         }
 
-        // Optimistic concurrency: use the __v (version key) to detect
-        // conflicting concurrent writes. Mongoose auto-increments __v on save,
-        // but only if we explicitly include it in the update conditions.
+        // Optimistic concurrency via updatedAt check
         try {
-          // increment() tells Mongoose to add {$inc: {__v: 1}} to the update
-          // and use the current __v in the query filter.
-          campaign.increment();
-          await campaign.save();
+          await db().campaign.update({
+            where: { id: campaign.id },
+            data: updateData,
+          });
         } catch (saveErr: any) {
-          // VersionError (Mongoose) means a concurrent save changed the doc.
-          if (saveErr?.name === 'VersionError' || saveErr?.message?.includes('No matching document')) {
+          if (saveErr?.code === 'P2025') {
             throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Campaign was modified concurrently, please retry');
           }
           throw saveErr;
         }
-        await writeAuditLog({ req, action: 'CAMPAIGN_SLOTS_ASSIGNED', entityType: 'Campaign', entityId: String(campaign._id) });
+
+        await writeAuditLog({ req, action: 'CAMPAIGN_SLOTS_ASSIGNED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
 
         const assignmentCodes = positiveEntries.map(([c]) => String(c).trim()).filter(Boolean);
         const inferredAgencyCodes = (
@@ -2295,19 +2268,23 @@ export function makeOpsController(env: Env) {
 
         const agencyCodes = Array.from(
           new Set([
-            ...((campaign as any).allowedAgencyCodes ?? []).map((c: any) => String(c).trim()).filter(Boolean),
+            ...(campaign.allowedAgencyCodes ?? []).map((c: any) => String(c).trim()).filter(Boolean),
             ...assignmentCodes,
             ...inferredAgencyCodes,
           ])
         ).filter(Boolean);
 
+        // Resolve brandUserId → mongoId for audience
+        const brandUser = await db().user.findUnique({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+        const brandMongoId = brandUser?.mongoId || '';
+
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String(campaign._id) },
+          payload: { campaignId: campaign.mongoId ?? campaign.id },
           audience: {
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [brandMongoId].filter(Boolean),
             agencyCodes,
             mediatorCodes: assignmentCodes,
             roles: ['admin', 'ops'],
@@ -2322,9 +2299,9 @@ export function makeOpsController(env: Env) {
     publishDeal: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = publishDealSchema.parse(req.body);
-        const { roles, user: requester } = getRequester(req);
-        const campaign = await CampaignModel.findById(body.id).lean();
-        if (!campaign || campaign.deletedAt) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
+        const { roles, pgUserId, user: requester } = getRequester(req);
+        const campaign = await db().campaign.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
         const normalizeCode = (v: unknown) => normalizeMediatorCode(v);
         const requestedCode = normalizeCode(body.mediatorCode);
@@ -2332,8 +2309,7 @@ export function makeOpsController(env: Env) {
         const findAssignmentForMediator = (assignments: any, mediatorCode: string) => {
           const target = normalizeCode(mediatorCode);
           if (!target) return null;
-          const obj = assignments instanceof Map ? Object.fromEntries(assignments) : assignments;
-          if (!obj || typeof obj !== 'object') return null;
+          const obj = assignments && typeof assignments === 'object' && !Array.isArray(assignments) ? assignments : {};
 
           if (Object.prototype.hasOwnProperty.call(obj, target)) return (obj as any)[target] ?? null;
 
@@ -2351,11 +2327,8 @@ export function makeOpsController(env: Env) {
             throw new AppError(403, 'FORBIDDEN', 'Cannot publish deals for other mediators');
           }
 
-          // Ensure mediator belongs to an allowed agency for this campaign.
-          // Note: `allowedAgencyCodes` historically contains either an agency code (agency-owned campaigns)
-          // OR a mediator code (mediator self-owned inventory). Accept either for the publishing mediator.
           const agencyCode = normalizeCode((requester as any)?.parentCode);
-          const allowedCodesRaw = Array.isArray((campaign as any).allowedAgencyCodes) ? (campaign as any).allowedAgencyCodes : [];
+          const allowedCodesRaw = Array.isArray(campaign.allowedAgencyCodes) ? campaign.allowedAgencyCodes : [];
           const allowedCodes = new Set(
             allowedCodesRaw
               .map((c: unknown) => normalizeCode(c))
@@ -2363,9 +2336,7 @@ export function makeOpsController(env: Env) {
               .map((c: string) => c.toLowerCase())
           );
 
-          // If the campaign has an explicit slot assignment for this mediator, treat it as authorized.
-          // This makes publish resilient even if `allowedAgencyCodes` is missing/out-of-sync.
-          const slotAssignment = findAssignmentForMediator((campaign as any).assignments, requestedCode);
+          const slotAssignment = findAssignmentForMediator(campaign.assignments, requestedCode);
           const hasAssignment = !!slotAssignment && Number((slotAssignment as any)?.limit ?? 0) > 0;
 
           const isAllowed = (agencyCode && allowedCodes.has(agencyCode.toLowerCase())) || allowedCodes.has(selfCode.toLowerCase()) || hasAssignment;
@@ -2374,80 +2345,75 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const slotAssignment = findAssignmentForMediator((campaign as any).assignments, requestedCode);
-        // Mediator always controls buyer commission. The agency's stored commissionPaise
-        // is the default/suggestion; the mediator overrides it via body.commission.
+        const slotAssignment = findAssignmentForMediator(campaign.assignments, requestedCode);
         const commissionPaise = rupeesToPaise(body.commission);
         const pricePaise = Number(campaign.pricePaise ?? 0) + commissionPaise;
 
-        // CRITICAL: Get mediator's commission from agency (per-assignment payout override)
         const payoutPaise = Number((slotAssignment as any)?.payout ?? campaign.payoutPaise ?? 0);
 
-        // Business rule: net earnings (agency commission + buyer commission) cannot be negative.
-        // Negative buyer commission is allowed (mediator gives discount from own earnings).
         const netEarnings = payoutPaise + commissionPaise;
         if (netEarnings < 0) {
           throw new AppError(400, 'INVALID_ECONOMICS', 'Buyer discount cannot exceed your commission from agency');
         }
 
-        // Campaign must be active to publish a deal.
-        if (String((campaign as any).status || '').toLowerCase() !== 'active') {
+        if (String(campaign.status || '').toLowerCase() !== 'active') {
           throw new AppError(409, 'CAMPAIGN_NOT_ACTIVE', 'Campaign is not active; cannot publish deal');
         }
 
-        // CRITICAL: Check if deal already published to prevent re-publishing with different terms
-        const existingDeal = await DealModel.findOne({
-          campaignId: campaign._id,
-          mediatorCode: buildMediatorCodeRegex(requestedCode) ?? requestedCode,
-          deletedAt: null,
-        }).lean();
+        // Check if deal already published (case-insensitive mediator code match)
+        const existingDeal = await db().deal.findFirst({
+          where: {
+            campaignId: campaign.id,
+            mediatorCode: { equals: requestedCode, mode: 'insensitive' },
+            deletedAt: null,
+          },
+        });
 
         if (existingDeal) {
-          // Allow updating commission/active status only, not structural changes
-          await DealModel.findOneAndUpdate(
-            { _id: (existingDeal as any)._id },
-            {
-              $set: {
-                commissionPaise,
-                pricePaise,
-                payoutPaise,
-                active: true,
-              },
-            }
-          );
+          await db().deal.update({
+            where: { id: existingDeal.id },
+            data: {
+              commissionPaise,
+              pricePaise,
+              payoutPaise,
+              active: true,
+            },
+          });
         } else {
-          // First-time deal creation
-          await DealModel.create({
-            campaignId: campaign._id,
-            mediatorCode: requestedCode,
-            title: campaign.title,
-            image: campaign.image,
-            productUrl: campaign.productUrl,
-            platform: campaign.platform,
-            brandName: campaign.brandName,
-            dealType: (campaign as any).dealType ?? 'Discount',
-            originalPricePaise: campaign.originalPricePaise,
-            pricePaise,
-            commissionPaise,
-            payoutPaise,
-            active: true,
-            createdBy: req.auth?.userId as any,
+          await db().deal.create({
+            data: {
+              campaignId: campaign.id,
+              mediatorCode: requestedCode,
+              title: campaign.title,
+              image: campaign.image,
+              productUrl: campaign.productUrl,
+              platform: campaign.platform,
+              brandName: campaign.brandName,
+              dealType: campaign.dealType ?? 'Discount',
+              originalPricePaise: campaign.originalPricePaise,
+              pricePaise,
+              commissionPaise,
+              payoutPaise,
+              active: true,
+              createdBy: pgUserId || undefined,
+            },
           });
         }
 
+        const campaignDisplayId = campaign.mongoId ?? campaign.id;
         await writeAuditLog({
           req,
           action: 'DEAL_PUBLISHED',
           entityType: 'Deal',
-          entityId: `${String(campaign._id)}:${requestedCode}`,
-          metadata: { campaignId: String(campaign._id), mediatorCode: requestedCode },
+          entityId: `${campaignDisplayId}:${requestedCode}`,
+          metadata: { campaignId: campaignDisplayId, mediatorCode: requestedCode },
         });
 
         const agencyCode = (await getAgencyCodeForMediatorCode(requestedCode)) || '';
         publishRealtime({
           type: 'deals.changed',
           ts: new Date().toISOString(),
-          payload: { campaignId: String(campaign._id), mediatorCode: requestedCode },
+          payload: { campaignId: campaignDisplayId, mediatorCode: requestedCode },
           audience: {
             roles: ['admin', 'ops'],
             mediatorCodes: [requestedCode],
@@ -2464,7 +2430,7 @@ export function makeOpsController(env: Env) {
     payoutMediator: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = payoutMediatorSchema.parse(req.body);
-        const { roles, user: requester } = getRequester(req);
+        const { roles, pgUserId, user: requester } = getRequester(req);
         const canAny = isPrivileged(roles);
         const canAgency = roles.includes('agency') && !canAny;
         if (!canAny && !canAgency) {
@@ -2478,14 +2444,14 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is not active; payouts are blocked');
           }
         }
-        const user = await UserModel.findById(body.mediatorId);
-        if (!user || user.deletedAt) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        const user = await db().user.findFirst({ where: { mongoId: body.mediatorId, deletedAt: null } });
+        if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         if (canAgency) {
           const agencyCode = String((requester as any)?.mediatorCode || '').trim();
-          const isMediator = Array.isArray((user as any).roles) ? (user as any).roles.includes('mediator') : (user as any).roles === 'mediator';
+          const isMediator = Array.isArray(user.roles) && user.roles.includes('mediator');
           if (!isMediator) throw new AppError(409, 'INVALID_BENEFICIARY', 'Beneficiary must be a mediator');
-          const parentCode = String((user as any).parentCode || '').trim();
+          const parentCode = String(user.parentCode || '').trim();
           if (!parentCode || parentCode !== agencyCode) {
             throw new AppError(403, 'FORBIDDEN', 'You can only payout mediators within your agency');
           }
@@ -2494,67 +2460,57 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Beneficiary is not active; payouts are blocked');
         }
 
-        const agencyCode = String((user as any).parentCode || '').trim();
+        const agencyCode = String(user.parentCode || '').trim();
         if (agencyCode && !(await isAgencyActive(agencyCode))) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Upstream agency is not active; payouts are blocked');
         }
 
-        const wallet = await ensureWallet(String(user._id));
+        const wallet = await ensureWallet(user.id);
         const amountPaise = rupeesToPaise(body.amount);
 
-        // Pre-check: ensure wallet has sufficient available balance for privileged payouts
         if (canAny && wallet.availablePaise < amountPaise) {
           throw new AppError(409, 'INSUFFICIENT_FUNDS', `Wallet only has ₹${(wallet.availablePaise / 100).toFixed(2)} available but payout is ₹${body.amount}`);
         }
 
-        // Deterministic idempotency: use requestId to prevent duplicate payouts on retry.
-        // Falls back to user+amount+date composite key to prevent same-day duplicate manual payouts.
         const requestId = String(
           (req as any).headers?.['x-request-id'] ||
           (res.locals as any)?.requestId ||
           ''
         ).trim();
-        const idempotencySuffix = requestId || `MANUAL-${String(user._id)}-${amountPaise}-${new Date().toISOString().slice(0, 10)}`;
+        const idempotencySuffix = requestId || `MANUAL-${user.id}-${amountPaise}-${new Date().toISOString().slice(0, 10)}`;
 
-        // Use a transaction to ensure payout record + wallet debit are atomic
-        const session = await mongoose.startSession();
-        try {
-          await session.withTransaction(async () => {
-            const payout = await PayoutModel.create([{
-              beneficiaryUserId: user._id,
-              walletId: wallet._id,
+        await db().$transaction(async (tx: any) => {
+          const payoutDoc = await tx.payout.create({
+            data: {
+              beneficiaryUserId: user.id,
+              walletId: wallet.id,
               amountPaise,
               status: canAny ? 'paid' : 'recorded',
               provider: 'manual',
               providerRef: idempotencySuffix,
               processedAt: new Date(),
               requestedAt: new Date(),
-              createdBy: req.auth?.userId,
-              updatedBy: req.auth?.userId,
-            }], { session });
-
-            const payoutDoc = payout[0];
-
-            // Agencies use this flow as a record of an external/manual transfer.
-            // Do not block on internal wallet balance (agencies may reconcile off-platform).
-            // Privileged users keep the strict wallet-debit behavior.
-            if (canAny) {
-              await applyWalletDebit({
-                idempotencyKey: `payout_complete:${payoutDoc._id}`,
-                type: 'payout_complete',
-                ownerUserId: String(user._id),
-                amountPaise,
-                payoutId: payoutDoc._id as any,
-                metadata: { provider: 'manual', source: 'ops_payout' },
-                session,
-              });
-            }
-
-            await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: String(payoutDoc._id), metadata: { beneficiaryUserId: String(user._id), amountPaise, recordOnly: canAgency } });
+              createdBy: pgUserId || undefined,
+              updatedBy: pgUserId || undefined,
+            },
           });
-        } finally {
-          await session.endSession();
-        }
+
+          if (canAny) {
+            await applyWalletDebit({
+              idempotencyKey: `payout_complete:${payoutDoc.id}`,
+              type: 'payout_complete',
+              ownerUserId: user.id,
+              amountPaise,
+              payoutId: payoutDoc.id,
+              metadata: { provider: 'manual', source: 'ops_payout' },
+              tx,
+            });
+          }
+
+          const payoutDisplayId = payoutDoc.mongoId ?? payoutDoc.id;
+          const userDisplayId = user.mongoId ?? user.id;
+          await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: payoutDisplayId, metadata: { beneficiaryUserId: userDisplayId, amountPaise, recordOnly: canAgency } });
+        });
 
         res.json({ ok: true });
       } catch (err) {
@@ -2565,60 +2521,61 @@ export function makeOpsController(env: Env) {
     deletePayout: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const payoutId = String(req.params.payoutId || '').trim();
-        if (!payoutId || !mongoose.Types.ObjectId.isValid(payoutId)) throw new AppError(400, 'INVALID_PAYOUT_ID', 'Valid payoutId required');
+        if (!payoutId) throw new AppError(400, 'INVALID_PAYOUT_ID', 'Valid payoutId required');
 
-        const { roles, user } = getRequester(req);
+        const { roles, pgUserId, user } = getRequester(req);
         const isPriv = isPrivileged(roles);
         if (!isPriv && !roles.includes('agency')) {
           throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
         }
 
-        const payout = await PayoutModel.findById(payoutId).lean();
-        if (!payout || (payout as any).deletedAt) throw new AppError(404, 'PAYOUT_NOT_FOUND', 'Payout not found');
+        const payout = await db().payout.findFirst({ where: { mongoId: payoutId, deletedAt: null } });
+        if (!payout) throw new AppError(404, 'PAYOUT_NOT_FOUND', 'Payout not found');
 
-        const beneficiary = await UserModel.findById((payout as any).beneficiaryUserId).lean();
-        if (!beneficiary || (beneficiary as any).deletedAt) throw new AppError(404, 'BENEFICIARY_NOT_FOUND', 'Beneficiary not found');
+        const beneficiary = await db().user.findUnique({ where: { id: payout.beneficiaryUserId } });
+        if (!beneficiary || beneficiary.deletedAt) throw new AppError(404, 'BENEFICIARY_NOT_FOUND', 'Beneficiary not found');
 
         if (!isPriv) {
           const agencyCode = String((user as any)?.mediatorCode || '').trim();
           if (!agencyCode) throw new AppError(409, 'MISSING_CODE', 'Agency is missing code');
-          const beneficiaryAgency = String((beneficiary as any)?.parentCode || '').trim();
+          const beneficiaryAgency = String(beneficiary.parentCode || '').trim();
           if (!beneficiaryAgency || beneficiaryAgency !== agencyCode) {
             throw new AppError(403, 'FORBIDDEN', 'You can only delete payouts within your agency');
           }
         }
 
-        const hasWalletTx = await TransactionModel.exists({ payoutId: (payout as any)._id, deletedAt: null });
+        const hasWalletTx = await db().transaction.findFirst({ where: { payoutId: payout.id, deletedAt: null }, select: { id: true } });
         if (hasWalletTx) {
           throw new AppError(409, 'PAYOUT_HAS_LEDGER', 'Cannot delete a payout with wallet ledger entries');
         }
 
         const now = new Date();
-        const deletedBy = req.auth?.userId as any;
-        const updated = await PayoutModel.updateOne(
-          { _id: (payout as any)._id, deletedAt: null },
-          { $set: { deletedAt: now, deletedBy, updatedBy: deletedBy } }
-        );
-        if (!updated.modifiedCount) {
+        const result = await db().payout.updateMany({
+          where: { id: payout.id, deletedAt: null },
+          data: { deletedAt: now, deletedBy: pgUserId || undefined, updatedBy: pgUserId || undefined },
+        });
+        if (!result.count) {
           throw new AppError(409, 'PAYOUT_ALREADY_DELETED', 'Payout already deleted');
         }
 
+        const payoutDisplayId = payout.mongoId ?? payout.id;
+        const beneficiaryDisplayId = beneficiary.mongoId ?? beneficiary.id;
         await writeAuditLog({
           req,
           action: 'PAYOUT_DELETED',
           entityType: 'Payout',
-          entityId: String((payout as any)._id),
-          metadata: { beneficiaryUserId: String((payout as any).beneficiaryUserId) },
+          entityId: payoutDisplayId,
+          metadata: { beneficiaryUserId: beneficiaryDisplayId },
         });
 
-        const agencyCode = String((beneficiary as any)?.parentCode || '').trim();
+        const agencyCode = String(beneficiary.parentCode || '').trim();
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'notifications.changed',
           ts,
-          payload: { source: 'payout.deleted', payoutId: String((payout as any)._id) },
+          payload: { source: 'payout.deleted', payoutId: payoutDisplayId },
           audience: {
-            userIds: [String((payout as any).beneficiaryUserId || '')].filter(Boolean),
+            userIds: [beneficiaryDisplayId].filter(Boolean),
             ...(agencyCode ? { agencyCodes: [agencyCode] } : {}),
             roles: ['admin', 'ops'],
           },
@@ -2633,22 +2590,23 @@ export function makeOpsController(env: Env) {
     // Optional endpoint used by some UI versions.
     getTransactions: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId } = getRequester(req);
-        const txQuery: any = { deletedAt: null };
+        const { roles, pgUserId } = getRequester(req);
+        const where: any = { deletedAt: null };
 
         // Non-privileged roles only see their own transactions
         if (!isPrivileged(roles)) {
-          txQuery.$or = [
-            { fromUserId: userId },
-            { toUserId: userId },
+          where.OR = [
+            { fromUserId: pgUserId },
+            { toUserId: pgUserId },
           ];
         }
 
-        const tx = await TransactionModel.find(txQuery)
-          .sort({ createdAt: -1 })
-          .limit(500)
-          .lean();
-        res.json(tx);
+        const transactions = await db().transaction.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: 500,
+        });
+        res.json(transactions);
       } catch (err) {
         next(err);
       }
@@ -2657,59 +2615,60 @@ export function makeOpsController(env: Env) {
     copyCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { id } = req.body;
-        if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+        if (!id || typeof id !== 'string') {
           throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
         }
-        const { roles, user: requester } = getRequester(req);
-        const campaign = await CampaignModel.findById(id).lean();
-        if (!campaign || (campaign as any).deletedAt) {
+        const { roles, pgUserId, user: requester } = getRequester(req);
+        const campaign = await db().campaign.findFirst({ where: { mongoId: id, deletedAt: null } });
+        if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
 
         // Authorization: brand owner, agency with access, or privileged
         if (!isPrivileged(roles)) {
-          const isBrandOwner = String((campaign as any).brandUserId || '') === String((requester as any)?._id || (requester as any)?.id || '');
+          const isBrandOwner = campaign.brandUserId === pgUserId;
           const isAgencyAllowed = roles.includes('agency') &&
-            Array.isArray((campaign as any).allowedAgencyCodes) &&
-            (campaign as any).allowedAgencyCodes.includes(String((requester as any)?.mediatorCode || ''));
+            Array.isArray(campaign.allowedAgencyCodes) &&
+            campaign.allowedAgencyCodes.includes(String((requester as any)?.mediatorCode || ''));
           if (!isBrandOwner && !isAgencyAllowed) {
             throw new AppError(403, 'FORBIDDEN', 'Not authorized to copy this campaign');
           }
         }
 
         // Create a clean copy with reset assignments and slots
-        const copyData: any = {
-          title: `${campaign.title} (Copy)`,
-          brandUserId: (campaign as any).brandUserId,
-          brandName: campaign.brandName,
-          platform: campaign.platform,
-          image: campaign.image,
-          productUrl: campaign.productUrl,
-          dealType: (campaign as any).dealType,
-          pricePaise: campaign.pricePaise,
-          originalPricePaise: campaign.originalPricePaise,
-          payoutPaise: campaign.payoutPaise,
-          totalSlots: campaign.totalSlots,
-          returnWindowDays: campaign.returnWindowDays,
-          usedSlots: 0,
-          status: 'draft',
-          allowedAgencyCodes: (campaign as any).allowedAgencyCodes || [],
-          assignments: new Map(),
-          locked: false,
-          createdBy: req.auth?.userId as any,
-        };
+        const newCampaign = await db().campaign.create({
+          data: {
+            title: `${campaign.title} (Copy)`,
+            brandUserId: campaign.brandUserId,
+            brandName: campaign.brandName,
+            platform: campaign.platform,
+            image: campaign.image,
+            productUrl: campaign.productUrl,
+            dealType: campaign.dealType,
+            pricePaise: campaign.pricePaise,
+            originalPricePaise: campaign.originalPricePaise,
+            payoutPaise: campaign.payoutPaise,
+            totalSlots: campaign.totalSlots,
+            returnWindowDays: campaign.returnWindowDays,
+            usedSlots: 0,
+            status: 'draft',
+            allowedAgencyCodes: campaign.allowedAgencyCodes || [],
+            assignments: {},
+            locked: false,
+            createdBy: pgUserId || undefined,
+          },
+        });
 
-        const newCampaign = await CampaignModel.create(copyData);
-
+        const newDisplayId = newCampaign.mongoId ?? newCampaign.id;
         await writeAuditLog({
           req,
           action: 'CAMPAIGN_COPIED',
           entityType: 'Campaign',
-          entityId: String(newCampaign._id),
+          entityId: newDisplayId,
           metadata: { sourceCampaignId: id },
         });
 
-        res.json({ ok: true, id: String(newCampaign._id) });
+        res.json({ ok: true, id: newDisplayId });
       } catch (err) {
         next(err);
       }
@@ -2718,7 +2677,7 @@ export function makeOpsController(env: Env) {
     declineOffer: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const { id } = req.body;
-        if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+        if (!id || typeof id !== 'string') {
           throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
         }
         const { roles, user: requester } = getRequester(req);
@@ -2729,42 +2688,51 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'AGENCY_MISSING_CODE', 'Agency is missing a code');
         }
 
-        const campaign = await CampaignModel.findById(id)
-          .select({ allowedAgencyCodes: 1, brandUserId: 1, title: 1, deletedAt: 1 })
-          .lean();
-        if (!campaign || (campaign as any).deletedAt) {
+        const campaign = await db().campaign.findFirst({
+          where: { mongoId: id, deletedAt: null },
+          select: { id: true, mongoId: true, allowedAgencyCodes: true, brandUserId: true, title: true, deletedAt: true },
+        });
+        if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
 
-        const allowed: string[] = Array.isArray((campaign as any).allowedAgencyCodes)
-          ? (campaign as any).allowedAgencyCodes.map((c: any) => String(c))
+        const allowed: string[] = Array.isArray(campaign.allowedAgencyCodes)
+          ? campaign.allowedAgencyCodes.map((c: any) => String(c))
           : [];
         if (!allowed.includes(agencyCode)) {
           throw new AppError(409, 'NOT_OFFERED', 'This campaign was not offered to your agency');
         }
 
-        await CampaignModel.findOneAndUpdate(
-          { _id: (campaign as any)._id },
-          { $pull: { allowedAgencyCodes: agencyCode } },
-          { new: true }
-        );
+        const newCodes = allowed.filter((c: string) => c !== agencyCode);
+        await db().campaign.update({
+          where: { id: campaign.id },
+          data: { allowedAgencyCodes: newCodes },
+        });
 
+        const campaignDisplayId = campaign.mongoId ?? campaign.id;
         await writeAuditLog({
           req,
           action: 'OFFER_DECLINED',
           entityType: 'Campaign',
-          entityId: String((campaign as any)._id),
+          entityId: campaignDisplayId,
           metadata: { agencyCode },
         });
+
+        // Resolve brandUserId (PG UUID) to mongoId for realtime audience
+        let brandMongoId = '';
+        if (campaign.brandUserId) {
+          const brandUser = await db().user.findUnique({ where: { id: campaign.brandUserId }, select: { mongoId: true } });
+          brandMongoId = brandUser?.mongoId || '';
+        }
 
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
           ts,
-          payload: { campaignId: String((campaign as any)._id) },
+          payload: { campaignId: campaignDisplayId },
           audience: {
             agencyCodes: [agencyCode],
-            userIds: [String((campaign as any).brandUserId || '')].filter(Boolean),
+            userIds: [brandMongoId].filter(Boolean),
             roles: ['admin', 'ops'],
           },
         });
