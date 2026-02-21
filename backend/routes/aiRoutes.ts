@@ -628,7 +628,7 @@ export function aiRoutes(env: Env): Router {
         ...(payload.expectedReviewerName ? { expectedReviewerName: payload.expectedReviewerName } : {}),
       });
 
-      writeAuditLog({
+      await writeAuditLog({
         req,
         action: 'ai.verify_rating_preview',
         entityType: 'rating_verification',
