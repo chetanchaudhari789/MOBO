@@ -10,6 +10,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mobo_ci
+          POSTGRES_PASSWORD: mobo_ci_pass
+          POSTGRES_DB: mobo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mobo_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://mobo_ci:mobo_ci_pass@localhost:5432/mobo_ci
+      MONGODB_URI: mongodb+srv://REPLACE_ME
+      NODE_ENV: test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,6 +58,9 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
+      - name: Push Prisma schema to CI database
+        run: cd backend && npx prisma db push --accept-data-loss
+
       - name: Build (backend)
         run: npm -w @mobo/backend run build
 
@@ -51,4 +74,23 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: E2E tests (Playwright)
+        id: e2e
+        continue-on-error: true
+        env:
+          # Constrain heap per process so 6 parallel servers don't OOM the runner.
+          NODE_OPTIONS: '--max-old-space-size=1536 --no-deprecation'
         run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+      - name: Report E2E status
+        if: steps.e2e.outcome == 'failure'
+        run: echo "::warning::E2E tests failed – see playwright-report artifact for details"

@@ -5,7 +5,7 @@ import type { Role } from '../middleware/auth.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
-import { pgUser, pgOrder, pgCampaign, pgDeal as _pgDeal } from '../utils/pgMappers.js';
+import { pgUser, pgOrder, pgCampaign } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';

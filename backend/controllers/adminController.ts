@@ -10,7 +10,7 @@ import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../ser
 import { updateSystemConfigSchema } from '../validations/systemConfig.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
-import { pgUser, pgWallet, pgOrder, pgDeal as _pgDeal, pgSuspension as _pgSuspension } from '../utils/pgMappers.js';
+import { pgUser, pgWallet, pgOrder, pgDeal } from '../utils/pgMappers.js';
 
 function db() { return prisma(); }
 

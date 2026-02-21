@@ -4,7 +4,9 @@
 // Tests are partitioned by portal so each spec's `page.goto('/')` resolves correctly.
 export default defineConfig({
   testDir: './e2e',
-  reporter: [['list']],
+  reporter: process.env.CI
+    ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
+    : [['list']],
   timeout: 180_000,
   expect: {
     timeout: 20_000,
