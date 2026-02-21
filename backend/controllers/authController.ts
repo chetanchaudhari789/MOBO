@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
+import { idWhere } from '../utils/idWhere.js';
 import { hashPassword, verifyPassword } from '../services/passwords.js';
 import type { Env } from '../config/env.js';
 import { signAccessToken, signRefreshToken } from '../services/tokens.js';
@@ -35,7 +36,10 @@ export function makeAuthController(env: Env) {
           throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
         }
 
-        const user = await db().user.findFirst({ where: { mongoId: userId, deletedAt: null } });
+        const user = await db().user.findFirst({
+          where: { ...idWhere(userId), deletedAt: null },
+          include: { pendingConnections: true },
+        });
         if (!user) {
           throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         }
@@ -207,8 +211,8 @@ export function makeAuthController(env: Env) {
         const username = usernameRaw ? usernameRaw.toLowerCase() : '';
 
         const user = mobile
-          ? await db().user.findFirst({ where: { mobile, deletedAt: null } })
-          : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null } });
+          ? await db().user.findFirst({ where: { mobile, deletedAt: null }, include: { pendingConnections: true } })
+          : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null }, include: { pendingConnections: true } });
         if (!user) {
           await writeAuditLog({
             req,
@@ -329,7 +333,7 @@ export function makeAuthController(env: Env) {
         const userId = String(decoded.sub || '').trim();
         if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Invalid refresh token');
 
-        const user = await db().user.findFirst({ where: { mongoId: userId, deletedAt: null } });
+        const user = await db().user.findFirst({ where: { ...idWhere(userId), deletedAt: null } });
         if (!user) {
           throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         }
@@ -639,7 +643,7 @@ export function makeAuthController(env: Env) {
         }
 
         const targetMongoId = body.userId ?? requesterId;
-        const requester = await db().user.findFirst({ where: { mongoId: requesterId, deletedAt: null } });
+        const requester = await db().user.findFirst({ where: { ...idWhere(requesterId), deletedAt: null } });
         if (!requester) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
 
         const isSelf = String(targetMongoId) === String(requesterId);
@@ -650,7 +654,7 @@ export function makeAuthController(env: Env) {
 
         const targetUser = isSelf
           ? requester
-          : await db().user.findFirst({ where: { mongoId: targetMongoId, deletedAt: null } });
+          : await db().user.findFirst({ where: { ...idWhere(targetMongoId), deletedAt: null } });
         if (!targetUser) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         const update: any = {};

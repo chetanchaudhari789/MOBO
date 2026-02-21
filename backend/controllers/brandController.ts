@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
+import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
@@ -112,7 +113,7 @@ export function makeBrandController() {
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
-          const brandUser = await db().user.findFirst({ where: { mongoId: requested }, select: { id: true } });
+          const brandUser = await db().user.findFirst({ where: { ...idWhere(requested) }, select: { id: true } });
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
         } else {
@@ -167,7 +168,7 @@ export function makeBrandController() {
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
-          const brandUser = await db().user.findFirst({ where: { mongoId: requested }, select: { id: true } });
+          const brandUser = await db().user.findFirst({ where: { ...idWhere(requested) }, select: { id: true } });
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
         } else {
@@ -358,7 +359,7 @@ export function makeBrandController() {
         let agency: any = null;
         if (body.agencyId) {
           agency = await db().user.findFirst({
-            where: { mongoId: body.agencyId, roles: { has: 'agency' as any }, deletedAt: null },
+            where: { ...idWhere(body.agencyId), roles: { has: 'agency' as any }, deletedAt: null },
             select: { id: true, mongoId: true, mediatorCode: true },
           });
         } else if (body.agencyCode) {
@@ -520,7 +521,7 @@ export function makeBrandController() {
         let brandPgId: string;
         let brandMongoId: string;
         if (isPrivileged(roles) && body?.brandId) {
-          const brandUser = await db().user.findFirst({ where: { mongoId: String(body.brandId) }, select: { id: true, mongoId: true } });
+          const brandUser = await db().user.findFirst({ where: { ...idWhere(String(body.brandId)) }, select: { id: true, mongoId: true } });
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
           brandMongoId = brandUser.mongoId || brandUser.id;
@@ -627,7 +628,7 @@ export function makeBrandController() {
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         const existing = await db().campaign.findFirst({
-          where: { mongoId: id, deletedAt: null },
+          where: { ...idWhere(id), deletedAt: null },
         });
         if (!existing) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
@@ -791,7 +792,7 @@ export function makeBrandController() {
         const { roles, userId } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const campaign = await db().campaign.findFirst({ where: { mongoId: id, deletedAt: null } });
+        const campaign = await db().campaign.findFirst({ where: { ...idWhere(id), deletedAt: null } });
         if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
@@ -866,7 +867,7 @@ export function makeBrandController() {
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         const campaign = await db().campaign.findFirst({
-          where: { mongoId: id, deletedAt: null },
+          where: { ...idWhere(id), deletedAt: null },
         });
         if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 

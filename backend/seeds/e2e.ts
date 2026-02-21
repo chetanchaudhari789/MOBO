@@ -91,29 +91,17 @@ async function wipeCollections() {
 
   await Promise.allSettled(deletions);
 
-  // Also wipe PostgreSQL tables (FK-safe order: children first).
+  // Also wipe PostgreSQL tables — use TRUNCATE CASCADE for reliability.
   if (isPrismaAvailable()) {
     const db = prisma();
-    await db.auditLog.deleteMany({});
-    await db.transaction.deleteMany({});
-    await db.payout.deleteMany({});
-    await db.wallet.deleteMany({});
-    await db.orderItem.deleteMany({});
-    await db.order.deleteMany({});
-    await db.deal.deleteMany({});
-    await db.campaign.deleteMany({});
-    await db.invite.deleteMany({});
-    await db.ticket.deleteMany({});
-    await db.pushSubscription.deleteMany({});
-    await db.suspension.deleteMany({});
-    await db.shopperProfile.deleteMany({});
-    await db.mediatorProfile.deleteMany({});
-    await db.brand.deleteMany({});
-    await db.agency.deleteMany({});
-    await db.pendingConnection.deleteMany({});
-    await db.systemConfig.deleteMany({});
-    await db.migrationSync.deleteMany({});
-    await db.user.deleteMany({});
+    const tables = [
+      'audit_logs', 'transactions', 'payouts', 'wallets',
+      'order_items', 'orders', 'deals', 'campaigns',
+      'invites', 'tickets', 'push_subscriptions', 'suspensions',
+      'shopper_profiles', 'mediator_profiles', 'brands', 'agencies',
+      'pending_connections', 'system_configs', 'migration_sync', 'users',
+    ];
+    await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
   }
 }
 

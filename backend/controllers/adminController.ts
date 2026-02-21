@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
+import { idWhere } from '../utils/idWhere.js';
 import { prisma } from '../database/prisma.js';
 import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
@@ -210,7 +211,7 @@ export function makeAdminController() {
         const dealId = String(req.params.dealId || '').trim();
         if (!dealId) throw new AppError(400, 'INVALID_DEAL_ID', 'dealId required');
 
-        const deal = await db().deal.findFirst({ where: { mongoId: dealId, deletedAt: null } });
+        const deal = await db().deal.findFirst({ where: { ...idWhere(dealId), deletedAt: null } });
         if (!deal) throw new AppError(404, 'DEAL_NOT_FOUND', 'Deal not found');
 
         // Check for orders referencing this deal via order items
@@ -256,7 +257,7 @@ export function makeAdminController() {
         const userId = String(req.params.userId || '').trim();
         if (!userId) throw new AppError(400, 'INVALID_USER_ID', 'userId required');
 
-        const user = await db().user.findFirst({ where: { mongoId: userId, deletedAt: null } });
+        const user = await db().user.findFirst({ where: { ...idWhere(userId), deletedAt: null } });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         const roles = Array.isArray(user.roles) ? (user.roles as string[]) : [];
@@ -345,7 +346,7 @@ export function makeAdminController() {
         if (!userId) throw new AppError(400, 'INVALID_USER_ID', 'userId required');
 
         // Resolve PG UUID for the user
-        const user = await db().user.findFirst({ where: { mongoId: userId, deletedAt: null }, select: { id: true, mongoId: true } });
+        const user = await db().user.findFirst({ where: { ...idWhere(userId), deletedAt: null }, select: { id: true, mongoId: true } });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         const wallet = await db().wallet.findFirst({ where: { ownerUserId: user.id, deletedAt: null } });
@@ -401,7 +402,7 @@ export function makeAdminController() {
           throw new AppError(400, 'CANNOT_SELF_SUSPEND', 'Cannot suspend your own account');
         }
 
-        const before = await db().user.findFirst({ where: { mongoId: body.userId, deletedAt: null } });
+        const before = await db().user.findFirst({ where: { ...idWhere(body.userId), deletedAt: null } });
         if (!before) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         if (before.deletedAt) throw new AppError(409, 'USER_DELETED', 'Cannot update status of a deleted user');
 
@@ -574,7 +575,7 @@ export function makeAdminController() {
           if (isUuid) {
             where.actorUserId = actorUserId;
           } else {
-            const actor = await db().user.findFirst({ where: { mongoId: actorUserId }, select: { id: true } });
+            const actor = await db().user.findFirst({ where: { ...idWhere(actorUserId) }, select: { id: true } });
             if (actor) where.actorUserId = actor.id;
             else where.actorUserId = actorUserId; // fallback
           }
