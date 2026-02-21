@@ -1,6 +1,7 @@
-﻿import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
+import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
 import { prisma } from '../database/prisma.js';
 import { createTicketSchema, updateTicketSchema } from '../validations/tickets.js';
@@ -23,7 +24,7 @@ async function buildTicketAudience(ticket: any) {
   if (orderId) {
     const db = prisma();
     const order = await db.order.findFirst({
-      where: { mongoId: orderId, deletedAt: null },
+      where: { ...idWhere(orderId), deletedAt: null },
       select: {
         managerName: true,
         user: { select: { mongoId: true } },
@@ -102,7 +103,7 @@ async function assertCanReferenceOrder(params: { orderId: string; pgUserId: stri
   const db = prisma();
 
   const order = await db.order.findFirst({
-    where: { mongoId: orderId, deletedAt: null },
+    where: { ...idWhere(orderId), deletedAt: null },
     select: { userId: true, managerName: true, brandUserId: true },
   });
   if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
@@ -219,7 +220,7 @@ export function makeTicketsController() {
         const { roles, pgUserId, user } = getRequester(req);
         const db = prisma();
 
-        const existing = await db.ticket.findFirst({ where: { mongoId: id, deletedAt: null } });
+        const existing = await db.ticket.findFirst({ where: { ...idWhere(id), deletedAt: null } });
         if (!existing) throw new AppError(404, 'TICKET_NOT_FOUND', 'Ticket not found');
 
         if (!isPrivileged(roles) && existing.userId !== pgUserId) {
@@ -265,7 +266,7 @@ export function makeTicketsController() {
         const { roles, pgUserId, user } = getRequester(req);
         const db = prisma();
 
-        const existing = await db.ticket.findFirst({ where: { mongoId: id, deletedAt: null } });
+        const existing = await db.ticket.findFirst({ where: { ...idWhere(id), deletedAt: null } });
         if (!existing) throw new AppError(404, 'TICKET_NOT_FOUND', 'Ticket not found');
 
         if (String(existing.status || '').trim() === 'Open') {

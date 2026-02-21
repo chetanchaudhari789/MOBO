@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import type { Env } from '../config/env.js';
 import { AppError } from './errors.js';
 import { prisma } from '../database/prisma.js';
+import { idWhere } from '../utils/idWhere.js';
 
 export type Role = 'shopper' | 'mediator' | 'agency' | 'brand' | 'admin' | 'ops';
 
@@ -48,8 +49,8 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
 
   // Zero-trust: do not trust roles/status embedded in the JWT.
   // Fetch from DB so suspensions and role changes take effect immediately.
-  const user = await db.user.findUnique({
-    where: { mongoId: userId },
+  const user = await db.user.findFirst({
+    where: { ...idWhere(userId), deletedAt: null },
     select: {
       id: true, mongoId: true, status: true, roles: true, role: true,
       parentCode: true, mediatorCode: true, brandCode: true,

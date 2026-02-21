@@ -26,6 +26,7 @@ import {
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiUser } from '../utils/uiMappers.js';
+import { idWhere } from '../utils/idWhere.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
 import { listMediatorCodesForAgency, getAgencyCodeForMediatorCode, isAgencyActive, isMediatorActive } from '../services/lineage.js';
@@ -593,7 +594,7 @@ export function makeOpsController(env: Env) {
         const { roles, user: requester } = getRequester(req);
         const body = approveByIdSchema.parse(req.body);
         
-        const mediator = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
         if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
@@ -644,7 +645,7 @@ export function makeOpsController(env: Env) {
         const { roles, user: requester } = getRequester(req);
         const body = rejectByIdSchema.parse(req.body);
 
-        const mediator = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
         if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
@@ -696,7 +697,7 @@ export function makeOpsController(env: Env) {
         const body = approveByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const buyerBefore = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        const buyerBefore = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
         if (!buyerBefore) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         const upstreamMediatorCode = String(buyerBefore.parentCode || '').trim();
 
@@ -757,7 +758,7 @@ export function makeOpsController(env: Env) {
         const body = rejectByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const buyerBefore = await db().user.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        const buyerBefore = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
         if (!buyerBefore) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         const upstreamMediatorCode = String(buyerBefore.parentCode || '').trim();
 
@@ -817,7 +818,7 @@ export function makeOpsController(env: Env) {
       try {
         const body = verifyOrderSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
@@ -921,7 +922,7 @@ export function makeOpsController(env: Env) {
         const body = verifyOrderRequirementSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
@@ -1037,7 +1038,7 @@ export function makeOpsController(env: Env) {
       try {
         const body = verifyOrderSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
@@ -1144,7 +1145,7 @@ export function makeOpsController(env: Env) {
         const body = rejectOrderProofSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
@@ -1294,7 +1295,7 @@ export function makeOpsController(env: Env) {
         const body = requestMissingProofSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
@@ -1405,7 +1406,7 @@ export function makeOpsController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
         }
 
-        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if (!canSettleAny) {
@@ -1514,7 +1515,7 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
           }
 
-          const deal = await db().deal.findFirst({ where: { mongoId: productId, deletedAt: null } });
+          const deal = await db().deal.findFirst({ where: { ...idWhere(productId), deletedAt: null } });
           if (!deal) {
             throw new AppError(409, 'DEAL_NOT_FOUND', 'Cannot settle: deal not found');
           }
@@ -1662,7 +1663,7 @@ export function makeOpsController(env: Env) {
         const canScoped = roles.includes('mediator') || roles.includes('agency');
         if (!canAny && !canScoped) throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
 
-        const order = await db().order.findFirst({ where: { mongoId: body.orderId, deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
@@ -1740,7 +1741,7 @@ export function makeOpsController(env: Env) {
 
         if (!isCapExceeded && settlementMode !== 'external') {
           if (!productId) throw new AppError(409, 'MISSING_DEAL_ID', 'Order is missing deal reference');
-          const deal = await db().deal.findFirst({ where: { mongoId: productId, deletedAt: null } });
+          const deal = await db().deal.findFirst({ where: { ...idWhere(productId), deletedAt: null } });
           if (!deal) throw new AppError(409, 'DEAL_NOT_FOUND', 'Cannot revert: deal not found');
 
           const payoutPaise = Number(deal.payoutPaise ?? 0);
@@ -1849,7 +1850,7 @@ export function makeOpsController(env: Env) {
           const brandUserId = String(body.brandUserId || '').trim();
           if (!brandUserId) throw new AppError(400, 'MISSING_BRAND_USER_ID', 'brandUserId is required');
 
-          const brand = await db().user.findFirst({ where: { mongoId: brandUserId, deletedAt: null } });
+          const brand = await db().user.findFirst({ where: { ...idWhere(brandUserId), deletedAt: null } });
           if (!brand) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           if (!(Array.isArray(brand.roles) ? brand.roles : []).includes('brand')) throw new AppError(400, 'INVALID_BRAND', 'Invalid brand');
           if (brand.status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
@@ -1961,7 +1962,7 @@ export function makeOpsController(env: Env) {
         }
 
         const { roles, pgUserId, user: requester } = getRequester(req);
-        const campaign = await db().campaign.findFirst({ where: { mongoId: campaignId, deletedAt: null } });
+        const campaign = await db().campaign.findFirst({ where: { ...idWhere(campaignId), deletedAt: null } });
         if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
@@ -2043,7 +2044,7 @@ export function makeOpsController(env: Env) {
 
         const { roles, pgUserId } = getRequester(req);
 
-        const campaign = await db().campaign.findFirst({ where: { mongoId: campaignId, deletedAt: null } });
+        const campaign = await db().campaign.findFirst({ where: { ...idWhere(campaignId), deletedAt: null } });
         if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
@@ -2128,7 +2129,7 @@ export function makeOpsController(env: Env) {
       try {
         const body = assignSlotsSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const campaign = await db().campaign.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        const campaign = await db().campaign.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
         if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
         // Campaign must be active to accept new assignments.
@@ -2300,7 +2301,7 @@ export function makeOpsController(env: Env) {
       try {
         const body = publishDealSchema.parse(req.body);
         const { roles, pgUserId, user: requester } = getRequester(req);
-        const campaign = await db().campaign.findFirst({ where: { mongoId: body.id, deletedAt: null } });
+        const campaign = await db().campaign.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
         if (!campaign) throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
 
         const normalizeCode = (v: unknown) => normalizeMediatorCode(v);
@@ -2444,7 +2445,7 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is not active; payouts are blocked');
           }
         }
-        const user = await db().user.findFirst({ where: { mongoId: body.mediatorId, deletedAt: null } });
+        const user = await db().user.findFirst({ where: { ...idWhere(body.mediatorId), deletedAt: null } });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         if (canAgency) {
@@ -2529,7 +2530,7 @@ export function makeOpsController(env: Env) {
           throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
         }
 
-        const payout = await db().payout.findFirst({ where: { mongoId: payoutId, deletedAt: null } });
+        const payout = await db().payout.findFirst({ where: { ...idWhere(payoutId), deletedAt: null } });
         if (!payout) throw new AppError(404, 'PAYOUT_NOT_FOUND', 'Payout not found');
 
         const beneficiary = await db().user.findUnique({ where: { id: payout.beneficiaryUserId } });
@@ -2619,7 +2620,7 @@ export function makeOpsController(env: Env) {
           throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
         }
         const { roles, pgUserId, user: requester } = getRequester(req);
-        const campaign = await db().campaign.findFirst({ where: { mongoId: id, deletedAt: null } });
+        const campaign = await db().campaign.findFirst({ where: { ...idWhere(id), deletedAt: null } });
         if (!campaign) {
           throw new AppError(404, 'CAMPAIGN_NOT_FOUND', 'Campaign not found');
         }
@@ -2689,7 +2690,7 @@ export function makeOpsController(env: Env) {
         }
 
         const campaign = await db().campaign.findFirst({
-          where: { mongoId: id, deletedAt: null },
+          where: { ...idWhere(id), deletedAt: null },
           select: { id: true, mongoId: true, allowedAgencyCodes: true, brandUserId: true, title: true, deletedAt: true },
         });
         if (!campaign) {
