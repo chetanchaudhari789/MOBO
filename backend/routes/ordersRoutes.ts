@@ -3,8 +3,10 @@ import rateLimit from 'express-rate-limit';
 import type { Env } from '../config/env.js';
 import { requireAuth, requireAuthOrToken } from '../middleware/auth.js';
 import { makeOrdersController } from '../controllers/ordersController.js';
-import { prisma } from '../database/prisma.js';
+import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
+import { AuditLogModel } from '../models/AuditLog.js';
+import { OrderModel } from '../models/Order.js';
 
 export function ordersRoutes(env: Env): Router {
   const router = Router();
@@ -70,7 +72,7 @@ export function ordersRoutes(env: Env): Router {
 
         if (!allowed && roles.includes('brand')) {
           const user = await db.user.findFirst({ where: idWhere(userId), select: { id: true, name: true } });
-          const sameBrandId = !!user && (order.brandUserId === user.id || order.brandUserId === userId);
+          const sameBrandId = !!user && order.brandUserId === user.id;
           const sameBrandName = !!user?.name && String(order.brandName || '').trim() === String(user.name || '').trim();
           allowed = sameBrandId || sameBrandName;
         }
@@ -110,22 +112,38 @@ export function ordersRoutes(env: Env): Router {
       const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
       const skip = (page - 1) * limit;
 
-      const db = prisma();
+      // Fetch AuditLog entries for this order — PG primary, MongoDB fallback
+      let logs: any[] = [];
+      if (isPrismaAvailable()) {
+        logs = await prisma().auditLog.findMany({
+          where: { entityType: 'Order', entityId: orderId },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        });
+      }
+      if (!logs.length) {
+        // Fallback to MongoDB for audit logs not yet synced to PG
+        logs = await AuditLogModel.find({ entityType: 'Order', entityId: orderId })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
+      }
 
-      // Fetch AuditLog entries for this order from PG
-      const logs = await db.auditLog.findMany({
-        where: { entityType: 'Order', entityId: orderId },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      });
-
-      // Also return inline order.events for a combined timeline
-      const orderDoc = await db.order.findFirst({
-        where: idWhere(orderId),
-        select: { events: true },
-      });
-      const events = Array.isArray((orderDoc as any)?.events) ? (orderDoc as any).events : [];
+      // Also return inline order.events for a combined timeline — PG primary, MongoDB fallback
+      let events: any[] = [];
+      if (isPrismaAvailable()) {
+        const orderDoc = await prisma().order.findFirst({
+          where: idWhere(orderId),
+          select: { events: true },
+        });
+        events = Array.isArray((orderDoc as any)?.events) ? (orderDoc as any).events : [];
+      }
+      if (!events.length) {
+        const mongoOrder = await OrderModel.findById(orderId, { events: 1 }).lean().catch(() => null);
+        events = Array.isArray((mongoOrder as any)?.events) ? (mongoOrder as any).events : [];
+      }
 
       res.json({ logs, events, page, limit });
     } catch (err) {
