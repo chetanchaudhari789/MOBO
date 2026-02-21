@@ -575,7 +575,7 @@ export function makeAdminController() {
           if (isUuid) {
             where.actorUserId = actorUserId;
           } else {
-            const actor = await db().user.findFirst({ where: { ...idWhere(actorUserId) }, select: { id: true } });
+            const actor = await db().user.findFirst({ where: { ...idWhere(actorUserId), deletedAt: null }, select: { id: true } });
             if (actor) where.actorUserId = actor.id;
             else where.actorUserId = actorUserId; // fallback
           }

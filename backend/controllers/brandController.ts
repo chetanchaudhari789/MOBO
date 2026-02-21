@@ -113,7 +113,7 @@ export function makeBrandController() {
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
-          const brandUser = await db().user.findFirst({ where: { ...idWhere(requested) }, select: { id: true } });
+          const brandUser = await db().user.findFirst({ where: { ...idWhere(requested), deletedAt: null }, select: { id: true } });
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
         } else {
@@ -168,7 +168,7 @@ export function makeBrandController() {
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
-          const brandUser = await db().user.findFirst({ where: { ...idWhere(requested) }, select: { id: true } });
+          const brandUser = await db().user.findFirst({ where: { ...idWhere(requested), deletedAt: null }, select: { id: true } });
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
         } else {
@@ -521,7 +521,10 @@ export function makeBrandController() {
         let brandPgId: string;
         let brandMongoId: string;
         if (isPrivileged(roles) && body?.brandId) {
-          const brandUser = await db().user.findFirst({ where: { ...idWhere(String(body.brandId)) }, select: { id: true, mongoId: true } });
+          const brandUser = await db().user.findFirst({
+            where: { ...idWhere(String(body.brandId)), deletedAt: null },
+            select: { id: true, mongoId: true },
+          });
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
           brandMongoId = brandUser.mongoId || brandUser.id;
