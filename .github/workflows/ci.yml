@@ -10,6 +10,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mobo_ci
+          POSTGRES_PASSWORD: mobo_ci_pass
+          POSTGRES_DB: mobo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mobo_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://mobo_ci:mobo_ci_pass@localhost:5432/mobo_ci
+      MONGODB_URI: mongodb+srv://REPLACE_ME
+      NODE_ENV: test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,6 +57,9 @@ jobs:
 
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
+
+      - name: Push Prisma schema to CI database
+        run: cd backend && npx prisma db push --skip-generate --accept-data-loss
 
       - name: Build (backend)
         run: npm -w @mobo/backend run build
