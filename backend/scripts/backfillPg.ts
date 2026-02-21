@@ -119,15 +119,15 @@ async function backfillCollection(entry: CollectionEntry): Promise<{ synced: num
     const batch = await entry.model.find({}).skip(skip).limit(BATCH_SIZE).lean();
     if (batch.length === 0) break;
 
-    const results = await Promise.allSettled(
-      batch.map((doc: any) => entry.writer(doc))
-    );
-
-    for (const r of results) {
-      if (r.status === 'fulfilled') synced++;
-      else {
+    // Process sequentially to avoid overwhelming the PG connection pool (max 10).
+    // Promise.allSettled on 200 items causes pool exhaustion on remote PG.
+    for (const doc of batch) {
+      try {
+        await entry.writer(doc);
+        synced++;
+      } catch (err: any) {
         errors++;
-        console.error(`  [err] ${entry.name}:`, (r as any).reason?.message ?? r.reason);
+        console.error(`  [err] ${entry.name}:`, err?.message ?? err);
       }
     }
 
