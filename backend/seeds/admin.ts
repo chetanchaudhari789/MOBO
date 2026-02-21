@@ -94,10 +94,27 @@ export async function seedAdminOnly(args: SeedAdminArgs = {}) {
   if (isPrismaAvailable()) {
     const db = prisma();
     // Remove any stale PG user with conflicting mobile (from a previous seed/test run).
-    // Delete dependent wallets first to avoid FK constraint violations.
+    // Delete dependent records first to avoid FK constraint violations.
     const staleUsers = await db.user.findMany({ where: { mobile: user.mobile, mongoId: { not: String(user._id) } }, select: { id: true } });
     if (staleUsers.length) {
       const staleIds = staleUsers.map(u => u.id);
+      // Delete transactions for wallets owned by stale users.
+      await db.transaction.deleteMany({
+        where: {
+          wallet: {
+            ownerUserId: { in: staleIds },
+          },
+        },
+      });
+      // Delete payouts that either use wallets owned by stale users or reference stale users as beneficiaries.
+      await db.payout.deleteMany({
+        where: {
+          OR: [
+            { wallet: { ownerUserId: { in: staleIds } } },
+            { beneficiaryUserId: { in: staleIds } },
+          ],
+        },
+      });
       await db.wallet.deleteMany({ where: { ownerUserId: { in: staleIds } } });
       await db.user.deleteMany({ where: { id: { in: staleIds } } });
     }
