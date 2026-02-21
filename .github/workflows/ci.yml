@@ -59,7 +59,7 @@ jobs:
         run: npm -w @mobo/backend run pg:generate
 
       - name: Push Prisma schema to CI database
-        run: cd backend && npx prisma db push --skip-generate --accept-data-loss
+        run: cd backend && npx prisma db push --accept-data-loss
 
       - name: Build (backend)
         run: npm -w @mobo/backend run build
