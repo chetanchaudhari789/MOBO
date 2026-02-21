@@ -94,11 +94,49 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
       deletedAt: mongoDoc.deletedAt || null,
     };
 
-    await db.user.upsert({
-      where: { mongoId: id },
-      create: { mongoId: id, ...data },
-      update: data,
-    });
+    // Try upsert by mongoId first.  If a user with the same mobile already
+    // exists (e.g. seed data), fall back to updating that record and attaching
+    // the mongoId so future upserts hit the fast-path.
+    try {
+      await db.user.upsert({
+        where: { mongoId: id },
+        create: { mongoId: id, ...data },
+        update: data,
+      });
+    } catch (err: any) {
+      const msg = String(err?.message ?? '');
+      const isUniqueViolation =
+        msg.includes('Unique constraint failed') ||
+        msg.includes('unique constraint') ||
+        msg.includes('duplicate key');
+      if (!isUniqueViolation) throw err;
+
+      // Fallback: find existing user by mobile (or username) and stamp mongoId
+      const mobile = String(mongoDoc.mobile ?? '').trim();
+      const existing = mobile
+        ? await db.user.findFirst({ where: { mobile } })
+        : null;
+      if (existing) {
+        await db.user.update({
+          where: { id: existing.id },
+          data: { mongoId: id, ...data },
+        });
+      } else {
+        // Try by username if mobile didn't match
+        const uname = mongoDoc.username || null;
+        const byName = uname
+          ? await db.user.findFirst({ where: { username: uname } })
+          : null;
+        if (byName) {
+          await db.user.update({
+            where: { id: byName.id },
+            data: { mongoId: id, ...data },
+          });
+        } else {
+          throw err; // re-throw if we can't resolve the conflict
+        }
+      }
+    }
 
     // Sync pending connections (embedded array → relational table)
     if (Array.isArray(mongoDoc.pendingConnections) && mongoDoc.pendingConnections.length > 0) {
