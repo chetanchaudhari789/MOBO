@@ -104,37 +104,41 @@ export async function dualWriteUser(mongoDoc: any): Promise<void> {
         update: data,
       });
     } catch (err: any) {
-      const msg = String(err?.message ?? '');
-      const isUniqueViolation =
-        msg.includes('Unique constraint failed') ||
-        msg.includes('unique constraint') ||
-        msg.includes('duplicate key');
-      if (!isUniqueViolation) throw err;
+      // Only handle Prisma unique constraint violations (P2002); rethrow others
+      if (err?.code !== 'P2002') throw err;
 
-      // Fallback: find existing user by mobile (or username) and stamp mongoId
-      const mobile = String(mongoDoc.mobile ?? '').trim();
-      const existing = mobile
-        ? await db.user.findFirst({ where: { mobile } })
-        : null;
-      if (existing) {
-        await db.user.update({
-          where: { id: existing.id },
-          data: { mongoId: id, ...data },
-        });
-      } else {
-        // Try by username if mobile didn't match
-        const uname = mongoDoc.username || null;
-        const byName = uname
-          ? await db.user.findFirst({ where: { username: uname } })
-          : null;
-        if (byName) {
-          await db.user.update({
-            where: { id: byName.id },
-            data: { mongoId: id, ...data },
-          });
+      const target: string[] = err.meta?.target ?? [];
+
+      // If the conflict is on mongoId, it's a data corruption scenario – fail immediately
+      const MONGOID_TARGETS = new Set(['mongoId', 'User_mongoId_key']);
+      if (target.some((t) => MONGOID_TARGETS.has(t))) {
+        throw new Error(`Data corruption: mongoId ${id} already assigned to a different PG user`);
+      }
+
+      // Fallback: find existing user by the exact conflicting field and stamp mongoId
+      const MOBILE_TARGETS = new Set(['mobile', 'User_mobile_key', 'User_mobile_unique']);
+      const USERNAME_TARGETS = new Set(['username', 'User_username_key', 'User_username_unique']);
+      const onMobile = target.some((t) => MOBILE_TARGETS.has(t));
+      const onUsername = target.some((t) => USERNAME_TARGETS.has(t));
+
+      if (onMobile) {
+        const mobile = String(mongoDoc.mobile ?? '').trim();
+        const existing = mobile ? await db.user.findFirst({ where: { mobile } }) : null;
+        if (existing) {
+          await db.user.update({ where: { id: existing.id }, data: { mongoId: id, ...data } });
         } else {
-          throw err; // re-throw if we can't resolve the conflict
+          throw err;
         }
+      } else if (onUsername) {
+        const uname = mongoDoc.username || null;
+        const byName = uname ? await db.user.findFirst({ where: { username: uname } }) : null;
+        if (byName) {
+          await db.user.update({ where: { id: byName.id }, data: { mongoId: id, ...data } });
+        } else {
+          throw err;
+        }
+      } else {
+        throw err; // unknown conflict target – re-throw
       }
     }
 
