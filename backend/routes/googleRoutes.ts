@@ -19,6 +19,8 @@ import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
 import { UserModel } from '../models/User.js';
 import { writeAuditLog } from '../services/audit.js';
+import { prisma, isPrismaAvailable } from '../database/prisma.js';
+import { idWhere } from '../utils/idWhere.js';
 
 // ─── Helpers ───────────────────────────────────────────────────
 
@@ -187,6 +189,14 @@ export function googleRoutes(env: Env): Router {
       }
 
       if (Object.keys(update).length > 0) {
+        // Dual-write: update both PG (primary) and MongoDB
+        if (isPrismaAvailable()) {
+          const db = prisma();
+          const pgUser = await db.user.findFirst({ where: idWhere(pending.userId), select: { id: true } });
+          if (pgUser) {
+            await db.user.update({ where: { id: pgUser.id }, data: update });
+          }
+        }
         await UserModel.findByIdAndUpdate(pending.userId, { $set: update });
       }
 
@@ -214,11 +224,28 @@ export function googleRoutes(env: Env): Router {
     try {
       const userId = (req as any).auth?.userId;
       if (!userId) return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
-      const user = await UserModel.findById(userId).select('+googleRefreshToken googleEmail').lean();
-      return res.json({
-        connected: !!(user as any)?.googleRefreshToken,
-        googleEmail: (user as any)?.googleEmail || null,
-      });
+
+      // Read from PG (primary), fall back to MongoDB
+      let connected = false;
+      let googleEmail: string | null = null;
+      if (isPrismaAvailable()) {
+        const db = prisma();
+        const pgUser = await db.user.findFirst({
+          where: idWhere(userId),
+          select: { googleRefreshToken: true, googleEmail: true },
+        });
+        if (pgUser) {
+          connected = !!pgUser.googleRefreshToken;
+          googleEmail = pgUser.googleEmail || null;
+        }
+      }
+      if (!connected) {
+        // Fallback to MongoDB
+        const user = await UserModel.findById(userId).select('+googleRefreshToken googleEmail').lean();
+        connected = !!(user as any)?.googleRefreshToken;
+        googleEmail = (user as any)?.googleEmail || null;
+      }
+      return res.json({ connected, googleEmail });
     } catch (err) {
       next(err);
     }
@@ -232,6 +259,18 @@ export function googleRoutes(env: Env): Router {
     try {
       const userId = (req as any).auth?.userId;
       if (!userId) return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
+
+      // Dual-write: clear tokens from both PG (primary) and MongoDB
+      if (isPrismaAvailable()) {
+        const db = prisma();
+        const pgUser = await db.user.findFirst({ where: idWhere(userId), select: { id: true } });
+        if (pgUser) {
+          await db.user.update({
+            where: { id: pgUser.id },
+            data: { googleRefreshToken: null, googleEmail: null },
+          });
+        }
+      }
       await UserModel.findByIdAndUpdate(userId, {
         $unset: { googleRefreshToken: 1, googleEmail: 1 },
       });

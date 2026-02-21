@@ -14,6 +14,7 @@ import {
 import { DealModel } from '../models/Deal.js';
 import { toUiDeal } from '../utils/uiMappers.js';
 import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 
@@ -278,16 +279,37 @@ export function aiRoutes(env: Env): Router {
         const roles = req.auth?.roles ?? [];
         if (requester && roles.includes('shopper')) {
           const mediatorCode = normalizeMediatorCode((requester as any).parentCode);
-          const mediatorRegex = buildMediatorCodeRegex(mediatorCode);
-          if (mediatorRegex) {
-            const deals = await DealModel.find({
-              mediatorCode: mediatorRegex,
-              active: true,
-              deletedAt: null,
-            })
-              .sort({ createdAt: -1 })
-              .limit(50)
-              .lean();
+          if (mediatorCode) {
+            let deals: any[] = [];
+            // Primary: PostgreSQL via Prisma
+            if (isPrismaAvailable()) {
+              const db = prisma();
+              const pgDeals = await db.deal.findMany({
+                where: {
+                  mediatorCode: { equals: mediatorCode, mode: 'insensitive' },
+                  active: true,
+                  deletedAt: null,
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 50,
+              });
+              deals = pgDeals;
+            }
+            // Fallback: MongoDB
+            if (!deals.length) {
+              const mediatorRegex = buildMediatorCodeRegex(mediatorCode);
+              if (mediatorRegex) {
+                const mongoDeals = await DealModel.find({
+                  mediatorCode: mediatorRegex,
+                  active: true,
+                  deletedAt: null,
+                })
+                  .sort({ createdAt: -1 })
+                  .limit(50)
+                  .lean();
+                deals = mongoDeals;
+              }
+            }
             effectiveProducts = deals.map(toUiDeal);
           }
         }

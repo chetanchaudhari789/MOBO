@@ -3,6 +3,8 @@ import type { Env } from '../config/env.js';
 import type { OrderWorkflowStatus } from '../models/Order.js';
 import { PushSubscriptionModel } from '../models/PushSubscription.js';
 import { UserModel } from '../models/User.js';
+import { prisma, isPrismaAvailable } from '../database/prisma.js';
+import { idWhere } from '../utils/idWhere.js';
 
 export type PushPayload = {
   title: string;
@@ -48,6 +50,10 @@ export function getVapidPublicKey(env: Env): string {
 
 async function removeInvalidSubscription(endpoint: string) {
   try {
+    // Remove from both PG and MongoDB
+    if (isPrismaAvailable()) {
+      await prisma().pushSubscription.deleteMany({ where: { endpoint } }).catch(() => {});
+    }
     await PushSubscriptionModel.deleteOne({ endpoint });
   } catch {
     // ignore cleanup errors
@@ -64,12 +70,38 @@ export async function sendPushToUser(params: {
 
   configureWebPush(params.env);
 
-  const subscriptions = await PushSubscriptionModel.find({
-    userId: params.userId,
-    app: params.app,
-  })
-    .select({ endpoint: 1, keys: 1, expirationTime: 1 })
-    .lean();
+  // Read push subscriptions from PostgreSQL (primary)
+  let subscriptions: Array<{ endpoint: string; keysP256dh: string | null; keysAuth: string | null; expirationTime: Date | number | null }> = [];
+  if (isPrismaAvailable()) {
+    const db = prisma();
+    // Resolve userId (could be mongoId or PG UUID)
+    const pgUser = await db.user.findFirst({
+      where: idWhere(params.userId),
+      select: { id: true },
+    });
+    if (pgUser) {
+      subscriptions = await db.pushSubscription.findMany({
+        where: { userId: pgUser.id, app: params.app },
+        select: { endpoint: true, keysP256dh: true, keysAuth: true, expirationTime: true },
+      });
+    }
+  }
+
+  // Fallback to MongoDB if PG returned nothing
+  if (!subscriptions.length) {
+    const mongoSubs = await PushSubscriptionModel.find({
+      userId: params.userId,
+      app: params.app,
+    })
+      .select({ endpoint: 1, keys: 1, expirationTime: 1 })
+      .lean();
+    subscriptions = mongoSubs.map((s: any) => ({
+      endpoint: String(s.endpoint || ''),
+      keysP256dh: String(s.keys?.p256dh || ''),
+      keysAuth: String(s.keys?.auth || ''),
+      expirationTime: s.expirationTime || null,
+    }));
+  }
 
   if (!subscriptions.length) return;
 
@@ -80,19 +112,19 @@ export async function sendPushToUser(params: {
       try {
         await webpush.sendNotification(
           {
-            endpoint: String((sub as any).endpoint || ''),
+            endpoint: String(sub.endpoint || ''),
             keys: {
-              p256dh: String((sub as any).keys?.p256dh || ''),
-              auth: String((sub as any).keys?.auth || ''),
+              p256dh: String(sub.keysP256dh || ''),
+              auth: String(sub.keysAuth || ''),
             },
-            expirationTime: (sub as any).expirationTime,
+            expirationTime: sub.expirationTime ? Number(sub.expirationTime) : null,
           },
           payload
         );
       } catch (err: any) {
         const status = Number(err?.statusCode || err?.status || 0);
         if (status === 404 || status === 410) {
-          await removeInvalidSubscription(String((sub as any).endpoint || ''));
+          await removeInvalidSubscription(String(sub.endpoint || ''));
         }
       }
     })
@@ -159,17 +191,30 @@ export async function notifyOrderWorkflowPush(params: {
     if (params.to === 'UNDER_REVIEW') {
       const mediatorCode = String(params.order?.managerName || '').trim();
       if (mediatorCode) {
-        const mediators = await UserModel.find({ mediatorCode, roles: 'mediator', deletedAt: null })
-          .select({ _id: 1 })
-          .lean();
+        // Find mediators from PG (primary), fall back to MongoDB
+        let mediatorIds: string[] = [];
+        if (isPrismaAvailable()) {
+          const db = prisma();
+          const pgMediators = await db.user.findMany({
+            where: { mediatorCode, roles: { has: 'mediator' }, deletedAt: null },
+            select: { id: true, mongoId: true },
+          });
+          mediatorIds = pgMediators.map(m => m.mongoId || m.id);
+        }
+        if (!mediatorIds.length) {
+          const mongoMediators = await UserModel.find({ mediatorCode, roles: 'mediator', deletedAt: null })
+            .select({ _id: 1 })
+            .lean();
+          mediatorIds = mongoMediators.map((m: any) => String(m._id));
+        }
         const payload: PushPayload = {
           title: 'New order to review',
           body: `Order #${shortOrderId(params.order?._id)} is ready for verification.`,
           url: '/',
         };
         await Promise.all(
-          mediators.map((m) =>
-            sendPushToUser({ env: params.env, userId: String((m as any)._id || ''), app: 'mediator', payload })
+          mediatorIds.map((mId) =>
+            sendPushToUser({ env: params.env, userId: mId, app: 'mediator', payload })
           )
         );
       }

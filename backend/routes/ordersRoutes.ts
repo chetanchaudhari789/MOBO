@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
 import type { Env } from '../config/env.js';
 import { requireAuth, requireAuthOrToken } from '../middleware/auth.js';
 import { makeOrdersController } from '../controllers/ordersController.js';
-import { AuditLogModel } from '../models/AuditLog.js';
-import { OrderModel } from '../models/Order.js';
-import { UserModel } from '../models/User.js';
+import { prisma } from '../database/prisma.js';
+import { idWhere } from '../utils/idWhere.js';
 
 export function ordersRoutes(env: Env): Router {
   const router = Router();
@@ -50,14 +48,14 @@ export function ordersRoutes(env: Env): Router {
       const isAdmin = roles.some((r: string) => ['admin', 'ops'].includes(r));
 
       const orderId = String(req.params.orderId);
-      // Validate orderId is a proper ObjectId to prevent CastError 500s
-      if (!mongoose.Types.ObjectId.isValid(orderId)) {
-        return res.status(400).json({ error: { code: 'INVALID_ID', message: 'Invalid orderId format' } });
-      }
 
       // Everyone except admin/ops must pass ownership checks
       if (!isAdmin) {
-        const order = await OrderModel.findById(orderId).select('userId brandUserId agencyName managerName').lean() as any;
+        const db = prisma();
+        const order = await db.order.findFirst({
+          where: idWhere(orderId),
+          select: { id: true, userId: true, brandUserId: true, brandName: true, agencyName: true, managerName: true },
+        });
         if (!order) {
           return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
         }
@@ -65,35 +63,40 @@ export function ordersRoutes(env: Env): Router {
         let allowed = false;
 
         if (roles.includes('shopper')) {
-          allowed = String(order.userId) === userId;
+          // Check both PG id and mongoId
+          const pgUser = await db.user.findFirst({ where: idWhere(userId), select: { id: true } });
+          allowed = !!pgUser && order.userId === pgUser.id;
         }
 
         if (!allowed && roles.includes('brand')) {
-          const user = await UserModel.findById(userId).select('name').lean() as any;
-          const sameBrandId = String(order.brandUserId || '') === userId;
+          const user = await db.user.findFirst({ where: idWhere(userId), select: { id: true, name: true } });
+          const sameBrandId = !!user && (order.brandUserId === user.id || order.brandUserId === userId);
           const sameBrandName = !!user?.name && String(order.brandName || '').trim() === String(user.name || '').trim();
           allowed = sameBrandId || sameBrandName;
         }
 
         if (!allowed && roles.includes('agency')) {
-          const user = await UserModel.findById(userId).select('mediatorCode name').lean() as any;
+          const user = await db.user.findFirst({ where: idWhere(userId), select: { id: true, mediatorCode: true, name: true } });
           const agencyName = String(user?.name || '').trim();
           const agencyCode = String(user?.mediatorCode || '').trim();
           if (agencyName && String(order.agencyName || '').trim() === agencyName) {
             allowed = true;
           } else if (agencyCode && order.managerName) {
-            const mediator = await UserModel.findOne({
-              roles: 'mediator',
-              mediatorCode: String(order.managerName).trim(),
-              parentCode: agencyCode,
-              deletedAt: null,
-            }).select('_id').lean();
+            const mediator = await db.user.findFirst({
+              where: {
+                roles: { has: 'mediator' },
+                mediatorCode: String(order.managerName).trim(),
+                parentCode: agencyCode,
+                deletedAt: null,
+              },
+              select: { id: true },
+            });
             allowed = !!mediator;
           }
         }
 
         if (!allowed && roles.includes('mediator')) {
-          const user = await UserModel.findById(userId).select('mediatorCode').lean() as any;
+          const user = await db.user.findFirst({ where: idWhere(userId), select: { mediatorCode: true } });
           const mediatorCode = String(user?.mediatorCode || '').trim();
           allowed = !!mediatorCode && String(order.managerName || '').trim() === mediatorCode;
         }
@@ -107,18 +110,21 @@ export function ordersRoutes(env: Env): Router {
       const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
       const skip = (page - 1) * limit;
 
-      // Fetch AuditLog entries for this order
-      const logs = await AuditLogModel.find({
-        entityType: 'Order',
-        entityId: orderId,
-      })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean();
+      const db = prisma();
+
+      // Fetch AuditLog entries for this order from PG
+      const logs = await db.auditLog.findMany({
+        where: { entityType: 'Order', entityId: orderId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      });
 
       // Also return inline order.events for a combined timeline
-      const orderDoc = await OrderModel.findById(orderId).select('events').lean();
+      const orderDoc = await db.order.findFirst({
+        where: idWhere(orderId),
+        select: { events: true },
+      });
       const events = Array.isArray((orderDoc as any)?.events) ? (orderDoc as any).events : [];
 
       res.json({ logs, events, page, limit });
