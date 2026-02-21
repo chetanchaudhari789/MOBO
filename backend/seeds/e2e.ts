@@ -94,14 +94,30 @@ async function wipeCollections() {
   // Also wipe PostgreSQL tables — use TRUNCATE CASCADE for reliability.
   if (isPrismaAvailable()) {
     const db = prisma();
-    const tables = [
-      'audit_logs', 'transactions', 'payouts', 'wallets',
-      'order_items', 'orders', 'deals', 'campaigns',
-      'invites', 'tickets', 'push_subscriptions', 'suspensions',
-      'shopper_profiles', 'mediator_profiles', 'brands', 'agencies',
-      'pending_connections', 'system_configs', 'migration_sync', 'users',
-    ];
-    await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
+    await db.$executeRaw`
+      TRUNCATE TABLE
+        audit_logs,
+        transactions,
+        payouts,
+        wallets,
+        order_items,
+        orders,
+        deals,
+        campaigns,
+        invites,
+        tickets,
+        push_subscriptions,
+        suspensions,
+        shopper_profiles,
+        mediator_profiles,
+        brands,
+        agencies,
+        pending_connections,
+        system_configs,
+        migration_sync,
+        users
+      CASCADE
+    `;
   }
 }
 

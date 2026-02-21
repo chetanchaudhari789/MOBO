@@ -20,5 +20,15 @@ export function isUUID(value: string): boolean {
 }
 
 export function idWhere(value: string): { id: string } | { mongoId: string } {
-  return isUUID(value) ? { id: value } : { mongoId: value };
+  if (typeof value !== 'string') {
+    throw new TypeError('idWhere: value must be a string');
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    throw new TypeError('idWhere: value must be a non-empty string');
+  }
+
+  return isUUID(trimmed) ? { id: trimmed } : { mongoId: trimmed };
 }
