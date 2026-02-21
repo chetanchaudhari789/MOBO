@@ -8,7 +8,7 @@ import type { TicketDoc } from '../models/Ticket.js';
 import { paiseToRupees } from './money.js';
 
 /** Safely convert a value to ISO string, returning undefined for invalid dates. */
-function safeIso(val: any): string | undefined {
+export function safeIso(val: any): string | undefined {
   if (!val) return undefined;
   const d = new Date(val);
   return isNaN(d.getTime()) ? undefined : d.toISOString();
@@ -51,7 +51,7 @@ export function toUiUser(
       agencyId: p.agencyId,
       agencyName: p.agencyName,
       agencyCode: p.agencyCode,
-      timestamp: p.timestamp ? new Date(p.timestamp).toISOString() : new Date().toISOString(),
+      timestamp: safeIso(p.timestamp) ?? new Date().toISOString(),
     })),
 
     kycStatus: user.kycStatus,
@@ -67,7 +67,7 @@ export function toUiUser(
     walletPending: paiseToRupees(walletPendingPaise),
 
     avatar: user.avatar,
-    createdAt: user.createdAt ? new Date(user.createdAt).toISOString() : undefined,
+    createdAt: safeIso(user.createdAt),
   };
 }
 
@@ -227,21 +227,19 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
       ? {
           type: o.rejection.type,
           reason: o.rejection.reason,
-          rejectedAt: o.rejection.rejectedAt
-            ? new Date(o.rejection.rejectedAt).toISOString()
-            : undefined,
+          rejectedAt: safeIso(o.rejection.rejectedAt),
           rejectedBy: o.rejection.rejectedBy ? String(o.rejection.rejectedBy) : undefined,
         }
       : undefined,
     verification: {
       orderVerified: !!orderVerifiedAt,
-      orderVerifiedAt: orderVerifiedAt ? orderVerifiedAt.toISOString() : undefined,
+      orderVerifiedAt: safeIso(orderVerifiedAt),
       reviewVerified: !!reviewVerifiedAt,
-      reviewVerifiedAt: reviewVerifiedAt ? reviewVerifiedAt.toISOString() : undefined,
+      reviewVerifiedAt: safeIso(reviewVerifiedAt),
       ratingVerified: !!ratingVerifiedAt,
-      ratingVerifiedAt: ratingVerifiedAt ? ratingVerifiedAt.toISOString() : undefined,
+      ratingVerifiedAt: safeIso(ratingVerifiedAt),
       returnWindowVerified: !!returnWindowVerifiedAt,
-      returnWindowVerifiedAt: returnWindowVerifiedAt ? returnWindowVerifiedAt.toISOString() : undefined,
+      returnWindowVerifiedAt: safeIso(returnWindowVerifiedAt),
     },
     requirements: {
       required: requiredSteps,
@@ -260,7 +258,7 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
       ? o.missingProofRequests.map((r: any) => ({
           type: r?.type,
           note: r?.note,
-          requestedAt: r?.requestedAt ? new Date(r.requestedAt).toISOString() : undefined,
+          requestedAt: safeIso(r?.requestedAt),
           requestedBy: r?.requestedBy ? String(r.requestedBy) : undefined,
         }))
       : [],
@@ -273,7 +271,7 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
     orderDate: safeIso(o.orderDate),
     soldBy: o.soldBy,
     extractedProductName: o.extractedProductName,
-    createdAt: new Date(o.createdAt ?? o.createdAtIso ?? Date.now()).toISOString(),
+    createdAt: safeIso(o.createdAt ?? o.createdAtIso) ?? new Date().toISOString(),
     expectedSettlementDate: safeIso(o.expectedSettlementDate),
     // Audit trail: sanitized event log (strip internal metadata)
     events: Array.isArray(o.events)
@@ -353,13 +351,13 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
     hasReturnWindowProof,
     verification: {
       orderVerified: !!orderVerifiedAt,
-      orderVerifiedAt: orderVerifiedAt ? orderVerifiedAt.toISOString() : undefined,
+      orderVerifiedAt: safeIso(orderVerifiedAt),
       reviewVerified: !!reviewVerifiedAt,
-      reviewVerifiedAt: reviewVerifiedAt ? reviewVerifiedAt.toISOString() : undefined,
+      reviewVerifiedAt: safeIso(reviewVerifiedAt),
       ratingVerified: !!ratingVerifiedAt,
-      ratingVerifiedAt: ratingVerifiedAt ? ratingVerifiedAt.toISOString() : undefined,
+      ratingVerifiedAt: safeIso(ratingVerifiedAt),
       returnWindowVerified: !!returnWindowVerifiedAt,
-      returnWindowVerifiedAt: returnWindowVerifiedAt ? returnWindowVerifiedAt.toISOString() : undefined,
+      returnWindowVerifiedAt: safeIso(returnWindowVerifiedAt),
     },
     requirements: {
       required: requiredSteps,
@@ -370,16 +368,14 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
       ? {
           type: o.rejection.type,
           reason: o.rejection.reason,
-          rejectedAt: o.rejection.rejectedAt
-            ? new Date(o.rejection.rejectedAt).toISOString()
-            : undefined,
+          rejectedAt: safeIso(o.rejection.rejectedAt),
         }
       : undefined,
     missingProofRequests: Array.isArray(o.missingProofRequests)
       ? o.missingProofRequests.map((r: any) => ({
           type: r?.type,
           note: r?.note,
-          requestedAt: r?.requestedAt ? new Date(r.requestedAt).toISOString() : undefined,
+          requestedAt: safeIso(r?.requestedAt),
         }))
       : [],
     managerName: o.managerName,
@@ -389,7 +385,7 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
     orderDate: safeIso(o.orderDate),
     soldBy: o.soldBy,
     extractedProductName: o.extractedProductName,
-    createdAt: new Date(o.createdAt ?? o.createdAtIso ?? Date.now()).toISOString(),
+    createdAt: safeIso(o.createdAt ?? o.createdAtIso) ?? new Date().toISOString(),
     expectedSettlementDate: safeIso(o.expectedSettlementDate),
     // Audit trail (brand view: omit actorUserId for privacy)
     events: Array.isArray(o.events)
@@ -411,7 +407,7 @@ export function toUiTicketForBrand(t: TicketDoc & { _id?: any } | any) {
     issueType: t.issueType,
     description: t.description,
     status: t.status,
-    createdAt: new Date(t.createdAt ?? Date.now()).toISOString(),
+    createdAt: safeIso(t.createdAt) ?? new Date().toISOString(),
   };
 }
 export function toUiTicket(t: TicketDoc & { _id?: any } | any) {
@@ -424,6 +420,6 @@ export function toUiTicket(t: TicketDoc & { _id?: any } | any) {
     issueType: t.issueType,
     description: t.description,
     status: t.status,
-    createdAt: new Date(t.createdAt ?? Date.now()).toISOString(),
+    createdAt: safeIso(t.createdAt) ?? new Date().toISOString(),
   };
 }

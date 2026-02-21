@@ -10,6 +10,8 @@
  * 3. Order: flat screenshot / rejection fields → nested subdocuments.
  */
 
+import { safeIso } from './uiMappers.js';
+
 // ────────────── generic ──────────────
 
 /** Add `_id = mongoId` for backward compat with code that expects Mongoose docs. */
@@ -47,7 +49,7 @@ export function pgUser(raw: any): any {
           agencyId: p.agencyUserId ?? p.agencyId,
           agencyName: p.agencyName,
           agencyCode: p.agencyCode,
-          timestamp: p.createdAt ? new Date(p.createdAt).toISOString() : new Date().toISOString(),
+          timestamp: safeIso(p.createdAt) ?? new Date().toISOString(),
         }))
       : [],
   };

@@ -152,10 +152,14 @@ export function makeBrandController() {
           take: 5000,
         });
         if (!isPrivileged(roles) && roles.includes('brand')) {
-          res.json(orders.map((o: any) => toUiOrderForBrand(pgOrder(o))));
+          res.json(orders.map((o: any) => { try { return toUiOrderForBrand(pgOrder(o)); } catch (e) { console.error(`[brand/getOrders] toUiOrderForBrand failed for ${o.id}:`, e); return null; } }).filter(Boolean));
           return;
         }
-        res.json(orders.map((o: any) => toUiOrder(pgOrder(o))));
+        const mapped = orders.map((o: any) => {
+          try { return toUiOrder(pgOrder(o)); }
+          catch (e) { console.error(`[brand/getOrders] toUiOrder failed for ${o.id}:`, e); return null; }
+        }).filter(Boolean);
+        res.json(mapped);
       } catch (err) {
         next(err);
       }

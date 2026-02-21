@@ -208,7 +208,11 @@ export function makeOrdersController(env: Env) {
           take: 2000,
         });
 
-        res.json(orders.map((o: any) => toUiOrder(pgOrder(o))));
+        const mapped = orders.map((o: any) => {
+          try { return toUiOrder(pgOrder(o)); }
+          catch (e) { console.error(`[orders/getOrders] toUiOrder failed for ${o.id}:`, e); return null; }
+        }).filter(Boolean);
+        res.json(mapped);
       } catch (err) {
         next(err);
       }

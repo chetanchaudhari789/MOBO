@@ -25,7 +25,7 @@ import {
   opsDealsQuerySchema,
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
-import { toUiCampaign, toUiDeal, toUiOrder, toUiUser } from '../utils/uiMappers.js';
+import { toUiCampaign, toUiDeal, toUiOrder, toUiUser, safeIso } from '../utils/uiMappers.js';
 import { idWhere } from '../utils/idWhere.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
@@ -446,7 +446,11 @@ export function makeOpsController(env: Env) {
           take: oLimit,
         });
 
-        res.json(orders.map((o: any) => toUiOrder(pgOrder(o))));
+        const mapped = orders.map((o: any) => {
+          try { return toUiOrder(pgOrder(o)); }
+          catch (e) { console.error(`[getOrders] toUiOrder failed for order ${o.id}:`, e); return null; }
+        }).filter(Boolean);
+        res.json(mapped);
       } catch (err) {
         next(err);
       }
@@ -579,7 +583,7 @@ export function makeOpsController(env: Env) {
               mediatorName: u?.name ?? 'Mediator',
               mediatorCode: u?.mediatorCode,
               amount: Math.round((p.amountPaise ?? 0) / 100),
-              date: (p.requestedAt ?? p.createdAt ?? new Date()).toISOString(),
+              date: safeIso(p.requestedAt ?? p.createdAt) ?? new Date().toISOString(),
               status: p.status === 'paid' ? 'Success' : String(p.status),
             };
           })

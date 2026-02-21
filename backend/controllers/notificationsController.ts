@@ -3,6 +3,7 @@ import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { paiseToRupees } from '../utils/money.js';
 import { getRequester } from '../services/authz.js';
+import { safeIso } from '../utils/uiMappers.js';
 
 function db() { return prisma(); }
 
@@ -51,7 +52,7 @@ export function makeNotificationsController() {
             const pay = String(o.paymentStatus || '').trim();
             const aff = String(o.affiliateStatus || '').trim();
             const hasPurchaseProof = !!o.screenshotOrder;
-            const ts = o.updatedAt ? new Date(o.updatedAt).toISOString() : nowIso();
+            const ts = safeIso(o.updatedAt) ?? nowIso();
 
             const dealTypes = Array.isArray(o.items)
               ? o.items.map((it: any) => String(it?.dealType || '')).filter(Boolean)
@@ -208,9 +209,7 @@ export function makeNotificationsController() {
           });
 
           for (const p of payouts) {
-            const createdAt = p.processedAt
-              ? new Date(p.processedAt).toISOString()
-              : new Date(p.createdAt ?? Date.now()).toISOString();
+            const createdAt = safeIso(p.processedAt) ?? safeIso(p.createdAt) ?? new Date().toISOString();
             const amount = paiseToRupees(Number(p.amountPaise ?? 0));
             notifications.push({
               id: `payout:${p.mongoId || p.id}`,
