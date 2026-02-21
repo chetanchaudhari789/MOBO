@@ -69,6 +69,10 @@ export function healthRoutes(env: Env): Router {
       status: isHealthy ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       database: {
+        // Backward-compatible flat fields
+        status: isHealthy ? 'connected' : mongoStatus,
+        readyState: mongoState === 1 ? 1 : (pgOk ? 1 : mongoState),
+        // Detailed per-engine status
         mongo: { status: mongoStatus, readyState: mongoState },
         postgres: { status: pgOk ? 'connected' : 'disconnected' },
       },
