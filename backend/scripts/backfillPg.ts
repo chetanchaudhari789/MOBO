@@ -137,10 +137,17 @@ async function backfillCollection(entry: CollectionEntry): Promise<{ synced: num
 
   console.log(`  [done] ${entry.name}: ${synced}/${total} synced, ${errors} errors`);
 
-  // Update MigrationSync
-  await db.migrationSync.update({
+  // Update MigrationSync (upsert in case TRUNCATE removed tracking rows)
+  await db.migrationSync.upsert({
     where: { collection: entry.name },
-    data: {
+    create: {
+      collection: entry.name,
+      status: errors === 0 ? 'completed' : 'partial',
+      syncedCount: synced,
+      errorCount: errors,
+      lastSyncAt: new Date(),
+    },
+    update: {
       status: errors === 0 ? 'completed' : 'partial',
       syncedCount: synced,
       errorCount: errors,
