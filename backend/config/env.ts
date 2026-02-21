@@ -25,7 +25,20 @@ const envSchema = z.object({
   // PostgreSQL — used by Prisma for the dual-write migration.
   // Supports any PostgreSQL server with optional SSL (sslmode=require).
   // Optional: when not set, Prisma writes are silently skipped.
-  DATABASE_URL: z.string().min(1).optional(),
+  DATABASE_URL: z
+    .string()
+    .refine(
+      (val) => {
+        try {
+          const url = new URL(val);
+          return url.protocol === 'postgresql:' || url.protocol === 'postgres:';
+        } catch {
+          return false;
+        }
+      },
+      { message: 'must be a valid PostgreSQL connection string (postgresql:// or postgres://)' }
+    )
+    .optional(),
 
   // Feature flag: when true, every Mongo write is also shadow-written to PG.
   // Set to false to disable PG writes without removing the Prisma config.
