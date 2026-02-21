@@ -1,4 +1,4 @@
-import { Types as _Types } from 'mongoose';
+// mongoose Types removed — no longer needed after PG migration
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 
