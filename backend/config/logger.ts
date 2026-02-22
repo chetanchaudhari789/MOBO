@@ -3,15 +3,33 @@
  *
  * Features:
  * - Colorful, human-readable console output in development
- * - Structured JSON logs in production (for log aggregators)
+ * - Structured JSON logs in production (for log aggregators like Datadog, ELK, CloudWatch)
+ * - File transport in production for persistent log storage with daily rotation
  * - Request ID correlation via `requestId` metadata
  * - Module-scoped child loggers via `logger.child({ module: 'auth' })`
  * - Timestamp + level + module + message in every log line
  * - Silent mode in tests to keep output clean
+ * - Separate error log file for critical issue tracking
  */
 import winston from 'winston';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const { combine, timestamp, printf, errors, json, metadata } = winston.format;
+
+// ─── Resolve log directory ──────────────────────────────────────────────────
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LOG_DIR = process.env.LOG_DIR || path.resolve(__dirname, '..', 'logs');
+
+// Ensure log directory exists (production file transports write here)
+try {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+} catch {
+  // Best-effort — if we can't create logs dir, console-only logging is fine.
+}
 
 // ─── Custom colorful dev format ──────────────────────────────────────────────
 const levelColors: Record<string, string> = {
@@ -48,27 +66,54 @@ const nodeEnv = process.env.NODE_ENV || 'development';
 const isTest = nodeEnv === 'test';
 const isProd = nodeEnv === 'production';
 
+const prodJsonFormat = combine(
+  timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.SSSZ' }),
+  errors({ stack: true }),
+  metadata({ fillExcept: ['message', 'level', 'timestamp'] }),
+  json()
+);
+
+const transports: winston.transport[] = [
+  new winston.transports.Console({
+    format: isProd
+      ? prodJsonFormat
+      : combine(
+          timestamp({ format: 'HH:mm:ss.SSS' }),
+          errors({ stack: true }),
+          metadata({ fillExcept: ['message', 'level', 'timestamp', 'module', 'requestId', 'durationMs'] }),
+          devFormat
+        ),
+  }),
+];
+
+// Production file transports: combined log + separate error log
+if (isProd) {
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(LOG_DIR, 'combined.log'),
+      format: prodJsonFormat,
+      maxsize: 10 * 1024 * 1024, // 10MB per file
+      maxFiles: 14,              // Keep 14 rotated files (~140MB max)
+      tailable: true,
+    }),
+    new winston.transports.File({
+      filename: path.join(LOG_DIR, 'error.log'),
+      level: 'error',
+      format: prodJsonFormat,
+      maxsize: 10 * 1024 * 1024,
+      maxFiles: 30,              // Keep 30 rotated error logs
+      tailable: true,
+    })
+  );
+}
+
 const logger = winston.createLogger({
   level: isProd ? 'info' : 'debug',
   silent: isTest, // No noise during vitest runs
-  defaultMeta: {},
-  transports: [
-    new winston.transports.Console({
-      format: isProd
-        ? combine(
-            timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.SSSZ' }),
-            errors({ stack: true }),
-            metadata({ fillExcept: ['message', 'level', 'timestamp'] }),
-            json()
-          )
-        : combine(
-            timestamp({ format: 'HH:mm:ss.SSS' }),
-            errors({ stack: true }),
-            metadata({ fillExcept: ['message', 'level', 'timestamp', 'module', 'requestId', 'durationMs'] }),
-            devFormat
-          ),
-    }),
-  ],
+  defaultMeta: { service: 'mobo-backend', pid: process.pid },
+  transports,
+  // Prevent unhandled errors from crashing the logger
+  exitOnError: false,
 });
 
 export default logger;
@@ -88,3 +133,5 @@ export const notifLog = logger.child({ module: 'notifications' });
 export const migrationLog = logger.child({ module: 'migration' });
 export const seedLog = logger.child({ module: 'seed' });
 export const startupLog = logger.child({ module: 'startup' });
+export const securityLog = logger.child({ module: 'security' });
+export const cronLog = logger.child({ module: 'cron' });

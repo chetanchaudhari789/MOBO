@@ -21,6 +21,7 @@ import { brandRoutes } from './routes/brandRoutes.js';
 import { notificationsRoutes } from './routes/notificationsRoutes.js';
 import { realtimeRoutes } from './routes/realtimeRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
+import { securityAuditMiddleware, responseTimingMiddleware } from './middleware/security.js';
 import { mediaRoutes } from './routes/mediaRoutes.js';
 import { initAiServiceConfig } from './services/aiService.js';
 
@@ -77,6 +78,9 @@ export function createApp(env: Env) {
   initAiServiceConfig(env);
 
   app.disable('x-powered-by');
+
+  // Response timing headers for performance monitoring.
+  app.use(responseTimingMiddleware());
 
   // Ensure every response carries a request identifier for log correlation.
   // If a caller provides X-Request-Id, we echo it back (within a safe length).
@@ -184,6 +188,12 @@ export function createApp(env: Env) {
     if (skipBodyParser(req)) return next();
     express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT })(req, res, next);
   });
+
+  // Security audit: log suspicious patterns in requests (after body parsing).
+  // Only active in production to avoid dev noise.
+  if (env.NODE_ENV === 'production') {
+    app.use(securityAuditMiddleware());
+  }
 
   app.use('/api', healthRoutes(env));
   app.use('/api/auth', authLimiter, authRoutes(env));

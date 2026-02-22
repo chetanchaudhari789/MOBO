@@ -86,11 +86,21 @@ function buildPoolConfig(url: string) {
   }
   const cleanUrl = parsedUrl.toString();
 
+  const isProd = process.env.NODE_ENV === 'production';
+
   const poolConfig: Record<string, unknown> = {
     connectionString: cleanUrl,
-    max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+    // Pool sizing: production servers need more connections; dev/test stays lean.
+    max: parseInt(process.env.PG_POOL_MAX || (isProd ? '20' : '10'), 10),
+    min: parseInt(process.env.PG_POOL_MIN || (isProd ? '5' : '2'), 10),
     idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
     connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
+    // Statement timeout prevents runaway queries from blocking the pool.
+    statement_timeout: parseInt(process.env.PG_STATEMENT_TIMEOUT || '30000', 10),
+    // Idle-in-transaction timeout prevents abandoned transactions from holding locks.
+    idle_in_transaction_session_timeout: parseInt(process.env.PG_IDLE_IN_TX_TIMEOUT || '60000', 10),
+    // Automatically reap connections above `min` if they've been idle for this long.
+    allowExitOnIdle: !isProd,
   };
 
   if (ssl) {
@@ -163,6 +173,21 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
     await _connecting;
   } finally {
     _connecting = null;
+  }
+}
+
+/**
+ * Lightweight ping to check if the PG connection is alive.
+ * Returns true if the connection is healthy, false otherwise.
+ * Used by the health endpoint for real connectivity checks.
+ */
+export async function pingPg(): Promise<boolean> {
+  if (!_prisma) return false;
+  try {
+    await _prisma.$queryRawUnsafe('SELECT 1');
+    return true;
+  } catch {
+    return false;
   }
 }
 
