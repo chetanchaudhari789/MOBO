@@ -18,8 +18,28 @@ env:
   IMAGE_NAME: mobo-backend
 
 jobs:
+
   build-and-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mobo_ci
+          POSTGRES_PASSWORD: mobo_ci_pass
+          POSTGRES_DB: mobo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mobo_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://mobo_ci:mobo_ci_pass@localhost:5432/mobo_ci
+      NODE_ENV: test
 
     steps:
       - name: Checkout
