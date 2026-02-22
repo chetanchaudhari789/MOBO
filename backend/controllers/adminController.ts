@@ -110,7 +110,11 @@ export function makeAdminController() {
           orderBy: { createdAt: 'desc' },
           take: 5000,
         });
-        res.json(orders.map(o => toUiOrder(pgOrder(o))));
+        const mapped = orders.map(o => {
+          try { return toUiOrder(pgOrder(o)); }
+          catch (e) { console.error(`[admin/getOrders] toUiOrder failed for ${o.id}:`, e); return null; }
+        }).filter(Boolean);
+        res.json(mapped);
       } catch (err) {
         next(err);
       }

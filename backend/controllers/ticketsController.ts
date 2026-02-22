@@ -141,13 +141,13 @@ export function makeTicketsController() {
 
         if (isPrivileged(roles)) {
           const tickets = await db.ticket.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 5000 });
-          res.json(tickets.map((t) => toUiTicket(pgTicket(t))));
+          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicket failed for ${t.id}:`, e); return null; } }).filter(Boolean));
           return;
         }
 
         if (roles.includes('shopper')) {
           const tickets = await db.ticket.findMany({ where: { userId: pgUserId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 2000 });
-          res.json(tickets.map((t) => toUiTicket(pgTicket(t))));
+          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicket failed for ${t.id}:`, e); return null; } }).filter(Boolean));
           return;
         }
 
@@ -162,10 +162,10 @@ export function makeTicketsController() {
         });
 
         if (roles.includes('brand')) {
-          res.json(tickets.map((t) => toUiTicketForBrand(pgTicket(t))));
+          res.json(tickets.map((t) => { try { return toUiTicketForBrand(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicketForBrand failed for ${t.id}:`, e); return null; } }).filter(Boolean));
           return;
         }
-        res.json(tickets.map((t) => toUiTicket(pgTicket(t))));
+        res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicket failed for ${t.id}:`, e); return null; } }).filter(Boolean));
       } catch (err) {
         next(err);
       }
