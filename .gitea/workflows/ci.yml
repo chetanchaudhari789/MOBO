@@ -43,8 +43,8 @@ jobs:
       - name: Build backend
         run: npm -w @mobo/backend run build
 
-      # - name: Run backend tests
-      #   run: npm -w @mobo/backend run test
+      - name: Run backend tests
+        run: npm -w @mobo/backend run test
 
   docker-publish:
     runs-on: ubuntu-latest
