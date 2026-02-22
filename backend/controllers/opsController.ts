@@ -3,6 +3,7 @@ import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
 import { prisma as db } from '../database/prisma.js';
+import { orderLog } from '../config/logger.js';
 import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
 import {
   approveByIdSchema,
@@ -448,7 +449,7 @@ export function makeOpsController(env: Env) {
 
         const mapped = orders.map((o: any) => {
           try { return toUiOrder(pgOrder(o)); }
-          catch (e) { console.error(`[getOrders] toUiOrder failed for order ${o.id}:`, e); return null; }
+          catch (e) { orderLog.error(`[getOrders] toUiOrder failed for order ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {

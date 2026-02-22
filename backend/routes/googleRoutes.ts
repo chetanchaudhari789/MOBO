@@ -21,6 +21,7 @@ import { UserModel } from '../models/User.js';
 import { writeAuditLog } from '../services/audit.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
+import { authLog } from '../config/logger.js';
 
 // ─── Helpers ───────────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ export function googleRoutes(env: Env): Router {
 
       if (!tokenRes.ok) {
         const errText = await tokenRes.text();
-        console.error('Google token exchange failed:', errText);
+        authLog.error('Google token exchange failed', { detail: errText });
         return res.send(makeCallbackHtml(false, 'Failed to exchange authorization code.'));
       }
 
@@ -162,7 +163,7 @@ export function googleRoutes(env: Env): Router {
       if (!tokenData.refresh_token) {
         // This can happen if the user previously authorized and Google doesn't send a new refresh token.
         // We asked for prompt=consent so this should be rare.
-        console.warn('Google OAuth: no refresh_token returned. The user may need to revoke access and re-authorize.');
+        authLog.warn('Google OAuth: no refresh_token returned. The user may need to revoke access and re-authorize.');
       }
 
       // Get the user's Google email
@@ -211,7 +212,7 @@ export function googleRoutes(env: Env): Router {
 
       return res.send(makeCallbackHtml(true, 'Google account connected successfully!'));
     } catch (err: any) {
-      console.error('Google OAuth callback error:', err);
+      authLog.error('Google OAuth callback error', { error: err });
       return res.send(makeCallbackHtml(false, 'An unexpected error occurred. Please try again.'));
     }
   });

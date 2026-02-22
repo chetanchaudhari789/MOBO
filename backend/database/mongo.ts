@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import type { Env } from '../config/env.js';
 import path from 'node:path';
 import fs from 'node:fs';
+import { dbLog } from '../config/logger.js';
 
 /**
  * Default database name when MONGODB_DBNAME is not set and the connection URI
@@ -20,20 +21,20 @@ let connectInFlight: Promise<void> | null = null;
 let handlersAttached = false;
 
 const onMongoError = (err: unknown) => {
-  console.error('MongoDB connection error:', err);
+  dbLog.error('MongoDB connection error', { error: err });
 };
 
 const onMongoDisconnected = () => {
   if (isIntentionalDisconnect) return;
-  console.warn('MongoDB disconnected. Attempting reconnection...');
+  dbLog.warn('MongoDB disconnected. Attempting reconnection...');
 };
 
 const onMongoConnected = () => {
-  console.log('MongoDB connected successfully');
+  dbLog.info('MongoDB connected successfully');
 };
 
 const onMongoReconnected = () => {
-  console.log('MongoDB reconnected');
+  dbLog.info('MongoDB reconnected');
 };
 
 function looksPlaceholderMongoUri(uri: string | undefined): boolean {
@@ -169,13 +170,13 @@ export async function connectMongo(env: Env): Promise<void> {
     })();
 
     if (env.NODE_ENV === 'production' && resolvedDbName === 'test') {
-      console.warn(
-        '⚠️  WARNING: Production is using database name "test". ' +
+      dbLog.warn(
+        'Production is using database name "test". ' +
         'Set MONGODB_DBNAME or include the database name in MONGODB_URI to avoid this.'
       );
     }
 
-    console.log(`MongoDB: connecting to db "${resolvedDbName ?? '(from URI)'}"`);
+    dbLog.info(`MongoDB: connecting to db "${resolvedDbName ?? '(from URI)'}"`);
 
     await mongoose.connect(mongoUri, {
       autoIndex: env.NODE_ENV !== 'production',

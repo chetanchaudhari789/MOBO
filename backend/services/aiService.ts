@@ -4,6 +4,7 @@ import { createWorker } from 'tesseract.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../config/env.js';
+import { aiLog } from '../config/logger.js';
 
 // ── Tesseract Worker Pool ──
 // Reuse workers across OCR calls instead of creating/terminating per request.
@@ -50,7 +51,7 @@ function recordGeminiFailure(): void {
   _geminiConsecutiveFails++;
   _geminiLastFailTimestamp = Date.now();
   if (_geminiConsecutiveFails >= _circuitBreakerThreshold) {
-    console.warn(`[AI Circuit Breaker] OPEN — ${_geminiConsecutiveFails} consecutive Gemini failures. Skipping Gemini for ${_circuitBreakerCooldownMs / 1000}s.`);
+    aiLog.warn(`[Circuit Breaker] OPEN — ${_geminiConsecutiveFails} consecutive Gemini failures. Skipping Gemini for ${_circuitBreakerCooldownMs / 1000}s.`);
   }
 }
 
@@ -95,7 +96,7 @@ async function _initOcrPool(): Promise<void> {
         createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH })
           .then((w) => { _ocrPool.push(w); })
           .catch((err) => {
-            console.warn('Failed to init Tesseract worker (will create on-demand):', err);
+            aiLog.warn('Failed to init Tesseract worker (will create on-demand)', { error: err });
           })
       );
     }
@@ -616,7 +617,7 @@ ${
           recommendedProducts = products.slice(0, 5);
         }
 
-        console.info('Gemini chat usage estimate', {
+        aiLog.info('Gemini chat usage estimate', {
           model,
           estimatedTokens,
         });
@@ -631,7 +632,7 @@ ${
             : {}),
         };
       } catch (innerError) {
-        console.warn(`[AI Chatbot] Model fallback error:`, innerError instanceof Error ? innerError.message : innerError);
+        aiLog.warn('[Chatbot] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError });
         lastError = innerError;
         continue;
       }
@@ -641,7 +642,7 @@ ${
     throw lastError ?? new Error('Gemini request failed');
   } catch (error) {
     // Fallback response if AI fails
-    console.error('Gemini API error:', error);
+    aiLog.error('Gemini API error', { error });
     return {
       text: `Hi ${payload.userName}! I'm experiencing some technical difficulties right now, but I'm here to help. Could you try rephrasing your question?`,
       intent: 'unknown',
@@ -888,7 +889,7 @@ async function verifyProofWithOcr(
       throw workerErr;
     }
   } catch (err) {
-    console.error('OCR proof verification error:', err);
+    aiLog.error('OCR proof verification error', { error: err });
     return {
       orderIdMatch: false,
       amountMatch: false,
@@ -1002,12 +1003,12 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
         // Clamp confidenceScore to 0-100
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
 
-        console.info('Gemini proof usage estimate', { model, estimatedTokens });
+        aiLog.info('Gemini proof usage estimate', { model, estimatedTokens });
 
         recordGeminiSuccess();
         return { ...parsed, verificationMethod: 'gemini' as const };
       } catch (innerError) {
-        console.warn(`[AI Proof] Model fallback error:`, innerError instanceof Error ? innerError.message : innerError);
+        aiLog.warn('[Proof] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError });
         lastError = innerError;
         continue;
       }
@@ -1016,7 +1017,7 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini proof verification failed');
   } catch (error) {
-    console.error('Gemini proof verification error:', error);
+    aiLog.error('Gemini proof verification error', { error });
     // Fall back to OCR when Gemini fails at runtime.
     const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
     return { ...ocrResult, verificationMethod: 'ocr' as const };
@@ -1203,7 +1204,7 @@ async function verifyRatingWithOcr(
       ].filter(Boolean).join(' '),
     };
   } catch (err) {
-    console.error('OCR rating verification error:', err);
+    aiLog.error('OCR rating verification error', { error: err });
     return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
       discrepancyNote: 'Rating verification unavailable. Please verify manually.' };
   }
@@ -1274,12 +1275,12 @@ export async function verifyRatingScreenshotWithAi(
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
         return parsed;
-      } catch (innerError) { console.warn('[AI Rating] Model fallback error:', innerError instanceof Error ? innerError.message : innerError); lastError = innerError; continue; }
+      } catch (innerError) { aiLog.warn('[Rating] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError }); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini rating verification failed');
   } catch (error) {
-    console.error('Gemini rating verification error:', error);
+    aiLog.error('Gemini rating verification error', { error });
     return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
 }
@@ -1470,7 +1471,7 @@ async function verifyReturnWindowWithOcr(
       throw workerErr;
     }
   } catch (err) {
-    console.error('OCR return window verification error:', err);
+    aiLog.error('OCR return window verification error', { error: err });
     return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
       returnWindowClosed: false, confidenceScore: 0,
       discrepancyNote: 'Return window verification unavailable. Please verify manually.' };
@@ -1547,12 +1548,12 @@ export async function verifyReturnWindowWithAi(
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
         return parsed;
-      } catch (innerError) { console.warn('[AI ReturnWindow] Model fallback error:', innerError instanceof Error ? innerError.message : innerError); lastError = innerError; continue; }
+      } catch (innerError) { aiLog.warn('[ReturnWindow] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError }); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini return window verification failed');
   } catch (error) {
-    console.error('Gemini return window verification error:', error);
+    aiLog.error('Gemini return window verification error', { error });
     return verifyReturnWindowWithOcr(payload.imageBase64, payload);
   }
 }
@@ -2585,7 +2586,7 @@ export async function extractOrderDetailsWithAi(
         ]);
         return result;
       } catch (err) {
-        console.warn('OCR preprocessing failed, using original image.', err);
+        aiLog.warn('OCR preprocessing failed, using original image', { error: err });
         return base64;
       }
     };
@@ -2679,12 +2680,12 @@ export async function extractOrderDetailsWithAi(
         }
 
         if (Date.now() >= deadline) {
-          console.warn('Tesseract OCR hit timeout — returning best result so far.');
+          aiLog.warn('Tesseract OCR hit timeout — returning best result so far.');
         }
 
         return text;
       } catch (err) {
-        console.warn('Tesseract OCR failed:', err);
+        aiLog.warn('Tesseract OCR failed', { error: err });
         return '';
       } finally {
         // Return the worker to the pool instead of terminating.
@@ -2831,12 +2832,12 @@ export async function extractOrderDetailsWithAi(
             // eslint-disable-next-line no-await-in-loop
             text = await extractTextOnly(model, imageBase64);
             if (text) {
-              console.log('Order extract OCR pass', { label, model, length: text.length });
+              aiLog.info('Order extract OCR pass', { label, model, length: text.length });
               recordGeminiSuccess();
               return text;
             }
           } catch (innerError) {
-            console.warn('[AI OCR] Model fallback error:', innerError instanceof Error ? innerError.message : innerError);
+            aiLog.warn('[OCR] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError });
             _lastError = innerError;
             continue;
           }
@@ -2845,7 +2846,7 @@ export async function extractOrderDetailsWithAi(
       // Fallback: Tesseract.js local OCR (works without Gemini API key)
       const tesseractText = await runTesseractOcr(imageBase64);
       if (tesseractText) {
-        console.log('Order extract OCR pass (Tesseract)', { label, length: tesseractText.length });
+        aiLog.info('Order extract OCR pass (Tesseract)', { label, length: tesseractText.length });
       }
       return tesseractText;
     };
@@ -2985,7 +2986,7 @@ export async function extractOrderDetailsWithAi(
 
     if (env.AI_DEBUG_OCR) {
       const parsed = parseDataUrl(payload.imageBase64);
-      console.log('Order extract input', {
+      aiLog.info('Order extract input', {
         mimeType: parsed.mimeType,
         imageChars: payload.imageBase64.length,
       });
@@ -3132,7 +3133,7 @@ export async function extractOrderDetailsWithAi(
     }
 
     if (!ocrText) {
-      console.warn('Order extract OCR failed: empty OCR output.');
+      aiLog.warn('Order extract OCR failed: empty OCR output.');
       return {
         orderId: null,
         amount: null,
@@ -3142,7 +3143,7 @@ export async function extractOrderDetailsWithAi(
     }
 
     if (env.AI_DEBUG_OCR) {
-      console.log('Order extract OCR', {
+      aiLog.info('Order extract OCR', {
         label: ocrLabel,
         length: ocrText.length,
         preview: ocrText.slice(0, 600),
@@ -3153,7 +3154,7 @@ export async function extractOrderDetailsWithAi(
     const deterministicConfidence = deterministic.orderId && deterministic.amount ? 78 :
       deterministic.orderId || deterministic.amount ? 72 : 0;
 
-    console.log('Order extract deterministic', {
+    aiLog.info('Order extract deterministic', {
       orderId: deterministic.orderId,
       amount: deterministic.amount,
       confidence: deterministicConfidence,
@@ -3258,14 +3259,14 @@ export async function extractOrderDetailsWithAi(
 
           if (aiResult.notes) notes.push(aiResult.notes);
           aiUsed = true;
-          console.log('Order extract AI refine', {
+          aiLog.info('Order extract AI refine', {
             suggestedOrderId: aiSuggestedOrderId,
             suggestedAmount: aiSuggestedAmount,
             confidence: aiConfidence,
           });
           break;
         } catch (innerError) {
-          console.warn('[AI Extract] Step 1 model fallback error:', innerError instanceof Error ? innerError.message : innerError);
+          aiLog.warn('[Extract] Step 1 model fallback error', { error: innerError instanceof Error ? innerError.message : innerError });
           _lastError = innerError;
           continue;
         }
@@ -3320,7 +3321,7 @@ export async function extractOrderDetailsWithAi(
             if (finalOrderId || finalAmount) {
               confidenceScore = Math.max(confidenceScore, directConfidence);
               aiUsed = true;
-              console.log('Order extract direct AI', {
+              aiLog.info('Order extract direct AI', {
                 orderId: directOrderId,
                 amount: directAmount,
                 confidence: directConfidence,
@@ -3328,7 +3329,7 @@ export async function extractOrderDetailsWithAi(
             }
             break;
           } catch (innerError) {
-            console.warn('[AI Extract] Step 2 model fallback error:', innerError instanceof Error ? innerError.message : innerError);
+            aiLog.warn('[Extract] Step 2 model fallback error', { error: innerError instanceof Error ? innerError.message : innerError });
             _lastError = innerError;
             continue;
           }
@@ -3475,7 +3476,7 @@ export async function extractOrderDetailsWithAi(
       finalAmount = null;
     }
 
-    console.log('Order extract final', {
+    aiLog.info('Order extract final', {
       orderId: finalOrderId,
       amount: finalAmount,
       orderDate: finalOrderDate,
@@ -3495,7 +3496,7 @@ export async function extractOrderDetailsWithAi(
       notes: notes.join(' '),
     };
   } catch (error) {
-    console.error('Order extraction error:', error);
+    aiLog.error('Order extraction error', { error });
     return {
       orderId: null,
       amount: null,

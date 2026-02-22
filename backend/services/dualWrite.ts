@@ -14,6 +14,7 @@
 
 import { getPrisma, isPrismaAvailable } from '../database/prisma.js';
 import type { PrismaClient } from '../generated/prisma/client.js';
+import { migrationLog } from '../config/logger.js';
 
 // ─── helpers ────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ async function safe(label: string, fn: () => Promise<unknown>): Promise<void> {
   try {
     await fn();
   } catch (err: any) {
-    console.error(`[dual-write][${label}] PG shadow-write failed:`, err?.message ?? err);
+    migrationLog.error(`[dual-write][${label}] PG shadow-write failed: ${err?.message ?? err}`);
   }
 }
 

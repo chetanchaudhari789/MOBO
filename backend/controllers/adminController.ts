@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import { prisma } from '../database/prisma.js';
+import { orderLog } from '../config/logger.js';
 import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { writeAuditLog } from '../services/audit.js';
@@ -112,7 +113,7 @@ export function makeAdminController() {
         });
         const mapped = orders.map(o => {
           try { return toUiOrder(pgOrder(o)); }
-          catch (e) { console.error(`[admin/getOrders] toUiOrder failed for ${o.id}:`, e); return null; }
+          catch (e) { orderLog.error(`[admin/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {

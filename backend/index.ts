@@ -7,6 +7,7 @@ import { connectPrisma, disconnectPrisma, isPrismaAvailable } from './database/p
 import { registerDualWriteHooks } from './database/dualWriteHooks.js';
 import { createApp } from './app.js';
 import type { Server } from 'node:http';
+import logger, { startupLog, seedLog } from './config/logger.js';
 
 let server: Server | null = null;
 let shuttingDown = false;
@@ -16,12 +17,10 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
 
-  // eslint-disable-next-line no-console
-  console.log(`Received ${signal}. Shutting down...`);
+  startupLog.info(`Received ${signal}. Shutting down...`);
 
   const forceTimer = setTimeout(() => {
-    // eslint-disable-next-line no-console
-    console.error('Force shutdown after timeout');
+    startupLog.error('Force shutdown after timeout');
     process.exit(1);
   }, shutdownTimeoutMs);
   forceTimer.unref();
@@ -32,22 +31,19 @@ async function shutdown(signal: string) {
       server.close(() => resolve());
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('Error while closing HTTP server:', err);
+    startupLog.error('Error while closing HTTP server', { error: err });
   }
 
   try {
     await disconnectMongo();
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('Error while disconnecting Mongo:', err);
+    startupLog.error('Error while disconnecting Mongo', { error: err });
   }
 
   try {
     await disconnectPrisma();
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('Error while disconnecting Prisma:', err);
+    startupLog.error('Error while disconnecting Prisma', { error: err });
   } finally {
     clearTimeout(forceTimer);
   }
@@ -60,8 +56,7 @@ async function tryRunE2ESeed() {
       await (mod as any).seedE2E();
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('SEED_E2E seed failed; skipping', err);
+    seedLog.warn('SEED_E2E seed failed; skipping', { error: err });
   }
 }
 
@@ -77,8 +72,7 @@ async function tryRunAdminSeed(env: Env) {
       });
     }
   } catch {
-    // eslint-disable-next-line no-console
-    console.warn('SEED_ADMIN requested but seed module is missing (./seeds/admin.js); skipping');
+    seedLog.warn('SEED_ADMIN requested but seed module is missing (./seeds/admin.js); skipping');
   }
 }
 
@@ -89,8 +83,7 @@ async function tryRunDevSeed() {
       await (mod as any).seedDev();
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('SEED_DEV seed failed; skipping', err);
+    seedLog.warn('SEED_DEV seed failed; skipping', { error: err });
   }
 }
 
@@ -103,7 +96,7 @@ async function main() {
   await connectPrisma();
 
   if (!isPrismaAvailable()) {
-    console.error('[FATAL] PostgreSQL connection failed. Cannot start without primary database.');
+    startupLog.error('PostgreSQL connection failed. Cannot start without primary database.');
     process.exit(1);
   }
 
@@ -133,27 +126,26 @@ async function main() {
   const app = createApp(env);
 
   server = app.listen(env.PORT, () => {
-    // eslint-disable-next-line no-console
-    console.log(`Backend listening on :${env.PORT}`);
+    startupLog.info(`Backend listening on :${env.PORT}`, {
+      nodeEnv: env.NODE_ENV,
+      port: env.PORT,
+    });
   });
 }
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('unhandledRejection', (reason) => {
-  // eslint-disable-next-line no-console
-  console.error('Unhandled promise rejection:', reason);
+  logger.error('Unhandled promise rejection', { error: reason });
   process.exitCode = 1;
   void shutdown('unhandledRejection');
 });
 process.on('uncaughtException', (err) => {
-  // eslint-disable-next-line no-console
-  console.error('Uncaught exception:', err);
+  logger.error('Uncaught exception', { error: err });
   process.exitCode = 1;
   void shutdown('uncaughtException');
 });
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('Fatal startup error:', err);
+  startupLog.error('Fatal startup error', { error: err });
   process.exitCode = 1;
 });
