@@ -12,6 +12,7 @@
  */
 import { PrismaClient } from '../generated/prisma/client.js';
 import type { TlsOptions } from 'node:tls';
+import { dbLog } from '../config/logger.js';
 
 let _prisma: PrismaClient | null = null;
 let _connecting: Promise<void> | null = null;
@@ -106,13 +107,15 @@ function buildPoolConfig(url: string) {
 
 /**
  * Connect to PostgreSQL via Prisma with connection pooling.
- * Safe to call multiple times.
+ * Safe to call multiple times.  Retries up to `maxRetries` with exponential
+ * back-off so transient network hiccups (especially when MongoMemoryServer
+ * is starting in parallel during tests) don't cause a cascade of failures.
  * Returns silently when DATABASE_URL is not configured (PG is optional).
  */
-export async function connectPrisma(): Promise<void> {
+export async function connectPrisma(maxRetries = 3): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.log('[prisma] DATABASE_URL not set – PostgreSQL dual-write disabled');
+    dbLog.info('DATABASE_URL not set – PostgreSQL dual-write disabled');
     return;
   }
 
@@ -120,35 +123,47 @@ export async function connectPrisma(): Promise<void> {
   if (_connecting) return _connecting;
 
   _connecting = (async () => {
-    try {
-      const logConfig: ('warn' | 'error')[] =
-        process.env.NODE_ENV === 'development'
-          ? ['warn', 'error']
-          : ['error'];
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const logConfig: ('warn' | 'error')[] =
+          process.env.NODE_ENV === 'development'
+            ? ['warn', 'error']
+            : ['error'];
 
-      // Standard PostgreSQL with connection pooling + SSL
-      const { PrismaPg } = await import('@prisma/adapter-pg');
-      const { poolConfig, pgSchema, sslmode } = buildPoolConfig(url);
-      const adapter = new PrismaPg(poolConfig as any, pgSchema ? { schema: pgSchema } : undefined);
-      const client = new PrismaClient({ adapter, log: logConfig });
+        // Standard PostgreSQL with connection pooling + SSL
+        const { PrismaPg } = await import('@prisma/adapter-pg');
+        const { poolConfig, pgSchema, sslmode } = buildPoolConfig(url);
+        const adapter = new PrismaPg(poolConfig as any, pgSchema ? { schema: pgSchema } : undefined);
+        const client = new PrismaClient({ adapter, log: logConfig });
 
-      const sslLabel = sslmode === 'disable' ? 'off' : sslmode;
-      console.log(`[prisma] Using PostgreSQL adapter (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'}, ssl=${sslLabel})`);
+        const sslLabel = sslmode === 'disable' ? 'off' : sslmode;
+        dbLog.info(`PostgreSQL adapter ready (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'}, ssl=${sslLabel})`);
 
-      // Run a lightweight query to verify connectivity upfront.
-      await client.$queryRawUnsafe('SELECT 1');
-      _prisma = client;
-      console.log('[prisma] Connected to PostgreSQL (SSL active)');
-    } catch (err) {
-      console.error('[prisma] Failed to connect to PostgreSQL:', err);
-      // Non-fatal — Mongo is still the primary. PG is a shadow.
-      _prisma = null;
-    } finally {
-      _connecting = null;
+        // Run a lightweight query to verify connectivity upfront.
+        await client.$queryRawUnsafe('SELECT 1');
+        _prisma = client;
+        dbLog.info('Connected to PostgreSQL successfully');
+        return; // success — break out of retry loop
+      } catch (err) {
+        const isLastAttempt = attempt === maxRetries;
+        const msg = `PostgreSQL connection attempt ${attempt}/${maxRetries} failed`;
+        if (isLastAttempt) {
+          dbLog.error(msg, { error: err });
+          // Non-fatal — Mongo is still the primary. PG is a shadow.
+          _prisma = null;
+        } else {
+          dbLog.warn(`${msg} – retrying in ${attempt}s…`, { error: (err as Error).message });
+          await new Promise(r => setTimeout(r, attempt * 1000));
+        }
+      }
     }
   })();
 
-  return _connecting;
+  try {
+    await _connecting;
+  } finally {
+    _connecting = null;
+  }
 }
 
 /**

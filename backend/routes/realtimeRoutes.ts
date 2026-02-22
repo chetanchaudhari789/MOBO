@@ -3,6 +3,7 @@ import type { Env } from '../config/env.js';
 import type { Role } from '../middleware/auth.js';
 import { requireAuth } from '../middleware/auth.js';
 import { subscribeRealtime, type RealtimeEvent } from '../services/realtimeHub.js';
+import { realtimeLog } from '../config/logger.js';
 
 function writeSse(res: any, evt: { event: string; data?: any }): boolean {
   // Never throw from a realtime emitter callback.
@@ -56,12 +57,14 @@ export function realtimeRoutes(env: Env) {
   // Lightweight health check for the realtime subsystem.
   // Does not require auth and does not open a long-lived SSE stream.
   r.get('/health', (_req, res) => {
-    res.status(200).json({ status: 'ok' });
+    res.status(200).json({ status: 'ok', transport: 'sse' });
   });
 
   // Streaming endpoint for realtime UI updates.
   // Auth is via standard Bearer token header (same as REST routes).
   r.get('/stream', requireAuth(env), (req, res) => {
+    const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+
     // Avoid proxy / load balancer / Node defaults closing the connection.
     try {
       req.socket.setNoDelay(true);
@@ -80,6 +83,8 @@ export function realtimeRoutes(env: Env) {
 
     // Some proxies buffer by default.
     res.setHeader('X-Accel-Buffering', 'no');
+    // Allow CORS credentials for SSE (browsers enforce this).
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     // Flush headers if supported (depends on runtime).
     if (typeof (res as any).flushHeaders === 'function') (res as any).flushHeaders();
@@ -90,9 +95,12 @@ export function realtimeRoutes(env: Env) {
     const parentCode = String((req.auth?.user as any)?.parentCode || '').trim();
     const brandCode = String((req.auth?.user as any)?.brandCode || '').trim();
 
+    realtimeLog.info('SSE stream opened', { requestId, userId, roles });
+
     let cleaned = false;
     let ping: ReturnType<typeof setInterval> | null = null;
     let unsubscribe: (() => void) | null = null;
+    let eventsDelivered = 0;
 
     const cleanup = () => {
       if (cleaned) return;
@@ -108,10 +116,11 @@ export function realtimeRoutes(env: Env) {
         // ignore
       }
       try {
-        res.end();
+        if (!res.writableEnded) res.end();
       } catch {
         // ignore
       }
+      realtimeLog.info('SSE stream closed', { requestId, userId, eventsDelivered });
     };
 
     // Initial handshake.
@@ -130,7 +139,10 @@ export function realtimeRoutes(env: Env) {
 
     unsubscribe = subscribeRealtime((evt) => {
       if (!shouldDeliver(evt, { userId, roles, mediatorCode, parentCode, brandCode })) return;
-      if (!writeSse(res, { event: evt.type, data: { ts: evt.ts, payload: evt.payload } })) {
+      const ok = writeSse(res, { event: evt.type, data: { ts: evt.ts, payload: evt.payload } });
+      if (ok) {
+        eventsDelivered++;
+      } else {
         cleanup();
       }
     });

@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
+import logger from '../config/logger.js';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -117,11 +118,10 @@ export function errorHandler(
 
   const isProd = process.env.NODE_ENV === 'production';
 
-  // eslint-disable-next-line no-console
-  console.error(
-    `[${requestId || '-'}] Unhandled error on ${req.method} ${req.originalUrl}:`,
-    err
-  );
+  logger.error(`Unhandled error on ${req.method} ${req.originalUrl}`, {
+    requestId: requestId || undefined,
+    error: err instanceof Error ? { message: err.message, stack: err.stack } : err,
+  });
 
   const message = isProd ? 'Unexpected error' : err instanceof Error ? err.message : 'Unexpected error';
   res.status(500).json({

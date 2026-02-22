@@ -13,6 +13,7 @@
 
 import * as crypto from 'crypto';
 import type { Env } from '../config/env.js';
+import logger from '../config/logger.js';
 
 // ─── Types ───
 
@@ -138,14 +139,14 @@ export async function refreshUserGoogleToken(
     });
 
     if (!res.ok) {
-      console.warn('Google token refresh failed:', await res.text());
+      logger.warn('Google token refresh failed', { detail: await res.text() });
       return null;
     }
 
     const data = (await res.json()) as { access_token: string };
     return data.access_token;
   } catch (err) {
-    console.warn('Google token refresh error:', err);
+    logger.warn('Google token refresh error', { error: err });
     return null;
   }
 }
@@ -251,7 +252,7 @@ async function formatHeaderRow(
   });
 
   if (!res.ok) {
-    console.warn('Google Sheets formatting warning:', await res.text());
+    logger.warn('Google Sheets formatting warning', { detail: await res.text() });
   }
 }
 
@@ -282,11 +283,11 @@ async function shareWithUser(
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      console.warn(`Google Drive share warning: ${res.status} — ${await res.text()}`);
+      logger.warn(`Google Drive share warning: ${res.status}`, { detail: await res.text() });
     }
   } catch (err) {
     // Non-critical: user can still access via the URL if they have the link
-    console.warn('Google Drive share failed (non-critical):', err);
+    logger.warn('Google Drive share failed (non-critical)', { error: err });
   }
 }
 
@@ -310,10 +311,10 @@ async function makePublicReadable(
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      console.warn(`Google Drive public share warning: ${res.status} — ${await res.text()}`);
+      logger.warn(`Google Drive public share warning: ${res.status}`, { detail: await res.text() });
     }
   } catch (err) {
-    console.warn('Google Drive public share failed (non-critical):', err);
+    logger.warn('Google Drive public share failed (non-critical)', { error: err });
   }
 }
 

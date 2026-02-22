@@ -7,6 +7,7 @@ import seedrandom from 'seedrandom';
 
 import { loadEnv } from '../config/env.js';
 import { connectMongo } from '../database/mongo.js';
+import { seedLog } from '../config/logger.js';
 
 import { UserModel } from '../models/User.js';
 import { WalletModel } from '../models/Wallet.js';
@@ -555,10 +556,8 @@ export async function runLargeSeed(params?: { wipe?: boolean }) {
     });
   }
 
-  // eslint-disable-next-line no-console
-  console.log('✅ Large seed complete');
-  // eslint-disable-next-line no-console
-  console.log({
+  seedLog.info('Large seed complete');
+  seedLog.info('Seed summary', {
     seed: opts.seed,
     usersPerRole: opts.usersPerRole,
     campaigns: opts.campaigns,
@@ -597,8 +596,7 @@ function isDirectlyExecuted(): boolean {
 
 if (isDirectlyExecuted()) {
   main().catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error('Seed failed:', err);
+    seedLog.error('Seed failed', { error: err });
     process.exitCode = 1;
   });
 }

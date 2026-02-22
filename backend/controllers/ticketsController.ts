@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
+import { orderLog } from '../config/logger.js';
 import { prisma } from '../database/prisma.js';
 import { createTicketSchema, updateTicketSchema } from '../validations/tickets.js';
 import { toUiTicket, toUiTicketForBrand } from '../utils/uiMappers.js';
@@ -141,13 +142,13 @@ export function makeTicketsController() {
 
         if (isPrivileged(roles)) {
           const tickets = await db.ticket.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 5000 });
-          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicket failed for ${t.id}:`, e); return null; } }).filter(Boolean));
+          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
           return;
         }
 
         if (roles.includes('shopper')) {
           const tickets = await db.ticket.findMany({ where: { userId: pgUserId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 2000 });
-          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicket failed for ${t.id}:`, e); return null; } }).filter(Boolean));
+          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
           return;
         }
 
@@ -162,10 +163,10 @@ export function makeTicketsController() {
         });
 
         if (roles.includes('brand')) {
-          res.json(tickets.map((t) => { try { return toUiTicketForBrand(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicketForBrand failed for ${t.id}:`, e); return null; } }).filter(Boolean));
+          res.json(tickets.map((t) => { try { return toUiTicketForBrand(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicketForBrand failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
           return;
         }
-        res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { console.error(`[tickets] toUiTicket failed for ${t.id}:`, e); return null; } }).filter(Boolean));
+        res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
       } catch (err) {
         next(err);
       }

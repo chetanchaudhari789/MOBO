@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errors.js';
 import type { Env } from '../config/env.js';
 import type { OrderWorkflowStatus } from '../models/Order.js';
 // pushOrderEvent import removed — events now handled inline
+import { orderLog } from '../config/logger.js';
 import { notifyOrderWorkflowPush } from './pushNotifications.js';
 import { writeAuditLog } from './audit.js';
 
@@ -103,7 +104,7 @@ export async function transitionOrderWorkflow(params: {
       order: { ...order, _id: order.mongoId } as any,
       from: params.from,
       to: params.to,
-    }).catch((err) => console.warn('[orderWorkflow] push notification failed:', err?.message || err));
+    }).catch((err) => orderLog.warn('[orderWorkflow] push notification failed', { error: err?.message || err }));
   }
 
   writeAuditLog({

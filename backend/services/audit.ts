@@ -2,6 +2,7 @@ import type { Request } from 'express';
 import { Types } from 'mongoose';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { AuditLogModel } from '../models/AuditLog.js';
+import logger from '../config/logger.js';
 
 export type AuditParams = {
   req?: Request;
@@ -53,6 +54,6 @@ export async function writeAuditLog(params: AuditParams): Promise<void> {
   } catch (err) {
     // Audit logs must never break business flows, but we log failures
     // so security-relevant events are not silently lost.
-    console.error('[audit] Failed to write audit log:', params.action, params.entityType, params.entityId, err);
+    logger.error('[audit] Failed to write audit log', { action: params.action, entityType: params.entityType, entityId: params.entityId, error: err });
   }
 }

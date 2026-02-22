@@ -16,6 +16,7 @@ process.env.NODE_ENV = 'test';
 import { loadEnv } from './config/env.js';
 import { connectMongo } from './database/mongo.js';
 import { createApp } from './app.js';
+import { startupLog } from './config/logger.js';
 
 async function tryRunE2ESeed() {
   // In E2E we run under tsx (TypeScript); import the TS module directly.
@@ -62,13 +63,11 @@ async function main() {
   const app = createApp(env);
 
   app.listen(env.PORT, () => {
-    // eslint-disable-next-line no-console
-    console.log(`Backend listening on :${env.PORT}`);
+    startupLog.info(`Backend listening on :${env.PORT}`);
   });
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('Fatal startup error:', err);
+  startupLog.error('Fatal startup error', { error: err });
   process.exitCode = 1;
 });

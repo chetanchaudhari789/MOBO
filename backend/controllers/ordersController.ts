@@ -3,6 +3,7 @@ import type { Env } from '../config/env.js';
 import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
+import { orderLog } from '../config/logger.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
@@ -210,7 +211,7 @@ export function makeOrdersController(env: Env) {
 
         const mapped = orders.map((o: any) => {
           try { return toUiOrder(pgOrder(o)); }
-          catch (e) { console.error(`[orders/getOrders] toUiOrder failed for ${o.id}:`, e); return null; }
+          catch (e) { orderLog.error(`[orders/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {
@@ -874,7 +875,7 @@ export function makeOrdersController(env: Env) {
             ) / 100;
             // Guard against NaN/Infinity from corrupted order data
             if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
-              console.warn(`[ordersController] Skipping AI re-upload verification: invalid expectedAmount=${expectedAmount} for order=${order.mongoId}`);
+              orderLog.warn(`[ordersController] Skipping AI re-upload verification: invalid expectedAmount=${expectedAmount} for order=${order.mongoId}`);
             } else {
               aiOrderVerification = await verifyProofWithAi(env, {
                 imageBase64: body.data,

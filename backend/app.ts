@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
+import { httpLog } from './config/logger.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
@@ -91,19 +92,25 @@ export function createApp(env: Env) {
   // This ensures `req.ip` and rate-limits behave correctly.
   app.set('trust proxy', 1);
 
-  // Lightweight request logging (kept dependency-free).
-  // Disabled in tests to avoid noisy output.
-  if (env.NODE_ENV !== 'test') {
-    app.use((req, res, next) => {
-      const start = Date.now();
-      res.on('finish', () => {
-        const ms = Date.now() - start;
-        // eslint-disable-next-line no-console
-        console.log(`[${String(res.locals.requestId || '-')}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${ms}ms)`);
+  // Structured request logging via Winston.
+  // Silent in tests (Winston logger is configured to be silent in test mode).
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const ms = Date.now() - start;
+      const status = res.statusCode;
+      const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
+      httpLog.log(level, `${req.method} ${req.originalUrl} -> ${status}`, {
+        requestId: String(res.locals.requestId || ''),
+        durationMs: ms,
+        method: req.method,
+        url: req.originalUrl,
+        status,
+        ip: req.ip,
       });
-      next();
     });
-  }
+    next();
+  });
   // Helmet defaults are good, but for an API service we explicitly:
   // - disable CSP (frontends are served separately)
   // - only enable HSTS in production
@@ -121,8 +128,11 @@ export function createApp(env: Env) {
       limit: env.NODE_ENV === 'production' ? 300 : 10_000,
       standardHeaders: true,
       legacyHeaders: false,
+      // Exempt SSE stream from rate limit — it's a single long-lived connection.
+      skip: (req) => req.path === '/api/realtime/stream' || req.path === '/api/realtime/health',
       handler: (_req, res) => {
         const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+        httpLog.warn('Rate limit exceeded', { requestId, ip: _req.ip });
         res.status(429).json({
           error: { code: 'RATE_LIMITED', message: 'Too many requests' },
           requestId,
@@ -162,8 +172,18 @@ export function createApp(env: Env) {
     })
   );
 
-  app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }));
-  app.use(express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT }));
+  // Skip body parsers for SSE stream — no request body and parsers can interfere
+  // with long-lived streaming connections (a common cause of 400 errors on SSE).
+  const skipBodyParser = (req: express.Request) =>
+    req.path.startsWith('/api/realtime/');
+  app.use((req, res, next) => {
+    if (skipBodyParser(req)) return next();
+    express.json({ limit: env.REQUEST_BODY_LIMIT })(req, res, next);
+  });
+  app.use((req, res, next) => {
+    if (skipBodyParser(req)) return next();
+    express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT })(req, res, next);
+  });
 
   app.use('/api', healthRoutes(env));
   app.use('/api/auth', authLimiter, authRoutes(env));

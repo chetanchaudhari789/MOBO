@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
+import { orderLog } from '../config/logger.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
@@ -152,12 +153,12 @@ export function makeBrandController() {
           take: 5000,
         });
         if (!isPrivileged(roles) && roles.includes('brand')) {
-          res.json(orders.map((o: any) => { try { return toUiOrderForBrand(pgOrder(o)); } catch (e) { console.error(`[brand/getOrders] toUiOrderForBrand failed for ${o.id}:`, e); return null; } }).filter(Boolean));
+          res.json(orders.map((o: any) => { try { return toUiOrderForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean));
           return;
         }
         const mapped = orders.map((o: any) => {
           try { return toUiOrder(pgOrder(o)); }
-          catch (e) { console.error(`[brand/getOrders] toUiOrder failed for ${o.id}:`, e); return null; }
+          catch (e) { orderLog.error(`[brand/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {

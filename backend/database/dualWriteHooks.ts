@@ -22,6 +22,7 @@
  */
 
 import { getPrisma, isPrismaAvailable } from '../database/prisma.js';
+import { migrationLog } from '../config/logger.js';
 
 import { UserModel } from '../models/User.js';
 import { BrandModel } from '../models/Brand.js';
@@ -118,7 +119,7 @@ export async function resyncAfterBulkUpdate(
   if (!isDualWriteEnabled()) return;
   const entry = HOOK_MAP.get(modelName);
   if (!entry) {
-    console.warn(`[dual-write-hooks] resyncAfterBulkUpdate: unknown model "${modelName}"`);
+    migrationLog.warn(`resyncAfterBulkUpdate: unknown model "${modelName}"`);
     return;
   }
 
@@ -127,10 +128,10 @@ export async function resyncAfterBulkUpdate(
     const results = await Promise.allSettled(docs.map((d: any) => entry.writer(d)));
     const failures = results.filter((r) => r.status === 'rejected').length;
     if (failures > 0) {
-      console.error(`[dual-write-hooks] resyncAfterBulkUpdate(${modelName}): ${failures}/${docs.length} failed`);
+      migrationLog.error(`resyncAfterBulkUpdate(${modelName}): ${failures}/${docs.length} failed`);
     }
   } catch (err: any) {
-    console.error(`[dual-write-hooks] resyncAfterBulkUpdate(${modelName}) error:`, err?.message ?? err);
+    migrationLog.error(`resyncAfterBulkUpdate(${modelName}) error: ${err?.message ?? err}`);
   }
 }
 
@@ -146,7 +147,7 @@ async function hardDeleteFromPg(label: string, prismaDelegate: string, mongoId: 
   try {
     await (db as any)[prismaDelegate].deleteMany({ where: { mongoId } });
   } catch (err: any) {
-    console.error(`[dual-write-hooks][${label}] hard-delete from PG failed:`, err?.message ?? err);
+    migrationLog.error(`[${label}] hard-delete from PG failed: ${err?.message ?? err}`);
   }
 }
 
@@ -161,14 +162,14 @@ export function registerDualWriteHooks(): void {
   for (const { model, writer, label, prismaDelegate } of HOOKS) {
     const schema = model.schema;
     if (!schema) {
-      console.warn(`[dual-write-hooks] No schema found for ${label}, skipping`);
+      migrationLog.warn(`No schema found for ${label}, skipping`);
       continue;
     }
 
     // ── post('save') — covers .save() and Model.create() ──
     schema.post('save', function (doc: any) {
       writer(doc).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-save failed:`, err?.message ?? err);
+        migrationLog.error(`[${label}] post-save failed: ${err?.message ?? err}`);
       });
     });
 
@@ -176,7 +177,7 @@ export function registerDualWriteHooks(): void {
     schema.post('findOneAndUpdate', function (doc: any) {
       if (!doc) return;
       writer(doc).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-findOneAndUpdate failed:`, err?.message ?? err);
+        migrationLog.error(`[${label}] post-findOneAndUpdate failed: ${err?.message ?? err}`);
       });
     });
 
@@ -185,7 +186,7 @@ export function registerDualWriteHooks(): void {
       if (!Array.isArray(docs)) return;
       for (const doc of docs) {
         writer(doc).catch((err: any) => {
-          console.error(`[dual-write-hooks][${label}] post-insertMany failed:`, err?.message ?? err);
+          migrationLog.error(`[${label}] post-insertMany failed: ${err?.message ?? err}`);
         });
       }
     });
@@ -196,7 +197,7 @@ export function registerDualWriteHooks(): void {
       const id = String(doc._id ?? '');
       if (!id) return;
       hardDeleteFromPg(label, prismaDelegate, id).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-findOneAndDelete failed:`, err?.message ?? err);
+        migrationLog.error(`[${label}] post-findOneAndDelete failed: ${err?.message ?? err}`);
       });
     });
 
@@ -205,7 +206,7 @@ export function registerDualWriteHooks(): void {
       const id = String(this._id ?? '');
       if (!id) return;
       hardDeleteFromPg(label, prismaDelegate, id).catch((err: any) => {
-        console.error(`[dual-write-hooks][${label}] post-deleteOne failed:`, err?.message ?? err);
+        migrationLog.error(`[${label}] post-deleteOne failed: ${err?.message ?? err}`);
       });
     });
 
@@ -219,15 +220,15 @@ export function registerDualWriteHooks(): void {
         if (!doc) return;
         await writer(doc);
       } catch (err: any) {
-        console.error(`[dual-write-hooks][${label}] post-updateOne failed:`, err?.message ?? err);
+        migrationLog.error(`[${label}] post-updateOne failed: ${err?.message ?? err}`);
       }
     });
 
     // ── post('deleteMany') — re-query is impossible (docs gone); log warning ──
     schema.post('deleteMany', function (this: any) {
-      console.warn(`[dual-write-hooks][${label}] deleteMany detected — use resyncAfterBulkUpdate() or findOneAndDelete() instead`);
+      migrationLog.warn(`[${label}] deleteMany detected — use resyncAfterBulkUpdate() or findOneAndDelete() instead`);
     });
   }
 
-  console.log('[dual-write-hooks] Registered post-hooks on all 17 models (save, update, updateOne, insert, delete)');
+  migrationLog.info('Registered post-hooks on all 17 models (save, update, updateOne, insert, delete)');
 }
