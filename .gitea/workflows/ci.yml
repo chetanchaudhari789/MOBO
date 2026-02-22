@@ -59,12 +59,15 @@ jobs:
 
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
+      
+      - name: Push Prisma schema to CI database
+        run: cd backend && npx prisma db push --accept-data-loss
 
       - name: Build backend
         run: npm -w @mobo/backend run build
 
-      - name: Run backend tests
-        run: npm -w @mobo/backend run test
+      - name: Backend tests (Vitest)
+        run: npm run test:backend
 
   docker-publish:
     runs-on: ubuntu-latest
