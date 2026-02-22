@@ -2,9 +2,9 @@
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, develop]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -116,6 +116,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Install Next.js SWC binary for Linux
+        run: npm i --no-save @next/swc-linux-x64-gnu
+
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
@@ -166,6 +169,9 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Install Next.js SWC binary for Linux
+        run: npm i --no-save @next/swc-linux-x64-gnu
 
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
