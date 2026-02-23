@@ -38,7 +38,7 @@ jobs:
           --health-retries 20
 
     env:
-      DATABASE_URL: postgresql://mobo_ci:mobo_ci_pass@127.0.0.1:5432/mobo_ci
+      DATABASE_URL: postgresql://mobo_ci:mobo_ci_pass@postgres:5432/mobo_ci
       NODE_ENV: test
 
     steps:
