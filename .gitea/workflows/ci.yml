@@ -46,14 +46,13 @@ jobs:
       - name: Wait for Postgres Port (Max 20 attempts)
         run: |
           for i in {1..20}; do
-            if nc -z 127.0.0.1 5432; then
+            if (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; then
               echo "✅ Postgres is ready!"
               exit 0
             fi
             echo "⏳ Attempt $i/20: Waiting for Postgres..."
             sleep 1
           done
-          echo "❌ Error: Postgres failed to start within 20 seconds."
           exit 1
 
       - name: Checkout
