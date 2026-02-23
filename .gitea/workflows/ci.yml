@@ -51,7 +51,7 @@ jobs:
               exit 0
             fi
             echo "⏳ Attempt $i/20: Waiting for Postgres..."
-            sleep 1
+            sleep 5
           done
           exit 1
 
