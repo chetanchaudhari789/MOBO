@@ -43,6 +43,9 @@ jobs:
 
     steps:
 
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
       - name: Wait for Postgres Port (Max 20 attempts)
         run: |
           for i in {1..20}; do
