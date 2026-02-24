@@ -53,8 +53,11 @@ export async function compressImageDataUrl(
       .toBuffer();
 
     return `data:image/webp;base64,${compressed.toString('base64')}`;
-  } catch {
+  } catch (err) {
     // If Sharp fails (corrupt image, unsupported format), return the original.
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[imageCompress] Failed to compress image data URL:', err);
+    }
     return dataUrl;
   }
 }

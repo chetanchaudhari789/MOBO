@@ -152,9 +152,14 @@ export function createApp(env: Env) {
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     })
   );
-  // Permissions-Policy: restrict sensitive browser APIs (not part of Helmet types)
+  // Permissions-Policy: restrict sensitive browser APIs. Can be overridden via PERMISSIONS_POLICY_HEADER env var.
+  // Set PERMISSIONS_POLICY_HEADER="" to disable the header entirely.
   app.use((_req, res, next) => {
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    const permissionsPolicy =
+      process.env.PERMISSIONS_POLICY_HEADER ?? 'camera=(), microphone=(), geolocation=()';
+    if (permissionsPolicy) {
+      res.setHeader('Permissions-Policy', permissionsPolicy);
+    }
     next();
   });
 
@@ -175,10 +180,10 @@ export function createApp(env: Env) {
     })
   );
 
-  // Stricter limiter for authentication endpoints to reduce brute-force risk.
+  // Allow up to 50 attempts per 5 minutes in production to balance security with legitimate retries.
   const authLimiter = rateLimit({
     windowMs: 5 * 60_000,
-    limit: env.NODE_ENV === 'production' ? 30 : 1000,
+    limit: env.NODE_ENV === 'production' ? 50 : 1000,
     standardHeaders: true,
     legacyHeaders: false,
     handler: (_req, res) => {

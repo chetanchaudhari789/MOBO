@@ -93,7 +93,7 @@ function buildPoolConfig(url: string) {
     // Pool sizing: production needs enough connections for burst traffic.
     // For 100k concurrent users, most hosting (Neon/Render) supports 50-100 connections.
     // With PgBouncer or Prisma Accelerate in front, this can be higher.
-    max: parseInt(process.env.PG_POOL_MAX || (isProd ? '30' : '10'), 10),
+    max: parseInt(process.env.PG_POOL_MAX || (isProd ? '80' : '10'), 10),
     min: parseInt(process.env.PG_POOL_MIN || (isProd ? '5' : '2'), 10),
     idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
     connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),

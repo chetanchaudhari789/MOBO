@@ -246,6 +246,14 @@ export function makeAuthController(env: Env) {
                 walletPendingPaise: true,
                 createdAt: true,
                 updatedAt: true,
+                pendingConnections: {
+                  select: {
+                    agencyId: true,
+                    agencyName: true,
+                    agencyCode: true,
+                    timestamp: true,
+                  },
+                },
               },
             })
           : await db().user.findFirst({
@@ -281,6 +289,14 @@ export function makeAuthController(env: Env) {
                 walletPendingPaise: true,
                 createdAt: true,
                 updatedAt: true,
+                pendingConnections: {
+                  select: {
+                    agencyId: true,
+                    agencyName: true,
+                    agencyCode: true,
+                    timestamp: true,
+                  },
+                },
               },
             });
         if (!user) {
@@ -375,7 +391,9 @@ export function makeAuthController(env: Env) {
             actorUserId: user.mongoId!,
             actorRoles: user.roles as any,
             metadata: { role: user.role },
-          }).catch(() => {}),
+          }).catch((err) => {
+            console.error('Failed to write AUTH_LOGIN_SUCCESS audit log', err);
+          }),
         ]);
 
         res.json({

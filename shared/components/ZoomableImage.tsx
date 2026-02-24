@@ -27,24 +27,29 @@ export const ZoomableImage: React.FC<{
     const el = containerRef.current;
     if (!el) return;
 
+    let observer: IntersectionObserver | null = null;
+
     // If IntersectionObserver is unavailable, load immediately
     if (typeof IntersectionObserver === 'undefined') {
       setInView(true);
-      return;
+    } else {
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setInView(true);
+            observer && observer.disconnect();
+          }
+        },
+        { rootMargin: '200px' } // start loading 200px before entering viewport
+      );
+      observer.observe(el);
     }
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setInView(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '200px' } // start loading 200px before entering viewport
-    );
-    observer.observe(el);
-
-    return () => observer.disconnect();
+    return () => {
+      if (observer) {
+        observer.disconnect();
+      }
+    };
   }, []);
 
   // Reset state when src changes
@@ -89,7 +94,7 @@ export const ZoomableImage: React.FC<{
             onLoad={handleLoad}
             onError={handleError}
             className={`${className || defaultClass} transition-all duration-500 ${
-              loaded ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-sm scale-[0.98] absolute inset-0'
+              loaded ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-sm scale-[0.98]'
             }`}
           />
         )}

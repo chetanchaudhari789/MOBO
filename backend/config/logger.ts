@@ -110,6 +110,11 @@ function sanitize(obj: unknown, depth = 0, seen = new WeakSet()): unknown {
 
   if (typeof obj !== 'object') return obj;
 
+  // Note: primitives are returned above before reaching this point because
+  // WeakSet only accepts objects. This ordering ensures we never pass a
+  // primitive to `seen.has` / `seen.add` while still correctly handling
+  // circular references within object/array graphs.
+
   // Circular reference protection
   if (seen.has(obj as object)) return '[CIRCULAR]';
   seen.add(obj as object);
@@ -216,6 +221,16 @@ const _throttleCleanup = setInterval(() => {
   }
 }, 5 * 60_000);
 _throttleCleanup.unref();
+
+/**
+ * Cleanup function to stop internal logger intervals.
+ *
+ * Call this during graceful shutdown, in test teardown, or before hot reloads
+ * to ensure the throttle cleanup timer does not continue running.
+ */
+export function cleanupLoggerIntervals(): void {
+  clearInterval(_throttleCleanup);
+}
 
 // ─── Redaction Format ────────────────────────────────────────────────────────
 const redactFormat = winston.format((info) => {
@@ -378,9 +393,12 @@ export interface LogEvent {
 
 /**
  * Log a structured domain event with full schema compliance.
+ * System metrics (memory/heap) are included for warn/error logs unless
+ * LOGGER_SYSTEM_METRICS_ENABLED=false is set to reduce CPU overhead during error storms.
  */
 export function logEvent(level: 'debug' | 'info' | 'warn' | 'error', message: string, event: LogEvent): void {
-  const metrics = level === 'error' || level === 'warn' ? getSystemMetrics() : undefined;
+  const metricsEnabled = process.env.LOGGER_SYSTEM_METRICS_ENABLED !== 'false';
+  const metrics = metricsEnabled && (level === 'error' || level === 'warn') ? getSystemMetrics() : undefined;
   logger.log(level, message, {
     domain: event.domain,
     eventCategory: event.eventCategory,
