@@ -193,9 +193,9 @@ export function makeBrandController() {
 
         const agencies = agencyPgIds.length
           ? await db().user.findMany({
-              where: { id: { in: agencyPgIds }, deletedAt: null },
-              select: { id: true, mongoId: true, name: true, mediatorCode: true },
-            })
+            where: { id: { in: agencyPgIds }, deletedAt: null },
+            select: { id: true, mongoId: true, name: true, mediatorCode: true },
+          })
           : [];
         const byId = new Map(agencies.map((a: any) => [a.id, a]));
 
@@ -475,9 +475,9 @@ export function makeBrandController() {
         if (agencyCode) {
           const affectedCount = await db().$executeRaw`
             UPDATE "campaigns"
-            SET "allowedAgencyCodes" = array_remove("allowedAgencyCodes", ${agencyCode})
-            WHERE "brandUserId" = ${brand.id}::uuid AND "deletedAt" IS NULL
-            AND ${agencyCode} = ANY("allowedAgencyCodes")
+            SET "allowed_agency_codes" = array_remove("allowed_agency_codes", ${agencyCode})
+            WHERE "brand_user_id" = ${brand.id}::uuid AND "deleted_at" IS NULL
+            AND ${agencyCode} = ANY("allowed_agency_codes")
           `;
           if (affectedCount > 0) {
             writeAuditLog({
@@ -486,7 +486,7 @@ export function makeBrandController() {
               entityType: 'User',
               entityId: brand.mongoId || brand.id,
               metadata: { agencyCode, campaignsAffected: affectedCount },
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
         const ts = new Date().toISOString();

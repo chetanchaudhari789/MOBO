@@ -21,8 +21,8 @@ beforeAll(async () => {
   // Override the connection string with the dynamically assigned port
   process.env.DATABASE_URL = pgContainer.getConnectionUri();
 
-  // Push the schema to the fresh database
-  execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
+  // Run Flyway migrations against the fresh database
+  execSync('tsx scripts/flyway.ts migrate', { stdio: 'inherit' });
 
   await connectPrisma(5);
   if (!isPrismaAvailable()) {
@@ -31,7 +31,7 @@ beforeAll(async () => {
       '\n⚠  [test setup] PostgreSQL not available after 5 retries – PG-dependent tests will fail.\n\n'
     );
   }
-}, 30000); // 30s timeout to allow Docker image to pull if not present
+}, 60000); // 60s timeout to allow Docker image to pull and apply migrations if not present
 
 afterAll(async () => {
   await disconnectPrisma();

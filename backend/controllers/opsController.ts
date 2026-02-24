@@ -284,36 +284,36 @@ export function makeOpsController(env: Env) {
             const allCodes = [code, ...mediatorCodes].filter(Boolean);
             const rows = statusFilter
               ? await db().$queryRaw<{ id: string }[]>`
-                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL AND status = ${statusFilter}
-                  AND (${code} = ANY("allowedAgencyCodes")
+                  SELECT id FROM "campaigns" WHERE "deleted_at" IS NULL AND status = ${statusFilter}
+                  AND (${code} = ANY("allowed_agency_codes")
                        OR EXISTS (SELECT 1 FROM unnest(${allCodes}::text[]) AS mc WHERE jsonb_exists(assignments, mc)))
                 `
               : await db().$queryRaw<{ id: string }[]>`
-                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL
-                  AND (${code} = ANY("allowedAgencyCodes")
+                  SELECT id FROM "campaigns" WHERE "deleted_at" IS NULL
+                  AND (${code} = ANY("allowed_agency_codes")
                        OR EXISTS (SELECT 1 FROM unnest(${allCodes}::text[]) AS mc WHERE jsonb_exists(assignments, mc)))
                 `;
             matchingIds = rows.map((r) => r.id);
           } else {
             const rows = statusFilter
               ? await db().$queryRaw<{ id: string }[]>`
-                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL AND status = ${statusFilter}
-                  AND (${code} = ANY("allowedAgencyCodes") OR jsonb_exists(assignments, ${code}))
+                  SELECT id FROM "campaigns" WHERE "deleted_at" IS NULL AND status = ${statusFilter}
+                  AND (${code} = ANY("allowed_agency_codes") OR jsonb_exists(assignments, ${code}))
                 `
               : await db().$queryRaw<{ id: string }[]>`
-                  SELECT id FROM campaigns WHERE "deletedAt" IS NULL
-                  AND (${code} = ANY("allowedAgencyCodes") OR jsonb_exists(assignments, ${code}))
+                  SELECT id FROM "campaigns" WHERE "deleted_at" IS NULL
+                  AND (${code} = ANY("allowed_agency_codes") OR jsonb_exists(assignments, ${code}))
                 `;
             matchingIds = rows.map((r) => r.id);
           }
 
           campaigns = matchingIds.length
             ? await db().campaign.findMany({
-                where: { id: { in: matchingIds } },
-                orderBy: { createdAt: 'desc' },
-                skip: (cPage - 1) * cLimit,
-                take: cLimit,
-              })
+              where: { id: { in: matchingIds } },
+              orderBy: { createdAt: 'desc' },
+              skip: (cPage - 1) * cLimit,
+              take: cLimit,
+            })
             : [];
         } else {
           campaigns = await db().campaign.findMany({
@@ -598,14 +598,14 @@ export function makeOpsController(env: Env) {
       try {
         const { roles, user: requester } = getRequester(req);
         const body = approveByIdSchema.parse(req.body);
-        
+
         const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
         if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
 
-        const canApprove = 
-          isPrivileged(roles) || 
+        const canApprove =
+          isPrivileged(roles) ||
           (roles.includes('agency') && String(mediator.parentCode) === String((requester as any)?.mediatorCode));
 
         if (!canApprove) {
@@ -907,7 +907,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
-          }).catch(() => {});
+          }).catch(() => { });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1019,7 +1019,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
-          }).catch(() => {});
+          }).catch(() => { });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1130,7 +1130,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Deal Verified!', body: 'All proofs verified! Your cashback is now in the cooling period.', url: '/orders' },
-          }).catch(() => {});
+          }).catch(() => { });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1237,7 +1237,7 @@ export function makeOpsController(env: Env) {
         if (body.type === 'order') {
           const campaignId = order.items?.[0]?.campaignId;
           if (campaignId) {
-            await db().$executeRaw`UPDATE "campaigns" SET "usedSlots" = GREATEST("usedSlots" - 1, 0) WHERE id = ${campaignId}::uuid AND "deletedAt" IS NULL`;
+            await db().$executeRaw`UPDATE "campaigns" SET "used_slots" = GREATEST("used_slots" - 1, 0) WHERE id = ${campaignId}::uuid AND "deleted_at" IS NULL`;
           }
         }
 
@@ -1267,7 +1267,7 @@ export function makeOpsController(env: Env) {
               entityType: 'Campaign',
               entityId: String(campaignId),
               metadata: { orderId: order.mongoId!, reason: 'proof_rejected' },
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
 
@@ -1286,7 +1286,7 @@ export function makeOpsController(env: Env) {
               body: body.reason || 'Please re-upload the required proof.',
               url: '/orders',
             },
-          }).catch(() => {});
+          }).catch(() => { });
         }
 
         res.json({ ok: true });
@@ -2214,12 +2214,12 @@ export function makeOpsController(env: Env) {
           const assignmentObj = typeof assignment === 'number'
             ? { limit: assignment, payout: payoutOverridePaise ?? campaign.payoutPaise }
             : {
-                limit: (assignment as any).limit,
-                payout:
-                  typeof (assignment as any).payout === 'number'
-                    ? rupeesToPaise((assignment as any).payout)
-                    : (payoutOverridePaise ?? campaign.payoutPaise),
-              };
+              limit: (assignment as any).limit,
+              payout:
+                typeof (assignment as any).payout === 'number'
+                  ? rupeesToPaise((assignment as any).payout)
+                  : (payoutOverridePaise ?? campaign.payoutPaise),
+            };
           if (typeof commissionPaise !== 'undefined') {
             (assignmentObj as any).commissionPaise = commissionPaise;
           }

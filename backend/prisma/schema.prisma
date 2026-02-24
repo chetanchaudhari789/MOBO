@@ -22,12 +22,16 @@ enum UserRole {
   brand
   admin
   ops
+
+  @@map("user_role")
 }
 
 enum UserStatus {
   active
   suspended
   pending
+
+  @@map("user_status")
 }
 
 enum KycStatus {
@@ -35,18 +39,24 @@ enum KycStatus {
   pending
   verified
   rejected
+
+  @@map("kyc_status")
 }
 
 enum BrandStatus {
   active
   suspended
   pending
+
+  @@map("brand_status")
 }
 
 enum AgencyStatus {
   active
   suspended
   pending
+
+  @@map("agency_status")
 }
 
 enum OrderWorkflowStatus {
@@ -60,6 +70,8 @@ enum OrderWorkflowStatus {
   REWARD_PENDING
   COMPLETED
   FAILED
+
+  @@map("order_workflow_status")
 }
 
 enum OrderStatus {
@@ -68,6 +80,8 @@ enum OrderStatus {
   Delivered
   Cancelled
   Returned
+
+  @@map("order_status")
 }
 
 enum PaymentStatus {
@@ -75,6 +89,8 @@ enum PaymentStatus {
   Paid
   Refunded
   Failed
+
+  @@map("payment_status")
 }
 
 enum AffiliateStatus {
@@ -85,17 +101,23 @@ enum AffiliateStatus {
   Fraud_Alert
   Cap_Exceeded
   Frozen_Disputed
+
+  @@map("affiliate_status")
 }
 
 enum SettlementMode {
   wallet
   external
+
+  @@map("settlement_mode")
 }
 
 enum DealType {
   Discount
   Review
   Rating
+
+  @@map("deal_type")
 }
 
 enum CampaignStatus {
@@ -103,6 +125,8 @@ enum CampaignStatus {
   active
   paused
   completed
+
+  @@map("campaign_status")
 }
 
 enum TransactionType {
@@ -121,6 +145,8 @@ enum TransactionType {
   payout_complete
   payout_failed
   refund
+
+  @@map("transaction_type")
 }
 
 enum TransactionStatus {
@@ -128,6 +154,8 @@ enum TransactionStatus {
   completed
   failed
   reversed
+
+  @@map("transaction_status")
 }
 
 enum PayoutStatus {
@@ -137,10 +165,14 @@ enum PayoutStatus {
   failed
   canceled
   recorded
+
+  @@map("payout_status")
 }
 
 enum Currency {
   INR
+
+  @@map("currency")
 }
 
 enum InviteStatus {
@@ -148,22 +180,30 @@ enum InviteStatus {
   used
   revoked
   expired
+
+  @@map("invite_status")
 }
 
 enum TicketStatus {
   Open
   Resolved
   Rejected
+
+  @@map("ticket_status")
 }
 
 enum SuspensionAction {
   suspend
   unsuspend
+
+  @@map("suspension_action")
 }
 
 enum PushApp {
   buyer
   mediator
+
+  @@map("push_app")
 }
 
 enum RejectionType {
@@ -171,97 +211,103 @@ enum RejectionType {
   review
   rating
   returnWindow
+
+  @@map("rejection_type")
 }
 
 enum MissingProofType {
   review
   rating
   returnWindow
+
+  @@map("missing_proof_type")
 }
 
 enum MediatorStatus {
   active
   suspended
   pending
+
+  @@map("mediator_status")
 }
 
 // ────────────────────── MODELS ──────────────────────
 
 /// Core user account — all roles share a single User row.
 model User {
-  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId  String?  @unique /// Original MongoDB _id for cross-referencing during migration
+  id      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId String? @unique @map("mongo_id") /// Original MongoDB _id for cross-referencing during migration
 
-  name     String   @db.VarChar(120)
-  username String?  @unique @db.VarChar(64)
-  mobile   String   @db.VarChar(10)
-  email    String?  @db.VarChar(320)
-  passwordHash String
+  name         String  @db.VarChar(120)
+  username     String? @unique @db.VarChar(64)
+  mobile       String  @db.VarChar(10)
+  email        String? @db.VarChar(320)
+  passwordHash String  @map("password_hash")
 
-  role     UserRole  @default(shopper)
-  roles    UserRole[] @default([shopper])
-  status   UserStatus @default(active)
+  role   UserRole   @default(shopper)
+  roles  UserRole[] @default([shopper])
+  status UserStatus @default(active)
 
   // Ops hierarchy / attribution
-  mediatorCode   String?  @db.VarChar(64)
-  parentCode     String?  @db.VarChar(64)
-  generatedCodes String[] @default([])
+  mediatorCode   String?  @map("mediator_code") @db.VarChar(64)
+  parentCode     String?  @map("parent_code") @db.VarChar(64)
+  generatedCodes String[] @default([]) @map("generated_codes")
 
   // Consumer specific
-  isVerifiedByMediator Boolean @default(false)
+  isVerifiedByMediator Boolean @default(false) @map("is_verified_by_mediator")
 
   // Brand specific
-  brandCode          String?  @db.VarChar(64)
-  connectedAgencies  String[] @default([])
+  brandCode         String?  @map("brand_code") @db.VarChar(64)
+  connectedAgencies String[] @default([]) @map("connected_agencies")
 
   // KYC
-  kycStatus     KycStatus @default(none)
-  kycPanCard    String?
-  kycAadhaar    String?
-  kycGst        String?
+  kycStatus  KycStatus @default(none) @map("kyc_status")
+  kycPanCard String?   @map("kyc_pan_card")
+  kycAadhaar String?   @map("kyc_aadhaar")
+  kycGst     String?   @map("kyc_gst")
 
   // Financials
-  upiId              String?
-  qrCode             String?
-  bankAccountNumber  String?
-  bankIfsc           String?
-  bankName           String?
-  bankHolderName     String?
-  walletBalancePaise Int     @default(0)
-  walletPendingPaise Int     @default(0)
+  upiId              String? @map("upi_id")
+  qrCode             String? @map("qr_code")
+  bankAccountNumber  String? @map("bank_account_number")
+  bankIfsc           String? @map("bank_ifsc")
+  bankName           String? @map("bank_name")
+  bankHolderName     String? @map("bank_holder_name")
+  walletBalancePaise Int     @default(0) @map("wallet_balance_paise")
+  walletPendingPaise Int     @default(0) @map("wallet_pending_paise")
 
   // Meta
   avatar String?
 
   // Account lockout
-  failedLoginAttempts Int       @default(0)
-  lockoutUntil        DateTime?
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockoutUntil        DateTime? @map("lockout_until")
 
   // Google OAuth
-  googleRefreshToken String?
-  googleEmail        String?  @db.VarChar(320)
+  googleRefreshToken String? @map("google_refresh_token")
+  googleEmail        String? @map("google_email") @db.VarChar(320)
 
   // Audit / soft delete
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations (self-referential for audit)
   pendingConnections PendingConnection[]
-  orders             Order[]            @relation("OrderUser")
-  brandOrders        Order[]            @relation("OrderBrandUser")
+  orders             Order[]             @relation("OrderUser")
+  brandOrders        Order[]             @relation("OrderBrandUser")
   wallets            Wallet[]
   payouts            Payout[]
   tickets            Ticket[]
   pushSubscriptions  PushSubscription[]
-  suspensionsTarget  Suspension[]       @relation("SuspensionTarget")
-  suspensionsAdmin   Suspension[]       @relation("SuspensionAdmin")
+  suspensionsTarget  Suspension[]        @relation("SuspensionTarget")
+  suspensionsAdmin   Suspension[]        @relation("SuspensionAdmin")
   auditLogs          AuditLog[]
-  invitesCreated     Invite[]           @relation("InviteCreatedBy")
+  invitesCreated     Invite[]            @relation("InviteCreatedBy")
   mediatorProfile    MediatorProfile?
   shopperProfile     ShopperProfile?
 
@@ -282,10 +328,10 @@ model User {
 /// Pending brand-agency connection requests (embedded array in Mongo -> join table in PG)
 model PendingConnection {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String   @db.Uuid
-  agencyId   String?
-  agencyName String?
-  agencyCode String?
+  userId     String   @map("user_id") @db.Uuid
+  agencyId   String?  @map("agency_id")
+  agencyName String?  @map("agency_name")
+  agencyCode String?  @map("agency_code")
   timestamp  DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -297,19 +343,19 @@ model PendingConnection {
 /// Brand entity (mirrors Brand.ts)
 model Brand {
   id                   String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId              String?     @unique
+  mongoId              String?     @unique @map("mongo_id")
   name                 String      @db.VarChar(200)
-  brandCode            String      @unique
-  ownerUserId          String      @db.Uuid
-  connectedAgencyCodes String[]    @default([])
+  brandCode            String      @unique @map("brand_code")
+  ownerUserId          String      @map("owner_user_id") @db.Uuid
+  connectedAgencyCodes String[]    @default([]) @map("connected_agency_codes")
   status               BrandStatus @default(active)
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
   @@map("brands")
@@ -318,18 +364,18 @@ model Brand {
 /// Agency entity (mirrors Agency.ts)
 model Agency {
   id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId     String?      @unique
+  mongoId     String?      @unique @map("mongo_id")
   name        String       @db.VarChar(200)
-  agencyCode  String       @unique
-  ownerUserId String       @db.Uuid
+  agencyCode  String       @unique @map("agency_code")
+  ownerUserId String       @map("owner_user_id") @db.Uuid
   status      AgencyStatus @default(active)
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
   @@map("agencies")
@@ -338,18 +384,18 @@ model Agency {
 /// Mediator profile (mirrors MediatorProfile.ts)
 model MediatorProfile {
   id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId          String?        @unique
-  userId           String         @unique @db.Uuid
-  mediatorCode     String         @unique
-  parentAgencyCode String?
+  mongoId          String?        @unique @map("mongo_id")
+  userId           String         @unique @map("user_id") @db.Uuid
+  mediatorCode     String         @unique @map("mediator_code")
+  parentAgencyCode String?        @map("parent_agency_code")
   status           MediatorStatus @default(active)
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -359,16 +405,16 @@ model MediatorProfile {
 /// Shopper profile (mirrors ShopperProfile.ts)
 model ShopperProfile {
   id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId             String? @unique
-  userId              String  @unique @db.Uuid
-  defaultMediatorCode String?
+  mongoId             String? @unique @map("mongo_id")
+  userId              String  @unique @map("user_id") @db.Uuid
+  defaultMediatorCode String? @map("default_mediator_code")
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -377,40 +423,40 @@ model ShopperProfile {
 
 /// Campaign created by a brand (mirrors Campaign.ts)
 model Campaign {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId       String?        @unique
-  title         String         @db.VarChar(200)
-  brandUserId   String         @db.Uuid
-  brandName     String         @db.VarChar(200)
-  platform      String         @db.VarChar(80)
-  image         String
-  productUrl    String
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId     String? @unique @map("mongo_id")
+  title       String  @db.VarChar(200)
+  brandUserId String  @map("brand_user_id") @db.Uuid
+  brandName   String  @map("brand_name") @db.VarChar(200)
+  platform    String  @db.VarChar(80)
+  image       String
+  productUrl  String  @map("product_url")
 
-  originalPricePaise Int
-  pricePaise         Int
-  payoutPaise        Int
-  returnWindowDays   Int      @default(14)
+  originalPricePaise Int @map("original_price_paise")
+  pricePaise         Int @map("price_paise")
+  payoutPaise        Int @map("payout_paise")
+  returnWindowDays   Int @default(14) @map("return_window_days")
 
-  dealType           DealType?
-  totalSlots         Int
-  usedSlots          Int      @default(0)
-  status             CampaignStatus @default(draft)
+  dealType   DealType?      @map("deal_type")
+  totalSlots Int            @map("total_slots")
+  usedSlots  Int            @default(0) @map("used_slots")
+  status     CampaignStatus @default(draft)
 
-  allowedAgencyCodes String[] @default([])
+  allowedAgencyCodes String[] @default([]) @map("allowed_agency_codes")
 
   /// Mediator code -> { limit, payout, commissionPaise }. Stored as JSONB because it is a dynamic Map.
-  assignments        Json     @default("{}")
+  assignments Json @default("{}")
 
   locked       Boolean   @default(false)
-  lockedAt     DateTime?
-  lockedReason String?
+  lockedAt     DateTime? @map("locked_at")
+  lockedReason String?   @map("locked_reason")
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   deals  Deal[]
   orders OrderItem[]
@@ -422,36 +468,36 @@ model Campaign {
 
 /// Deal = campaign snapshot for a mediator (mirrors Deal.ts)
 model Deal {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId     String?  @unique
-  campaignId  String   @db.Uuid
-  mediatorCode String
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId      String? @unique @map("mongo_id")
+  campaignId   String  @map("campaign_id") @db.Uuid
+  mediatorCode String  @map("mediator_code")
 
   // Snapshot fields
   title       String
-  description String   @default("Exclusive")
+  description String @default("Exclusive")
   image       String
-  productUrl  String
+  productUrl  String @map("product_url")
   platform    String
-  brandName   String
+  brandName   String @map("brand_name")
 
-  dealType    DealType
+  dealType DealType @map("deal_type")
 
-  originalPricePaise Int
-  pricePaise         Int
-  commissionPaise    Int
-  payoutPaise        Int
+  originalPricePaise Int @map("original_price_paise")
+  pricePaise         Int @map("price_paise")
+  commissionPaise    Int @map("commission_paise")
+  payoutPaise        Int @map("payout_paise")
 
   rating   Float   @default(5)
   category String  @default("General")
   active   Boolean @default(true)
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
@@ -464,79 +510,79 @@ model Deal {
 /// Order (mirrors Order.ts)
 model Order {
   id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId     String? @unique
-  userId      String  @db.Uuid
-  brandUserId String? @db.Uuid
+  mongoId     String? @unique @map("mongo_id")
+  userId      String  @map("user_id") @db.Uuid
+  brandUserId String? @map("brand_user_id") @db.Uuid
 
-  totalPaise  Int
+  totalPaise Int @map("total_paise")
 
-  workflowStatus  OrderWorkflowStatus @default(CREATED)
+  workflowStatus OrderWorkflowStatus @default(CREATED) @map("workflow_status")
 
   // Suspension freeze
-  frozen       Boolean   @default(false)
-  frozenAt     DateTime?
-  frozenReason String?
-  reactivatedAt DateTime?
-  reactivatedBy String?   @db.Uuid
+  frozen        Boolean   @default(false)
+  frozenAt      DateTime? @map("frozen_at")
+  frozenReason  String?   @map("frozen_reason")
+  reactivatedAt DateTime? @map("reactivated_at")
+  reactivatedBy String?   @map("reactivated_by") @db.Uuid
 
-  status         OrderStatus    @default(Ordered)
-  paymentStatus  PaymentStatus  @default(Pending)
-  affiliateStatus AffiliateStatus @default(Unchecked)
+  status          OrderStatus     @default(Ordered)
+  paymentStatus   PaymentStatus   @default(Pending) @map("payment_status")
+  affiliateStatus AffiliateStatus @default(Unchecked) @map("affiliate_status")
 
-  externalOrderId String?
+  externalOrderId String? @map("external_order_id")
 
   // AI-extracted metadata
-  orderDate          DateTime?
-  soldBy             String?
-  extractedProductName String?
+  orderDate            DateTime? @map("order_date")
+  soldBy               String?   @map("sold_by")
+  extractedProductName String?   @map("extracted_product_name")
 
-  settlementRef  String?
-  settlementMode SettlementMode @default(wallet)
+  settlementRef  String?        @map("settlement_ref")
+  settlementMode SettlementMode @default(wallet) @map("settlement_mode")
 
   // Screenshots stored as URLs
-  screenshotOrder       String?
-  screenshotPayment     String?
-  screenshotReview      String?
-  screenshotRating      String?
-  screenshotReturnWindow String?
-  reviewLink            String?
-  returnWindowDays      Int     @default(14)
+  screenshotOrder        String? @map("screenshot_order")
+  screenshotPayment      String? @map("screenshot_payment")
+  screenshotReview       String? @map("screenshot_review")
+  screenshotRating       String? @map("screenshot_rating")
+  screenshotReturnWindow String? @map("screenshot_return_window")
+  reviewLink             String? @map("review_link")
+  returnWindowDays       Int     @default(14) @map("return_window_days")
 
   // AI verification results (JSONB because deeply nested)
-  ratingAiVerification      Json?
-  returnWindowAiVerification Json?
+  ratingAiVerification       Json? @map("rating_ai_verification")
+  returnWindowAiVerification Json? @map("return_window_ai_verification")
 
   // Rejection info
-  rejectionType     RejectionType?
-  rejectionReason   String?
-  rejectionAt       DateTime?
-  rejectionBy       String?   @db.Uuid
+  rejectionType   RejectionType? @map("rejection_type")
+  rejectionReason String?        @map("rejection_reason")
+  rejectionAt     DateTime?      @map("rejection_at")
+  rejectionBy     String?        @map("rejection_by") @db.Uuid
 
   // Verification timestamps (JSONB for nested structure)
   verification Json?
 
   // Display names
-  managerName  String
-  agencyName   String?
-  buyerName    String
-  buyerMobile  String  @db.VarChar(10)
-  reviewerName String?
-  brandName    String?
+  managerName  String  @map("manager_name")
+  agencyName   String? @map("agency_name")
+  buyerName    String  @map("buyer_name")
+  buyerMobile  String  @map("buyer_mobile") @db.VarChar(10)
+  reviewerName String? @map("reviewer_name")
+  brandName    String? @map("brand_name")
 
   // Events log (JSONB array)
   events Json @default("[]")
 
   // Missing proof requests (JSONB array)
-  missingProofRequests Json @default("[]")
+  missingProofRequests Json @default("[]") @map("missing_proof_requests")
 
-  expectedSettlementDate DateTime?
+  expectedSettlementDate DateTime? @map("expected_settlement_date")
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   // Relations
   user      User        @relation("OrderUser", fields: [userId], references: [id])
@@ -563,17 +609,17 @@ model Order {
 /// Order item (embedded array in Mongo -> join table in PG)
 model OrderItem {
   id                   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId              String  @db.Uuid
-  productId            String
+  orderId              String  @map("order_id") @db.Uuid
+  productId            String  @map("product_id")
   title                String
   image                String
-  priceAtPurchasePaise Int
-  commissionPaise      Int
-  campaignId           String  @db.Uuid
-  dealType             String?
+  priceAtPurchasePaise Int     @map("price_at_purchase_paise")
+  commissionPaise      Int     @map("commission_paise")
+  campaignId           String  @map("campaign_id") @db.Uuid
+  dealType             String? @map("deal_type")
   quantity             Int     @default(1)
   platform             String?
-  brandName            String?
+  brandName            String? @map("brand_name")
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   campaign Campaign @relation(fields: [campaignId], references: [id])
@@ -586,20 +632,20 @@ model OrderItem {
 /// Wallet (mirrors Wallet.ts)
 model Wallet {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId        String?  @unique
-  ownerUserId    String   @unique @db.Uuid
+  mongoId        String?  @unique @map("mongo_id")
+  ownerUserId    String   @unique @map("owner_user_id") @db.Uuid
   currency       Currency @default(INR)
-  availablePaise Int      @default(0)
-  pendingPaise   Int      @default(0)
-  lockedPaise    Int      @default(0)
+  availablePaise Int      @default(0) @map("available_paise")
+  pendingPaise   Int      @default(0) @map("pending_paise")
+  lockedPaise    Int      @default(0) @map("locked_paise")
   version        Int      @default(0)
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   owner        User          @relation(fields: [ownerUserId], references: [id])
   transactions Transaction[]
@@ -610,29 +656,29 @@ model Wallet {
 
 /// Financial transaction (mirrors Transaction.ts)
 model Transaction {
-  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId         String?           @unique
-  idempotencyKey  String            @unique
-  type            TransactionType
-  status          TransactionStatus @default(pending)
-  amountPaise     Int
-  currency        String            @default("INR")
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId        String?           @unique @map("mongo_id")
+  idempotencyKey String            @unique @map("idempotency_key")
+  type           TransactionType
+  status         TransactionStatus @default(pending)
+  amountPaise    Int               @map("amount_paise")
+  currency       String            @default("INR")
 
-  orderId    String? @db.VarChar(64)
-  campaignId String? @db.Uuid
-  payoutId   String? @db.Uuid
-  walletId   String? @db.Uuid
-  fromUserId String? @db.Uuid
-  toUserId   String? @db.Uuid
+  orderId    String? @map("order_id") @db.VarChar(64)
+  campaignId String? @map("campaign_id") @db.Uuid
+  payoutId   String? @map("payout_id") @db.Uuid
+  walletId   String? @map("wallet_id") @db.Uuid
+  fromUserId String? @map("from_user_id") @db.Uuid
+  toUserId   String? @map("to_user_id") @db.Uuid
 
   metadata Json?
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   wallet Wallet? @relation(fields: [walletId], references: [id])
 
@@ -650,28 +696,28 @@ model Transaction {
 /// Payout request (mirrors Payout.ts)
 model Payout {
   id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId           String?      @unique
-  beneficiaryUserId String       @db.Uuid
-  walletId          String       @db.Uuid
-  amountPaise       Int
+  mongoId           String?      @unique @map("mongo_id")
+  beneficiaryUserId String       @map("beneficiary_user_id") @db.Uuid
+  walletId          String       @map("wallet_id") @db.Uuid
+  amountPaise       Int          @map("amount_paise")
   currency          String       @default("INR")
   status            PayoutStatus @default(requested)
 
   provider    String?
-  providerRef String?
+  providerRef String? @map("provider_ref")
 
-  failureCode    String?
-  failureMessage String?
+  failureCode    String? @map("failure_code")
+  failureMessage String? @map("failure_message")
 
-  requestedAt DateTime  @default(now())
-  processedAt DateTime?
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  processedAt DateTime? @map("processed_at")
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   beneficiary User   @relation(fields: [beneficiaryUserId], references: [id])
   wallet      Wallet @relation(fields: [walletId], references: [id])
@@ -684,34 +730,34 @@ model Payout {
 
 /// Invite code (mirrors Invite.ts)
 model Invite {
-  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId      String?      @unique
-  code         String       @unique
-  role         UserRole
-  label        String?
+  id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId String?  @unique @map("mongo_id")
+  code    String   @unique
+  role    UserRole
+  label   String?
 
-  parentUserId String?      @db.Uuid
-  parentCode   String?
+  parentUserId String? @map("parent_user_id") @db.Uuid
+  parentCode   String? @map("parent_code")
 
-  status       InviteStatus @default(active)
+  status InviteStatus @default(active)
 
-  maxUses  Int @default(1)
-  useCount Int @default(0)
+  maxUses  Int @default(1) @map("max_uses")
+  useCount Int @default(0) @map("use_count")
 
-  expiresAt DateTime?
+  expiresAt DateTime? @map("expires_at")
 
-  createdBy String?   @db.Uuid
-  usedBy    String?   @db.Uuid
-  usedAt    DateTime?
+  createdBy String?   @map("created_by") @db.Uuid
+  usedBy    String?   @map("used_by") @db.Uuid
+  usedAt    DateTime? @map("used_at")
 
   /// Array of { usedBy, usedAt } stored as JSONB
   uses Json @default("[]")
 
-  revokedBy String?   @db.Uuid
-  revokedAt DateTime?
+  revokedBy String?   @map("revoked_by") @db.Uuid
+  revokedAt DateTime? @map("revoked_at")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   creator User? @relation("InviteCreatedBy", fields: [createdBy], references: [id])
 
@@ -724,25 +770,25 @@ model Invite {
 /// Support ticket (mirrors Ticket.ts)
 model Ticket {
   id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId     String?      @unique
-  userId      String       @db.Uuid
-  userName    String
+  mongoId     String?      @unique @map("mongo_id")
+  userId      String       @map("user_id") @db.Uuid
+  userName    String       @map("user_name")
   role        String
-  orderId     String?
-  issueType   String
+  orderId     String?      @map("order_id")
+  issueType   String       @map("issue_type")
   description String
   status      TicketStatus @default(Open)
 
-  resolvedBy     String?   @db.Uuid
-  resolvedAt     DateTime?
-  resolutionNote String?   @db.VarChar(1000)
+  resolvedBy     String?   @map("resolved_by") @db.Uuid
+  resolvedAt     DateTime? @map("resolved_at")
+  resolutionNote String?   @map("resolution_note") @db.VarChar(1000)
 
-  createdBy String?   @db.Uuid
-  updatedBy String?   @db.Uuid
-  deletedAt DateTime?
-  deletedBy String?   @db.Uuid
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id])
 
@@ -754,17 +800,17 @@ model Ticket {
 /// Push notification subscription (mirrors PushSubscription.ts)
 model PushSubscription {
   id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId        String? @unique
-  userId         String  @db.Uuid
+  mongoId        String? @unique @map("mongo_id")
+  userId         String  @map("user_id") @db.Uuid
   app            PushApp
   endpoint       String  @unique
-  expirationTime Int?
-  keysP256dh     String
-  keysAuth       String
-  userAgent      String?
+  expirationTime Int?    @map("expiration_time")
+  keysP256dh     String  @map("keys_p256dh")
+  keysAuth       String  @map("keys_auth")
+  userAgent      String? @map("user_agent")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -774,14 +820,14 @@ model PushSubscription {
 
 /// Admin suspension / unsuspension record (mirrors Suspension.ts)
 model Suspension {
-  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId      String?         @unique
-  targetUserId String          @db.Uuid
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId      String?          @unique @map("mongo_id")
+  targetUserId String           @map("target_user_id") @db.Uuid
   action       SuspensionAction
   reason       String?
-  adminUserId  String          @db.Uuid
+  adminUserId  String           @map("admin_user_id") @db.Uuid
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   target User @relation("SuspensionTarget", fields: [targetUserId], references: [id])
   admin  User @relation("SuspensionAdmin", fields: [adminUserId], references: [id])
@@ -792,18 +838,18 @@ model Suspension {
 
 /// Audit log (mirrors AuditLog.ts)
 model AuditLog {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId      String?  @unique
-  actorUserId  String?  @db.Uuid
-  actorRoles   String[] @default([])
-  action       String
-  entityType   String?
-  entityId     String?
-  ip           String?
-  userAgent    String?
-  metadata     Json?
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId     String?  @unique @map("mongo_id")
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  actorRoles  String[] @default([]) @map("actor_roles")
+  action      String
+  entityType  String?  @map("entity_type")
+  entityId    String?  @map("entity_id")
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  metadata    Json?
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   actor User? @relation(fields: [actorUserId], references: [id])
 
@@ -816,26 +862,26 @@ model AuditLog {
 /// System configuration key-value (mirrors SystemConfig.ts)
 model SystemConfig {
   id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId           String? @unique
+  mongoId           String? @unique @map("mongo_id")
   key               String  @unique @default("system")
-  adminContactEmail String?
+  adminContactEmail String? @map("admin_contact_email")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_configs")
 }
 
 /// Migration sync tracking for backfilling Mongo data to PG (per-collection).
 model MigrationSync {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  collection  String   @unique
-  status      String   @default("pending")
-  syncedCount Int      @default(0)
-  errorCount  Int      @default(0)
-  lastSyncAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  collection  String    @unique
+  status      String    @default("pending")
+  syncedCount Int       @default(0) @map("synced_count")
+  errorCount  Int       @default(0) @map("error_count")
+  lastSyncAt  DateTime? @map("last_sync_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@index([status])
   @@map("migration_sync")
