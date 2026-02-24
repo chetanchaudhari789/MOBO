@@ -106,14 +106,40 @@ async function wipeCollections() {
 
     if (isPrismaAvailable()) {
       const db = prisma();
-      const tables = [
-        'audit_logs', 'transactions', 'payouts', 'wallets',
-        'order_items', 'orders', 'deals', 'campaigns',
-        'invites', 'tickets', 'push_subscriptions', 'suspensions',
-        'shopper_profiles', 'mediator_profiles', 'brands', 'agencies',
-        'pending_connections', 'system_configs', 'migration_sync', 'users',
-      ];
-      await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
+      try {
+        // Prefer TRUNCATE CASCADE for speed — single statement, resets sequences.
+        const tables = [
+          'audit_logs', 'transactions', 'payouts', 'wallets',
+          'order_items', 'orders', 'deals', 'campaigns',
+          'invites', 'tickets', 'push_subscriptions', 'suspensions',
+          'shopper_profiles', 'mediator_profiles', 'brands', 'agencies',
+          'pending_connections', 'system_configs', 'migration_sync', 'users',
+        ];
+        await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
+      } catch {
+        // Fallback: individual deleteMany in FK-safe order when TRUNCATE fails
+        // (e.g. adapter limitations, permission issues, missing tables).
+        await db.auditLog.deleteMany({});
+        await db.transaction.deleteMany({});
+        await db.payout.deleteMany({});
+        await db.orderItem.deleteMany({});
+        await db.wallet.deleteMany({});
+        await db.order.deleteMany({});
+        await db.deal.deleteMany({});
+        await db.campaign.deleteMany({});
+        await db.invite.deleteMany({});
+        await db.ticket.deleteMany({});
+        await db.pushSubscription.deleteMany({});
+        await db.suspension.deleteMany({});
+        await db.shopperProfile.deleteMany({});
+        await db.mediatorProfile.deleteMany({});
+        await db.brand.deleteMany({});
+        await db.agency.deleteMany({});
+        await db.pendingConnection.deleteMany({});
+        await db.systemConfig.deleteMany({});
+        await db.migrationSync.deleteMany({});
+        await db.user.deleteMany({});
+      }
     }
     return;
   }
@@ -225,18 +251,21 @@ export async function seedE2E(): Promise<SeededE2E> {
     status: 'active',
   });
 
-  // Create corresponding PG user
-  const pgAdmin = await db.user.create({
-    data: {
-      mongoId: String(admin._id),
-      name: E2E_ACCOUNTS.admin.name,
-      mobile: E2E_ACCOUNTS.admin.mobile,
-      username: E2E_ACCOUNTS.admin.username,
-      passwordHash: adminPasswordHash,
-      role: 'admin' as any,
-      roles: ['admin', 'ops'] as any,
-      status: 'active' as any,
-    },
+  // Create corresponding PG user (upsert for idempotency across re-runs)
+  const adminUpsertData = {
+    mongoId: String(admin._id),
+    name: E2E_ACCOUNTS.admin.name,
+    mobile: E2E_ACCOUNTS.admin.mobile,
+    username: E2E_ACCOUNTS.admin.username,
+    passwordHash: adminPasswordHash,
+    role: 'admin' as any,
+    roles: ['admin', 'ops'] as any,
+    status: 'active' as any,
+  };
+  const pgAdmin = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.admin.mobile },
+    create: adminUpsertData,
+    update: adminUpsertData,
   });
 
   const agencyPasswordHash = await hashPassword(E2E_ACCOUNTS.agency.password);
@@ -254,18 +283,21 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
-  const pgAgency = await db.user.create({
-    data: {
-      mongoId: String(agency._id),
-      name: E2E_ACCOUNTS.agency.name,
-      mobile: E2E_ACCOUNTS.agency.mobile,
-      passwordHash: agencyPasswordHash,
-      role: 'agency' as any,
-      roles: ['agency'] as any,
-      status: 'active' as any,
-      mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
-      createdBy: pgAdmin.id,
-    },
+  const agencyUpsertData = {
+    mongoId: String(agency._id),
+    name: E2E_ACCOUNTS.agency.name,
+    mobile: E2E_ACCOUNTS.agency.mobile,
+    passwordHash: agencyPasswordHash,
+    role: 'agency' as any,
+    roles: ['agency'] as any,
+    status: 'active' as any,
+    mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgAgency = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.agency.mobile },
+    create: agencyUpsertData,
+    update: agencyUpsertData,
   });
 
   const mediatorPasswordHash = await hashPassword(E2E_ACCOUNTS.mediator.password);
@@ -283,19 +315,22 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
-  const pgMediator = await db.user.create({
-    data: {
-      mongoId: String(mediator._id),
-      name: E2E_ACCOUNTS.mediator.name,
-      mobile: E2E_ACCOUNTS.mediator.mobile,
-      passwordHash: mediatorPasswordHash,
-      role: 'mediator' as any,
-      roles: ['mediator'] as any,
-      status: 'active' as any,
-      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      parentCode: E2E_ACCOUNTS.agency.agencyCode,
-      createdBy: pgAdmin.id,
-    },
+  const mediatorUpsertData = {
+    mongoId: String(mediator._id),
+    name: E2E_ACCOUNTS.mediator.name,
+    mobile: E2E_ACCOUNTS.mediator.mobile,
+    passwordHash: mediatorPasswordHash,
+    role: 'mediator' as any,
+    roles: ['mediator'] as any,
+    status: 'active' as any,
+    mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    parentCode: E2E_ACCOUNTS.agency.agencyCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgMediator = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.mediator.mobile },
+    create: mediatorUpsertData,
+    update: mediatorUpsertData,
   });
 
   const brandPasswordHash = await hashPassword(E2E_ACCOUNTS.brand.password);
@@ -312,18 +347,21 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
-  const pgBrand = await db.user.create({
-    data: {
-      mongoId: String(brand._id),
-      name: E2E_ACCOUNTS.brand.name,
-      mobile: E2E_ACCOUNTS.brand.mobile,
-      passwordHash: brandPasswordHash,
-      role: 'brand' as any,
-      roles: ['brand'] as any,
-      status: 'active' as any,
-      brandCode: E2E_ACCOUNTS.brand.brandCode,
-      createdBy: pgAdmin.id,
-    },
+  const brandUpsertData = {
+    mongoId: String(brand._id),
+    name: E2E_ACCOUNTS.brand.name,
+    mobile: E2E_ACCOUNTS.brand.mobile,
+    passwordHash: brandPasswordHash,
+    role: 'brand' as any,
+    roles: ['brand'] as any,
+    status: 'active' as any,
+    brandCode: E2E_ACCOUNTS.brand.brandCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgBrand = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.brand.mobile },
+    create: brandUpsertData,
+    update: brandUpsertData,
   });
 
   const shopperPasswordHash = await hashPassword(E2E_ACCOUNTS.shopper.password);
@@ -344,19 +382,22 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
-  const pgShopper = await db.user.create({
-    data: {
-      mongoId: String(shopper._id),
-      name: E2E_ACCOUNTS.shopper.name,
-      mobile: E2E_ACCOUNTS.shopper.mobile,
-      passwordHash: shopperPasswordHash,
-      role: 'shopper' as any,
-      roles: ['shopper'] as any,
-      status: 'active' as any,
-      isVerifiedByMediator: true,
-      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      createdBy: pgAdmin.id,
-    },
+  const shopperUpsertData = {
+    mongoId: String(shopper._id),
+    name: E2E_ACCOUNTS.shopper.name,
+    mobile: E2E_ACCOUNTS.shopper.mobile,
+    passwordHash: shopperPasswordHash,
+    role: 'shopper' as any,
+    roles: ['shopper'] as any,
+    status: 'active' as any,
+    isVerifiedByMediator: true,
+    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgShopper = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.shopper.mobile },
+    create: shopperUpsertData,
+    update: shopperUpsertData,
   });
 
   const shopper2PasswordHash = await hashPassword(E2E_ACCOUNTS.shopper2.password);
@@ -375,19 +416,22 @@ export async function seedE2E(): Promise<SeededE2E> {
     createdBy: admin._id,
   });
 
-  const pgShopper2 = await db.user.create({
-    data: {
-      mongoId: String(shopper2._id),
-      name: E2E_ACCOUNTS.shopper2.name,
-      mobile: E2E_ACCOUNTS.shopper2.mobile,
-      passwordHash: shopper2PasswordHash,
-      role: 'shopper' as any,
-      roles: ['shopper'] as any,
-      status: 'active' as any,
-      isVerifiedByMediator: true,
-      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      createdBy: pgAdmin.id,
-    },
+  const shopper2UpsertData = {
+    mongoId: String(shopper2._id),
+    name: E2E_ACCOUNTS.shopper2.name,
+    mobile: E2E_ACCOUNTS.shopper2.mobile,
+    passwordHash: shopper2PasswordHash,
+    role: 'shopper' as any,
+    roles: ['shopper'] as any,
+    status: 'active' as any,
+    isVerifiedByMediator: true,
+    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgShopper2 = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.shopper2.mobile },
+    create: shopper2UpsertData,
+    update: shopper2UpsertData,
   });
 
   // Ensure role documents (Agency/Brand/MediatorProfile/ShopperProfile) exist — pass PG users.
@@ -415,18 +459,21 @@ export async function seedE2E(): Promise<SeededE2E> {
     { upsert: true, new: true }
   );
 
-  // Also create PG wallet for brand with pre-funded balance.
-  await db.wallet.create({
-    data: {
-      mongoId: new mongoose.Types.ObjectId().toString(),
-      ownerUserId: pgBrand.id,
-      currency: 'INR' as any,
-      availablePaise: 50_000_00,
-      pendingPaise: 0,
-      lockedPaise: 0,
-      version: 0,
-      createdBy: pgAdmin.id,
-    },
+  // Also create PG wallet for brand with pre-funded balance (upsert for idempotency).
+  const walletUpsertData = {
+    mongoId: new mongoose.Types.ObjectId().toString(),
+    ownerUserId: pgBrand.id,
+    currency: 'INR' as any,
+    availablePaise: 50_000_00,
+    pendingPaise: 0,
+    lockedPaise: 0,
+    version: 0,
+    createdBy: pgAdmin.id,
+  };
+  await db.wallet.upsert({
+    where: { ownerUserId: pgBrand.id },
+    create: walletUpsertData,
+    update: { availablePaise: 50_000_00, pendingPaise: 0, lockedPaise: 0, version: 0 },
   });
 
   // Minimal campaign + deal so shoppers can list products and create orders.

@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const BRAND_MOBILE = '9000000003';
-const PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 test.describe.configure({ retries: 2 });
 
@@ -9,7 +7,7 @@ test('brand can open Order Intelligence', async ({ page, request }) => {
   test.setTimeout(360_000);
 
   const loginRes = await request.post('/api/auth/login', {
-    data: { mobile: BRAND_MOBILE, password: PASSWORD },
+    data: { mobile: E2E_ACCOUNTS.brand.mobile, password: E2E_ACCOUNTS.brand.password },
   });
   expect(loginRes.ok()).toBeTruthy();
   const payload = await loginRes.json();

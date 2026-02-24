@@ -1,10 +1,19 @@
 import type { APIRequestContext } from '@playwright/test';
 
+export interface E2EUser {
+  id: string;
+  roles: string[];
+  mobile?: string;
+  username?: string;
+  wallet?: { balancePaise: number };
+  [key: string]: unknown;
+}
+
 export async function loginAndGetAccessToken(request: APIRequestContext, args: {
   mobile?: string;
   username?: string;
   password: string;
-}): Promise<{ accessToken: string; user: any }>
+}): Promise<{ accessToken: string; user: E2EUser }>
 {
   const deadline = Date.now() + 15_000;
   let lastError: unknown = null;
@@ -26,7 +35,7 @@ export async function loginAndGetAccessToken(request: APIRequestContext, args: {
     } else {
       const accessToken = payload?.tokens?.accessToken;
       if (typeof accessToken === 'string' && accessToken) {
-        return { accessToken, user: payload?.user };
+        return { accessToken, user: payload?.user as E2EUser };
       }
 
       // During portal startup, a 200 HTML response can slip through if the proxy isn't ready yet.

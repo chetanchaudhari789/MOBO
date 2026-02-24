@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
-import logger, { securityLog } from '../config/logger.js';
+import logger, { securityLog, logEvent } from '../config/logger.js';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -23,7 +23,6 @@ export function notFoundHandler(req: Request, res: Response): void {
       code: 'NOT_FOUND',
       message: `Route not found: ${req.method} ${req.path}`,
     },
-    requestId: String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim(),
   });
 }
 
@@ -33,6 +32,7 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  // requestId is kept for internal logging only — never exposed in API responses.
   const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
 
   if (err instanceof AppError) {
@@ -42,7 +42,6 @@ export function errorHandler(
         message: err.message,
         details: err.details,
       },
-      requestId,
     });
     return;
   }
@@ -53,13 +52,12 @@ export function errorHandler(
     res.status(400).json({
       error: {
         code: 'BAD_REQUEST',
-        message: 'Invalid request',
+        message: 'Please check your input and try again.',
         // In production, only expose user-facing field paths and messages (no internal schema details).
         details: isProd
           ? err.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
           : err.issues,
       },
-      requestId,
     });
     return;
   }
@@ -70,9 +68,8 @@ export function errorHandler(
     res.status(400).json({
       error: {
         code: 'INVALID_ID',
-        message: 'Invalid identifier format',
+        message: 'The provided identifier is not valid.',
       },
-      requestId,
     });
     return;
   }
@@ -87,9 +84,8 @@ export function errorHandler(
     res.status(400).json({
       error: {
         code: 'BAD_JSON',
-        message: 'Malformed JSON body',
+        message: 'The request body contains invalid JSON. Please check and try again.',
       },
-      requestId,
     });
     return;
   }
@@ -99,9 +95,8 @@ export function errorHandler(
     res.status(413).json({
       error: {
         code: 'PAYLOAD_TOO_LARGE',
-        message: 'Request body is too large. Please reduce the payload size.',
+        message: 'The uploaded data is too large. Please reduce the file size and try again.',
       },
-      requestId,
     });
     return;
   }
@@ -111,9 +106,8 @@ export function errorHandler(
     res.status(409).json({
       error: {
         code: 'DUPLICATE_ENTRY',
-        message: 'A record with this value already exists.',
+        message: 'This entry already exists. Please use a different value.',
       },
-      requestId,
     });
     return;
   }
@@ -126,27 +120,24 @@ export function errorHandler(
         res.status(409).json({
           error: {
             code: 'DUPLICATE_ENTRY',
-            message: 'A record with this value already exists.',
+            message: 'This entry already exists. Please use a different value.',
           },
-          requestId,
         });
         return;
       case 'P2025': // Record not found
         res.status(404).json({
           error: {
             code: 'NOT_FOUND',
-            message: 'The requested record was not found.',
+            message: 'The requested item was not found.',
           },
-          requestId,
         });
         return;
       case 'P2003': // Foreign key constraint failure
         res.status(400).json({
           error: {
             code: 'INVALID_REFERENCE',
-            message: 'Referenced record does not exist.',
+            message: 'The referenced item does not exist.',
           },
-          requestId,
         });
         return;
       case 'P2024': // Connection pool timeout
@@ -154,9 +145,8 @@ export function errorHandler(
         res.status(503).json({
           error: {
             code: 'SERVICE_UNAVAILABLE',
-            message: 'Service temporarily unavailable. Please try again.',
+            message: 'We are experiencing high traffic. Please try again in a moment.',
           },
-          requestId,
         });
         return;
       default:
@@ -172,9 +162,8 @@ export function errorHandler(
     res.status(400).json({
       error: {
         code: 'BAD_REQUEST',
-        message: 'Invalid data provided.',
+        message: 'The provided data is not valid. Please check and try again.',
       },
-      requestId,
     });
     return;
   }
@@ -184,9 +173,8 @@ export function errorHandler(
     res.status(401).json({
       error: {
         code: 'TOKEN_EXPIRED',
-        message: 'Authentication token has expired. Please refresh or login again.',
+        message: 'Your session has expired. Please log in again.',
       },
-      requestId,
     });
     return;
   }
@@ -195,26 +183,48 @@ export function errorHandler(
     res.status(401).json({
       error: {
         code: 'INVALID_TOKEN',
-        message: 'Authentication token is invalid.',
+        message: 'Your session is invalid. Please log in again.',
       },
-      requestId,
+    });
+    return;
+  }
+
+  // Network/connectivity errors — surface as 503 so clients know to retry.
+  const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN']);
+  if (anyErr?.code && networkCodes.has(String(anyErr.code))) {
+    logger.error('Network error during request', { requestId, code: anyErr.code, error: anyErr.message });
+    res.status(503).json({
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'A downstream service is temporarily unreachable. Please try again shortly.',
+      },
     });
     return;
   }
 
   const isProd = process.env.NODE_ENV === 'production';
 
-  logger.error(`Unhandled error on ${req.method} ${req.originalUrl}`, {
+  logEvent('error', `Unhandled error on ${req.method} ${req.originalUrl}`, {
+    domain: 'http',
+    eventName: 'UNHANDLED_REQUEST_ERROR',
     requestId: requestId || undefined,
-    error: err instanceof Error ? { message: err.message, stack: err.stack } : err,
+    method: req.method,
+    route: req.originalUrl,
+    ip: req.ip,
+    stack: err instanceof Error ? err.stack : undefined,
+    metadata: {
+      errorName: err instanceof Error ? err.name : typeof err,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    },
   });
 
-  const message = isProd ? 'Unexpected error' : err instanceof Error ? err.message : 'Unexpected error';
+  const message = isProd
+    ? 'Something went wrong. Please try again later.'
+    : err instanceof Error ? err.message : 'Something went wrong.';
   res.status(500).json({
     error: {
       code: 'INTERNAL_SERVER_ERROR',
       message,
     },
-    requestId,
   });
 }

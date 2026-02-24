@@ -1,7 +1,5 @@
 ﻿import { test, expect } from '@playwright/test';
-
-const ADMIN_ID = 'root';
-const PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 test.describe.configure({ retries: 2 });
 
@@ -9,7 +7,7 @@ test('admin can view seeded users', async ({ page, request }) => {
   test.setTimeout(360_000);
 
   const loginRes = await request.post('/api/auth/login', {
-    data: { username: ADMIN_ID, password: PASSWORD },
+    data: { username: E2E_ACCOUNTS.admin.username, password: E2E_ACCOUNTS.admin.password },
   });
   expect(loginRes.ok()).toBeTruthy();
   const payload = await loginRes.json();

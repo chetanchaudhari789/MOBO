@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
-import { httpLog } from './config/logger.js';
+import { httpLog, logEvent } from './config/logger.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
@@ -83,10 +83,11 @@ export function createApp(env: Env) {
   app.use(responseTimingMiddleware());
 
   // Ensure every response carries a request identifier for log correlation.
-  // If a caller provides X-Request-Id, we echo it back (within a safe length).
+  // Validate format to prevent log injection / CRLF attacks.
+  const UUID_PATTERN = /^[a-zA-Z0-9._-]{1,128}$/;
   app.use((req, res, next) => {
     const provided = String(req.header('x-request-id') || '').trim();
-    const requestId = provided && provided.length <= 128 ? provided : crypto.randomUUID();
+    const requestId = provided && UUID_PATTERN.test(provided) ? provided : crypto.randomUUID();
     res.setHeader('x-request-id', requestId);
     res.locals.requestId = requestId;
     next();
@@ -96,35 +97,66 @@ export function createApp(env: Env) {
   // This ensures `req.ip` and rate-limits behave correctly.
   app.set('trust proxy', 1);
 
-  // Structured request logging via Winston.
+  // Structured request logging via Winston with correlation ID propagation.
   // Silent in tests (Winston logger is configured to be silent in test mode).
+  const SLOW_REQUEST_THRESHOLD_MS = 3000;
   app.use((req, res, next) => {
     const start = Date.now();
+    const requestId = String(res.locals.requestId || '');
+    const correlationId = String(req.header('x-correlation-id') || requestId);
+    res.locals.correlationId = correlationId;
+    if (correlationId) res.setHeader('x-correlation-id', correlationId);
+
     res.on('finish', () => {
       const ms = Date.now() - start;
       const status = res.statusCode;
       const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
-      httpLog.log(level, `${req.method} ${req.originalUrl} -> ${status}`, {
-        requestId: String(res.locals.requestId || ''),
-        durationMs: ms,
+
+      logEvent(level, `${req.method} ${req.originalUrl} -> ${status}`, {
+        domain: 'http',
+        eventName: 'REQUEST_COMPLETED',
+        requestId,
+        correlationId,
         method: req.method,
-        url: req.originalUrl,
-        status,
+        route: req.originalUrl,
+        statusCode: status,
+        duration: ms,
         ip: req.ip,
+        metadata: {
+          userAgent: req.get('user-agent'),
+          contentLength: res.get('content-length'),
+        },
       });
+
+      // Slow request detection
+      if (ms > SLOW_REQUEST_THRESHOLD_MS) {
+        httpLog.warn(`Slow request detected: ${req.method} ${req.originalUrl} took ${ms}ms`, {
+          requestId,
+          correlationId,
+          durationMs: ms,
+          threshold: SLOW_REQUEST_THRESHOLD_MS,
+        });
+      }
     });
     next();
   });
   // Helmet defaults are good, but for an API service we explicitly:
   // - disable CSP (frontends are served separately)
   // - only enable HSTS in production
+  // - enforce strict referrer policy
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
-      hsts: env.NODE_ENV === 'production',
+      hsts: env.NODE_ENV === 'production' ? { maxAge: 31_536_000, includeSubDomains: true, preload: true } : false,
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     })
   );
+  // Permissions-Policy: restrict sensitive browser APIs (not part of Helmet types)
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
 
   app.use(
     rateLimit({
@@ -135,11 +167,9 @@ export function createApp(env: Env) {
       // Exempt SSE stream from rate limit — it's a single long-lived connection.
       skip: (req) => req.path === '/api/realtime/stream' || req.path === '/api/realtime/health',
       handler: (_req, res) => {
-        const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
-        httpLog.warn('Rate limit exceeded', { requestId, ip: _req.ip });
+        httpLog.warn('Rate limit exceeded', { ip: _req.ip });
         res.status(429).json({
-          error: { code: 'RATE_LIMITED', message: 'Too many requests' },
-          requestId,
+          error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
         });
       },
     })
@@ -148,9 +178,14 @@ export function createApp(env: Env) {
   // Stricter limiter for authentication endpoints to reduce brute-force risk.
   const authLimiter = rateLimit({
     windowMs: 5 * 60_000,
-    limit: env.NODE_ENV === 'production' ? 50 : 1000,
+    limit: env.NODE_ENV === 'production' ? 30 : 1000,
     standardHeaders: true,
     legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({
+        error: { code: 'AUTH_RATE_LIMITED', message: 'Too many login attempts. Please wait a few minutes and try again.' },
+      });
+    },
   });
 
   const corsOrigins = parseCorsOrigins(env.CORS_ORIGINS);
@@ -163,7 +198,6 @@ export function createApp(env: Env) {
     if (origin && !isOriginAllowed(origin, corsOrigins)) {
       return res.status(403).json({
         error: 'origin_not_allowed',
-        requestId: String(res.locals.requestId || ''),
       });
     }
     next();
@@ -189,11 +223,9 @@ export function createApp(env: Env) {
     express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT })(req, res, next);
   });
 
-  // Security audit: log suspicious patterns in requests (after body parsing).
-  // Only active in production to avoid dev noise.
-  if (env.NODE_ENV === 'production') {
-    app.use(securityAuditMiddleware());
-  }
+  // Security audit: log and block suspicious patterns in requests (after body parsing).
+  // Active in all environments for defense-in-depth.
+  app.use(securityAuditMiddleware());
 
   app.use('/api', healthRoutes(env));
   app.use('/api/auth', authLimiter, authRoutes(env));

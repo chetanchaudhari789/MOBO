@@ -31,6 +31,9 @@ RUN npm -w @mobo/backend run build
 # ─── Stage 2: Production ────────────────────────────────────────────────────
 FROM node:20-alpine AS production
 
+# Install tini for proper PID 1 signal handling (SIGTERM → graceful shutdown)
+RUN apk add --no-cache tini
+
 # Security: run as non-root user
 RUN addgroup -g 1001 -S mobo && \
     adduser -S mobo -u 1001 -G mobo
@@ -66,6 +69,7 @@ USER mobo
 # Expose port
 EXPOSE 8080
 
-# Start the server
+# Start the server with tini for proper signal forwarding
 ENV NODE_ENV=production
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "backend/dist/index.js"]

@@ -240,6 +240,9 @@ export function makeOrdersController(env: Env) {
           : { mongoId: body.userId, deletedAt: null };
         const user = await db().user.findFirst({ where: userLookupWhere as any });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        if (user.status !== 'active') {
+          throw new AppError(403, 'USER_NOT_ACTIVE', 'Your account is not active. Please contact support.');
+        }
         const userPgId = user.id;
         const userMongoId = user.mongoId!;
 

@@ -30,14 +30,18 @@ test('admin realtime stream is ready', async ({ page, request }) => {
     let buf = '';
     const deadline = Date.now() + 4_000;
 
-    while (Date.now() < deadline) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      buf += decoder.decode(value, { stream: true });
-      if (buf.includes('event: ready')) {
-        return { ok: true, status: res.status };
+    try {
+      while (Date.now() < deadline) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        buf += decoder.decode(value, { stream: true });
+        if (buf.includes('event: ready')) {
+          return { ok: true, status: res.status };
+        }
       }
+    } finally {
+      await reader.cancel().catch(() => {});
     }
 
     return { ok: false, status: res.status, detail: 'Timed out waiting for SSE ready event' };

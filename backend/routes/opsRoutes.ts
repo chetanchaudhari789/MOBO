@@ -19,10 +19,8 @@ export function opsRoutes(env: Env): Router {
     standardHeaders: true,
     legacyHeaders: false,
     handler: (_req, res) => {
-      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
       res.status(429).json({
-        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
-        requestId,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a few minutes and try again.' },
       });
     },
   });

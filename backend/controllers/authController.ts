@@ -24,6 +24,7 @@ import { pgUser, pgWallet } from '../utils/pgMappers.js';
 import { ensureRoleDocumentsForUser } from '../services/roleDocuments.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getAgencyCodeForMediatorCode } from '../services/lineage.js';
+import { compressImageDataUrl, compressQrCode } from '../utils/imageCompress.js';
 
 export function makeAuthController(env: Env) {
   const db = () => prisma();
@@ -210,9 +211,78 @@ export function makeAuthController(env: Env) {
           typeof (body as any).username === 'string' ? String((body as any).username).trim() : '';
         const username = usernameRaw ? usernameRaw.toLowerCase() : '';
 
+        // Fast login: only fetch fields needed for authentication (no relations)
         const user = mobile
-          ? await db().user.findFirst({ where: { mobile, deletedAt: null }, include: { pendingConnections: true } })
-          : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null }, include: { pendingConnections: true } });
+          ? await db().user.findFirst({
+              where: { mobile, deletedAt: null },
+              select: {
+                id: true,
+                mongoId: true,
+                name: true,
+                mobile: true,
+                email: true,
+                avatar: true,
+                role: true,
+                roles: true,
+                status: true,
+                passwordHash: true,
+                failedLoginAttempts: true,
+                lockoutUntil: true,
+                parentCode: true,
+                mediatorCode: true,
+                brandCode: true,
+                isVerifiedByMediator: true,
+                username: true,
+                upiId: true,
+                qrCode: true,
+                bankAccountNumber: true,
+                bankIfsc: true,
+                bankName: true,
+                bankHolderName: true,
+                kycStatus: true,
+                connectedAgencies: true,
+                generatedCodes: true,
+                walletBalancePaise: true,
+                walletPendingPaise: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            })
+          : await db().user.findFirst({
+              where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null },
+              select: {
+                id: true,
+                mongoId: true,
+                name: true,
+                mobile: true,
+                email: true,
+                avatar: true,
+                role: true,
+                roles: true,
+                status: true,
+                passwordHash: true,
+                failedLoginAttempts: true,
+                lockoutUntil: true,
+                parentCode: true,
+                mediatorCode: true,
+                brandCode: true,
+                isVerifiedByMediator: true,
+                username: true,
+                upiId: true,
+                qrCode: true,
+                bankAccountNumber: true,
+                bankIfsc: true,
+                bankName: true,
+                bankHolderName: true,
+                kycStatus: true,
+                connectedAgencies: true,
+                generatedCodes: true,
+                walletBalancePaise: true,
+                walletPendingPaise: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            });
         if (!user) {
           await writeAuditLog({
             req,
@@ -284,25 +354,29 @@ export function makeAuthController(env: Env) {
         }
 
         // Reset failed attempts on successful login
-        if ((user.failedLoginAttempts ?? 0) > 0 || user.lockoutUntil) {
-          await db().user.update({
-            where: { id: user.id },
-            data: { failedLoginAttempts: 0, lockoutUntil: null },
-          });
-        }
+        const resetPromise = (user.failedLoginAttempts ?? 0) > 0 || user.lockoutUntil
+          ? db().user.update({
+              where: { id: user.id },
+              data: { failedLoginAttempts: 0, lockoutUntil: null },
+            })
+          : null;
 
+        // Sign tokens synchronously (fast, CPU-only)
         const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
         const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
 
-        const wallet = await ensureWallet(user.id);
-
-        await writeAuditLog({
-          req,
-          action: 'AUTH_LOGIN_SUCCESS',
-          actorUserId: user.mongoId!,
-          actorRoles: user.roles as any,
-          metadata: { role: user.role },
-        });
+        // Parallel: wallet + reset + audit (non-blocking for fast response)
+        const [wallet] = await Promise.all([
+          ensureWallet(user.id),
+          resetPromise,
+          writeAuditLog({
+            req,
+            action: 'AUTH_LOGIN_SUCCESS',
+            actorUserId: user.mongoId!,
+            actorRoles: user.roles as any,
+            metadata: { role: user.role },
+          }).catch(() => {}),
+        ]);
 
         res.json({
           user: toUiUser(pgUser(user), pgWallet(wallet)),
@@ -664,6 +738,14 @@ export function makeAuthController(env: Env) {
           if (typeof value === 'undefined') continue;
           if (typeof value === 'string' && value.trim() === '') continue;
           update[key] = value;
+        }
+
+        // Compress images before persisting — reduces storage and page-load time.
+        if (update.avatar) {
+          update.avatar = await compressImageDataUrl(update.avatar);
+        }
+        if (update.qrCode) {
+          update.qrCode = await compressQrCode(update.qrCode);
         }
 
         if (typeof (body as any).bankDetails !== 'undefined') {

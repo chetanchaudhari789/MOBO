@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const BRAND_MOBILE = '9000000003';
-const PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 test('brand can login and view Campaigns', async ({ page }) => {
   await page.goto('/');
@@ -9,8 +7,8 @@ test('brand can login and view Campaigns', async ({ page }) => {
   // Splash -> Login
   await page.getByRole('button', { name: /Access Portal/i }).click();
 
-  await page.getByPlaceholder('9000000000').fill(BRAND_MOBILE);
-  await page.getByPlaceholder('Password').fill(PASSWORD);
+  await page.getByPlaceholder('9000000000').fill(E2E_ACCOUNTS.brand.mobile);
+  await page.getByPlaceholder('Password').fill(E2E_ACCOUNTS.brand.password);
   await page.getByRole('button', { name: /Login to Portal/i }).click();
 
   // Landing assertions

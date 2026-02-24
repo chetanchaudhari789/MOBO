@@ -27,7 +27,7 @@ describe('error handler production behavior', () => {
     expect(res.body).toMatchObject({
       error: {
         code: 'INTERNAL_SERVER_ERROR',
-        message: 'Unexpected error',
+        message: 'Something went wrong. Please try again later.',
       },
     });
 

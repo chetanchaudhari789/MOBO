@@ -12,7 +12,7 @@
  */
 import { PrismaClient } from '../generated/prisma/client.js';
 import type { TlsOptions } from 'node:tls';
-import { dbLog } from '../config/logger.js';
+import { dbLog, logEvent } from '../config/logger.js';
 
 let _prisma: PrismaClient | null = null;
 let _connecting: Promise<void> | null = null;
@@ -90,8 +90,10 @@ function buildPoolConfig(url: string) {
 
   const poolConfig: Record<string, unknown> = {
     connectionString: cleanUrl,
-    // Pool sizing: production servers need more connections; dev/test stays lean.
-    max: parseInt(process.env.PG_POOL_MAX || (isProd ? '20' : '10'), 10),
+    // Pool sizing: production needs enough connections for burst traffic.
+    // For 100k concurrent users, most hosting (Neon/Render) supports 50-100 connections.
+    // With PgBouncer or Prisma Accelerate in front, this can be higher.
+    max: parseInt(process.env.PG_POOL_MAX || (isProd ? '30' : '10'), 10),
     min: parseInt(process.env.PG_POOL_MIN || (isProd ? '5' : '2'), 10),
     idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
     connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
@@ -99,6 +101,9 @@ function buildPoolConfig(url: string) {
     statement_timeout: parseInt(process.env.PG_STATEMENT_TIMEOUT || '30000', 10),
     // Idle-in-transaction timeout prevents abandoned transactions from holding locks.
     idle_in_transaction_session_timeout: parseInt(process.env.PG_IDLE_IN_TX_TIMEOUT || '60000', 10),
+    // TCP keepalive: detect broken connections before they cause timeout cascades.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: parseInt(process.env.PG_KEEPALIVE_DELAY || '10000', 10),
     // Automatically reap connections above `min` if they've been idle for this long.
     allowExitOnIdle: !isProd,
   };
@@ -135,9 +140,9 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
   _connecting = (async () => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const logConfig: ('warn' | 'error')[] =
+        const logConfig: ('warn' | 'error' | 'query')[] =
           process.env.NODE_ENV === 'development'
-            ? ['warn', 'error']
+            ? ['warn', 'error', 'query']
             : ['error'];
 
         // Standard PostgreSQL with connection pooling + SSL
@@ -146,19 +151,48 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         const adapter = new PrismaPg(poolConfig as any, pgSchema ? { schema: pgSchema } : undefined);
         const client = new PrismaClient({ adapter, log: logConfig });
 
+        // Log slow queries (>200ms) in development for performance debugging
+        if (process.env.NODE_ENV === 'development') {
+          client.$on('query' as never, (event: any) => {
+            const duration = event.duration;
+            if (duration > 200) {
+              dbLog.warn(`Slow PG query (${duration}ms): ${String(event.query).slice(0, 200)}`, {
+                duration,
+                params: event.params ? String(event.params).slice(0, 100) : undefined,
+              });
+            }
+          });
+        }
+
         const sslLabel = sslmode === 'disable' ? 'off' : sslmode;
         dbLog.info(`PostgreSQL adapter ready (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'}, ssl=${sslLabel})`);
 
         // Run a lightweight query to verify connectivity upfront.
         await client.$queryRawUnsafe('SELECT 1');
         _prisma = client;
-        dbLog.info('Connected to PostgreSQL successfully');
+        logEvent('info', 'Connected to PostgreSQL successfully', {
+          domain: 'db',
+          eventName: 'PG_CONNECTED',
+          metadata: {
+            poolMax: poolConfig.max,
+            poolMin: poolConfig.min,
+            schema: pgSchema ?? 'public',
+            ssl: sslLabel,
+            attempt,
+          },
+        });
         return; // success — break out of retry loop
       } catch (err) {
         const isLastAttempt = attempt === maxRetries;
         const msg = `PostgreSQL connection attempt ${attempt}/${maxRetries} failed`;
         if (isLastAttempt) {
-          dbLog.error(msg, { error: err });
+          logEvent('error', msg, {
+            domain: 'db',
+            eventName: 'PG_CONNECTION_FAILED',
+            errorCode: (err as any).code,
+            stack: err instanceof Error ? err.stack : undefined,
+            metadata: { attempt, maxRetries },
+          });
           // Non-fatal — Mongo is still the primary. PG is a shadow.
           _prisma = null;
         } else {
@@ -193,14 +227,21 @@ export async function pingPg(): Promise<boolean> {
 
 /**
  * Gracefully disconnect the Prisma client (used during shutdown).
+ * Uses a 5-second timeout to prevent hanging when PG is unreachable.
  */
 export async function disconnectPrisma(): Promise<void> {
   if (_prisma) {
+    const client = _prisma;
+    _prisma = null; // Mark as disconnected immediately to prevent new queries
     try {
-      await _prisma.$disconnect();
-    } catch {
-      // best effort
+      await Promise.race([
+        client.$disconnect(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('Prisma disconnect timed out after 5s')), 5000)
+        ),
+      ]);
+    } catch (err) {
+      dbLog.warn('Prisma disconnect error (best-effort)', { error: err instanceof Error ? err.message : String(err) });
     }
-    _prisma = null;
   }
 }

@@ -119,8 +119,19 @@ async function acquireOcrWorker(): Promise<Awaited<ReturnType<typeof createWorke
 }
 
 /** Return a worker to the pool (or terminate if pool is full). */
-async function releaseOcrWorker(worker: Awaited<ReturnType<typeof createWorker>> | null): Promise<void> {
+async function releaseOcrWorker(worker: Awaited<ReturnType<typeof createWorker>> | null, hadError = false): Promise<void> {
   if (!worker) return;
+  // If the worker errored, it may be in a broken state. Terminate and create a fresh one.
+  if (hadError) {
+    try { await worker.terminate(); } catch { /* ignore */ }
+    // Replenish pool with a fresh worker in the background
+    if (_ocrPool.length < OCR_POOL_SIZE) {
+      createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH })
+        .then((w) => { if (_ocrPool.length < OCR_POOL_SIZE) _ocrPool.push(w); else w.terminate().catch(() => {}); })
+        .catch(() => { /* pool will be replenished on next acquire */ });
+    }
+    return;
+  }
   if (_ocrPool.length < OCR_POOL_SIZE) {
     _ocrPool.push(worker);
   } else {
@@ -742,7 +753,7 @@ async function verifyProofWithOcr(
           const hcText = (hcResult.data.text || '').trim();
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
-          if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
+          if (hcWorker) try { await releaseOcrWorker(hcWorker, true); } catch { /* ignore */ }
         }
       }
 
@@ -765,7 +776,7 @@ async function verifyProofWithOcr(
           const invText = (invResult.data.text || '').trim();
           if (invText.length > ocrText.length) ocrText = invText;
         } catch {
-          if (invWorker) try { await releaseOcrWorker(invWorker); } catch { /* ignore */ }
+          if (invWorker) try { await releaseOcrWorker(invWorker, true); } catch { /* ignore */ }
         }
       }
 
@@ -885,7 +896,7 @@ async function verifyProofWithOcr(
       discrepancyNote: detectedNotes.join(' ') || 'OCR fallback verification complete.',
     };
     } catch (workerErr) {
-      if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
+      if (worker) try { await releaseOcrWorker(worker, true); } catch { /* ignore */ }
       throw workerErr;
     }
   } catch (err) {
@@ -1086,7 +1097,7 @@ async function verifyRatingWithOcr(
         worker = null;
         return (data.text || '').trim();
       } catch {
-        if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
+        if (worker) try { await releaseOcrWorker(worker, true); } catch { /* ignore */ }
         return '';
       }
     };
@@ -1347,7 +1358,7 @@ async function verifyReturnWindowWithOcr(
           const hcText = (hcResult.data.text || '').trim();
           if (hcText.length > ocrText.length) ocrText = hcText;
         } catch {
-          if (hcWorker) try { await releaseOcrWorker(hcWorker); } catch { /* ignore */ }
+          if (hcWorker) try { await releaseOcrWorker(hcWorker, true); } catch { /* ignore */ }
         }
       }
 
@@ -1368,7 +1379,7 @@ async function verifyReturnWindowWithOcr(
           const invText = (invResult.data.text || '').trim();
           if (invText.length > ocrText.length) ocrText = invText;
         } catch {
-          if (invWorker) try { await releaseOcrWorker(invWorker); } catch { /* ignore */ }
+          if (invWorker) try { await releaseOcrWorker(invWorker, true); } catch { /* ignore */ }
         }
       }
 
@@ -1467,7 +1478,7 @@ async function verifyReturnWindowWithOcr(
       ].filter(Boolean).join(' ') || 'OCR verification complete.',
     };
     } catch (workerErr) {
-      if (worker) try { await releaseOcrWorker(worker); } catch { /* ignore */ }
+      if (worker) try { await releaseOcrWorker(worker, true); } catch { /* ignore */ }
       throw workerErr;
     }
   } catch (err) {
@@ -2548,6 +2559,14 @@ export async function extractOrderDetailsWithAi(
         const imgWidth = metadata.width ?? 0;
         const imgHeight = metadata.height ?? 0;
 
+        // Guard against decompression bombs: reject images with extreme dimensions.
+        // A 10000×10000 JPEG is ~300MB in RAM when decoded. Limit to 8000×8000 (≈192MB).
+        const MAX_DIMENSION = 8000;
+        if (imgWidth > MAX_DIMENSION || imgHeight > MAX_DIMENSION) {
+          aiLog.warn(`Image too large for OCR: ${imgWidth}×${imgHeight}px (max ${MAX_DIMENSION}×${MAX_DIMENSION})`);
+          return base64; // Skip preprocessing — let OCR handle raw data
+        }
+
         let pipeline = input;
         if (crop && imgWidth > 0 && imgHeight > 0) {
           const left = Math.max(0, Math.floor(imgWidth * (crop.left ?? 0)));
@@ -2686,10 +2705,13 @@ export async function extractOrderDetailsWithAi(
         return text;
       } catch (err) {
         aiLog.warn('Tesseract OCR failed', { error: err });
+        // Worker errored — terminate instead of returning to pool
+        if (worker) try { await releaseOcrWorker(worker as any, true); } catch { /* ignore */ }
+        worker = null as any;
         return '';
       } finally {
-        // Return the worker to the pool instead of terminating.
-        try { await releaseOcrWorker(worker as any); } catch { /* ignore cleanup errors */ }
+        // Return the worker to the pool (healthy path only; error path already handled above).
+        if (worker) try { await releaseOcrWorker(worker as any); } catch { /* ignore cleanup errors */ }
       }
     };
 

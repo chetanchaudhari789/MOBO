@@ -70,25 +70,70 @@ function checkObjectForSuspiciousPatterns(
   }
 }
 
+// Patterns that are unambiguously malicious and should be blocked outright.
+const BLOCK_PATTERNS = [
+  /(\.\.[/\\]){2,}/,          // Path traversal (../../ etc.)
+  /(\x00|\x1a|\x7f)/,         // Null bytes / control characters
+];
+
+function containsBlockablePattern(value: string): string | null {
+  for (const pattern of BLOCK_PATTERNS) {
+    if (pattern.test(value)) return pattern.source;
+  }
+  return null;
+}
+
+function checkObjectForBlockable(obj: Record<string, unknown>, depth = 0): string | null {
+  if (depth > 5) return null;
+  for (const [, value] of Object.entries(obj)) {
+    if (typeof value === 'string') {
+      const match = containsBlockablePattern(value);
+      if (match) return match;
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const match = checkObjectForBlockable(value as Record<string, unknown>, depth + 1);
+      if (match) return match;
+    }
+  }
+  return null;
+}
+
 /**
  * Middleware that logs suspicious request patterns for security monitoring.
- * Does NOT block requests (to avoid false positives) — just creates an audit trail.
+ * BLOCKS requests with unambiguously malicious patterns (path traversal, null bytes).
+ * Logs others (NoSQL injection, XSS, SQL injection) for audit trail without blocking.
  */
 export function securityAuditMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Check query parameters
-    if (req.query && typeof req.query === 'object') {
-      checkObjectForSuspiciousPatterns(req.query as Record<string, unknown>, 'query', req, res);
+    // Phase 1: Block unambiguously dangerous patterns
+    const sources: Array<{ data: Record<string, unknown>; label: string }> = [];
+    if (req.query && typeof req.query === 'object') sources.push({ data: req.query as Record<string, unknown>, label: 'query' });
+    if (req.body && typeof req.body === 'object') sources.push({ data: req.body as Record<string, unknown>, label: 'body' });
+    if (req.params && typeof req.params === 'object') sources.push({ data: req.params as Record<string, unknown>, label: 'params' });
+
+    for (const source of sources) {
+      const blockMatch = checkObjectForBlockable(source.data);
+      if (blockMatch) {
+        securityLog.warn('Blocked malicious request pattern', {
+          requestId: String(res.locals.requestId || ''),
+          pattern: blockMatch,
+          location: source.label,
+          ip: req.ip,
+          method: req.method,
+          url: req.originalUrl,
+        });
+        res.status(400).json({
+          error: {
+            code: 'BAD_REQUEST',
+            message: 'The request contains invalid characters.',
+          },
+        });
+        return;
+      }
     }
 
-    // Check body (only if parsed)
-    if (req.body && typeof req.body === 'object') {
-      checkObjectForSuspiciousPatterns(req.body as Record<string, unknown>, 'body', req, res);
-    }
-
-    // Check URL params
-    if (req.params && typeof req.params === 'object') {
-      checkObjectForSuspiciousPatterns(req.params as Record<string, unknown>, 'params', req, res);
+    // Phase 2: Log suspicious-but-not-conclusive patterns for audit
+    for (const source of sources) {
+      checkObjectForSuspiciousPatterns(source.data, source.label, req, res);
     }
 
     next();

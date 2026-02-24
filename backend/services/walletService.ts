@@ -71,29 +71,48 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     });
     if (existingTx) return existingTx;
 
-    // Upsert wallet and atomically increment balance
-    const wallet = await tx.wallet.upsert({
+    // Safety limit: prevent runaway balances (default 1 crore paise = ₹1,00,000).
+    const MAX_BALANCE_PAISE = Number(process.env.WALLET_MAX_BALANCE_PAISE) || 1_00_00_000;
+
+    // Ensure wallet exists first
+    await tx.wallet.upsert({
       where: { ownerUserId: input.ownerUserId },
-      update: {
-        availablePaise: { increment: input.amountPaise },
-        version: { increment: 1 },
-      },
+      update: {},
       create: {
         mongoId: new Types.ObjectId().toString(),
         ownerUserId: input.ownerUserId,
         currency: 'INR',
-        availablePaise: input.amountPaise,
+        availablePaise: 0,
         pendingPaise: 0,
         lockedPaise: 0,
-        version: 1,
+        version: 0,
       },
     });
 
-    // Safety: prevent runaway balances (default 1 crore paise = ₹1,00,000).
-    const MAX_BALANCE_PAISE = Number(process.env.WALLET_MAX_BALANCE_PAISE) || 1_00_00_000;
-    if (wallet.availablePaise > MAX_BALANCE_PAISE) {
+    // Atomic credit with max-balance ceiling check via updateMany.
+    // This prevents the race condition where two concurrent credits both pass
+    // a read-then-write check and exceed the wallet limit.
+    const updated = await tx.wallet.updateMany({
+      where: {
+        ownerUserId: input.ownerUserId,
+        deletedAt: null,
+        availablePaise: { lte: MAX_BALANCE_PAISE - input.amountPaise },
+      },
+      data: {
+        availablePaise: { increment: input.amountPaise },
+        version: { increment: 1 },
+      },
+    });
+
+    if (updated.count === 0) {
+      // Distinguish wallet-not-found from limit exceeded
+      const existing = await tx.wallet.findUnique({ where: { ownerUserId: input.ownerUserId } });
+      if (!existing || existing.deletedAt) throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
       throw new AppError(409, 'BALANCE_LIMIT_EXCEEDED', 'Wallet balance limit exceeded');
     }
+
+    // Re-read wallet to get walletId for the transaction record
+    const wallet = await tx.wallet.findUnique({ where: { ownerUserId: input.ownerUserId } });
 
     const txn = await tx.transaction.create({
       data: {
