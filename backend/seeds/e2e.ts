@@ -226,259 +226,287 @@ async function wipeCollections() {
       }
     }
   }
+}
 
-  export async function seedE2E(): Promise<SeededE2E> {
-    if (mongoose.connection.readyState === 0) {
-      throw new Error('seedE2E() requires an active Mongo connection');
-    }
+export async function seedE2E(): Promise<SeededE2E> {
+  if (mongoose.connection.readyState === 0) {
+    throw new Error('seedE2E() requires an active Mongo connection');
+  }
 
-    // Ensure PostgreSQL (Prisma) is connected for controllers that use PG as primary.
-    await connectPrisma();
+  // Ensure PostgreSQL (Prisma) is connected for controllers that use PG as primary.
+  await connectPrisma();
 
-    await wipeCollections();
+  await wipeCollections();
 
-    const db = prisma();
+  const db = prisma();
 
-    const adminPasswordHash = await hashPassword(E2E_ACCOUNTS.admin.password);
-    const admin = await UserModel.create({
-      name: E2E_ACCOUNTS.admin.name,
-      mobile: E2E_ACCOUNTS.admin.mobile,
-      username: E2E_ACCOUNTS.admin.username,
-      passwordHash: adminPasswordHash,
-      role: 'admin',
-      roles: ['admin', 'ops'],
-      status: 'active',
-    });
+  const adminPasswordHash = await hashPassword(E2E_ACCOUNTS.admin.password);
+  const admin = await UserModel.create({
+    name: E2E_ACCOUNTS.admin.name,
+    mobile: E2E_ACCOUNTS.admin.mobile,
+    username: E2E_ACCOUNTS.admin.username,
+    passwordHash: adminPasswordHash,
+    role: 'admin',
+    roles: ['admin', 'ops'],
+    status: 'active',
+  });
 
-    // Create corresponding PG user (upsert for idempotency across re-runs)
-    const adminUpsertData = {
-      mongoId: String(admin._id),
-      name: E2E_ACCOUNTS.admin.name,
-      mobile: E2E_ACCOUNTS.admin.mobile,
-      username: E2E_ACCOUNTS.admin.username,
-      passwordHash: adminPasswordHash,
-      role: 'admin' as any,
-      roles: ['admin', 'ops'] as any,
-      status: 'active' as any,
-    };
-    const pgAdmin = await db.user.upsert({
-      where: { mobile: E2E_ACCOUNTS.admin.mobile },
-      create: adminUpsertData,
-      update: adminUpsertData,
-    });
+  // Create corresponding PG user (upsert for idempotency across re-runs)
+  const adminUpsertData = {
+    mongoId: String(admin._id),
+    name: E2E_ACCOUNTS.admin.name,
+    mobile: E2E_ACCOUNTS.admin.mobile,
+    username: E2E_ACCOUNTS.admin.username,
+    passwordHash: adminPasswordHash,
+    role: 'admin' as any,
+    roles: ['admin', 'ops'] as any,
+    status: 'active' as any,
+  };
+  const pgAdmin = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.admin.mobile },
+    create: adminUpsertData,
+    update: adminUpsertData,
+  });
 
-    const agencyPasswordHash = await hashPassword(E2E_ACCOUNTS.agency.password);
-    const agency = await UserModel.create({
-      name: E2E_ACCOUNTS.agency.name,
-      mobile: E2E_ACCOUNTS.agency.mobile,
-      passwordHash: agencyPasswordHash,
-      role: 'agency',
-      roles: ['agency'],
-      status: 'active',
+  const agencyPasswordHash = await hashPassword(E2E_ACCOUNTS.agency.password);
+  const agency = await UserModel.create({
+    name: E2E_ACCOUNTS.agency.name,
+    mobile: E2E_ACCOUNTS.agency.mobile,
+    passwordHash: agencyPasswordHash,
+    role: 'agency',
+    roles: ['agency'],
+    status: 'active',
 
-      // For agencies, the system stores the agency code in the legacy `mediatorCode` field.
-      mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
+    // For agencies, the system stores the agency code in the legacy `mediatorCode` field.
+    mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
 
-      createdBy: admin._id,
-    });
+    createdBy: admin._id,
+  });
 
-    const agencyUpsertData = {
-      mongoId: String(agency._id),
-      name: E2E_ACCOUNTS.agency.name,
-      mobile: E2E_ACCOUNTS.agency.mobile,
-      passwordHash: agencyPasswordHash,
-      role: 'agency' as any,
-      roles: ['agency'] as any,
-      status: 'active' as any,
-      mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
-      createdBy: pgAdmin.id,
-    };
-    const pgAgency = await db.user.upsert({
-      where: { mobile: E2E_ACCOUNTS.agency.mobile },
-      create: agencyUpsertData,
-      update: agencyUpsertData,
-    });
+  const agencyUpsertData = {
+    mongoId: String(agency._id),
+    name: E2E_ACCOUNTS.agency.name,
+    mobile: E2E_ACCOUNTS.agency.mobile,
+    passwordHash: agencyPasswordHash,
+    role: 'agency' as any,
+    roles: ['agency'] as any,
+    status: 'active' as any,
+    mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgAgency = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.agency.mobile },
+    create: agencyUpsertData,
+    update: agencyUpsertData,
+  });
 
-    const mediatorPasswordHash = await hashPassword(E2E_ACCOUNTS.mediator.password);
-    const mediator = await UserModel.create({
-      name: E2E_ACCOUNTS.mediator.name,
-      mobile: E2E_ACCOUNTS.mediator.mobile,
-      passwordHash: mediatorPasswordHash,
-      role: 'mediator',
-      roles: ['mediator'],
-      status: 'active',
+  const mediatorPasswordHash = await hashPassword(E2E_ACCOUNTS.mediator.password);
+  const mediator = await UserModel.create({
+    name: E2E_ACCOUNTS.mediator.name,
+    mobile: E2E_ACCOUNTS.mediator.mobile,
+    passwordHash: mediatorPasswordHash,
+    role: 'mediator',
+    roles: ['mediator'],
+    status: 'active',
 
-      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      parentCode: E2E_ACCOUNTS.agency.agencyCode,
+    mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    parentCode: E2E_ACCOUNTS.agency.agencyCode,
 
-      createdBy: admin._id,
-    });
+    createdBy: admin._id,
+  });
 
-    const mediatorUpsertData = {
-      mongoId: String(mediator._id),
-      name: E2E_ACCOUNTS.mediator.name,
-      mobile: E2E_ACCOUNTS.mediator.mobile,
-      passwordHash: mediatorPasswordHash,
-      role: 'mediator' as any,
-      roles: ['mediator'] as any,
-      status: 'active' as any,
-      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      parentCode: E2E_ACCOUNTS.agency.agencyCode,
-      createdBy: pgAdmin.id,
-    };
-    const pgMediator = await db.user.upsert({
-      where: { mobile: E2E_ACCOUNTS.mediator.mobile },
-      create: mediatorUpsertData,
-      update: mediatorUpsertData,
-    });
+  const mediatorUpsertData = {
+    mongoId: String(mediator._id),
+    name: E2E_ACCOUNTS.mediator.name,
+    mobile: E2E_ACCOUNTS.mediator.mobile,
+    passwordHash: mediatorPasswordHash,
+    role: 'mediator' as any,
+    roles: ['mediator'] as any,
+    status: 'active' as any,
+    mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    parentCode: E2E_ACCOUNTS.agency.agencyCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgMediator = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.mediator.mobile },
+    create: mediatorUpsertData,
+    update: mediatorUpsertData,
+  });
 
-    const brandPasswordHash = await hashPassword(E2E_ACCOUNTS.brand.password);
-    const brand = await UserModel.create({
-      name: E2E_ACCOUNTS.brand.name,
-      mobile: E2E_ACCOUNTS.brand.mobile,
-      passwordHash: brandPasswordHash,
-      role: 'brand',
-      roles: ['brand'],
-      status: 'active',
+  const brandPasswordHash = await hashPassword(E2E_ACCOUNTS.brand.password);
+  const brand = await UserModel.create({
+    name: E2E_ACCOUNTS.brand.name,
+    mobile: E2E_ACCOUNTS.brand.mobile,
+    passwordHash: brandPasswordHash,
+    role: 'brand',
+    roles: ['brand'],
+    status: 'active',
 
-      brandCode: E2E_ACCOUNTS.brand.brandCode,
+    brandCode: E2E_ACCOUNTS.brand.brandCode,
 
-      createdBy: admin._id,
-    });
+    createdBy: admin._id,
+  });
 
-    const brandUpsertData = {
-      mongoId: String(brand._id),
-      name: E2E_ACCOUNTS.brand.name,
-      mobile: E2E_ACCOUNTS.brand.mobile,
-      passwordHash: brandPasswordHash,
-      role: 'brand' as any,
-      roles: ['brand'] as any,
-      status: 'active' as any,
-      brandCode: E2E_ACCOUNTS.brand.brandCode,
-      createdBy: pgAdmin.id,
-    };
-    const pgBrand = await db.user.upsert({
-      where: { mobile: E2E_ACCOUNTS.brand.mobile },
-      create: brandUpsertData,
-      update: brandUpsertData,
-    });
+  const brandUpsertData = {
+    mongoId: String(brand._id),
+    name: E2E_ACCOUNTS.brand.name,
+    mobile: E2E_ACCOUNTS.brand.mobile,
+    passwordHash: brandPasswordHash,
+    role: 'brand' as any,
+    roles: ['brand'] as any,
+    status: 'active' as any,
+    brandCode: E2E_ACCOUNTS.brand.brandCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgBrand = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.brand.mobile },
+    create: brandUpsertData,
+    update: brandUpsertData,
+  });
 
-    const shopperPasswordHash = await hashPassword(E2E_ACCOUNTS.shopper.password);
-    const shopper = await UserModel.create({
-      name: E2E_ACCOUNTS.shopper.name,
-      mobile: E2E_ACCOUNTS.shopper.mobile,
-      passwordHash: shopperPasswordHash,
-      role: 'shopper',
-      roles: ['shopper'],
-      status: 'active',
+  const shopperPasswordHash = await hashPassword(E2E_ACCOUNTS.shopper.password);
+  const shopper = await UserModel.create({
+    name: E2E_ACCOUNTS.shopper.name,
+    mobile: E2E_ACCOUNTS.shopper.mobile,
+    passwordHash: shopperPasswordHash,
+    role: 'shopper',
+    roles: ['shopper'],
+    status: 'active',
 
-      // Buyer portal is blocked until the shopper is verified by their mediator.
-      // E2E flows assume the seeded shoppers can navigate Explore/Orders immediately.
-      isVerifiedByMediator: true,
+    // Buyer portal is blocked until the shopper is verified by their mediator.
+    // E2E flows assume the seeded shoppers can navigate Explore/Orders immediately.
+    isVerifiedByMediator: true,
 
-      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
 
-      createdBy: admin._id,
-    });
+    createdBy: admin._id,
+  });
 
-    const shopperUpsertData = {
-      mongoId: String(shopper._id),
-      name: E2E_ACCOUNTS.shopper.name,
-      mobile: E2E_ACCOUNTS.shopper.mobile,
-      passwordHash: shopperPasswordHash,
-      role: 'shopper' as any,
-      roles: ['shopper'] as any,
-      status: 'active' as any,
-      isVerifiedByMediator: true,
-      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      createdBy: pgAdmin.id,
-    };
-    const pgShopper = await db.user.upsert({
-      where: { mobile: E2E_ACCOUNTS.shopper.mobile },
-      create: shopperUpsertData,
-      update: shopperUpsertData,
-    });
+  const shopperUpsertData = {
+    mongoId: String(shopper._id),
+    name: E2E_ACCOUNTS.shopper.name,
+    mobile: E2E_ACCOUNTS.shopper.mobile,
+    passwordHash: shopperPasswordHash,
+    role: 'shopper' as any,
+    roles: ['shopper'] as any,
+    status: 'active' as any,
+    isVerifiedByMediator: true,
+    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgShopper = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.shopper.mobile },
+    create: shopperUpsertData,
+    update: shopperUpsertData,
+  });
 
-    const shopper2PasswordHash = await hashPassword(E2E_ACCOUNTS.shopper2.password);
-    const shopper2 = await UserModel.create({
-      name: E2E_ACCOUNTS.shopper2.name,
-      mobile: E2E_ACCOUNTS.shopper2.mobile,
-      passwordHash: shopper2PasswordHash,
-      role: 'shopper',
-      roles: ['shopper'],
-      status: 'active',
+  const shopper2PasswordHash = await hashPassword(E2E_ACCOUNTS.shopper2.password);
+  const shopper2 = await UserModel.create({
+    name: E2E_ACCOUNTS.shopper2.name,
+    mobile: E2E_ACCOUNTS.shopper2.mobile,
+    passwordHash: shopper2PasswordHash,
+    role: 'shopper',
+    roles: ['shopper'],
+    status: 'active',
 
-      isVerifiedByMediator: true,
+    isVerifiedByMediator: true,
 
-      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
 
-      createdBy: admin._id,
-    });
+    createdBy: admin._id,
+  });
 
-    const shopper2UpsertData = {
-      mongoId: String(shopper2._id),
-      name: E2E_ACCOUNTS.shopper2.name,
-      mobile: E2E_ACCOUNTS.shopper2.mobile,
-      passwordHash: shopper2PasswordHash,
-      role: 'shopper' as any,
-      roles: ['shopper'] as any,
-      status: 'active' as any,
-      isVerifiedByMediator: true,
-      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      createdBy: pgAdmin.id,
-    };
-    const pgShopper2 = await db.user.upsert({
-      where: { mobile: E2E_ACCOUNTS.shopper2.mobile },
-      create: shopper2UpsertData,
-      update: shopper2UpsertData,
-    });
+  const shopper2UpsertData = {
+    mongoId: String(shopper2._id),
+    name: E2E_ACCOUNTS.shopper2.name,
+    mobile: E2E_ACCOUNTS.shopper2.mobile,
+    passwordHash: shopper2PasswordHash,
+    role: 'shopper' as any,
+    roles: ['shopper'] as any,
+    status: 'active' as any,
+    isVerifiedByMediator: true,
+    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    createdBy: pgAdmin.id,
+  };
+  const pgShopper2 = await db.user.upsert({
+    where: { mobile: E2E_ACCOUNTS.shopper2.mobile },
+    create: shopper2UpsertData,
+    update: shopper2UpsertData,
+  });
 
-    // Ensure role documents (Agency/Brand/MediatorProfile/ShopperProfile) exist — pass PG users.
-    await ensureRoleDocumentsForUser({ user: pgAgency });
-    await ensureRoleDocumentsForUser({ user: pgMediator });
-    await ensureRoleDocumentsForUser({ user: pgBrand });
-    await ensureRoleDocumentsForUser({ user: pgShopper });
-    await ensureRoleDocumentsForUser({ user: pgShopper2 });
+  // Ensure role documents (Agency/Brand/MediatorProfile/ShopperProfile) exist — pass PG users.
+  await ensureRoleDocumentsForUser({ user: pgAgency });
+  await ensureRoleDocumentsForUser({ user: pgMediator });
+  await ensureRoleDocumentsForUser({ user: pgBrand });
+  await ensureRoleDocumentsForUser({ user: pgShopper });
+  await ensureRoleDocumentsForUser({ user: pgShopper2 });
 
-    // Pre-fund brand wallet so ops settlement flows can debit it.
-    await WalletModel.findOneAndUpdate(
-      { ownerUserId: brand._id, deletedAt: null },
-      {
-        $setOnInsert: {
-          ownerUserId: brand._id,
-          currency: 'INR',
-        },
-        $set: {
-          availablePaise: 50_000_00, // ₹50,000
-          pendingPaise: 0,
-          lockedPaise: 0,
-          version: 0,
-        },
+  // Pre-fund brand wallet so ops settlement flows can debit it.
+  await WalletModel.findOneAndUpdate(
+    { ownerUserId: brand._id, deletedAt: null },
+    {
+      $setOnInsert: {
+        ownerUserId: brand._id,
+        currency: 'INR',
       },
-      { upsert: true, new: true }
-    );
+      $set: {
+        availablePaise: 50_000_00, // ₹50,000
+        pendingPaise: 0,
+        lockedPaise: 0,
+        version: 0,
+      },
+    },
+    { upsert: true, new: true }
+  );
 
-    // Also create PG wallet for brand with pre-funded balance (upsert for idempotency).
-    const walletUpsertData = {
-      mongoId: new mongoose.Types.ObjectId().toString(),
-      ownerUserId: pgBrand.id,
-      currency: 'INR' as any,
-      availablePaise: 50_000_00,
-      pendingPaise: 0,
-      lockedPaise: 0,
-      version: 0,
-      createdBy: pgAdmin.id,
-    };
-    await db.wallet.upsert({
-      where: { ownerUserId: pgBrand.id },
-      create: walletUpsertData,
-      update: { availablePaise: 50_000_00, pendingPaise: 0, lockedPaise: 0, version: 0 },
-    });
+  // Also create PG wallet for brand with pre-funded balance (upsert for idempotency).
+  const walletUpsertData = {
+    mongoId: new mongoose.Types.ObjectId().toString(),
+    ownerUserId: pgBrand.id,
+    currency: 'INR' as any,
+    availablePaise: 50_000_00,
+    pendingPaise: 0,
+    lockedPaise: 0,
+    version: 0,
+    createdBy: pgAdmin.id,
+  };
+  await db.wallet.upsert({
+    where: { ownerUserId: pgBrand.id },
+    create: walletUpsertData,
+    update: { availablePaise: 50_000_00, pendingPaise: 0, lockedPaise: 0, version: 0 },
+  });
 
-    // Minimal campaign + deal so shoppers can list products and create orders.
-    const campaign = await CampaignModel.create({
+  // Minimal campaign + deal so shoppers can list products and create orders.
+  const campaign = await CampaignModel.create({
+    title: 'E2E Campaign',
+    brandUserId: brand._id,
+    brandName: E2E_ACCOUNTS.brand.name,
+    platform: 'Amazon',
+    image: 'https://placehold.co/600x400',
+    productUrl: 'https://example.com/product',
+    originalPricePaise: 1200_00,
+    pricePaise: 999_00,
+    payoutPaise: 100_00,
+    returnWindowDays: 14,
+    dealType: 'Discount',
+    totalSlots: 100,
+    usedSlots: 0,
+    status: 'active',
+
+    allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
+    assignments: {
+      [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 },
+    },
+
+    createdBy: admin._id,
+  });
+
+  // Create PG campaign.
+  const pgCampaign = await db.campaign.create({
+    data: {
+      mongoId: String(campaign._id),
       title: 'E2E Campaign',
-      brandUserId: brand._id,
+      brandUserId: pgBrand.id,
       brandName: E2E_ACCOUNTS.brand.name,
       platform: 'Amazon',
       image: 'https://placehold.co/600x400',
@@ -487,45 +515,41 @@ async function wipeCollections() {
       pricePaise: 999_00,
       payoutPaise: 100_00,
       returnWindowDays: 14,
-      dealType: 'Discount',
+      dealType: 'Discount' as any,
       totalSlots: 100,
       usedSlots: 0,
-      status: 'active',
-
+      status: 'active' as any,
       allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
-      assignments: {
-        [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 },
-      },
+      assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
+      createdBy: pgAdmin.id,
+    },
+  });
 
-      createdBy: admin._id,
-    });
+  await DealModel.create({
+    campaignId: campaign._id,
+    mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    title: 'E2E Deal',
+    description: 'Exclusive',
+    image: 'https://placehold.co/600x400',
+    productUrl: 'https://example.com/product',
+    platform: 'Amazon',
+    brandName: E2E_ACCOUNTS.brand.name,
+    dealType: 'Discount',
+    originalPricePaise: 1200_00,
+    pricePaise: 999_00,
+    commissionPaise: 50_00,
+    payoutPaise: 100_00,
+    rating: 5,
+    category: 'General',
+    active: true,
+    createdBy: admin._id,
+  });
 
-    // Create PG campaign.
-    const pgCampaign = await db.campaign.create({
-      data: {
-        mongoId: String(campaign._id),
-        title: 'E2E Campaign',
-        brandUserId: pgBrand.id,
-        brandName: E2E_ACCOUNTS.brand.name,
-        platform: 'Amazon',
-        image: 'https://placehold.co/600x400',
-        productUrl: 'https://example.com/product',
-        originalPricePaise: 1200_00,
-        pricePaise: 999_00,
-        payoutPaise: 100_00,
-        returnWindowDays: 14,
-        dealType: 'Discount' as any,
-        totalSlots: 100,
-        usedSlots: 0,
-        status: 'active' as any,
-        allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
-        assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
-        createdBy: pgAdmin.id,
-      },
-    });
-
-    await DealModel.create({
-      campaignId: campaign._id,
+  // Create PG deal.
+  await db.deal.create({
+    data: {
+      mongoId: new mongoose.Types.ObjectId().toString(),
+      campaignId: pgCampaign.id,
       mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
       title: 'E2E Deal',
       description: 'Exclusive',
@@ -533,7 +557,7 @@ async function wipeCollections() {
       productUrl: 'https://example.com/product',
       platform: 'Amazon',
       brandName: E2E_ACCOUNTS.brand.name,
-      dealType: 'Discount',
+      dealType: 'Discount' as any,
       originalPricePaise: 1200_00,
       pricePaise: 999_00,
       commissionPaise: 50_00,
@@ -541,35 +565,12 @@ async function wipeCollections() {
       rating: 5,
       category: 'General',
       active: true,
-      createdBy: admin._id,
-    });
+      createdBy: pgAdmin.id,
+    },
+  });
 
-    // Create PG deal.
-    await db.deal.create({
-      data: {
-        mongoId: new mongoose.Types.ObjectId().toString(),
-        campaignId: pgCampaign.id,
-        mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-        title: 'E2E Deal',
-        description: 'Exclusive',
-        image: 'https://placehold.co/600x400',
-        productUrl: 'https://example.com/product',
-        platform: 'Amazon',
-        brandName: E2E_ACCOUNTS.brand.name,
-        dealType: 'Discount' as any,
-        originalPricePaise: 1200_00,
-        pricePaise: 999_00,
-        commissionPaise: 50_00,
-        payoutPaise: 100_00,
-        rating: 5,
-        category: 'General',
-        active: true,
-        createdBy: pgAdmin.id,
-      },
-    });
-
-    return {
-      admin, agency, mediator, brand, shopper, shopper2,
-      pgAdmin, pgAgency, pgMediator, pgBrand, pgShopper, pgShopper2,
-    };
-  }
+  return {
+    admin, agency, mediator, brand, shopper, shopper2,
+    pgAdmin, pgAgency, pgMediator, pgBrand, pgShopper, pgShopper2,
+  };
+}
