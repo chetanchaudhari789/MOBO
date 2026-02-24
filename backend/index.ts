@@ -7,7 +7,7 @@ import { connectPrisma, disconnectPrisma, isPrismaAvailable } from './database/p
 import { registerDualWriteHooks } from './database/dualWriteHooks.js';
 import { createApp } from './app.js';
 import type { Server } from 'node:http';
-import logger, { startupLog, seedLog } from './config/logger.js';
+import { startupLog, seedLog, logEvent, getSystemMetrics } from './config/logger.js';
 
 let server: Server | null = null;
 let shuttingDown = false;
@@ -126,9 +126,18 @@ async function main() {
   const app = createApp(env);
 
   server = app.listen(env.PORT, () => {
-    startupLog.info(`Backend listening on :${env.PORT}`, {
-      nodeEnv: env.NODE_ENV,
-      port: env.PORT,
+    const metrics = getSystemMetrics();
+    logEvent('info', `Backend listening on :${env.PORT}`, {
+      domain: 'system',
+      eventName: 'APPLICATION_STARTED',
+      metadata: {
+        nodeEnv: env.NODE_ENV,
+        port: env.PORT,
+        nodeVersion: process.version,
+        platform: process.platform,
+        uptimeSeconds: Math.round(process.uptime()),
+        ...metrics,
+      },
     });
   });
 }
@@ -136,16 +145,32 @@ async function main() {
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled promise rejection', { error: reason });
+  logEvent('error', 'Unhandled promise rejection', {
+    domain: 'system',
+    eventName: 'UNHANDLED_REJECTION',
+    stack: reason instanceof Error ? reason.stack : String(reason),
+    metadata: { reason: String(reason), ...getSystemMetrics() },
+  });
   process.exitCode = 1;
   void shutdown('unhandledRejection');
 });
 process.on('uncaughtException', (err) => {
-  logger.error('Uncaught exception', { error: err });
+  logEvent('error', `Uncaught exception: ${err.message}`, {
+    domain: 'system',
+    eventName: 'UNCAUGHT_EXCEPTION',
+    errorCode: (err as any).code,
+    stack: err.stack,
+    metadata: { name: err.name, ...getSystemMetrics() },
+  });
   process.exitCode = 1;
   void shutdown('uncaughtException');
 });
 main().catch((err) => {
-  startupLog.error('Fatal startup error', { error: err });
+  logEvent('error', `Fatal startup error: ${err.message}`, {
+    domain: 'system',
+    eventName: 'STARTUP_FATAL',
+    stack: err instanceof Error ? err.stack : undefined,
+    metadata: { ...getSystemMetrics() },
+  });
   process.exitCode = 1;
 });

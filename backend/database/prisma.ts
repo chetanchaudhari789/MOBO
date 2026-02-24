@@ -12,7 +12,7 @@
  */
 import { PrismaClient } from '../generated/prisma/client.js';
 import type { TlsOptions } from 'node:tls';
-import { dbLog } from '../config/logger.js';
+import { dbLog, logEvent } from '../config/logger.js';
 
 let _prisma: PrismaClient | null = null;
 let _connecting: Promise<void> | null = null;
@@ -157,13 +157,29 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         // Run a lightweight query to verify connectivity upfront.
         await client.$queryRawUnsafe('SELECT 1');
         _prisma = client;
-        dbLog.info('Connected to PostgreSQL successfully');
+        logEvent('info', 'Connected to PostgreSQL successfully', {
+          domain: 'db',
+          eventName: 'PG_CONNECTED',
+          metadata: {
+            poolMax: poolConfig.max,
+            poolMin: poolConfig.min,
+            schema: pgSchema ?? 'public',
+            ssl: sslLabel,
+            attempt,
+          },
+        });
         return; // success — break out of retry loop
       } catch (err) {
         const isLastAttempt = attempt === maxRetries;
         const msg = `PostgreSQL connection attempt ${attempt}/${maxRetries} failed`;
         if (isLastAttempt) {
-          dbLog.error(msg, { error: err });
+          logEvent('error', msg, {
+            domain: 'db',
+            eventName: 'PG_CONNECTION_FAILED',
+            errorCode: (err as any).code,
+            stack: err instanceof Error ? err.stack : undefined,
+            metadata: { attempt, maxRetries },
+          });
           // Non-fatal — Mongo is still the primary. PG is a shadow.
           _prisma = null;
         } else {

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
-import logger, { securityLog } from '../config/logger.js';
+import logger, { securityLog, logEvent } from '../config/logger.js';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -191,9 +191,18 @@ export function errorHandler(
 
   const isProd = process.env.NODE_ENV === 'production';
 
-  logger.error(`Unhandled error on ${req.method} ${req.originalUrl}`, {
+  logEvent('error', `Unhandled error on ${req.method} ${req.originalUrl}`, {
+    domain: 'http',
+    eventName: 'UNHANDLED_REQUEST_ERROR',
     requestId: requestId || undefined,
-    error: err instanceof Error ? { message: err.message, stack: err.stack } : err,
+    method: req.method,
+    route: req.originalUrl,
+    ip: req.ip,
+    stack: err instanceof Error ? err.stack : undefined,
+    metadata: {
+      errorName: err instanceof Error ? err.name : typeof err,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    },
   });
 
   const message = isProd

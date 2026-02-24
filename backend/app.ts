@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
-import { httpLog } from './config/logger.js';
+import { httpLog, logEvent } from './config/logger.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
@@ -96,22 +96,46 @@ export function createApp(env: Env) {
   // This ensures `req.ip` and rate-limits behave correctly.
   app.set('trust proxy', 1);
 
-  // Structured request logging via Winston.
+  // Structured request logging via Winston with correlation ID propagation.
   // Silent in tests (Winston logger is configured to be silent in test mode).
+  const SLOW_REQUEST_THRESHOLD_MS = 3000;
   app.use((req, res, next) => {
     const start = Date.now();
+    const requestId = String(res.locals.requestId || '');
+    const correlationId = String(req.header('x-correlation-id') || requestId);
+    res.locals.correlationId = correlationId;
+    if (correlationId) res.setHeader('x-correlation-id', correlationId);
+
     res.on('finish', () => {
       const ms = Date.now() - start;
       const status = res.statusCode;
       const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
-      httpLog.log(level, `${req.method} ${req.originalUrl} -> ${status}`, {
-        requestId: String(res.locals.requestId || ''),
-        durationMs: ms,
+
+      logEvent(level, `${req.method} ${req.originalUrl} -> ${status}`, {
+        domain: 'http',
+        eventName: 'REQUEST_COMPLETED',
+        requestId,
+        correlationId,
         method: req.method,
-        url: req.originalUrl,
-        status,
+        route: req.originalUrl,
+        statusCode: status,
+        duration: ms,
         ip: req.ip,
+        metadata: {
+          userAgent: req.get('user-agent'),
+          contentLength: res.get('content-length'),
+        },
       });
+
+      // Slow request detection
+      if (ms > SLOW_REQUEST_THRESHOLD_MS) {
+        httpLog.warn(`Slow request detected: ${req.method} ${req.originalUrl} took ${ms}ms`, {
+          requestId,
+          correlationId,
+          durationMs: ms,
+          threshold: SLOW_REQUEST_THRESHOLD_MS,
+        });
+      }
     });
     next();
   });
