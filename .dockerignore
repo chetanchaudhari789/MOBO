@@ -1,0 +1,47 @@
+# Dependencies
+node_modules
+**/node_modules
+!node_modules/.prisma
+
+# Build outputs (except what we need)
+apps/*/dist
+apps/*/.next
+apps/*/.turbo
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
+.github
+
+# Docs and reports
+*.md
+docs/
+*.json.log
+eslint-report.json
+
+# Environment
+.env*
+!.env.example
+
+# Test files
+coverage/
+e2e/
+**/*.test.ts
+**/*.spec.ts
+**/tests/
+playwright.config.ts
+playwright-report/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

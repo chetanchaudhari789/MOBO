@@ -96,93 +96,93 @@ export function makeOrdersController(env: Env) {
   };
 
   return {
-        getOrderProof: async (req: Request, res: Response, next: NextFunction) => {
-          try {
-            const orderId = String(req.params.orderId || '').trim();
-            const proofType = String(req.params.type || '').trim().toLowerCase();
-            if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
+    getOrderProof: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const orderId = String(req.params.orderId || '').trim();
+        const proofType = String(req.params.type || '').trim().toLowerCase();
+        if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
 
-            const allowedTypes = new Set(['order', 'payment', 'rating', 'review', 'returnwindow']);
-            if (!allowedTypes.has(proofType)) {
-              throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
-            }
+        const allowedTypes = new Set(['order', 'payment', 'rating', 'review', 'returnwindow']);
+        if (!allowedTypes.has(proofType)) {
+          throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
+        }
 
-            const order = await findOrderForProof(orderId);
-            if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+        const order = await findOrderForProof(orderId);
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-            const { roles, user, userId: _userId, pgUserId } = getRequester(req);
-            if (!isPrivileged(roles)) {
-              let allowed = false;
+        const { roles, user, userId: _userId, pgUserId } = getRequester(req);
+        if (!isPrivileged(roles)) {
+          let allowed = false;
 
-              if (roles.includes('brand')) {
-                const sameBrand = String(order.brandUserId || '') === pgUserId;
-                const brandName = String(order.brandName || '').trim();
-                const sameBrandName = !!brandName && brandName === String(user?.name || '').trim();
-                allowed = sameBrand || sameBrandName;
-              }
-
-              if (!allowed && roles.includes('agency')) {
-                const agencyCode = String(user?.mediatorCode || '').trim();
-                const agencyName = String(user?.name || '').trim();
-                if (agencyName && String(order.agencyName || '').trim() === agencyName) {
-                  allowed = true;
-                } else if (agencyCode && String(order.managerName || '').trim()) {
-                  const mediator = await db().user.findFirst({
-                    where: {
-                      roles: { has: 'mediator' as any },
-                      mediatorCode: String(order.managerName || '').trim(),
-                      parentCode: agencyCode,
-                      deletedAt: null,
-                    },
-                    select: { id: true },
-                  });
-                  allowed = !!mediator;
-                }
-              }
-
-              if (!allowed && roles.includes('mediator')) {
-                const mediatorCode = String(user?.mediatorCode || '').trim();
-                allowed = !!mediatorCode && String(order.managerName || '').trim() === mediatorCode;
-              }
-
-              if (!allowed && roles.includes('shopper')) {
-                allowed = String(order.userId || '') === pgUserId;
-              }
-
-              if (!allowed) throw new AppError(403, 'FORBIDDEN', 'Not allowed to access proof');
-            }
-
-            const proofValue = resolveProofValue(order, proofType);
-            sendProofResponse(res, proofValue);
-          } catch (err) {
-            next(err);
+          if (roles.includes('brand')) {
+            const sameBrand = String(order.brandUserId || '') === pgUserId;
+            const brandName = String(order.brandName || '').trim();
+            const sameBrandName = !!brandName && brandName === String(user?.name || '').trim();
+            allowed = sameBrand || sameBrandName;
           }
-        },
 
-        getOrderProofPublic: async (req: Request, res: Response, next: NextFunction) => {
-          try {
-            // Require authentication — prevents unauthenticated enumeration of proof images.
-            const requesterId = req.auth?.userId;
-            if (!requesterId) throw new AppError(401, 'UNAUTHENTICATED', 'Authentication required');
-
-            const orderId = String(req.params.orderId || '').trim();
-            const proofType = String(req.params.type || '').trim().toLowerCase();
-            if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
-
-            const allowedTypes = new Set(['order', 'payment', 'rating', 'review', 'returnwindow']);
-            if (!allowedTypes.has(proofType)) {
-              throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
+          if (!allowed && roles.includes('agency')) {
+            const agencyCode = String(user?.mediatorCode || '').trim();
+            const agencyName = String(user?.name || '').trim();
+            if (agencyName && String(order.agencyName || '').trim() === agencyName) {
+              allowed = true;
+            } else if (agencyCode && String(order.managerName || '').trim()) {
+              const mediator = await db().user.findFirst({
+                where: {
+                  roles: { has: 'mediator' as any },
+                  mediatorCode: String(order.managerName || '').trim(),
+                  parentCode: agencyCode,
+                  deletedAt: null,
+                },
+                select: { id: true },
+              });
+              allowed = !!mediator;
             }
-
-            const order = await findOrderForProof(orderId);
-            if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
-
-            const proofValue = resolveProofValue(order, proofType);
-            sendProofResponse(res, proofValue);
-          } catch (err) {
-            next(err);
           }
-        },
+
+          if (!allowed && roles.includes('mediator')) {
+            const mediatorCode = String(user?.mediatorCode || '').trim();
+            allowed = !!mediatorCode && String(order.managerName || '').trim() === mediatorCode;
+          }
+
+          if (!allowed && roles.includes('shopper')) {
+            allowed = String(order.userId || '') === pgUserId;
+          }
+
+          if (!allowed) throw new AppError(403, 'FORBIDDEN', 'Not allowed to access proof');
+        }
+
+        const proofValue = resolveProofValue(order, proofType);
+        sendProofResponse(res, proofValue);
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    getOrderProofPublic: async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        // Require authentication — prevents unauthenticated enumeration of proof images.
+        const requesterId = req.auth?.userId;
+        if (!requesterId) throw new AppError(401, 'UNAUTHENTICATED', 'Authentication required');
+
+        const orderId = String(req.params.orderId || '').trim();
+        const proofType = String(req.params.type || '').trim().toLowerCase();
+        if (!orderId) throw new AppError(400, 'INVALID_ORDER_ID', 'Invalid order id');
+
+        const allowedTypes = new Set(['order', 'payment', 'rating', 'review', 'returnwindow']);
+        if (!allowedTypes.has(proofType)) {
+          throw new AppError(400, 'INVALID_PROOF_TYPE', 'Invalid proof type');
+        }
+
+        const order = await findOrderForProof(orderId);
+        if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
+
+        const proofValue = resolveProofValue(order, proofType);
+        sendProofResponse(res, proofValue);
+      } catch (err) {
+        next(err);
+      }
+    },
     getUserOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const userId = String(req.params.userId || '');
@@ -429,8 +429,8 @@ export function makeOrdersController(env: Env) {
         // Atomic slot claim via raw SQL inside transaction to prevent overselling
         const claimSlot = async (tx: any) => {
           const claimed: any[] = await tx.$queryRaw`
-            UPDATE campaigns SET "usedSlots" = "usedSlots" + 1
-            WHERE id = ${campaign.id}::uuid AND "usedSlots" < "totalSlots" AND "deletedAt" IS NULL
+            UPDATE "campaigns" SET "used_slots" = "used_slots" + 1
+            WHERE id = ${campaign.id}::uuid AND "used_slots" < "total_slots" AND "deleted_at" IS NULL
             RETURNING id
           `;
           if (!claimed.length) {
@@ -641,7 +641,7 @@ export function makeOrdersController(env: Env) {
             total: body.items.reduce((a: number, it: any) => a + (Number(it.priceAtPurchase) || 0) * (Number(it.quantity) || 1), 0),
             externalOrderId: resolvedExternalOrderId,
           },
-        }).catch(() => {});
+        }).catch(() => { });
 
         res
           .status(201)
@@ -780,7 +780,7 @@ export function makeOrdersController(env: Env) {
               });
               // Block submission if both name AND product mismatch with high confidence (≥70 for anti-fraud strength)
               if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
-                  && ratingAiResult.confidenceScore >= 70) {
+                && ratingAiResult.confidenceScore >= 70) {
                 throw new AppError(422, 'RATING_VERIFICATION_FAILED',
                   'Rating screenshot does not match: the account name and product must match your order. ' +
                   (ratingAiResult.discrepancyNote || ''));
@@ -978,9 +978,9 @@ export function makeOrdersController(env: Env) {
         const managerCode = String(order.managerName || '').trim();
         const mediatorUser = managerCode
           ? await db().user.findFirst({
-              where: { roles: { has: 'mediator' as any }, mediatorCode: managerCode, deletedAt: null },
-              select: { parentCode: true },
-            })
+            where: { roles: { has: 'mediator' as any }, mediatorCode: managerCode, deletedAt: null },
+            select: { parentCode: true },
+          })
           : null;
         const upstreamAgencyCode = String(mediatorUser?.parentCode || '').trim();
 
@@ -1005,7 +1005,7 @@ export function makeOrdersController(env: Env) {
           req, action: 'PROOF_SUBMITTED', entityType: 'Order',
           entityId: order.mongoId!,
           metadata: { proofType: body.type },
-        }).catch(() => {});
+        }).catch(() => { });
         return;
       } catch (err) {
         next(err);

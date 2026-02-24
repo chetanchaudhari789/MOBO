@@ -126,17 +126,17 @@ export function makeAdminController() {
         const [roleCounts, orderStats] = await Promise.all([
           db().$queryRaw<Array<{ role: string; count: number }>>`
             SELECT r AS role, COUNT(*)::int AS count
-            FROM users, UNNEST(roles) AS r
-            WHERE "deletedAt" IS NULL
+            FROM "users", UNNEST(roles) AS r
+            WHERE "deleted_at" IS NULL
             GROUP BY r`,
           db().$queryRaw<Array<{ total_orders: number; total_revenue_paise: number; pending_revenue_paise: number; risk_orders: number }>>`
             SELECT
               COUNT(*)::int AS total_orders,
-              COALESCE(SUM("totalPaise"), 0)::int AS total_revenue_paise,
-              COALESCE(SUM(CASE WHEN "affiliateStatus"::text = 'Pending_Cooling' THEN "totalPaise" ELSE 0 END), 0)::int AS pending_revenue_paise,
-              COALESCE(SUM(CASE WHEN "affiliateStatus"::text IN ('Fraud_Alert', 'Unchecked') THEN 1 ELSE 0 END), 0)::int AS risk_orders
-            FROM orders
-            WHERE "deletedAt" IS NULL`,
+              COALESCE(SUM("total_paise"), 0)::int AS total_revenue_paise,
+              COALESCE(SUM(CASE WHEN "affiliate_status"::text = 'Pending_Cooling' THEN "total_paise" ELSE 0 END), 0)::int AS pending_revenue_paise,
+              COALESCE(SUM(CASE WHEN "affiliate_status"::text IN ('Fraud_Alert', 'Unchecked') THEN 1 ELSE 0 END), 0)::int AS risk_orders
+            FROM "orders"
+            WHERE "deleted_at" IS NULL`,
         ]);
 
         const counts: any = { total: 0, user: 0, mediator: 0, agency: 0, brand: 0 };
@@ -167,11 +167,11 @@ export function makeAdminController() {
         since.setHours(0, 0, 0, 0);
 
         const pipeline = await db().$queryRaw<Array<{ date: string; revenue: number }>>`
-          SELECT TO_CHAR("createdAt", 'YYYY-MM-DD') AS date,
-                 COALESCE(SUM("totalPaise"), 0)::int AS revenue
-          FROM orders
-          WHERE "createdAt" >= ${since} AND "deletedAt" IS NULL
-          GROUP BY TO_CHAR("createdAt", 'YYYY-MM-DD')`;
+          SELECT TO_CHAR("created_at", 'YYYY-MM-DD') AS date,
+                 COALESCE(SUM("total_paise"), 0)::int AS revenue
+          FROM "orders"
+          WHERE "created_at" >= ${since} AND "deleted_at" IS NULL
+          GROUP BY TO_CHAR("created_at", 'YYYY-MM-DD')`;
 
         const revenueByDate = new Map(pipeline.map(b => [b.date, Math.round(Number(b.revenue) / 100)]));
 
@@ -438,14 +438,14 @@ export function makeAdminController() {
 
             if (roles.includes('shopper')) {
               await freezeOrders({ query: { userId: user.id }, reason: 'USER_SUSPENDED', actorUserId: adminPgId });
-              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'USER_SUSPENDED', role: 'shopper' } }).catch(() => {});
+              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'USER_SUSPENDED', role: 'shopper' } }).catch(() => { });
             }
 
             if (roles.includes('mediator') && mediatorCode) {
               await db().deal.updateMany({ where: { mediatorCode, deletedAt: null }, data: { active: false } });
               await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminPgId });
-              writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => {});
-              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => {});
+              writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => { });
+              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => { });
               const agencyCode = (await getAgencyCodeForMediatorCode(mediatorCode)) || '';
               publishRealtime({
                 type: 'deals.changed',
@@ -465,8 +465,8 @@ export function makeAdminController() {
               if (mediatorCodes.length) {
                 await db().deal.updateMany({ where: { mediatorCode: { in: mediatorCodes }, deletedAt: null }, data: { active: false } });
                 await freezeOrders({ query: { managerName: { in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminPgId });
-                writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => {});
-                writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => {});
+                writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => { });
+                writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => { });
                 publishRealtime({
                   type: 'deals.changed',
                   ts: new Date().toISOString(),
@@ -487,8 +487,8 @@ export function makeAdminController() {
                 data: { status: 'paused' as any },
               });
               await freezeOrders({ query: { brandUserId: user.id }, reason: 'BRAND_SUSPENDED', actorUserId: adminPgId });
-              writeAuditLog({ req, action: 'CAMPAIGNS_PAUSED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => {});
-              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => {});
+              writeAuditLog({ req, action: 'CAMPAIGNS_PAUSED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => { });
+              writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => { });
             }
           }
 

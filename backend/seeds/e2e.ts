@@ -114,7 +114,7 @@ async function wipeCollections() {
           'invites', 'tickets', 'push_subscriptions', 'suspensions',
           'shopper_profiles', 'mediator_profiles', 'brands', 'agencies',
           'pending_connections', 'system_configs', 'migration_sync', 'users',
-        ];
+        ].map(t => `"${t}"`);
         await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
       } catch {
         // Fallback: individual deleteMany in FK-safe order when TRUNCATE fails
@@ -140,90 +140,90 @@ async function wipeCollections() {
         await db.migrationSync.deleteMany({});
         await db.user.deleteMany({});
       }
+      return;
     }
-    return;
-  }
 
-  // ── Targeted wipe (non-test): only remove E2E accounts ──
-  const mongoE2eUsers = await UserModel.find({ mobile: { $in: E2E_MOBILES } });
-  const mongoIds = mongoE2eUsers.map((u) => u._id);
+    // ── Targeted wipe (non-test): only remove E2E accounts ──
+    const mongoE2eUsers = await UserModel.find({ mobile: { $in: E2E_MOBILES } });
+    const mongoIds = mongoE2eUsers.map((u) => u._id);
 
-  if (mongoIds.length > 0) {
-    await Promise.allSettled([
-      TransactionModel.deleteMany({}), // E2E-only transactions
-      PayoutModel.deleteMany({}),
-      OrderModel.deleteMany({ userId: { $in: mongoIds } }),
-      DealModel.deleteMany({ createdBy: { $in: mongoIds } }),
-      CampaignModel.deleteMany({
-        $or: [
-          { brandUserId: { $in: mongoIds } },
-          { createdBy: { $in: mongoIds } },
-        ],
-      }),
-      WalletModel.deleteMany({ ownerUserId: { $in: mongoIds } }),
-      TicketModel.deleteMany({ userId: { $in: mongoIds } }),
-      InviteModel.deleteMany({ createdBy: { $in: mongoIds } }),
-      MediatorProfileModel.deleteMany({ userId: { $in: mongoIds } }),
-      ShopperProfileModel.deleteMany({ userId: { $in: mongoIds } }),
-      AgencyModel.deleteMany({ userId: { $in: mongoIds } }),
-      BrandModel.deleteMany({ userId: { $in: mongoIds } }),
-    ]);
-    await UserModel.deleteMany({ mobile: { $in: E2E_MOBILES } });
-  }
+    if (mongoIds.length > 0) {
+      await Promise.allSettled([
+        TransactionModel.deleteMany({}), // E2E-only transactions
+        PayoutModel.deleteMany({}),
+        OrderModel.deleteMany({ userId: { $in: mongoIds } }),
+        DealModel.deleteMany({ createdBy: { $in: mongoIds } }),
+        CampaignModel.deleteMany({
+          $or: [
+            { brandUserId: { $in: mongoIds } },
+            { createdBy: { $in: mongoIds } },
+          ],
+        }),
+        WalletModel.deleteMany({ ownerUserId: { $in: mongoIds } }),
+        TicketModel.deleteMany({ userId: { $in: mongoIds } }),
+        InviteModel.deleteMany({ createdBy: { $in: mongoIds } }),
+        MediatorProfileModel.deleteMany({ userId: { $in: mongoIds } }),
+        ShopperProfileModel.deleteMany({ userId: { $in: mongoIds } }),
+        AgencyModel.deleteMany({ userId: { $in: mongoIds } }),
+        BrandModel.deleteMany({ userId: { $in: mongoIds } }),
+      ]);
+      await UserModel.deleteMany({ mobile: { $in: E2E_MOBILES } });
+    }
 
-  // ── PostgreSQL: targeted delete by E2E mobile numbers ──
-  if (isPrismaAvailable()) {
-    const db = prisma();
-    const pgE2eUsers = await db.user.findMany({
-      where: { mobile: { in: E2E_MOBILES } },
-      select: { id: true },
-    });
-    const pgIds = pgE2eUsers.map((u) => u.id);
-
-    if (pgIds.length > 0) {
-      // Delete non-cascading dependents first (bottom-up from FK graph)
-      await db.auditLog.deleteMany({ where: { actorUserId: { in: pgIds } } });
-      await db.suspension.deleteMany({
-        where: { OR: [{ targetUserId: { in: pgIds } }, { adminUserId: { in: pgIds } }] },
+    // ── PostgreSQL: targeted delete by E2E mobile numbers ──
+    if (isPrismaAvailable()) {
+      const db = prisma();
+      const pgE2eUsers = await db.user.findMany({
+        where: { mobile: { in: E2E_MOBILES } },
+        select: { id: true },
       });
-      await db.invite.deleteMany({ where: { createdBy: { in: pgIds } } });
-      await db.ticket.deleteMany({ where: { userId: { in: pgIds } } });
+      const pgIds = pgE2eUsers.map((u) => u.id);
 
-      // Wallets & financial records
-      const walletIds = (
-        await db.wallet.findMany({ where: { ownerUserId: { in: pgIds } }, select: { id: true } })
-      ).map((w) => w.id);
-      if (walletIds.length) {
-        await db.transaction.deleteMany({ where: { walletId: { in: walletIds } } });
-        await db.payout.deleteMany({ where: { walletId: { in: walletIds } } });
+      if (pgIds.length > 0) {
+        // Delete non-cascading dependents first (bottom-up from FK graph)
+        await db.auditLog.deleteMany({ where: { actorUserId: { in: pgIds } } });
+        await db.suspension.deleteMany({
+          where: { OR: [{ targetUserId: { in: pgIds } }, { adminUserId: { in: pgIds } }] },
+        });
+        await db.invite.deleteMany({ where: { createdBy: { in: pgIds } } });
+        await db.ticket.deleteMany({ where: { userId: { in: pgIds } } });
+
+        // Wallets & financial records
+        const walletIds = (
+          await db.wallet.findMany({ where: { ownerUserId: { in: pgIds } }, select: { id: true } })
+        ).map((w) => w.id);
+        if (walletIds.length) {
+          await db.transaction.deleteMany({ where: { walletId: { in: walletIds } } });
+          await db.payout.deleteMany({ where: { walletId: { in: walletIds } } });
+        }
+        await db.wallet.deleteMany({ where: { ownerUserId: { in: pgIds } } });
+
+        // Orders & order items
+        const orderIds = (
+          await db.order.findMany({ where: { userId: { in: pgIds } }, select: { id: true } })
+        ).map((o) => o.id);
+        if (orderIds.length) {
+          await db.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+        }
+        await db.order.deleteMany({ where: { userId: { in: pgIds } } });
+
+        // Campaigns & deals (deals CASCADE from campaign)
+        const campaignIds = (
+          await db.campaign.findMany({ where: { brandUserId: { in: pgIds } }, select: { id: true } })
+        ).map((c) => c.id);
+        if (campaignIds.length) {
+          await db.deal.deleteMany({ where: { campaignId: { in: campaignIds } } });
+        }
+        await db.campaign.deleteMany({ where: { brandUserId: { in: pgIds } } });
+
+        // Role documents
+        await db.brand.deleteMany({ where: { ownerUserId: { in: pgIds } } });
+        await db.agency.deleteMany({ where: { ownerUserId: { in: pgIds } } });
+
+        // Finally delete users (cascades: PendingConnection, MediatorProfile,
+        // ShopperProfile, PushSubscription)
+        await db.user.deleteMany({ where: { mobile: { in: E2E_MOBILES } } });
       }
-      await db.wallet.deleteMany({ where: { ownerUserId: { in: pgIds } } });
-
-      // Orders & order items
-      const orderIds = (
-        await db.order.findMany({ where: { userId: { in: pgIds } }, select: { id: true } })
-      ).map((o) => o.id);
-      if (orderIds.length) {
-        await db.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
-      }
-      await db.order.deleteMany({ where: { userId: { in: pgIds } } });
-
-      // Campaigns & deals (deals CASCADE from campaign)
-      const campaignIds = (
-        await db.campaign.findMany({ where: { brandUserId: { in: pgIds } }, select: { id: true } })
-      ).map((c) => c.id);
-      if (campaignIds.length) {
-        await db.deal.deleteMany({ where: { campaignId: { in: campaignIds } } });
-      }
-      await db.campaign.deleteMany({ where: { brandUserId: { in: pgIds } } });
-
-      // Role documents
-      await db.brand.deleteMany({ where: { ownerUserId: { in: pgIds } } });
-      await db.agency.deleteMany({ where: { ownerUserId: { in: pgIds } } });
-
-      // Finally delete users (cascades: PendingConnection, MediatorProfile,
-      // ShopperProfile, PushSubscription)
-      await db.user.deleteMany({ where: { mobile: { in: E2E_MOBILES } } });
     }
   }
 }
