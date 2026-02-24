@@ -1909,11 +1909,6 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             Analyze
                           </button>
                         )}
-                        {adminAiAnalysis && !adminIsAnalyzing && (
-                          <button type="button" onClick={adminRunAnalysis} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-600 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors">
-                            Re-Analyze
-                          </button>
-                        )}
                       </div>
                       {adminIsAnalyzing && (
                         <div className="flex items-center justify-center py-3">

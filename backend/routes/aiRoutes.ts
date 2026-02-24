@@ -97,10 +97,8 @@ export function aiRoutes(env: Env): Router {
     legacyHeaders: false,
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
     handler: (_req, res) => {
-      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
       res.status(429).json({
-        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
-        requestId,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
       });
     },
   });
@@ -114,10 +112,8 @@ export function aiRoutes(env: Env): Router {
     legacyHeaders: false,
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
     handler: (_req, res) => {
-      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
       res.status(429).json({
-        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
-        requestId,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
       });
     },
   });
@@ -131,16 +127,11 @@ export function aiRoutes(env: Env): Router {
     legacyHeaders: false,
     keyGenerator: (req) => String(req.auth?.userId || req.ip || 'unknown'),
     handler: (_req, res) => {
-      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
       res.status(429).json({
-        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
-        requestId,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
       });
     },
   });
-
-  const getRequestId = (res: any) =>
-    String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
 
   // ⚠ DEPLOYMENT NOTE: These rate-limit Maps live in process memory.
   // They reset on restart and are per-instance in multi-worker deployments.
@@ -166,8 +157,7 @@ export function aiRoutes(env: Env): Router {
   const ensureAiEnabled = (res: any): boolean => {
     if (env.AI_ENABLED) return true;
     res.status(503).json({
-      error: { code: 'AI_DISABLED', message: 'AI is disabled' },
-      requestId: getRequestId(res),
+      error: { code: 'AI_DISABLED', message: 'AI features are currently unavailable.' },
     });
     return false;
   };
@@ -182,8 +172,7 @@ export function aiRoutes(env: Env): Router {
     if (!Number.isFinite(limit) || limit <= 0) {
       res.set('Retry-After', '3600');
       res.status(429).json({
-        error: { code: 'DAILY_LIMIT_REACHED', message: 'Daily AI quota exceeded' },
-        requestId: getRequestId(res),
+        error: { code: 'DAILY_LIMIT_REACHED', message: 'You have reached the daily limit. Please try again tomorrow.' },
       });
       return false;
     }
@@ -197,8 +186,7 @@ export function aiRoutes(env: Env): Router {
     if (existing.count >= limit) {
       res.set('Retry-After', '3600');
       res.status(429).json({
-        error: { code: 'DAILY_LIMIT_REACHED', message: 'Daily AI quota exceeded' },
-        requestId: getRequestId(res),
+        error: { code: 'DAILY_LIMIT_REACHED', message: 'You have reached the daily limit. Please try again tomorrow.' },
       });
       return false;
     }
@@ -217,8 +205,7 @@ export function aiRoutes(env: Env): Router {
       const retryInSeconds = Math.ceil(env.AI_MIN_SECONDS_BETWEEN_CALLS - (now - last) / 1000);
       res.set('Retry-After', String(Math.max(retryInSeconds, 1)));
       res.status(429).json({
-        error: { code: 'TOO_FREQUENT', message: 'Please wait before retrying' },
-        requestId: getRequestId(res),
+        error: { code: 'TOO_FREQUENT', message: 'Please wait a few seconds before trying again.' },
       });
       return false;
     }
@@ -230,15 +217,14 @@ export function aiRoutes(env: Env): Router {
       res
         .status(400)
         .json({
-          error: { code: 'BAD_REQUEST', message: 'Invalid request', details: err.issues },
-          requestId: getRequestId(res),
+          error: { code: 'BAD_REQUEST', message: 'Please check your input and try again.', details: err.issues },
         });
       return true;
     }
     const anyErr = err as any;
     if (anyErr && typeof anyErr.statusCode === 'number') {
       const statusCode = anyErr.statusCode;
-      const message = String(anyErr.message || 'AI error');
+      const message = String(anyErr.message || 'Something went wrong with AI analysis.');
       const code =
         statusCode === 400
           ? 'BAD_REQUEST'
@@ -252,7 +238,6 @@ export function aiRoutes(env: Env): Router {
             code,
             message,
           },
-          requestId: getRequestId(res),
         });
       return true;
     }
@@ -267,8 +252,7 @@ export function aiRoutes(env: Env): Router {
       const payload = chatSchema.parse(req.body);
       if (!isGeminiConfigured(env)) {
         res.status(503).json({
-          error: { code: 'AI_NOT_CONFIGURED', message: 'Gemini is not configured.' },
-          requestId: getRequestId(res),
+          error: { code: 'AI_NOT_CONFIGURED', message: 'AI chat is not available right now.' },
         });
         return;
       }
@@ -587,8 +571,7 @@ export function aiRoutes(env: Env): Router {
 
       if (!isGeminiConfigured(env)) {
         res.status(503).json({
-          error: { code: 'AI_NOT_CONFIGURED', message: 'Gemini is not configured.' },
-          requestId: getRequestId(res),
+          error: { code: 'AI_NOT_CONFIGURED', message: 'AI analysis is not available right now.' },
         });
         return;
       }

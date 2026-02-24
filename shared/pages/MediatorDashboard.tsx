@@ -2074,15 +2074,6 @@ export const MediatorDashboard: React.FC = () => {
                           Analyze
                         </button>
                       )}
-                      {aiAnalysis && !isAnalyzing && (
-                        <button
-                          type="button"
-                          onClick={runAnalysis}
-                          className="bg-indigo-900/60 hover:bg-indigo-800/80 text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]"
-                        >
-                          Re-Analyze
-                        </button>
-                      )}
                     </div>
 
                     {isAnalyzing && (

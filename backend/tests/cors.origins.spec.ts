@@ -29,7 +29,6 @@ describe('CORS origin enforcement', () => {
 
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: 'origin_not_allowed' });
-    expect(typeof res.body.requestId).toBe('string');
   });
 
   it('allows requests with an allowed Origin header', async () => {

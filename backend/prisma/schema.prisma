@@ -272,6 +272,10 @@ model User {
   @@index([brandCode, roles])
   @@index([mediatorCode, roles])
   @@index([roles, status])
+  // 100k-scale indexes for login + listing queries
+  @@index([mobile, deletedAt])               // fast login lookup
+  @@index([username, deletedAt])             // fast username login lookup
+  @@index([deletedAt, createdAt(sort: Desc)]) // admin user listing
   @@map("users")
 }
 
@@ -548,6 +552,11 @@ model Order {
   @@index([paymentStatus])
   @@index([affiliateStatus])
   @@index([settlementMode])
+  // 100k-scale composite indexes for common query/filter patterns
+  @@index([deletedAt, createdAt(sort: Desc)])     // soft-delete + recent-first listing
+  @@index([externalOrderId])                       // duplicate-check during order creation
+  @@index([userId, workflowStatus, deletedAt])     // buyer dashboard filtered listing
+  @@index([brandUserId, workflowStatus, deletedAt]) // brand dashboard filtered listing
   @@map("orders")
 }
 
@@ -738,6 +747,7 @@ model Ticket {
   user User @relation(fields: [userId], references: [id])
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([userId, deletedAt, createdAt(sort: Desc)]) // user-specific ticket listing
   @@map("tickets")
 }
 

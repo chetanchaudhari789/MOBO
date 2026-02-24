@@ -3443,15 +3443,6 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                             Analyze
                           </button>
                         )}
-                        {aiAnalysis && !isAnalyzing && (
-                          <button
-                            type="button"
-                            onClick={() => runAgencyAnalysis(proofOrder)}
-                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-600 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors active:scale-95"
-                          >
-                            Re-Analyze
-                          </button>
-                        )}
                       </div>
                       {isAnalyzing && (
                         <div className="flex flex-col items-center justify-center py-4">

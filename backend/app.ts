@@ -118,13 +118,20 @@ export function createApp(env: Env) {
   // Helmet defaults are good, but for an API service we explicitly:
   // - disable CSP (frontends are served separately)
   // - only enable HSTS in production
+  // - enforce strict referrer policy
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
-      hsts: env.NODE_ENV === 'production',
+      hsts: env.NODE_ENV === 'production' ? { maxAge: 31_536_000, includeSubDomains: true, preload: true } : false,
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     })
   );
+  // Permissions-Policy: restrict sensitive browser APIs (not part of Helmet types)
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
 
   app.use(
     rateLimit({
@@ -135,11 +142,9 @@ export function createApp(env: Env) {
       // Exempt SSE stream from rate limit — it's a single long-lived connection.
       skip: (req) => req.path === '/api/realtime/stream' || req.path === '/api/realtime/health',
       handler: (_req, res) => {
-        const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
-        httpLog.warn('Rate limit exceeded', { requestId, ip: _req.ip });
+        httpLog.warn('Rate limit exceeded', { ip: _req.ip });
         res.status(429).json({
-          error: { code: 'RATE_LIMITED', message: 'Too many requests' },
-          requestId,
+          error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
         });
       },
     })
@@ -148,9 +153,14 @@ export function createApp(env: Env) {
   // Stricter limiter for authentication endpoints to reduce brute-force risk.
   const authLimiter = rateLimit({
     windowMs: 5 * 60_000,
-    limit: env.NODE_ENV === 'production' ? 50 : 1000,
+    limit: env.NODE_ENV === 'production' ? 30 : 1000,
     standardHeaders: true,
     legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({
+        error: { code: 'AUTH_RATE_LIMITED', message: 'Too many login attempts. Please wait a few minutes and try again.' },
+      });
+    },
   });
 
   const corsOrigins = parseCorsOrigins(env.CORS_ORIGINS);
@@ -163,7 +173,6 @@ export function createApp(env: Env) {
     if (origin && !isOriginAllowed(origin, corsOrigins)) {
       return res.status(403).json({
         error: 'origin_not_allowed',
-        requestId: String(res.locals.requestId || ''),
       });
     }
     next();

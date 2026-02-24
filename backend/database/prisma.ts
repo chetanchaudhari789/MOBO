@@ -90,8 +90,10 @@ function buildPoolConfig(url: string) {
 
   const poolConfig: Record<string, unknown> = {
     connectionString: cleanUrl,
-    // Pool sizing: production servers need more connections; dev/test stays lean.
-    max: parseInt(process.env.PG_POOL_MAX || (isProd ? '20' : '10'), 10),
+    // Pool sizing: production needs enough connections for burst traffic.
+    // For 100k concurrent users, most hosting (Neon/Render) supports 50-100 connections.
+    // With PgBouncer or Prisma Accelerate in front, this can be higher.
+    max: parseInt(process.env.PG_POOL_MAX || (isProd ? '30' : '10'), 10),
     min: parseInt(process.env.PG_POOL_MIN || (isProd ? '5' : '2'), 10),
     idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
     connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
@@ -99,6 +101,9 @@ function buildPoolConfig(url: string) {
     statement_timeout: parseInt(process.env.PG_STATEMENT_TIMEOUT || '30000', 10),
     // Idle-in-transaction timeout prevents abandoned transactions from holding locks.
     idle_in_transaction_session_timeout: parseInt(process.env.PG_IDLE_IN_TX_TIMEOUT || '60000', 10),
+    // TCP keepalive: detect broken connections before they cause timeout cascades.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: parseInt(process.env.PG_KEEPALIVE_DELAY || '10000', 10),
     // Automatically reap connections above `min` if they've been idle for this long.
     allowExitOnIdle: !isProd,
   };

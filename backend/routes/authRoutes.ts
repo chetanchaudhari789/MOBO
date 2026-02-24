@@ -27,11 +27,9 @@ export function authRoutes(env: Env): Router {
       const ip = String(req.ip || 'unknown');
       return `${ip}:${identifier}`;
     },
-    handler: (req, res) => {
-      const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
+    handler: (_req, res) => {
       res.status(429).json({
-        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
-        requestId,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a few minutes and try again.' },
       });
     },
   });
