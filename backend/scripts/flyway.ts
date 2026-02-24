@@ -35,6 +35,27 @@ const password = dbUrl.password;
 const args = process.argv.slice(2);
 const commandArgs = args.length > 0 ? args : ['info'];
 
+try {
+    // Check if flyway binary is installed locally (e.g., in Docker container or dev machine)
+    execSync('flyway -v', { stdio: 'ignore' });
+
+    const localCmd = [
+        `flyway`,
+        `-locations="filesystem:${MIGRATIONS_DIR}"`,
+        `-url="${jdbcUrl}"`,
+        `-user="${user}"`,
+        `-password="${password}"`,
+        ...commandArgs
+    ].join(' ');
+
+    console.log(`Executing local Flyway: ${commandArgs.join(' ')}`);
+    execSync(localCmd, { stdio: 'inherit' });
+    process.exit(0);
+} catch (error) {
+    // Flyway locally not found, proceed to run via Docker
+    console.log('Local Flyway binary not found, falling back to Docker...');
+}
+
 const dockerCmd = [
     `docker run --rm`,
     `--network host`, // Ensure it can reach localhost databases if needed
@@ -46,7 +67,7 @@ const dockerCmd = [
     ...commandArgs
 ].join(' ');
 
-console.log(`Executing Flyway: ${commandArgs.join(' ')}`);
+console.log(`Executing Docker Flyway: ${commandArgs.join(' ')}`);
 
 try {
     execSync(dockerCmd, { stdio: 'inherit' });

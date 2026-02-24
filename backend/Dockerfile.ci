@@ -3,6 +3,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install Java and bash for Flyway
+RUN apk add --no-cache bash openjdk17-jre-headless ncurses
+
+# Copy Flyway from official image
+COPY --from=flyway/flyway:10-alpine /flyway /flyway
+RUN ln -s /flyway/flyway /usr/local/bin/flyway
+
 # Copy root package files for workspace setup
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
@@ -16,6 +23,9 @@ RUN npm ci --workspace=@mobo/backend --omit=dev
 
 # Copy pre-built dist from CI
 COPY backend/dist ./backend/dist
+
+# Copy migrations from CI or local
+COPY backend/db/migrations ./backend/db/migrations
 
 # Copy traineddata for OCR
 COPY backend/eng.traineddata ./backend/

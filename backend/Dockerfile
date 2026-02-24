@@ -40,6 +40,13 @@ RUN addgroup -g 1001 -S mobo && \
 
 WORKDIR /app
 
+# Install Java and bash for Flyway
+RUN apk add --no-cache bash openjdk17-jre-headless ncurses
+
+# Copy Flyway from official image
+COPY --from=flyway/flyway:10-alpine /flyway /flyway
+RUN ln -s /flyway/flyway /usr/local/bin/flyway
+
 # Copy workspace config
 COPY package.json package-lock.json ./
 COPY backend/package.json backend/package.json
@@ -52,6 +59,9 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder /app/backend/dist backend/dist
 COPY --from=builder /app/backend/generated backend/generated
 COPY --from=builder /app/backend/prisma backend/prisma
+
+# Copy migrations
+COPY backend/db/migrations backend/db/migrations
 
 # Copy shared (needed at runtime for type imports resolved via dist)
 COPY --from=builder /app/shared shared/

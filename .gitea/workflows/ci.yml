@@ -22,21 +22,6 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: mobo_ci
-          POSTGRES_PASSWORD: mobo_ci_pass
-          POSTGRES_DB: mobo_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U mobo_ci"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 20
-
     env:
       DATABASE_URL: postgresql://mobo_ci:mobo_ci_pass@postgres:5432/mobo_ci
       NODE_ENV: test
@@ -45,15 +30,6 @@ jobs:
 
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      - name: Wait for Postgres Port (Max 20 attempts)
-        run: |
-          for i in {1..20}; do
-            pg_isready -h postgres -p 5432 -U mobo_ci && exit 0
-            echo "Waiting for PostgreSQL..."
-            sleep 5
-          done
-          exit 1
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,8 +52,8 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
       
-      - name: Push Prisma schema to CI database
-        run: cd backend && npx prisma db push --accept-data-loss
+      - name: Apply Flyway schema to CI database
+        run: npm -w @mobo/backend run migrate:pg migrate
 
       - name: Build backend
         run: npm -w @mobo/backend run build
