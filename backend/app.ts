@@ -83,10 +83,11 @@ export function createApp(env: Env) {
   app.use(responseTimingMiddleware());
 
   // Ensure every response carries a request identifier for log correlation.
-  // If a caller provides X-Request-Id, we echo it back (within a safe length).
+  // Validate format to prevent log injection / CRLF attacks.
+  const UUID_PATTERN = /^[a-zA-Z0-9._-]{1,128}$/;
   app.use((req, res, next) => {
     const provided = String(req.header('x-request-id') || '').trim();
-    const requestId = provided && provided.length <= 128 ? provided : crypto.randomUUID();
+    const requestId = provided && UUID_PATTERN.test(provided) ? provided : crypto.randomUUID();
     res.setHeader('x-request-id', requestId);
     res.locals.requestId = requestId;
     next();
@@ -222,11 +223,9 @@ export function createApp(env: Env) {
     express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT })(req, res, next);
   });
 
-  // Security audit: log suspicious patterns in requests (after body parsing).
-  // Only active in production to avoid dev noise.
-  if (env.NODE_ENV === 'production') {
-    app.use(securityAuditMiddleware());
-  }
+  // Security audit: log and block suspicious patterns in requests (after body parsing).
+  // Active in all environments for defense-in-depth.
+  app.use(securityAuditMiddleware());
 
   app.use('/api', healthRoutes(env));
   app.use('/api/auth', authLimiter, authRoutes(env));

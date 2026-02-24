@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const SHOPPER_MOBILE = '9000000004';
-const SHOPPER_PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 test('buyer can login and view deals in Explore', async ({ page }) => {
   page.on('dialog', async (dialog) => {
@@ -13,8 +11,8 @@ test('buyer can login and view deals in Explore', async ({ page }) => {
   // Splash -> Login
   await page.getByRole('button', { name: 'Get Started' }).click();
 
-  await page.getByPlaceholder('Mobile Number').fill(SHOPPER_MOBILE);
-  await page.getByPlaceholder('Password').fill(SHOPPER_PASSWORD);
+  await page.getByPlaceholder('Mobile Number').fill(E2E_ACCOUNTS.shopper.mobile);
+  await page.getByPlaceholder('Password').fill(E2E_ACCOUNTS.shopper.password);
 
   const loginResPromise = page.waitForResponse(
     (res) => res.url().includes('/api/auth/login') && res.request().method() === 'POST'

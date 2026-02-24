@@ -1,9 +1,6 @@
 ﻿import { test, expect, type APIRequestContext } from '@playwright/test';
 import { loginAndGetAccessToken } from './_apiAuth';
-
-const BRAND_MOBILE = '9000000003';
-const AGENCY_MOBILE = '9000000001';
-const PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 const BRAND_CODE = 'BRD_TEST';
 const AGENCY_CODE = 'AG_TEST';
@@ -11,14 +8,14 @@ const AGENCY_CODE = 'AG_TEST';
 async function loginApi(request: APIRequestContext, mobile: string) {
   const { accessToken, user } = await loginAndGetAccessToken(request, {
     mobile,
-    password: PASSWORD,
+    password: E2E_ACCOUNTS.brand.password,
   });
   return { token: accessToken, user };
 }
 
 test('brand can see and approve an agency connection request', async ({ page, request }) => {
   // Ensure a clean slate (idempotent test).
-  const brandAuth = await loginApi(request, BRAND_MOBILE);
+  const brandAuth = await loginApi(request, E2E_ACCOUNTS.brand.mobile);
 
   const meRes = await request.get('/api/auth/me', {
     headers: { Authorization: `Bearer ${brandAuth.token}` },
@@ -50,7 +47,7 @@ test('brand can see and approve an agency connection request', async ({ page, re
   }
 
   // Create a request as the agency.
-  const agencyAuth = await loginApi(request, AGENCY_MOBILE);
+  const agencyAuth = await loginApi(request, E2E_ACCOUNTS.agency.mobile);
   const connectRes = await request.post('/api/ops/brands/connect', {
     headers: { Authorization: `Bearer ${agencyAuth.token}` },
     data: { brandCode: BRAND_CODE },
@@ -64,8 +61,8 @@ test('brand can see and approve an agency connection request', async ({ page, re
   // Now verify in the brand UI.
   await page.goto('/');
   await page.getByRole('button', { name: /Access Portal/i }).click();
-  await page.getByPlaceholder('9000000000').fill(BRAND_MOBILE);
-  await page.getByPlaceholder('Password').fill(PASSWORD);
+  await page.getByPlaceholder('9000000000').fill(E2E_ACCOUNTS.brand.mobile);
+  await page.getByPlaceholder('Password').fill(E2E_ACCOUNTS.brand.password);
   await page.getByRole('button', { name: /Login to Portal/i }).click();
 
   await expect(page.getByText('Partner Portal', { exact: true })).toBeVisible({ timeout: 15000 });

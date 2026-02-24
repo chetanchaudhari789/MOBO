@@ -1,10 +1,5 @@
 ﻿import { test, expect } from '@playwright/test';
-
-const BUYER_MOBILE = '9000000005';
-const MEDIATOR_MOBILE = '9000000002';
-const OPS_USERNAME = 'root';
-const BRAND_MOBILE = '9000000003';
-const PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 test('mediator can open verification modal for a newly created buyer order', async ({ page, request }) => {
   page.on('dialog', async (dialog) => {
@@ -16,10 +11,11 @@ test('mediator can open verification modal for a newly created buyer order', asy
   });
 
   const login = async (args: { mobile?: string; username?: string }) => {
+    const password = E2E_ACCOUNTS.admin.password; // Same password for all E2E accounts
     const res = await request.post('/api/auth/login', {
       data: args.username
-        ? { username: args.username, password: PASSWORD }
-        : { mobile: String(args.mobile || ''), password: PASSWORD },
+        ? { username: args.username, password }
+        : { mobile: String(args.mobile || ''), password },
     });
     expect(res.ok()).toBeTruthy();
     const json = await res.json();
@@ -30,9 +26,9 @@ test('mediator can open verification modal for a newly created buyer order', asy
     };
   };
 
-  const buyer = await login({ mobile: BUYER_MOBILE });
-  const ops = await login({ username: OPS_USERNAME });
-  const brand = await login({ mobile: BRAND_MOBILE });
+  const buyer = await login({ mobile: E2E_ACCOUNTS.shopper2.mobile });
+  const ops = await login({ username: E2E_ACCOUNTS.admin.username });
+  const brand = await login({ mobile: E2E_ACCOUNTS.brand.mobile });
 
   const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` });
 
@@ -121,22 +117,22 @@ test('mediator can open verification modal for a newly created buyer order', asy
   expect(createRes.ok()).toBeTruthy();
 
   // Sanity check: the order should be visible to the mediator as Unchecked.
-  const mediator = await login({ mobile: MEDIATOR_MOBILE });
+  const mediator = await login({ mobile: E2E_ACCOUNTS.mediator.mobile });
   const mediatorOrdersRes = await request.get('/api/ops/orders?mediatorCode=MED_TEST', {
     headers: authHeaders(mediator.tokens.accessToken),
   });
   expect(mediatorOrdersRes.ok()).toBeTruthy();
   const mediatorOrders = (await mediatorOrdersRes.json()) as any[];
   const createdForMediator = mediatorOrders.find(
-    (o) => o?.buyerMobile === BUYER_MOBILE && o?.affiliateStatus === 'Unchecked' && String(o?.items?.[0]?.title) === campaignTitle,
+    (o) => o?.buyerMobile === E2E_ACCOUNTS.shopper2.mobile && o?.affiliateStatus === 'Unchecked' && String(o?.items?.[0]?.title) === campaignTitle,
   );
   expect(createdForMediator).toBeTruthy();
 
   // Now login as mediator in UI
   await page.goto('/');
   await page.getByRole('button', { name: /^Login$/ }).click();
-  await page.getByPlaceholder('Mobile Number').fill(MEDIATOR_MOBILE);
-  await page.getByPlaceholder('Password').fill(PASSWORD);
+  await page.getByPlaceholder('Mobile Number').fill(E2E_ACCOUNTS.mediator.mobile);
+  await page.getByPlaceholder('Password').fill(E2E_ACCOUNTS.mediator.password);
   await page.getByRole('button', { name: /^Login$/ }).click();
 
   // Mediator dashboard keeps background polling/realtime, so `networkidle` can be unreliable.

@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const MEDIATOR_MOBILE = '9000000002';
-const PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 test('mediator can login and open Market', async ({ page }) => {
   await page.goto('/');
@@ -9,8 +7,8 @@ test('mediator can login and open Market', async ({ page }) => {
   // Splash -> Login
   await page.getByRole('button', { name: /^Login$/ }).click();
 
-  await page.getByPlaceholder('Mobile Number').fill(MEDIATOR_MOBILE);
-  await page.getByPlaceholder('Password').fill(PASSWORD);
+  await page.getByPlaceholder('Mobile Number').fill(E2E_ACCOUNTS.mediator.mobile);
+  await page.getByPlaceholder('Password').fill(E2E_ACCOUNTS.mediator.password);
   const loginResPromise = page.waitForResponse(
     (res) => res.url().includes('/api/auth/login') && res.request().method() === 'POST'
   );

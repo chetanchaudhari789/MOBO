@@ -140,9 +140,9 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
   _connecting = (async () => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const logConfig: ('warn' | 'error')[] =
+        const logConfig: ('warn' | 'error' | 'query')[] =
           process.env.NODE_ENV === 'development'
-            ? ['warn', 'error']
+            ? ['warn', 'error', 'query']
             : ['error'];
 
         // Standard PostgreSQL with connection pooling + SSL
@@ -150,6 +150,19 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         const { poolConfig, pgSchema, sslmode } = buildPoolConfig(url);
         const adapter = new PrismaPg(poolConfig as any, pgSchema ? { schema: pgSchema } : undefined);
         const client = new PrismaClient({ adapter, log: logConfig });
+
+        // Log slow queries (>200ms) in development for performance debugging
+        if (process.env.NODE_ENV === 'development') {
+          client.$on('query' as never, (event: any) => {
+            const duration = event.duration;
+            if (duration > 200) {
+              dbLog.warn(`Slow PG query (${duration}ms): ${String(event.query).slice(0, 200)}`, {
+                duration,
+                params: event.params ? String(event.params).slice(0, 100) : undefined,
+              });
+            }
+          });
+        }
 
         const sslLabel = sslmode === 'disable' ? 'off' : sslmode;
         dbLog.info(`PostgreSQL adapter ready (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'}, ssl=${sslLabel})`);
@@ -214,14 +227,21 @@ export async function pingPg(): Promise<boolean> {
 
 /**
  * Gracefully disconnect the Prisma client (used during shutdown).
+ * Uses a 5-second timeout to prevent hanging when PG is unreachable.
  */
 export async function disconnectPrisma(): Promise<void> {
   if (_prisma) {
+    const client = _prisma;
+    _prisma = null; // Mark as disconnected immediately to prevent new queries
     try {
-      await _prisma.$disconnect();
-    } catch {
-      // best effort
+      await Promise.race([
+        client.$disconnect(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('Prisma disconnect timed out after 5s')), 5000)
+        ),
+      ]);
+    } catch (err) {
+      dbLog.warn('Prisma disconnect error (best-effort)', { error: err instanceof Error ? err.message : String(err) });
     }
-    _prisma = null;
   }
 }

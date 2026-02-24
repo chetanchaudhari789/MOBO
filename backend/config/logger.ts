@@ -168,9 +168,11 @@ function getSystemMetrics() {
 
 // ─── Log Explosion Prevention ────────────────────────────────────────────────
 // Rate-limits identical error messages to prevent log storms.
+// Bounded to MAX_THROTTLE_ENTRIES to prevent memory leaks under high error variety.
 const errorThrottleMap = new Map<string, { count: number; lastLogged: number }>();
 const THROTTLE_WINDOW_MS = 60_000;
 const THROTTLE_MAX_PER_WINDOW = 10;
+const MAX_THROTTLE_ENTRIES = 500;
 
 function shouldThrottleError(message: string): { throttled: boolean; suppressed: number } {
   const now = Date.now();
@@ -178,6 +180,18 @@ function shouldThrottleError(message: string): { throttled: boolean; suppressed:
   const entry = errorThrottleMap.get(key);
 
   if (!entry || now - entry.lastLogged > THROTTLE_WINDOW_MS) {
+    // Evict oldest entries when map grows too large
+    if (errorThrottleMap.size >= MAX_THROTTLE_ENTRIES) {
+      let oldestKey: string | undefined;
+      let oldestTime = Infinity;
+      for (const [k, v] of errorThrottleMap) {
+        if (v.lastLogged < oldestTime) {
+          oldestTime = v.lastLogged;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) errorThrottleMap.delete(oldestKey);
+    }
     errorThrottleMap.set(key, { count: 1, lastLogged: now });
     return { throttled: false, suppressed: 0 };
   }

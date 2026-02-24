@@ -34,6 +34,9 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
+      - name: Security audit (npm)
+        run: npm audit --audit-level=high --omit=dev || echo "::warning::npm audit found vulnerabilities"
+
       - name: Lint (root)
         run: npm run lint
 
@@ -89,7 +92,7 @@ jobs:
         run: npm -w @mobo/backend run pg:generate
 
       - name: Push Prisma schema to CI database
-        run: cd backend && npx prisma db push --accept-data-loss
+        run: cd backend && npx prisma db push 
 
       - name: Backend tests (Vitest)
         run: npm run test:backend
@@ -177,7 +180,7 @@ jobs:
         run: npm -w @mobo/backend run pg:generate
 
       - name: Push Prisma schema to CI database
-        run: cd backend && npx prisma db push --accept-data-loss
+        run: cd backend && npx prisma db push 
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
@@ -189,6 +192,12 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=1536 --no-deprecation'
         run: npm run test:e2e
 
+      - name: E2E result check
+        if: steps.e2e.outcome == 'failure'
+        run: |
+          echo "::warning::E2E tests had failures — review Playwright report artifact"
+          echo "E2E test outcome: ${{ steps.e2e.outcome }}"
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -198,7 +207,3 @@ jobs:
             test-results/
             playwright-report/
           retention-days: 14
-
-      - name: Report E2E status
-        if: steps.e2e.outcome == 'failure'
-        run: echo "::warning::E2E tests failed – see playwright-report artifact for details"

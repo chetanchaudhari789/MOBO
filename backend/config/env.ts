@@ -128,9 +128,9 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
     value: string | undefined
   ) => {
     if (env.NODE_ENV === 'production') {
-      if (!value || value.length < 8 || looksPlaceholder(value)) {
+      if (!value || value.length < 32 || looksPlaceholder(value)) {
         throw new Error(
-          `Invalid environment configuration:\n${name}: must be set to a secure random string (>= 8 chars) in production`
+          `Invalid environment configuration:\n${name}: must be set to a secure random string (>= 32 chars) in production for HMAC-SHA256 safety`
         );
       }
       return value;

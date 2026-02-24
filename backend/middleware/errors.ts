@@ -189,6 +189,19 @@ export function errorHandler(
     return;
   }
 
+  // Network/connectivity errors — surface as 503 so clients know to retry.
+  const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN']);
+  if (anyErr?.code && networkCodes.has(String(anyErr.code))) {
+    logger.error('Network error during request', { requestId, code: anyErr.code, error: anyErr.message });
+    res.status(503).json({
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'A downstream service is temporarily unreachable. Please try again shortly.',
+      },
+    });
+    return;
+  }
+
   const isProd = process.env.NODE_ENV === 'production';
 
   logEvent('error', `Unhandled error on ${req.method} ${req.originalUrl}`, {

@@ -1,8 +1,9 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
-const SHOPPER_MOBILE = '9000000004';
-const SHOPPER_PASSWORD = 'ChangeMe_123!';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 test('buyer can submit a cashback claim (creates an order)', async ({ page }) => {
   page.once('dialog', (dialog) => {
@@ -18,8 +19,8 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   await page.goto('/');
   await page.getByRole('button', { name: 'Get Started' }).click();
 
-  await page.getByPlaceholder('Mobile Number').fill(SHOPPER_MOBILE);
-  await page.getByPlaceholder('Password').fill(SHOPPER_PASSWORD);
+  await page.getByPlaceholder('Mobile Number').fill(E2E_ACCOUNTS.shopper.mobile);
+  await page.getByPlaceholder('Password').fill(E2E_ACCOUNTS.shopper.password);
   await page.getByRole('button', { name: 'Sign In' }).click();
 
   // Go to Orders
@@ -39,7 +40,7 @@ test('buyer can submit a cashback claim (creates an order)', async ({ page }) =>
   await claimModal.getByText('E2E', { exact: false }).first().click();
 
   // Upload proof
-  const proofPath = path.resolve(process.cwd(), 'e2e', 'fixtures', 'proof.png');
+  const proofPath = path.resolve(__dirname, 'fixtures', 'proof.png');
   const fileInput = page.locator('input[type="file"][accept="image/*"]');
   await expect(fileInput).toHaveCount(1);
   await fileInput.setInputFiles(proofPath);

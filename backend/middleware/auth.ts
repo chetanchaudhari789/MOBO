@@ -37,9 +37,19 @@ declare global {
   }
 }
 
+/** Schema-validate the JWT payload to prevent malformed-but-signed tokens from causing issues. */
+function validateJwtPayload(decoded: unknown): { sub: string; role?: string } {
+  if (!decoded || typeof decoded !== 'object') throw new AppError(401, 'UNAUTHENTICATED', 'Invalid token payload');
+  const payload = decoded as Record<string, unknown>;
+  const sub = typeof payload.sub === 'string' ? payload.sub : typeof payload.sub === 'number' ? String(payload.sub) : '';
+  if (!sub) throw new AppError(401, 'UNAUTHENTICATED', 'Invalid token: missing subject');
+  const role = typeof payload.role === 'string' ? payload.role : undefined;
+  return { sub, role };
+}
+
 async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContext> {
-  const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload;
-  const userId = String(decoded.sub || '');
+  const raw = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ['HS256'] });
+  const { sub: userId } = validateJwtPayload(raw);
 
   if (!userId) {
     throw new AppError(401, 'UNAUTHENTICATED', 'Invalid token');

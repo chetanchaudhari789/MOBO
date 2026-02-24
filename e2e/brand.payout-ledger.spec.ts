@@ -1,15 +1,12 @@
 ﻿import { test, expect, type APIRequestContext } from '@playwright/test';
-
-const BRAND_MOBILE = '9000000003';
-const AGENCY_MOBILE = '9000000001';
-const PASSWORD = 'ChangeMe_123!';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 const BRAND_CODE = 'BRD_TEST';
 const AGENCY_CODE = 'AG_TEST';
 
 async function loginApi(request: APIRequestContext, mobile: string) {
   const res = await request.post('/api/auth/login', {
-    data: { mobile, password: PASSWORD },
+    data: { mobile, password: E2E_ACCOUNTS.brand.password },
   });
   if (!res.ok()) {
     throw new Error(`Login failed (status=${res.status()}): ${await res.text()}`);
@@ -29,7 +26,7 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
     })
     .toBeTruthy();
 
-  const brandAuth = await loginApi(request, BRAND_MOBILE);
+  const brandAuth = await loginApi(request, E2E_ACCOUNTS.brand.mobile);
 
   // Identify brand + current ledger count.
   const meRes = await request.get('/api/auth/me', {
@@ -43,7 +40,7 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
 
   // Ensure brand is connected to the demo agency.
   if (!Array.isArray(me?.connectedAgencies) || !me.connectedAgencies.includes(AGENCY_CODE)) {
-    const agencyAuth = await loginApi(request, AGENCY_MOBILE);
+    const agencyAuth = await loginApi(request, E2E_ACCOUNTS.agency.mobile);
 
     const connectRes = await request.post('/api/ops/brands/connect', {
       headers: { Authorization: `Bearer ${agencyAuth.token}` },
@@ -95,8 +92,8 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
   // Login in UI and open the agency modal.
   await page.goto('/');
   await page.getByRole('button', { name: /Access Portal/i }).click();
-  await page.getByPlaceholder('9000000000').fill(BRAND_MOBILE);
-  await page.getByPlaceholder('Password').fill(PASSWORD);
+  await page.getByPlaceholder('9000000000').fill(E2E_ACCOUNTS.brand.mobile);
+  await page.getByPlaceholder('Password').fill(E2E_ACCOUNTS.brand.password);
   await page.getByRole('button', { name: /Login to Portal/i }).click();
 
   await expect(page.getByText('Partner Portal', { exact: true })).toBeVisible({ timeout: 15000 });
@@ -147,7 +144,7 @@ test('brand can record a payout and see it in ledger', async ({ page, request })
         }
         const afterTxns = (await afterTxnsRes.json()) as any[];
         const found = afterTxns.some(
-          (t) => String(t?.ref || '') === ref && Number(t?.amount) === amount && String(t?.agencyName || '')
+          (t) => String(t?.ref || '') === ref && Number(t?.amount) === amount && String(t?.agencyName || '') === agencyName
         );
         return { count: afterTxns.length, found };
       },

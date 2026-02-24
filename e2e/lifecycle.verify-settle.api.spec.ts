@@ -1,5 +1,6 @@
 ﻿import { test, expect } from '@playwright/test';
 import { loginAndGetAccessToken } from './_apiAuth';
+import { E2E_ACCOUNTS } from './_seedAccounts';
 
 // This spec drives the critical money-moving lifecycle via HTTP APIs.
 // It relies on the backend E2E seed users and runs against the buyer project by default.
@@ -8,14 +9,10 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
   // IMPORTANT: tests run in parallel; don't reuse the single seeded deal because
   // other specs (buyer + mediator) also create/verify orders for it.
   // We instead create a unique campaign+deal for this spec.
-  const buyerMobile = '9000000004';
-  const opsUsername = 'root';
-  const brandMobile = '9000000003';
-  const password = 'ChangeMe_123!';
 
-  const buyerLogin = await loginAndGetAccessToken(request, { mobile: buyerMobile, password });
-  const opsLogin = await loginAndGetAccessToken(request, { username: opsUsername, password });
-  const brandLogin = await loginAndGetAccessToken(request, { mobile: brandMobile, password });
+  const buyerLogin = await loginAndGetAccessToken(request, { mobile: E2E_ACCOUNTS.shopper.mobile, password: E2E_ACCOUNTS.shopper.password });
+  const opsLogin = await loginAndGetAccessToken(request, { username: E2E_ACCOUNTS.admin.username, password: E2E_ACCOUNTS.admin.password });
+  const brandLogin = await loginAndGetAccessToken(request, { mobile: E2E_ACCOUNTS.brand.mobile, password: E2E_ACCOUNTS.brand.password });
 
   const buyer = { user: buyerLogin.user, tokens: { accessToken: buyerLogin.accessToken } };
   const ops = { user: opsLogin.user, tokens: { accessToken: opsLogin.accessToken } };
@@ -123,6 +120,7 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
 
   let orderId: string;
   let currentWorkflow: string | undefined;
+  let didSettle = false;
 
   if (createRes.ok()) {
     const created = (await createRes.json()) as any;
@@ -161,6 +159,7 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
       data: { orderId, success: true, settlementRef: `E2E-SETTLE-${Date.now()}` },
     });
     expect(settleRes.ok()).toBeTruthy();
+    didSettle = true;
   }
 
   // Wallets after
@@ -171,5 +170,11 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
   const meAfter = await meAfterRes.json();
   const buyerWalletAfter = Number(meAfter?.user?.wallet?.balancePaise ?? 0);
 
-  expect(buyerWalletAfter).toBeGreaterThanOrEqual(buyerWalletBefore);
+  if (didSettle) {
+    // Settlement just happened — wallet balance must have increased.
+    expect(buyerWalletAfter).toBeGreaterThan(buyerWalletBefore);
+  } else {
+    // Order was already settled in a prior run — wallet shouldn't have decreased.
+    expect(buyerWalletAfter).toBeGreaterThanOrEqual(buyerWalletBefore);
+  }
 });
