@@ -5,10 +5,10 @@ import { E2E_ACCOUNTS } from './_seedAccounts';
 const BRAND_CODE = 'BRD_TEST';
 const AGENCY_CODE = 'AG_TEST';
 
-async function loginApi(request: APIRequestContext, mobile: string) {
+async function loginApi(request: APIRequestContext, mobile: string, password?: string) {
   const { accessToken, user } = await loginAndGetAccessToken(request, {
     mobile,
-    password: E2E_ACCOUNTS.brand.password,
+    password: password ?? E2E_ACCOUNTS.brand.password,
   });
   return { token: accessToken, user };
 }
@@ -67,18 +67,23 @@ test('brand can see and approve an agency connection request', async ({ page, re
 
   await expect(page.getByText('Partner Portal', { exact: true })).toBeVisible({ timeout: 15000 });
 
-  // Open requests (this also triggers refreshMe()).
+  // Reload to ensure session restore fetches full user data (including pendingConnections).
+  await page.reload();
+  await expect(page.getByText('Partner Portal', { exact: true })).toBeVisible({ timeout: 15000 });
+
+  // Open requests tab.
   await page.getByRole('button', { name: 'Requests' }).click();
 
+  // Wait for the pending connection card from E2E Agency.
   const pendingCards = page
-    .locator('div.bg-white.p-3')
+    .locator('div')
     .filter({ hasText: 'Wants to connect with your brand.' })
     .filter({ hasText: 'E2E Agency' });
 
   await expect(pendingCards.first()).toBeVisible({ timeout: 15000 });
   await pendingCards.first().getByRole('button', { name: 'Approve' }).click();
 
-  // Verify persistence by navigating away/back (Requests click triggers refreshMe()).
+  // Verify persistence by navigating away/back.
   await page.getByRole('button', { name: 'Agency Partners' }).click();
   await page.getByRole('button', { name: 'Requests' }).click();
   await expect(pendingCards).toHaveCount(0, { timeout: 15000 });
