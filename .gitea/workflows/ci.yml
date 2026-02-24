@@ -27,11 +27,14 @@ jobs:
 
     steps:
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client and Flyway
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client wget tar
+          wget -qO- https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/10.0.0/flyway-commandline-10.0.0-linux-x64.tar.gz | tar -xvz
+          sudo ln -s $(pwd)/flyway-10.0.0/flyway /usr/local/bin/flyway
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
