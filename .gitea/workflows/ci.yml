@@ -23,7 +23,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DATABASE_URL: postgresql://mobo_ci:mobo_ci_pass@postgres:5432/mobo_ci
       NODE_ENV: test
 
     steps:
@@ -51,9 +50,6 @@ jobs:
 
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
-      
-      - name: Apply Flyway schema to CI database
-        run: npm -w @mobo/backend run migrate:pg migrate
 
       - name: Build backend
         run: npm -w @mobo/backend run build
