@@ -2,6 +2,15 @@
 import { loginAndGetAccessToken } from './_apiAuth';
 import { E2E_ACCOUNTS } from './_seedAccounts';
 
+// Helper: assert response ok and return parsed JSON, or throw with useful diagnostics.
+async function expectOk(res: { ok(): boolean; status(): number; text(): Promise<string>; json(): Promise<any> }, label: string) {
+  if (!res.ok()) {
+    const body = await res.text().catch(() => '(no body)');
+    throw new Error(`${label} failed [${res.status()}]: ${body.slice(0, 500)}`);
+  }
+  return res.json();
+}
+
 // This spec drives the critical money-moving lifecycle via HTTP APIs.
 // It relies on the backend E2E seed users and runs against the buyer project by default.
 
@@ -23,68 +32,75 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
   // Create a fresh campaign + deal that won't collide with other E2E specs.
   const lifecycleTitle = `Lifecycle Campaign ${Date.now()}`;
 
-  const createCampaignRes = await request.post('/api/ops/campaigns', {
-    headers: authHeaders(ops.tokens.accessToken),
-    data: {
-      brandUserId: brand.user.id,
-      title: lifecycleTitle,
-      platform: 'Amazon',
-      dealType: 'Discount',
-      price: 999,
-      originalPrice: 1999,
-      payout: 150,
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/lifecycle',
-      totalSlots: 10,
-      allowedAgencies: [],
-      returnWindowDays: 14,
-    },
-  });
-  expect(createCampaignRes.ok()).toBeTruthy();
-  const createdCampaign = (await createCampaignRes.json()) as any;
+  const createdCampaign = await expectOk(
+    await request.post('/api/ops/campaigns', {
+      headers: authHeaders(ops.tokens.accessToken),
+      data: {
+        brandUserId: brand.user.id,
+        title: lifecycleTitle,
+        platform: 'Amazon',
+        dealType: 'Discount',
+        price: 999,
+        originalPrice: 1999,
+        payout: 150,
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/lifecycle',
+        totalSlots: 10,
+        allowedAgencies: [],
+        returnWindowDays: 14,
+      },
+    }),
+    'Create campaign',
+  );
   const campaignId = String(createdCampaign?.id || '');
-  expect(campaignId).toBeTruthy();
+  expect(campaignId, 'Campaign ID should be present in response').toBeTruthy();
 
   // Assign slots so the buyer's mediator has access.
-  const assignRes = await request.post('/api/ops/campaigns/assign', {
-    headers: authHeaders(ops.tokens.accessToken),
-    data: {
-      id: campaignId,
-      assignments: {
-        MED_TEST: { limit: 5 },
+  await expectOk(
+    await request.post('/api/ops/campaigns/assign', {
+      headers: authHeaders(ops.tokens.accessToken),
+      data: {
+        id: campaignId,
+        assignments: {
+          MED_TEST: { limit: 5 },
+        },
       },
-    },
-  });
-  expect(assignRes.ok()).toBeTruthy();
+    }),
+    'Assign slots',
+  );
 
   // Publish deal for the seeded mediator.
-  const publishRes = await request.post('/api/ops/deals/publish', {
-    headers: authHeaders(ops.tokens.accessToken),
-    data: {
-      id: campaignId,
-      commission: 50,
-      mediatorCode: 'MED_TEST',
-    },
-  });
-  expect(publishRes.ok()).toBeTruthy();
+  await expectOk(
+    await request.post('/api/ops/deals/publish', {
+      headers: authHeaders(ops.tokens.accessToken),
+      data: {
+        id: campaignId,
+        commission: 50,
+        mediatorCode: 'MED_TEST',
+      },
+    }),
+    'Publish deal',
+  );
 
-  // Fetch products and pick our unique deal.
-  const productsRes = await request.get('/api/products', {
-    headers: authHeaders(buyer.tokens.accessToken),
-  });
-  expect(productsRes.ok()).toBeTruthy();
-  const deals: any[] = (await productsRes.json()) ?? [];
-  expect(Array.isArray(deals)).toBeTruthy();
-  const deal = deals.find((d) => String(d?.campaignId) === campaignId) ?? deals.find((d) => String(d?.title) === lifecycleTitle);
-  expect(deal).toBeTruthy();
+  // Fetch products and pick our unique deal (retry briefly in case of propagation delay).
+  let deal: any = null;
+  for (let attempt = 0; attempt < 3 && !deal; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 500));
+    const productsRes = await request.get('/api/products', {
+      headers: authHeaders(buyer.tokens.accessToken),
+    });
+    const deals: any[] = (await expectOk(productsRes, 'List products')) ?? [];
+    expect(Array.isArray(deals), 'Products response should be an array').toBeTruthy();
+    deal = deals.find((d) => String(d?.campaignId) === campaignId) ?? deals.find((d) => String(d?.title) === lifecycleTitle);
+  }
+  expect(deal, `Deal for campaign ${campaignId} not found in products list`).toBeTruthy();
 
   // Wallets before
-  const meBeforeRes = await request.get('/api/auth/me', {
-    headers: authHeaders(buyer.tokens.accessToken),
-  });
-  expect(meBeforeRes.ok()).toBeTruthy();
-  const meBefore = await meBeforeRes.json();
-  const buyerWalletBefore = Number(meBefore?.user?.wallet?.balancePaise ?? 0);
+  const meBefore = await expectOk(
+    await request.get('/api/auth/me', { headers: authHeaders(buyer.tokens.accessToken) }),
+    'Get buyer wallet before',
+  );
+  const buyerWalletBefore = Number(meBefore?.user?.wallet?.balancePaise ?? meBefore?.user?.walletBalance ?? 0);
 
   // Create order with proof at creation time (UI-equivalent).
   // The backend enforces one active order per buyer+deal, so this spec must be idempotent.
@@ -126,49 +142,54 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
     const created = (await createRes.json()) as any;
     orderId = String(created?.id || '');
     currentWorkflow = created?.workflowStatus;
-    expect(orderId).toBeTruthy();
+    expect(orderId, 'Order ID should be present after creation').toBeTruthy();
   } else {
     // Likely DUPLICATE_DEAL_ORDER. Re-use the most recent order for this buyer.
+    const body = await createRes.text().catch(() => '');
+    // eslint-disable-next-line no-console
+    console.log(`Order creation returned ${createRes.status()}: ${body.slice(0, 300)}`);
     const existingRes = await request.get(`/api/orders/user/${buyer.user.id}`, {
       headers: authHeaders(buyer.tokens.accessToken),
     });
-    expect(existingRes.ok()).toBeTruthy();
-    const existing = (await existingRes.json()) as any[];
-    expect(Array.isArray(existing)).toBeTruthy();
-    expect(existing.length).toBeGreaterThan(0);
+    const existing = (await expectOk(existingRes, 'List buyer orders (fallback)')) as any[];
+    expect(Array.isArray(existing), 'Orders response should be an array').toBeTruthy();
+    expect(existing.length, 'Buyer should have at least one existing order').toBeGreaterThan(0);
     const reusable = existing.find((o) => o?.items?.[0]?.productId === String(deal.id)) ?? existing[0];
     orderId = String(reusable?.id || '');
     currentWorkflow = String(reusable?.workflowStatus || '');
-    expect(orderId).toBeTruthy();
+    expect(orderId, 'Reusable order ID should be present').toBeTruthy();
   }
 
   // Verify (ops/admin) - only valid from UNDER_REVIEW.
   if (currentWorkflow === 'UNDER_REVIEW') {
-    const verifyRes = await request.post('/api/ops/verify', {
-      headers: authHeaders(ops.tokens.accessToken),
-      data: { orderId, decision: 'APPROVE' },
-    });
-    expect(verifyRes.ok()).toBeTruthy();
+    await expectOk(
+      await request.post('/api/ops/verify', {
+        headers: authHeaders(ops.tokens.accessToken),
+        data: { orderId },
+      }),
+      'Verify order',
+    );
     currentWorkflow = 'APPROVED';
   }
 
   // Settle (ops/admin) - only valid from APPROVED.
   if (currentWorkflow === 'APPROVED') {
-    const settleRes = await request.post('/api/ops/orders/settle', {
-      headers: authHeaders(ops.tokens.accessToken),
-      data: { orderId, success: true, settlementRef: `E2E-SETTLE-${Date.now()}` },
-    });
-    expect(settleRes.ok()).toBeTruthy();
+    await expectOk(
+      await request.post('/api/ops/orders/settle', {
+        headers: authHeaders(ops.tokens.accessToken),
+        data: { orderId, settlementRef: `E2E-SETTLE-${Date.now()}` },
+      }),
+      'Settle order',
+    );
     didSettle = true;
   }
 
   // Wallets after
-  const meAfterRes = await request.get('/api/auth/me', {
-    headers: authHeaders(buyer.tokens.accessToken),
-  });
-  expect(meAfterRes.ok()).toBeTruthy();
-  const meAfter = await meAfterRes.json();
-  const buyerWalletAfter = Number(meAfter?.user?.wallet?.balancePaise ?? 0);
+  const meAfter = await expectOk(
+    await request.get('/api/auth/me', { headers: authHeaders(buyer.tokens.accessToken) }),
+    'Get buyer wallet after',
+  );
+  const buyerWalletAfter = Number(meAfter?.user?.wallet?.balancePaise ?? meAfter?.user?.walletBalance ?? 0);
 
   if (didSettle) {
     // Settlement just happened — wallet balance must have increased.
