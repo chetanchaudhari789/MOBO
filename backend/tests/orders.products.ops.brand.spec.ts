@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 import { prisma } from '../database/prisma.js';
 
@@ -26,18 +25,11 @@ async function loginAdmin(app: any, username: string, password: string) {
 
 const LARGE_DATA_URL = `data:image/png;base64,${'A'.repeat(14000)}`;
 describe('core flows: products -> redirect -> order -> claim -> ops verify/settle -> brand payout/connect', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('supports end-to-end API flow (minimal assertions, contract-focused)', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      SEED_E2E: 'true',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     const seeded = await seedE2E();
 
     const app = createApp(env);
@@ -65,14 +57,60 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     const dealId = String(e2eDeal.id || e2eDeal._id || '');
     expect(dealId).toBeTruthy();
 
-    const deal = await db.deal.findFirst({ where: { id: dealId, deletedAt: null } });
+    const deal = await db.deal.findFirst({ where: { id: dealId, deletedAt: null }, include: { campaign: true } });
     expect(deal).toBeTruthy();
     const payoutPaise = Number(deal?.payoutPaise ?? 0);
     expect(payoutPaise).toBeGreaterThan(0);
 
-    const brandWalletBefore = await db.wallet.findFirst({ where: { ownerUserId: seeded.brand.id, deletedAt: null } });
+    // Use the campaign's brand (the actual wallet owner for settlement)
+    const campaignBrandUserId = String(deal?.campaign?.brandUserId || seeded.brand.id);
+    const brandWalletBefore = await db.wallet.findFirst({ where: { ownerUserId: campaignBrandUserId, deletedAt: null } });
     expect(brandWalletBefore).toBeTruthy();
     const brandAvailableBefore = Number(brandWalletBefore?.availablePaise ?? 0);
+
+    // Clean up any existing orders for this shopper+deal to avoid DUPLICATE_DEAL_ORDER
+    // The redirect stores deal.mongoId||deal.id as productId, so match both
+    const dealMongoId = deal?.mongoId || dealId;
+    const oldOrders = await db.order.findMany({
+      where: {
+        userId: shopper.userId,
+        items: { some: { productId: { in: [dealId, dealMongoId] } } },
+        deletedAt: null,
+      },
+      select: { id: true, mongoId: true },
+    });
+    if (oldOrders.length > 0) {
+      await db.order.updateMany({
+        where: { id: { in: oldOrders.map((o) => o.id) } },
+        data: { deletedAt: new Date() },
+      });
+      // Also clean up stale settlement transactions to avoid idempotency key collisions
+      const oldMongoIds = oldOrders.map((o) => o.mongoId).filter(Boolean) as string[];
+      if (oldMongoIds.length > 0) {
+        const staleKeys = oldMongoIds.flatMap((mid) => [
+          `order-settlement-debit-${mid}`,
+          `order-commission-${mid}`,
+          `order-margin-${mid}`,
+        ]);
+        await db.transaction.deleteMany({ where: { idempotencyKey: { in: staleKeys } } });
+      }
+    }
+
+    // Also cleanup any stale transactions for ALL this shopper's orders (belt and suspenders)
+    const allShopperOrders = await db.order.findMany({
+      where: { userId: shopper.userId },
+      select: { mongoId: true },
+    });
+    const allMongoIds = allShopperOrders.map((o) => o.mongoId).filter(Boolean) as string[];
+    if (allMongoIds.length > 0) {
+      const allStaleKeys = allMongoIds.flatMap((mid) => [
+        `order-settlement-debit-${mid}`,
+        `order-commission-${mid}`,
+        `order-margin-${mid}`,
+      ]);
+      await db.transaction.deleteMany({ where: { idempotencyKey: { in: allStaleKeys } } });
+    }
+
     // Redirect tracking creates a pre-order
     const redirectRes = await request(app)
       .post(`/api/deals/${dealId}/redirect`)
@@ -99,7 +137,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
             image: 'https://placehold.co/600x400',
             priceAtPurchase: 999,
             commission: 50,
-            campaignId: String(productsRes.body[0].campaignId || productsRes.body[0].campaign?.id || productsRes.body[0].campaign || ''),
+            campaignId: String(e2eDeal.campaignId || e2eDeal.campaign?.id || e2eDeal.campaign || ''),
             dealType: 'Discount',
             quantity: 1,
             platform: 'Amazon',
@@ -142,7 +180,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(settleRes.status).toBe(200);
     expect(settleRes.body).toHaveProperty('ok', true);
 
-    const brandWalletAfter = await db.wallet.findFirst({ where: { ownerUserId: seeded.brand.id, deletedAt: null } });
+    const brandWalletAfter = await db.wallet.findFirst({ where: { ownerUserId: campaignBrandUserId, deletedAt: null } });
     expect(brandWalletAfter).toBeTruthy();
     const brandAvailableAfter = Number(brandWalletAfter?.availablePaise ?? 0);
 
@@ -155,6 +193,15 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(myOrdersRes.status).toBe(200);
     expect(Array.isArray(myOrdersRes.body)).toBe(true);
     expect(myOrdersRes.body.some((o: any) => o.id === orderId)).toBe(true);
+
+    // Clean up any existing connection between agency and brand so we can test fresh
+    const brandUser = await db.user.findFirst({ where: { brandCode: E2E_ACCOUNTS.brand.brandCode, deletedAt: null } });
+    if (brandUser) {
+      const currentConnected = Array.isArray(brandUser.connectedAgencies) ? brandUser.connectedAgencies as string[] : [];
+      const stripped = currentConnected.filter((c: string) => c !== E2E_ACCOUNTS.agency.agencyCode);
+      await db.user.update({ where: { id: brandUser.id }, data: { connectedAgencies: stripped } });
+      await db.pendingConnection.deleteMany({ where: { userId: brandUser.id, agencyCode: E2E_ACCOUNTS.agency.agencyCode } });
+    }
 
     // Agency requests brand connection (agency-only)
     const connectRes = await request(app)

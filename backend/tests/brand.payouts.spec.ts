@@ -2,10 +2,12 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 import { prisma } from '../database/prisma.js';
 import { applyWalletCredit } from '../services/walletService.js';
+
+// Unique suffix per test run to avoid idempotencyKey collisions
+const RUN = Date.now().toString();
 
 async function login(app: any, mobile: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ mobile, password });
@@ -14,17 +16,8 @@ async function login(app: any, mobile: string, password: string) {
 }
 
 describe('brand payouts + ledger', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('records payout and shows it in /brand/transactions', async () => {
-    const env = loadEnv({
-      NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-    });
-
-    await connectMongo(env);
+    const env = loadEnv({ NODE_ENV: 'test' });
     const _seeded = await seedE2E();
 
     const app = createApp(env);
@@ -43,15 +36,16 @@ describe('brand payouts + ledger', () => {
       data: { connectedAgencies: { push: E2E_ACCOUNTS.agency.agencyCode } },
     });
 
-    // Fund brand wallet so debit succeeds (ownerUserId must be PG UUID).
+    // Fund brand wallet so debit succeeds (unique idempotencyKey per run).
     await applyWalletCredit({
-      idempotencyKey: 'test-brand-fund',
+      idempotencyKey: `test-brand-fund-${RUN}`,
       type: 'brand_deposit',
       ownerUserId: brand!.id,
       amountPaise: 500_00, // ₹500
       metadata: { test: true },
     });
 
+    const payoutRef = `UTR_${RUN}`;
     const payoutRes = await request(app)
       .post('/api/brand/payout')
       .set('Authorization', `Bearer ${brandToken}`)
@@ -59,7 +53,7 @@ describe('brand payouts + ledger', () => {
         brandId: brand!.id,
         agencyId: agency!.id,
         amount: 123,
-        ref: 'UTR123',
+        ref: payoutRef,
       });
 
     expect(payoutRes.status).toBe(200);
@@ -72,7 +66,7 @@ describe('brand payouts + ledger', () => {
     expect(ledgerRes.status).toBe(200);
     expect(Array.isArray(ledgerRes.body)).toBe(true);
 
-    const found = (ledgerRes.body as any[]).find((t) => t.ref === 'UTR123');
+    const found = (ledgerRes.body as any[]).find((t) => t.ref === payoutRef);
     expect(found).toBeTruthy();
     expect(found.amount).toBe(123);
     expect(found.status).toBe('Success');

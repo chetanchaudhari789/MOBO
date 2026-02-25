@@ -2,17 +2,19 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 
-async function setup() {
-  const env = loadEnv({
-    NODE_ENV: 'test',
-    MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-  });
+// Unique suffix per test run to avoid collisions on re-run
+const RUN = Date.now().toString().slice(-6);
+let mobileSeq = 0;
+function uniqueMobile(base: string) {
+  const suffix = (parseInt(RUN, 10) + ++mobileSeq) % 1_000_000;
+  return base.slice(0, 4) + String(suffix).padStart(6, '0');
+}
 
-  await connectMongo(env);
+async function setup() {
+  const env = loadEnv({ NODE_ENV: 'test' });
   const seeded = await seedE2E();
   const app = createApp(env);
 
@@ -20,16 +22,12 @@ async function setup() {
 }
 
 describe('mediator pending approval flow', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('mediator joins via agency code → pending → agency approves → mediator can login', async () => {
     const { app, seeded: _seeded } = await setup();
     const db = prisma();
 
     // 1. Mediator registers using agency code
-    const mediatorMobile = '9111222333';
+    const mediatorMobile = uniqueMobile('9112');
     const mediatorPassword = 'ChangeMe_123!';
     const registerRes = await request(app).post('/api/auth/register-ops').send({
       name: 'Pending Mediator',
@@ -110,7 +108,7 @@ describe('mediator pending approval flow', () => {
     const db = prisma();
 
     // Create a mediator under the first agency
-    const mediatorMobile = '9111444555';
+    const mediatorMobile = uniqueMobile('9114');
     const registerRes = await request(app).post('/api/auth/register-ops').send({
       name: 'Mediator Under Agency 1',
       mobile: mediatorMobile,
@@ -138,7 +136,7 @@ describe('mediator pending approval flow', () => {
     expect(inviteRes.status).toBe(201);
     const agency2Invite = inviteRes.body.code as string;
 
-    const agency2Mobile = '9222333444';
+    const agency2Mobile = uniqueMobile('9223');
     const agency2Res = await request(app).post('/api/auth/register-ops').send({
       name: 'Agency 2',
       mobile: agency2Mobile,

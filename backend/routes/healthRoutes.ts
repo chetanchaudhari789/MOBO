@@ -83,7 +83,7 @@ export function healthRoutes(env: Env): Router {
         portals.map((p) => isHttpOk(p.url))
       );
 
-      const e2eUsersOk = env.SEED_E2E ? await hasE2EUsers() : true;
+      const e2eUsersOk = env.NODE_ENV === 'test' ? await hasE2EUsers() : true;
 
       const allOk = dbOk && buyerOk && mediatorOk && agencyOk && brandOk && adminOk && e2eUsersOk;
 

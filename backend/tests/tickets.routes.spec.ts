@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 
 async function login(app: any, mobile: string, password: string) {
@@ -17,17 +16,11 @@ async function loginAdmin(app: any, username: string, password: string) {
   return res.body.tokens.accessToken as string;
 }
 describe('tickets routes', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('allows shopper to create/list/update own ticket; blocks other shoppers; admin can list all', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);
@@ -84,10 +77,8 @@ describe('tickets routes', () => {
   it('allows deleting tickets only after resolved/rejected', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);

@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 
 async function loginAdmin(app: any) {
@@ -14,17 +13,11 @@ async function loginAdmin(app: any) {
 }
 
 describe('admin invites', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('can create, list, and revoke invites', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);

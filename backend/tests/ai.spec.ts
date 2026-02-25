@@ -9,7 +9,6 @@ describe('AI Service', () => {
     env = {
       NODE_ENV: 'test',
       PORT: 8080,
-      MONGODB_URI: 'mongodb://test',
       JWT_ACCESS_SECRET: 'test-secret',
       JWT_REFRESH_SECRET: 'test-refresh-secret',
       JWT_ACCESS_TTL_SECONDS: 900,

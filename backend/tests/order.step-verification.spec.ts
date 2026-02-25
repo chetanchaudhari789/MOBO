@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 import { prisma } from '../database/prisma.js';
 
@@ -27,18 +26,11 @@ async function loginAdmin(app: any, username: string, password: string) {
 const LARGE_DATA_URL = `data:image/png;base64,${'A'.repeat(14000)}`;
 
 describe('order step verification (purchase vs review/rating)', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('keeps order UNDER_REVIEW when purchase verified but review proof missing, then approves after review verified', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      SEED_E2E: 'true',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);
@@ -54,6 +46,15 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(productsRes.body.length).toBeGreaterThan(0);
 
     const deal = productsRes.body[0];
+
+    // Clean up any existing orders for this shopper+deal to avoid DUPLICATE_DEAL_ORDER
+    // The redirect stores deal.mongoId||deal.id as productId, so match both
+    const dealRecord1 = await prisma().deal.findFirst({ where: { id: String(deal.id), deletedAt: null } });
+    const dealIdsToCheck1 = [String(deal.id), dealRecord1?.mongoId].filter(Boolean) as string[];
+    await prisma().order.updateMany({
+      where: { userId: shopper.userId, items: { some: { productId: { in: dealIdsToCheck1 } } }, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
 
     const createOrderRes = await request(app)
       .post('/api/orders')
@@ -74,7 +75,7 @@ describe('order step verification (purchase vs review/rating)', () => {
             brandName: String(deal.brandName || 'E2E Brand'),
           },
         ],
-        externalOrderId: `EXT_REVIEW_${Date.now()}`,
+        externalOrderId: `EXT_REVIEW_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         screenshots: { order: LARGE_DATA_URL },
       });
 
@@ -144,16 +145,13 @@ describe('order step verification (purchase vs review/rating)', () => {
   it('keeps order UNDER_REVIEW when purchase verified but rating proof missing, then approves after rating verified', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      SEED_E2E: 'true',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);
 
-    const shopper = await login(app, E2E_ACCOUNTS.shopper.mobile, E2E_ACCOUNTS.shopper.password);
+    const shopper = await login(app, E2E_ACCOUNTS.shopper2.mobile, E2E_ACCOUNTS.shopper2.password);
     const admin = await loginAdmin(app, E2E_ACCOUNTS.admin.username, E2E_ACCOUNTS.admin.password);
 
     const productsRes = await request(app)
@@ -163,7 +161,17 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(Array.isArray(productsRes.body)).toBe(true);
     expect(productsRes.body.length).toBeGreaterThan(0);
 
+    // Use productsRes.body[0] — shopper2 hasn't ordered this deal yet
     const deal = productsRes.body[0];
+
+    // Clean up any existing orders for this shopper+deal to avoid DUPLICATE_DEAL_ORDER
+    // The redirect stores deal.mongoId||deal.id as productId, so match both
+    const dealRecord2 = await prisma().deal.findFirst({ where: { id: String(deal.id), deletedAt: null } });
+    const dealIdsToCheck2 = [String(deal.id), dealRecord2?.mongoId].filter(Boolean) as string[];
+    await prisma().order.updateMany({
+      where: { userId: shopper.userId, items: { some: { productId: { in: dealIdsToCheck2 } } }, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
 
     const createOrderRes = await request(app)
       .post('/api/orders')
@@ -184,7 +192,7 @@ describe('order step verification (purchase vs review/rating)', () => {
             brandName: String(deal.brandName || 'E2E Brand'),
           },
         ],
-        externalOrderId: `EXT_RATING_${Date.now()}`,
+        externalOrderId: `EXT_RATING_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         screenshots: { order: LARGE_DATA_URL },
       });
 

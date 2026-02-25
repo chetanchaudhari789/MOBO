@@ -1,4 +1,5 @@
 ﻿// MongoDB removed — all seeding is PG-only via Prisma.
+// NO deleteMany, NO truncate, NO wipe — safe upserts only.
 import { randomUUID } from 'node:crypto';
 
 import { hashPassword } from '../services/passwords.js';
@@ -51,112 +52,27 @@ export type SeededE2E = {
   shopper2: any;
 };
 
-const E2E_MOBILES = Object.values(E2E_ACCOUNTS).map((a) => a.mobile);
-
 /**
- * Targeted cleanup: removes ONLY data created by E2E test accounts
- * (orders, order-items, invites, transactions, payouts, tickets, audit-logs,
- *  pre-orders, pending-connections, test-registered users).
- *
- * Production / migrated data is NEVER touched — we filter by E2E user IDs
- * and known test-created mobile numbers.
+ * Ensures E2E test accounts exist via safe upserts.
+ * NEVER deletes any data. All operations are create-or-update only.
  */
-
-// Mobiles used by test-registered users (auth.register, mediator.pending-approval, campaign.assign-slots)
-const TEST_REGISTERED_MOBILES = [
-  '9111111111', '9222222222', '9222000000', '9333333333',
-  '9111000000', '9777777777', '9444444444', '9555555555', '9666666666',
-  '9111222333', '9111444555', '9222333444',
-];
-
-async function cleanE2ETestData(db: ReturnType<typeof prisma>) {
-  // Collect IDs for both E2E seed accounts and test-registered users
-  const allTestMobiles = [...E2E_MOBILES, ...TEST_REGISTERED_MOBILES];
-  const allTestUsers = await db.user.findMany({
-    where: { mobile: { in: allTestMobiles } },
-    select: { id: true },
-  });
-  const allTestIds = allTestUsers.map((u) => u.id);
-
-  const e2eUsers = allTestUsers.filter((_, i) => i < E2E_MOBILES.length); // rough but sufficient
-  // Better: get E2E IDs specifically
-  const e2eSeedUsers = await db.user.findMany({
-    where: { mobile: { in: E2E_MOBILES } },
-    select: { id: true },
-  });
-  const e2eIds = e2eSeedUsers.map((u) => u.id);
-
-  if (allTestIds.length === 0) return;
-
-  // Order items cascade-delete with orders (ON DELETE CASCADE in schema).
-  // Still delete explicitly to be safe across all Prisma adapters.
-  await db.orderItem.deleteMany({ where: { order: { userId: { in: allTestIds } } } }).catch(() => {});
-  await db.order.deleteMany({ where: { userId: { in: allTestIds } } });
-  await db.invite.deleteMany({ where: { createdBy: { in: allTestIds } } });
-  await db.transaction.deleteMany({ where: { OR: [{ fromUserId: { in: allTestIds } }, { toUserId: { in: allTestIds } }] } });
-  await db.payout.deleteMany({ where: { beneficiaryUserId: { in: allTestIds } } });
-  await db.ticket.deleteMany({ where: { userId: { in: allTestIds } } });
-  await db.auditLog.deleteMany({ where: { actorUserId: { in: allTestIds } } });
-  await db.pendingConnection.deleteMany({ where: { userId: { in: allTestIds } } });
-
-  // Clean up test-created deals and campaigns (not the E2E Campaign/Deal — those are upserted later).
-  // deals.publish and other tests create extra campaigns/deals with createdBy = E2E users.
-  await db.deal.deleteMany({ where: { createdBy: { in: e2eIds }, title: { not: 'E2E Deal' } } }).catch(() => {});
-  await db.campaign.deleteMany({ where: { createdBy: { in: e2eIds }, title: { not: 'E2E Campaign' } } }).catch(() => {});
-
-  // Remove test-registered users (NOT the E2E seed accounts themselves)
-  if (TEST_REGISTERED_MOBILES.length > 0) {
-    // Delete role documents for test-registered users
-    const testRegUsers = await db.user.findMany({
-      where: { mobile: { in: TEST_REGISTERED_MOBILES } },
-      select: { id: true, role: true },
-    });
-    for (const u of testRegUsers) {
-      // MediatorProfile & ShopperProfile cascade-delete with user (onDelete: Cascade)
-      // Brand & Agency use ownerUserId without cascade — delete manually
-      await db.brand.deleteMany({ where: { ownerUserId: u.id } }).catch(() => {});
-      await db.agency.deleteMany({ where: { ownerUserId: u.id } }).catch(() => {});
-      // Wallet: no cascade from User
-      await db.wallet.deleteMany({ where: { ownerUserId: u.id } }).catch(() => {});
-    }
-    await db.user.deleteMany({ where: { mobile: { in: TEST_REGISTERED_MOBILES } } });
-  }
-
-  // Also delete test invite codes that tests create
-  await db.invite.deleteMany({
-    where: { code: { startsWith: 'INV_' } },
-  }).catch(() => {});
-
-  // Reset brand's connectedAgencies so connect-flow tests start clean
-  await db.user.updateMany({
-    where: { mobile: { in: E2E_MOBILES }, roles: { has: 'brand' as any } },
-    data: { connectedAgencies: [] },
-  });
-}
-
 export async function seedE2E(): Promise<SeededE2E> {
   await connectPrisma();
-  // Clean up ONLY E2E test-created data (orders, invites, etc.) — production data stays.
-  // E2E accounts themselves are upserted by mobile number.
-
   const db = prisma();
 
-  await cleanE2ETestData(db);
-
   const adminPasswordHash = await hashPassword(E2E_ACCOUNTS.admin.password);
-  const adminCreateData = {
-    mongoId: randomUUID(),
-    name: E2E_ACCOUNTS.admin.name,
-    mobile: E2E_ACCOUNTS.admin.mobile,
-    username: E2E_ACCOUNTS.admin.username,
-    passwordHash: adminPasswordHash,
-    role: 'admin' as any,
-    roles: ['admin', 'ops'] as any,
-    status: 'active' as any,
-  };
   const admin = await db.user.upsert({
     where: { mobile: E2E_ACCOUNTS.admin.mobile },
-    create: adminCreateData,
+    create: {
+      mongoId: randomUUID(),
+      name: E2E_ACCOUNTS.admin.name,
+      mobile: E2E_ACCOUNTS.admin.mobile,
+      username: E2E_ACCOUNTS.admin.username,
+      passwordHash: adminPasswordHash,
+      role: 'admin' as any,
+      roles: ['admin', 'ops'] as any,
+      status: 'active' as any,
+    },
     update: {
       name: E2E_ACCOUNTS.admin.name,
       username: E2E_ACCOUNTS.admin.username,
@@ -299,7 +215,7 @@ export async function seedE2E(): Promise<SeededE2E> {
   await ensureRoleDocumentsForUser({ user: shopper });
   await ensureRoleDocumentsForUser({ user: shopper2 });
 
-  // Wallet: upsert — reset balance on each test run since transactions are cleaned
+  // Wallet: ensure brand has a wallet (upsert, no balance reset)
   await db.wallet.upsert({
     where: { ownerUserId: brand.id },
     create: {
@@ -312,12 +228,13 @@ export async function seedE2E(): Promise<SeededE2E> {
       version: 0,
       createdBy: admin.id,
     },
-    update: { availablePaise: 50_000_00, pendingPaise: 0, lockedPaise: 0 },
+    update: { availablePaise: 50_000_00, pendingPaise: 0, lockedPaise: 0 },  // Reset balance for test runs
   });
 
-  // Campaign: find existing or create — never duplicate
+  // Campaign: find existing or create — never duplicate, never delete
+  // Search by title only (not brandUserId) to avoid creating duplicates when the brand user PG id changes
   let campaign = await db.campaign.findFirst({
-    where: { title: 'E2E Campaign', brandUserId: brand.id, deletedAt: null },
+    where: { title: 'E2E Campaign', deletedAt: null },
   });
   if (!campaign) {
     campaign = await db.campaign.create({
@@ -342,20 +259,15 @@ export async function seedE2E(): Promise<SeededE2E> {
         createdBy: admin.id,
       },
     });
-  } else {
-    // Ensure campaign is still active and properly configured
-    await db.campaign.update({
+  } else if (campaign.brandUserId !== brand.id) {
+    // Ensure campaign points to the current brand user
+    campaign = await db.campaign.update({
       where: { id: campaign.id },
-      data: {
-        status: 'active' as any,
-        usedSlots: 0,
-        allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
-        assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
-      },
+      data: { brandUserId: brand.id, brandName: E2E_ACCOUNTS.brand.name },
     });
   }
 
-  // Deal: find existing or create — never duplicate
+  // Deal: find existing or create — never duplicate, never delete
   const existingDeal = await db.deal.findFirst({
     where: { campaignId: campaign.id, mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode, deletedAt: null },
   });
@@ -382,9 +294,6 @@ export async function seedE2E(): Promise<SeededE2E> {
         createdBy: admin.id,
       },
     });
-  } else {
-    // Ensure deal is still active for tests
-    await db.deal.update({ where: { id: existingDeal.id }, data: { active: true } });
   }
 
   return { admin, agency, mediator, brand, shopper, shopper2 };

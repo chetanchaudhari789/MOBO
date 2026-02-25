@@ -21,8 +21,8 @@
 import { loadDotenv } from '../config/dotenvLoader.js';
 loadDotenv();
 
+import mongoose from 'mongoose';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { connectPrisma, disconnectPrisma, getPrisma } from '../database/prisma.js';
 
 // Mongoose Models
@@ -307,8 +307,14 @@ async function main() {
   // Load env and connect databases
   const env = loadEnv();
 
+  const mongoUri = process.env.MONGODB_URI || env.MONGODB_URI;
+  if (!mongoUri) {
+    console.error('❌ MONGODB_URI is not set. Cannot connect to source database.');
+    process.exit(1);
+  }
+
   console.log('🔌 Connecting to MongoDB...');
-  await connectMongo(env);
+  await mongoose.connect(mongoUri, { dbName: process.env.MONGODB_DBNAME || 'mobo' });
   console.log('   ✅ MongoDB connected');
 
   console.log('🔌 Connecting to PostgreSQL...');
@@ -326,7 +332,7 @@ async function main() {
   if (VERIFY_ONLY) {
     await verify();
     await disconnectPrisma();
-    await disconnectMongo();
+    await mongoose.disconnect();
     process.exit(0);
   }
 
@@ -373,7 +379,7 @@ async function main() {
 
   // Cleanup
   await disconnectPrisma();
-  await disconnectMongo();
+  await mongoose.disconnect();
 
   console.log(`\n✨ Migration complete in ${totalDur}`);
   process.exit(totalErrors > 0 ? 1 : 0);

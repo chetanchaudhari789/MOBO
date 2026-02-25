@@ -21,7 +21,7 @@ import { writeAuditLog } from '../services/audit.js';
 
 export function makeOrdersController(env: Env) {
   const MAX_PROOF_BYTES = 50 * 1024 * 1024;
-  const MIN_PROOF_BYTES = (env.SEED_E2E || env.NODE_ENV !== 'production') ? 1 : 10 * 1024;
+  const MIN_PROOF_BYTES = (env.NODE_ENV !== 'production') ? 1 : 10 * 1024;
 
   const getDataUrlByteSize = (raw: string) => {
     const match = String(raw || '').match(/^data:[^;]+;base64,(.+)$/i);
@@ -258,7 +258,7 @@ export function makeOrdersController(env: Env) {
           throw new AppError(429, 'VELOCITY_LIMIT', 'Too many orders created. Please try later.');
         }
 
-        const allowE2eBypass = env.SEED_E2E || env.NODE_ENV !== 'production';
+        const allowE2eBypass = env.NODE_ENV !== 'production';
         const resolvedExternalOrderId = body.externalOrderId || (allowE2eBypass ? `E2E-${Date.now()}` : undefined);
 
         if (resolvedExternalOrderId) {
@@ -763,7 +763,7 @@ export function makeOrdersController(env: Env) {
 
           // AI verification: check account name matches buyer + product name matches
           let ratingAiResult: any = null;
-          if (!env.SEED_E2E) {
+          if (env.NODE_ENV === 'production') {
             const buyerUser = await db().user.findUnique({
               where: { id: order.userId },
               select: { name: true },
@@ -825,7 +825,7 @@ export function makeOrdersController(env: Env) {
 
           // AI verification: check order ID, product name, amount, sold by
           let returnWindowResult: any = null;
-          if (!env.SEED_E2E) {
+          if (env.NODE_ENV === 'production') {
             const expectedOrderId = String(order.externalOrderId || '').trim();
             const expectedProductName = String((order.items?.[0] as any)?.title || '').trim();
             const expectedAmount = (order.items ?? []).reduce(
@@ -870,8 +870,8 @@ export function makeOrdersController(env: Env) {
           assertProofImageSize(body.data, 'Order proof');
           const expectedOrderId = String(order.externalOrderId || '').trim();
 
-          if (env.SEED_E2E) {
-            // E2E runs should not rely on external AI services.
+          if (env.NODE_ENV === 'test') {
+            // Test runs should not rely on external AI services.
           } else if (isGeminiConfigured(env) && expectedOrderId) {
             const expectedAmount = (order.items ?? []).reduce(
               (acc: number, it: any) => acc + (Number(it?.priceAtPurchasePaise) || 0) * (Number(it?.quantity) || 1), 0

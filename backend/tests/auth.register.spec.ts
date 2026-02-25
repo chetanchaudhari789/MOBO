@@ -6,6 +6,16 @@ import { loadEnv } from '../config/env.js';
 import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 
+// Unique suffix per test run to avoid collisions on re-run
+const RUN = Date.now().toString().slice(-6);
+let inviteSeq = 0;
+function uniqueInviteCode(prefix: string) { return `${prefix}_${RUN}_${++inviteSeq}`; }
+function uniqueMobile(base: string) {
+  // Replace last N digits with RUN-based suffix
+  const suffix = (parseInt(RUN, 10) + inviteSeq) % 1_000_000;
+  return base.slice(0, 4) + String(suffix).padStart(6, '0');
+}
+
 /**
  * Helper: create an invite in PostgreSQL (primary).
  */
@@ -51,7 +61,7 @@ describe('auth registration + invites', () => {
     const { app, seeded } = await setup();
     const db = prisma();
 
-    const inviteCode = 'INV_SHOPPER_1';
+    const inviteCode = uniqueInviteCode('INV_SHOPPER');
     await createInvite({
       code: inviteCode,
       role: 'shopper',
@@ -64,11 +74,11 @@ describe('auth registration + invites', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    const mobile = '9111111111';
+    const mobile = uniqueMobile('9111');
     const res = await request(app).post('/api/auth/register').send({
       name: 'New Shopper',
       mobile,
-      email: 'shopper@example.com',
+      email: `shopper_${RUN}@example.com`,
       password: 'ChangeMe_123!',
       mediatorCode: inviteCode,
     });
@@ -102,7 +112,7 @@ describe('auth registration + invites', () => {
     const { app, seeded } = await setup();
     const db = prisma();
 
-    const inviteCode = 'INV_MEDIATOR_1';
+    const inviteCode = uniqueInviteCode('INV_MEDIATOR');
     await createInvite({
       code: inviteCode,
       role: 'mediator',
@@ -115,7 +125,7 @@ describe('auth registration + invites', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    const mobile = '9222222222';
+    const mobile = uniqueMobile('9222');
     const res = await request(app).post('/api/auth/register-ops').send({
       name: 'New Mediator',
       mobile,
@@ -151,7 +161,7 @@ describe('auth registration + invites', () => {
     const { app } = await setup();
     const db = prisma();
 
-    const mobile = '9222000000';
+    const mobile = uniqueMobile('9220');
     const res = await request(app).post('/api/auth/register-ops').send({
       name: 'Mediator Join By Code',
       mobile,
@@ -179,7 +189,7 @@ describe('auth registration + invites', () => {
     const { app, seeded } = await setup();
     const db = prisma();
 
-    const inviteCode = 'INV_BRAND_1';
+    const inviteCode = uniqueInviteCode('INV_BRAND');
     await createInvite({
       code: inviteCode,
       role: 'brand',
@@ -190,7 +200,7 @@ describe('auth registration + invites', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    const mobile = '9333333333';
+    const mobile = uniqueMobile('9333');
     const res = await request(app).post('/api/auth/register-brand').send({
       name: 'New Brand',
       mobile,
@@ -224,11 +234,11 @@ describe('auth registration + invites', () => {
     const { app } = await setup();
     const db = prisma();
 
-    const mobile = '9111000000';
+    const mobile = uniqueMobile('9110');
     const res = await request(app).post('/api/auth/register').send({
       name: 'Shopper Join By Code',
       mobile,
-      email: 'shopper2@example.com',
+      email: `shopper2_${RUN}@example.com`,
       password: 'ChangeMe_123!',
       mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
     });
@@ -253,7 +263,7 @@ describe('auth registration + invites', () => {
     const { app, seeded } = await setup();
     const db = prisma();
 
-    const inviteCode = 'INV_AGENCY_1';
+    const inviteCode = uniqueInviteCode('INV_AGENCY');
     await createInvite({
       code: inviteCode,
       role: 'agency',
@@ -264,7 +274,7 @@ describe('auth registration + invites', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    const mobile = '9777777777';
+    const mobile = uniqueMobile('9777');
     const res = await request(app).post('/api/auth/register-ops').send({
       name: 'New Agency',
       mobile,
@@ -293,7 +303,7 @@ describe('auth registration + invites', () => {
     const { app, seeded } = await setup();
     const db = prisma();
 
-    const inviteCode = 'INV_EXPIRED_1';
+    const inviteCode = uniqueInviteCode('INV_EXPIRED');
     await createInvite({
       code: inviteCode,
       role: 'agency',
@@ -304,7 +314,7 @@ describe('auth registration + invites', () => {
       expiresAt: new Date(Date.now() - 60_000),
     });
 
-    const mobile = '9444444444';
+    const mobile = uniqueMobile('9444');
     const res = await request(app).post('/api/auth/register-ops').send({
       name: 'Expired User',
       mobile,
@@ -330,7 +340,7 @@ describe('auth registration + invites', () => {
     const { app, seeded } = await setup();
     const db = prisma();
 
-    const inviteCode = 'INV_ONCE_1';
+    const inviteCode = uniqueInviteCode('INV_ONCE');
     await createInvite({
       code: inviteCode,
       role: 'agency',
@@ -341,7 +351,7 @@ describe('auth registration + invites', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    const firstMobile = '9555555555';
+    const firstMobile = uniqueMobile('9555');
     const first = await request(app).post('/api/auth/register-ops').send({
       name: 'Agency One',
       mobile: firstMobile,
@@ -351,7 +361,7 @@ describe('auth registration + invites', () => {
     });
     expect(first.status).toBe(201);
 
-    const secondMobile = '9666666666';
+    const secondMobile = uniqueMobile('9666');
     const second = await request(app).post('/api/auth/register-ops').send({
       name: 'Agency Two',
       mobile: secondMobile,

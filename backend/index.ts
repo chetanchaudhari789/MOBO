@@ -1,11 +1,11 @@
 import { loadDotenv } from './config/dotenvLoader.js';
 
 loadDotenv();
-import { loadEnv, type Env } from './config/env.js';
+import { loadEnv } from './config/env.js';
 import { connectPrisma, disconnectPrisma, isPrismaAvailable } from './database/prisma.js';
 import { createApp } from './app.js';
 import type { Server } from 'node:http';
-import { startupLog, seedLog, logEvent, getSystemMetrics } from './config/logger.js';
+import { startupLog, logEvent, getSystemMetrics } from './config/logger.js';
 
 let server: Server | null = null;
 let shuttingDown = false;
@@ -41,44 +41,6 @@ async function shutdown(signal: string) {
   }
 }
 
-async function tryRunE2ESeed() {
-  try {
-    const mod = await import('./seeds/e2e.js');
-    if (typeof (mod as any).seedE2E === 'function') {
-      await (mod as any).seedE2E();
-    }
-  } catch (err) {
-    seedLog.warn('SEED_E2E seed failed; skipping', { error: err });
-  }
-}
-
-async function tryRunAdminSeed(env: Env) {
-  try {
-    const mod = await import('./seeds/admin.js');
-    if (typeof (mod as any).seedAdminOnly === 'function') {
-      await (mod as any).seedAdminOnly({
-        mobile: env.ADMIN_SEED_MOBILE,
-        username: env.ADMIN_SEED_USERNAME,
-        password: env.ADMIN_SEED_PASSWORD,
-        name: env.ADMIN_SEED_NAME,
-      });
-    }
-  } catch {
-    seedLog.warn('SEED_ADMIN requested but seed module is missing (./seeds/admin.js); skipping');
-  }
-}
-
-async function tryRunDevSeed() {
-  try {
-    const mod = await import('./seeds/dev.js');
-    if (typeof (mod as any).seedDev === 'function') {
-      await (mod as any).seedDev();
-    }
-  } catch (err) {
-    seedLog.warn('SEED_DEV seed failed; skipping', { error: err });
-  }
-}
-
 async function main() {
   const env = loadEnv();
 
@@ -92,24 +54,9 @@ async function main() {
 
   startupLog.info('PostgreSQL connected — primary database ready');
 
-  const seedAdminRequested = env.SEED_ADMIN;
-  const seedE2ERequested = env.SEED_E2E;
-  const seedDevRequested = env.SEED_DEV;
-  const isProd = env.NODE_ENV === 'production';
-
-  // E2E/admin seeding is idempotent and explicitly opt-in.
-  // Allow it even when NODE_ENV=production so Playwright (and similar harnesses) work
-  // in environments that default NODE_ENV to production.
-  if (!isProd || seedAdminRequested || seedE2ERequested) {
-    if (seedDevRequested) {
-      if (isProd) {
-        throw new Error('SEED_DEV is not allowed in production');
-      }
-      await tryRunDevSeed();
-    }
-    if (seedAdminRequested) await tryRunAdminSeed(env);
-    if (seedE2ERequested) await tryRunE2ESeed();
-  }
+  // No automatic seeding — all data comes from MongoDB migration.
+  // Seed scripts (seedE2E, seedAdmin, seedDev) are available as standalone
+  // CLI tools only if needed, never run on app startup.
 
   const app = createApp(env);
 

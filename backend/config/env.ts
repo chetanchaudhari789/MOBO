@@ -10,20 +10,7 @@ const envSchema = z.object({
   // 20mb accommodates base64-encoded proof images (~15MB raw) with headroom.
   REQUEST_BODY_LIMIT: z.string().trim().min(1).default('20mb'),
 
-  // When true, seed + E2E flows may bypass external integrations.
-  SEED_E2E: z.coerce.boolean().default(false),
-
-  // When true, seed baseline demo data for all portals (development/test only).
-  // This seed is designed to be idempotent and non-destructive.
-  SEED_DEV: z.coerce.boolean().default(false),
-
-  // When true, seed ONLY the admin account on startup (development/test only).
-  SEED_ADMIN: z.coerce.boolean().default(false),
-  // Legacy — kept optional so old .env files don't break. No longer used at runtime.
-  MONGODB_URI: z.string().optional().default(''),
-  MONGODB_DBNAME: z.string().trim().min(1).optional(),
-
-  // PostgreSQL — primary database via Prisma.
+  // PostgreSQL — primary and only database via Prisma.
   // When not provided (e.g. unit tests that mock DB), Prisma init is skipped.
   DATABASE_URL: z.string().min(1).optional(),
 
@@ -80,12 +67,6 @@ const envSchema = z.object({
   // Wallet safety limits
   WALLET_MAX_BALANCE_PAISE: z.coerce.number().int().positive().default(1_00_00_000), // ₹1,00,000
 
-  // Admin seed credentials (used during SEED_ADMIN)
-  ADMIN_SEED_MOBILE: z.string().optional(),
-  ADMIN_SEED_USERNAME: z.string().optional(),
-  ADMIN_SEED_PASSWORD: z.string().optional(),
-  ADMIN_SEED_NAME: z.string().optional(),
-
   // Web push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
@@ -139,8 +120,6 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
 
   env.JWT_ACCESS_SECRET = ensureSecret('JWT_ACCESS_SECRET', processEnv.JWT_ACCESS_SECRET);
   env.JWT_REFRESH_SECRET = ensureSecret('JWT_REFRESH_SECRET', processEnv.JWT_REFRESH_SECRET);
-
-  // MONGODB_URI is no longer required — PostgreSQL is the sole database.
 
   // Production safety: do not default to "allow all origins".
   // The API is consumed by multiple portals, so an explicit allowlist should always be configured.

@@ -557,14 +557,14 @@ export function aiRoutes(env: Env): Router {
       const payload = proofSchema.parse(req.body);
 
       // E2E runs should be deterministic and must not depend on external AI quotas.
-      if (env.SEED_E2E) {
+      if (env.NODE_ENV === 'test') {
         res.json({
           orderIdMatch: true,
           amountMatch: true,
           confidenceScore: 95,
           detectedOrderId: payload.expectedOrderId,
           detectedAmount: payload.expectedAmount,
-          discrepancyNote: 'E2E mode: AI verification bypassed.',
+          discrepancyNote: 'Test mode: AI verification bypassed.',
         });
         return;
       }
@@ -614,14 +614,14 @@ export function aiRoutes(env: Env): Router {
       if (!enforceMinInterval(req, res)) return;
 
       // E2E deterministic bypass
-      if (env.SEED_E2E) {
+      if (env.NODE_ENV === 'test') {
         res.json({
           accountNameMatch: true,
           productNameMatch: true,
           confidenceScore: 95,
           detectedAccountName: payload.expectedBuyerName,
           detectedProductName: payload.expectedProductName,
-          discrepancyNote: 'E2E mode: AI verification bypassed.',
+          discrepancyNote: 'Test mode: AI verification bypassed.',
         });
         return;
       }

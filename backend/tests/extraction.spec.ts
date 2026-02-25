@@ -12,7 +12,6 @@ import sharp from 'sharp';
 function makeTestEnv() {
   return loadEnv({
     NODE_ENV: 'test',
-    MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     GEMINI_API_KEY: '', // No Gemini — forces Tesseract fallback
     AI_DEBUG_OCR: 'true',
   });

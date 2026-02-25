@@ -90,16 +90,18 @@ describe('ops campaigns: assign slots', () => {
 
     // Create pending mediator in PG (controllers query PG only)
     const pendingMongoId = randomUUID();
+    const pendingMobile = `91${Date.now().toString().slice(-8)}`;
+    const pendingMedCode = `MED_PEND_${Date.now()}`;
     await db.user.create({
       data: {
         mongoId: pendingMongoId,
         name: 'Pending Mediator',
-        mobile: '9111111111',
+        mobile: pendingMobile,
         passwordHash: 'x',
         role: 'mediator',
         roles: ['mediator'],
         status: 'pending',
-        mediatorCode: 'MED_PEND',
+        mediatorCode: pendingMedCode,
         parentCode: E2E_ACCOUNTS.agency.agencyCode,
       },
     });
@@ -132,7 +134,7 @@ describe('ops campaigns: assign slots', () => {
       .set('Authorization', `Bearer ${agency.token}`)
       .send({
         id: pgCampaign.id,
-        assignments: { MED_PEND: 1 },
+        assignments: { [pendingMedCode]: 1 },
       });
 
     expect(res.status).toBe(403);

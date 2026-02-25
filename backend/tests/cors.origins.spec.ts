@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 
 describe('CORS origin enforcement', () => {
   let app: any;
@@ -10,16 +9,10 @@ describe('CORS origin enforcement', () => {
   beforeAll(async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: '<REPLACE_ME>',
       CORS_ORIGINS: 'https://allowed.example',
     });
 
-    await connectMongo(env);
     app = createApp(env);
-  });
-
-  afterAll(async () => {
-    await disconnectMongo();
   });
 
   it('rejects requests with a disallowed Origin header', async () => {
@@ -43,12 +36,9 @@ describe('CORS origin enforcement', () => {
   it('normalizes entries with trailing slashes/paths/quotes', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: '<REPLACE_ME>',
       CORS_ORIGINS: '"https://allowed.example/",https://allowed.example/api',
     });
 
-    await disconnectMongo();
-    await connectMongo(env);
     const app2 = createApp(env);
 
     const res = await request(app2)
