@@ -35,15 +35,13 @@ test('brand can see and approve an agency connection request', async ({ page, re
     expect(removeRes.ok()).toBeTruthy();
   }
 
-  // If already pending, reject it so we can create a fresh request.
+  // Reject ALL existing pending connections to ensure a clean slate.
   const pending = Array.isArray(me?.pendingConnections) ? me.pendingConnections : [];
-  const existing = pending.find((p: any) => String(p?.agencyCode) === AGENCY_CODE);
-  if (existing) {
-    const rejectRes = await request.post('/api/brand/requests/resolve', {
+  for (const p of pending) {
+    await request.post('/api/brand/requests/resolve', {
       headers: { Authorization: `Bearer ${brandAuth.token}` },
-      data: { agencyCode: AGENCY_CODE, action: 'reject' },
+      data: { agencyCode: String(p.agencyCode), action: 'reject' },
     });
-    expect(rejectRes.ok()).toBeTruthy();
   }
 
   // Create a request as the agency.
@@ -75,18 +73,27 @@ test('brand can see and approve an agency connection request', async ({ page, re
   await page.getByRole('button', { name: 'Requests' }).click();
 
   // Wait for the pending connection card from E2E Agency.
-  const pendingCards = page
-    .locator('div')
-    .filter({ hasText: 'Wants to connect with your brand.' })
-    .filter({ hasText: 'E2E Agency' });
+  // Use h4 heading locator — avoids matching ancestor wrapper divs that cascade `hasText`.
+  const agencyHeading = page.locator('h4').filter({ hasText: 'E2E Agency' });
+  await expect(agencyHeading.first()).toBeVisible({ timeout: 15000 });
 
-  await expect(pendingCards.first()).toBeVisible({ timeout: 15000 });
-  await pendingCards.first().getByRole('button', { name: 'Approve' }).click();
+  // Click Approve on the card containing that heading.
+  const card = page
+    .locator('div')
+    .filter({ has: agencyHeading })
+    .filter({ hasText: 'Wants to connect with your brand.' })
+    .first();
+  await card.getByRole('button', { name: 'Approve' }).click();
+
+  // Wait for the UI to process the approval.
+  await page.waitForTimeout(1000);
 
   // Verify persistence by navigating away/back.
   await page.getByRole('button', { name: 'Agency Partners' }).click();
   await page.getByRole('button', { name: 'Requests' }).click();
-  await expect(pendingCards).toHaveCount(0, { timeout: 15000 });
+
+  // Assert: E2E Agency heading should no longer exist on the Requests tab.
+  await expect(agencyHeading).toHaveCount(0, { timeout: 15000 });
 
   // And the agency should appear in partners.
   await page.getByRole('button', { name: 'Agency Partners' }).click();

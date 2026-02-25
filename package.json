@@ -30,10 +30,6 @@
     "clean:root": "node scripts/clean.mjs root",
     "clean:backend": "node scripts/clean.mjs backend",
     "clean:apps": "node scripts/clean.mjs apps",
-    "seed:large": "powershell -ExecutionPolicy Bypass -File scripts/seed-large.ps1",
-    "db:seed-admin": "npm -w @mobo/backend run seed:admin",
-    "db:seed-dev": "npm -w @mobo/backend run seed:dev",
-    "db:reset-admin": "npm -w @mobo/backend run reset:admin",
     "ai:check": "powershell -ExecutionPolicy Bypass -File scripts/check-ai-key.ps1"
   },
   "dependencies": {

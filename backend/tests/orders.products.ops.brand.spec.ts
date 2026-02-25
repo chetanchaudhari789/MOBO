@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import request from 'supertest';
 
 import { createApp } from '../app.js';
@@ -64,9 +65,24 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
 
     // Use the campaign's brand (the actual wallet owner for settlement)
     const campaignBrandUserId = String(deal?.campaign?.brandUserId || seeded.brand.id);
-    const brandWalletBefore = await db.wallet.findFirst({ where: { ownerUserId: campaignBrandUserId, deletedAt: null } });
-    expect(brandWalletBefore).toBeTruthy();
-    const brandAvailableBefore = Number(brandWalletBefore?.availablePaise ?? 0);
+
+    // Force-reset the wallet to a known balance (5,00,000 paisa = ₹50,000)
+    // so the assertion is deterministic regardless of leftover state.
+    const WALLET_START = 50_000_00;
+    await db.wallet.upsert({
+      where: { ownerUserId: campaignBrandUserId },
+      create: {
+        mongoId: crypto.randomUUID(),
+        ownerUserId: campaignBrandUserId,
+        currency: 'INR' as any,
+        availablePaise: WALLET_START,
+        pendingPaise: 0,
+        lockedPaise: 0,
+        version: 0,
+        createdBy: campaignBrandUserId,
+      },
+      update: { availablePaise: WALLET_START, pendingPaise: 0, lockedPaise: 0 },
+    });
 
     // Clean up any existing orders for this shopper+deal to avoid DUPLICATE_DEAL_ORDER
     // The redirect stores deal.mongoId||deal.id as productId, so match both
@@ -170,6 +186,11 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
 
     expect(verifyRes.status).toBe(200);
     expect(verifyRes.body).toHaveProperty('ok', true);
+
+    // Snapshot wallet balance immediately BEFORE settling
+    const walletSnap = await db.wallet.findFirst({ where: { ownerUserId: campaignBrandUserId, deletedAt: null } });
+    expect(walletSnap).toBeTruthy();
+    const brandAvailableBefore = Number(walletSnap?.availablePaise ?? 0);
 
     // Ops settle (with optional settlementRef)
     const settleRes = await request(app)

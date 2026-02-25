@@ -25,7 +25,7 @@ export default defineConfig({
     timeout: 240_000,
     env: {
       ...process.env,
-      SEED_E2E: 'true',
+      NODE_ENV: 'test',
       NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=4096', '--no-deprecation']
         .filter(Boolean)
         .join(' '),
