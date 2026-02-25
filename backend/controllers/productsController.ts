@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { toUiDeal } from '../utils/uiMappers.js';
@@ -8,6 +8,7 @@ import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgDeal } from '../utils/pgMappers.js';
+import { idWhere } from '../utils/idWhere.js';
 
 function db() { return prisma(); }
 
@@ -62,7 +63,7 @@ export function makeProductsController() {
 
         const deal = await db().deal.findFirst({
           where: {
-            mongoId: dealId,
+            ...idWhere(dealId),
             mediatorCode: { equals: mediatorCode, mode: 'insensitive' },
             active: true,
             deletedAt: null,
@@ -83,7 +84,7 @@ export function makeProductsController() {
           brandUserMongoId = bu?.mongoId ?? undefined;
         }
 
-        const mongoId = new Types.ObjectId().toString();
+        const mongoId = randomUUID();
         const _preOrder = await db().order.create({
           data: {
             mongoId,

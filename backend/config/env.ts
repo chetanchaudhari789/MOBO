@@ -19,17 +19,13 @@ const envSchema = z.object({
 
   // When true, seed ONLY the admin account on startup (development/test only).
   SEED_ADMIN: z.coerce.boolean().default(false),
-  MONGODB_URI: z.string().min(1),
+  // Legacy — kept optional so old .env files don't break. No longer used at runtime.
+  MONGODB_URI: z.string().optional().default(''),
   MONGODB_DBNAME: z.string().trim().min(1).optional(),
 
-  // PostgreSQL — used by Prisma for the dual-write migration.
-  // Supports any PostgreSQL server with optional SSL (sslmode=require).
-  // Optional: when not set, Prisma writes are silently skipped.
+  // PostgreSQL — primary database via Prisma.
+  // When not provided (e.g. unit tests that mock DB), Prisma init is skipped.
   DATABASE_URL: z.string().min(1).optional(),
-
-  // Feature flag: when true, every Mongo write is also shadow-written to PG.
-  // Set to false to disable PG writes without removing the Prisma config.
-  DUAL_WRITE_ENABLED: z.coerce.boolean().default(false),
 
   JWT_ACCESS_SECRET: z.string().optional(),
   JWT_REFRESH_SECRET: z.string().optional(),
@@ -144,11 +140,7 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
   env.JWT_ACCESS_SECRET = ensureSecret('JWT_ACCESS_SECRET', processEnv.JWT_ACCESS_SECRET);
   env.JWT_REFRESH_SECRET = ensureSecret('JWT_REFRESH_SECRET', processEnv.JWT_REFRESH_SECRET);
 
-  if (env.NODE_ENV === 'production' && looksPlaceholder(env.MONGODB_URI)) {
-    throw new Error(
-      'Invalid environment configuration:\nMONGODB_URI: must be set to a real MongoDB connection string in production'
-    );
-  }
+  // MONGODB_URI is no longer required — PostgreSQL is the sole database.
 
   // Production safety: do not default to "allow all origins".
   // The API is consumed by multiple portals, so an explicit allowlist should always be configured.

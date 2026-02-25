@@ -5,7 +5,7 @@
  * expected by uiMappers and controller logic.
  *
  * Key transformations:
- * 1. `_id = mongoId` — backward compat with Mongoose-format consumers.
+ * 1. `_id = id` — PG primary key used as the canonical identifier.
  * 2. User: flat KYC / bank fields → nested kycDocuments / bankDetails objects.
  * 3. Order: flat screenshot / rejection fields → nested subdocuments.
  */
@@ -14,9 +14,9 @@ import { safeIso } from './uiMappers.js';
 
 // ────────────── generic ──────────────
 
-/** Add `_id = mongoId` for backward compat with code that expects Mongoose docs. */
+/** Add `_id = id` for backward compat with code that expects Mongoose docs. */
 export function withId<T extends { mongoId?: string | null; id: string }>(raw: T): T & { _id: string } {
-  return { ...raw, _id: (raw.mongoId ?? raw.id) as string };
+  return { ...raw, _id: raw.id };
 }
 
 /** Map an array of PG results – null-safe. */
@@ -32,7 +32,7 @@ export function pgUser(raw: any): any {
   if (!raw) return null;
   return {
     ...raw,
-    _id: raw.mongoId ?? raw.id,
+    _id: raw.id,
     kycDocuments: {
       panCard: raw.kycPanCard ?? null,
       aadhaar: raw.kycAadhaar ?? null,
@@ -62,7 +62,7 @@ export function pgOrder(raw: any): any {
   if (!raw) return null;
   return {
     ...raw,
-    _id: raw.mongoId ?? raw.id,
+    _id: raw.id,
     userId: raw.userId,
     screenshots: {
       order: raw.screenshotOrder ?? null,
@@ -92,7 +92,7 @@ export function pgCampaign(raw: any): any {
   if (!raw) return null;
   return {
     ...raw,
-    _id: raw.mongoId ?? raw.id,
+    _id: raw.id,
     // assignments: JSONB – comes as-is
     // allowedAgencyCodes: string[] – same as Mongoose
   };
@@ -102,47 +102,47 @@ export function pgCampaign(raw: any): any {
 
 export function pgDeal(raw: any): any {
   if (!raw) return null;
-  return { ...raw, _id: raw.mongoId ?? raw.id };
+  return { ...raw, _id: raw.id };
 }
 
 // ────────────── Ticket ──────────────
 
 export function pgTicket(raw: any): any {
   if (!raw) return null;
-  return { ...raw, _id: raw.mongoId ?? raw.id };
+  return { ...raw, _id: raw.id };
 }
 
 // ────────────── Wallet ──────────────
 
 export function pgWallet(raw: any): any {
   if (!raw) return null;
-  return { ...raw, _id: raw.mongoId ?? raw.id };
+  return { ...raw, _id: raw.id };
 }
 
 // ────────────── Transaction ──────────────
 
 export function pgTransaction(raw: any): any {
   if (!raw) return null;
-  return { ...raw, _id: raw.mongoId ?? raw.id };
+  return { ...raw, _id: raw.id };
 }
 
 // ────────────── Invite ──────────────
 
 export function pgInvite(raw: any): any {
   if (!raw) return null;
-  return { ...raw, _id: raw.mongoId ?? raw.id };
+  return { ...raw, _id: raw.id };
 }
 
 // ────────────── Payout ──────────────
 
 export function pgPayout(raw: any): any {
   if (!raw) return null;
-  return { ...raw, _id: raw.mongoId ?? raw.id };
+  return { ...raw, _id: raw.id };
 }
 
 // ────────────── Suspension ──────────────
 
 export function pgSuspension(raw: any): any {
   if (!raw) return null;
-  return { ...raw, _id: raw.mongoId ?? raw.id };
+  return { ...raw, _id: raw.id };
 }

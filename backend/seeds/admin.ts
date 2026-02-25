@@ -1,6 +1,7 @@
-import { UserModel } from '../models/User.js';
+// MongoDB removed — admin seeding is PG-only via Prisma.
+import { randomUUID } from 'node:crypto';
 import { hashPassword } from '../services/passwords.js';
-import { isPrismaAvailable, prisma } from '../database/prisma.js';
+import { prisma } from '../database/prisma.js';
 
 export type SeedAdminArgs = {
   mobile?: string;
@@ -36,7 +37,6 @@ export async function seedAdminOnly(args: SeedAdminArgs = {}) {
   if (!name) throw new Error('seedAdminOnly: name is required');
 
   // Production safety: never silently seed a weak/default admin password.
-  // You can still run seeding in production, but env vars must be set intentionally.
   if (isProd) {
     if (looksPlaceholder(process.env.ADMIN_SEED_USERNAME) && !args.username) {
       throw new Error('seedAdminOnly: ADMIN_SEED_USERNAME must be set in production');
@@ -49,80 +49,50 @@ export async function seedAdminOnly(args: SeedAdminArgs = {}) {
   const shouldForcePassword = args.forcePassword === true;
   const shouldForceUsername = args.forceUsername === true;
 
-  // Prefer to find by username first (admin login is username/password).
-  let user = await UserModel.findOne({ username, deletedAt: null });
+  const db = prisma();
+
+  // Try to find existing admin by username first, then by mobile.
+  let user = await db.user.findFirst({ where: { username, deletedAt: null } });
   if (!user) {
-    user = await UserModel.findOne({ mobile, deletedAt: null });
+    user = await db.user.findFirst({ where: { mobile, deletedAt: null } });
   }
 
   // Avoid clobbering an existing different user with the same username.
   if (user && user.username && user.username !== username) {
-    const existingByUsername = await UserModel.findOne({ username, deletedAt: null }).lean();
-    if (existingByUsername && String(existingByUsername._id) !== String(user._id)) {
+    const existingByUsername = await db.user.findFirst({ where: { username, deletedAt: null } });
+    if (existingByUsername && existingByUsername.id !== user.id) {
       throw new Error(`seedAdminOnly: username '${username}' is already taken`);
     }
   }
 
   if (!user) {
     const passwordHash = await hashPassword(password);
-    user = new UserModel({
-      name,
-      username,
-      mobile,
-      passwordHash,
-      role: 'admin',
-      roles: ['admin'],
-      status: 'active',
-      deletedAt: null,
+    user = await db.user.create({
+      data: {
+        mongoId: randomUUID(),
+        name,
+        username,
+        mobile,
+        passwordHash,
+        role: 'admin' as any,
+        roles: ['admin'] as any,
+        status: 'active' as any,
+      },
     });
   } else {
-    user.name = name;
-    if (!user.username || shouldForceUsername) user.username = username;
-    user.mobile = mobile;
+    const updateData: any = {
+      name,
+      mobile,
+      role: 'admin',
+      roles: Array.from(new Set(['admin', ...(user.roles as string[] ?? [])])),
+      status: 'active',
+      deletedAt: null,
+    };
+    if (!user.username || shouldForceUsername) updateData.username = username;
     if (shouldForcePassword) {
-      user.passwordHash = await hashPassword(password);
+      updateData.passwordHash = await hashPassword(password);
     }
-    (user as any).role = 'admin';
-    (user as any).roles = Array.from(new Set(['admin', ...((user as any).roles ?? [])]));
-    (user as any).status = 'active';
-    (user as any).deletedAt = null;
-  }
-
-  await user.save();
-
-  // Also upsert the admin user in PostgreSQL so PG-primary controllers can find them.
-  if (isPrismaAvailable()) {
-    const db = prisma();
-    // Remove any stale PG user with conflicting mobile (from a previous seed/test run).
-    // Delete dependent wallets first to avoid FK constraint violations.
-    const staleUsers = await db.user.findMany({ where: { mobile: user.mobile, mongoId: { not: String(user._id) } }, select: { id: true } });
-    if (staleUsers.length) {
-      const staleIds = staleUsers.map(u => u.id);
-      await db.wallet.deleteMany({ where: { ownerUserId: { in: staleIds } } });
-      await db.user.deleteMany({ where: { id: { in: staleIds } } });
-    }
-    await db.user.upsert({
-      where: { mongoId: String(user._id) },
-      update: {
-        name: user.name,
-        username: user.username ?? undefined,
-        mobile: user.mobile,
-        passwordHash: user.passwordHash,
-        role: 'admin' as any,
-        roles: Array.from(new Set(['admin', ...((user as any).roles ?? [])])) as any,
-        status: 'active' as any,
-      },
-      create: {
-        mongoId: String(user._id),
-        name: user.name,
-        username: user.username ?? undefined,
-        mobile: user.mobile,
-        passwordHash: user.passwordHash,
-        role: 'admin' as any,
-        roles: Array.from(new Set(['admin', ...((user as any).roles ?? [])])) as any,
-        status: 'active' as any,
-      },
-    });
+    user = await db.user.update({ where: { id: user.id }, data: updateData });
   }
 
   return user;

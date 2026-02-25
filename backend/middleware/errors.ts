@@ -149,6 +149,17 @@ export function errorHandler(
           },
         });
         return;
+      case 'P2010': // Raw query failed
+      case 'P2022': // Column does not exist
+      case 'P2023': // Inconsistent column data
+        logger.error(`Database schema error ${prismaCode}`, { requestId, error: anyErr });
+        res.status(500).json({
+          error: {
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'A database configuration error occurred. Our team has been notified.',
+          },
+        });
+        return;
       default:
         // Log unknown Prisma errors but fall through to generic handler
         logger.error(`Prisma error ${prismaCode}`, { requestId, error: anyErr });
@@ -202,8 +213,6 @@ export function errorHandler(
     return;
   }
 
-  const isProd = process.env.NODE_ENV === 'production';
-
   logEvent('error', `Unhandled error on ${req.method} ${req.originalUrl}`, {
     domain: 'http',
     eventName: 'UNHANDLED_REQUEST_ERROR',
@@ -218,9 +227,10 @@ export function errorHandler(
     },
   });
 
+  const isProd = process.env.NODE_ENV === 'production';
   const message = isProd
     ? 'Something went wrong. Please try again later.'
-    : err instanceof Error ? err.message : 'Something went wrong.';
+    : (err instanceof Error ? err.message : String(err)) || 'Something went wrong. Please try again later.';
   res.status(500).json({
     error: {
       code: 'INTERNAL_SERVER_ERROR',

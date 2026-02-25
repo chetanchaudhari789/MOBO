@@ -93,7 +93,7 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(Array.isArray(verifyPurchaseRes.body.missingProofs)).toBe(true);
     expect(verifyPurchaseRes.body.missingProofs).toContain('review');
 
-    const afterPurchase = await prisma().order.findFirst({ where: { mongoId: orderId } });
+    const afterPurchase = await prisma().order.findFirst({ where: { id: orderId } });
     expect(afterPurchase).toBeTruthy();
     expect(afterPurchase?.workflowStatus).toBe('UNDER_REVIEW');
     expect(!!(afterPurchase?.verification as any)?.order?.verifiedAt).toBe(true);
@@ -133,7 +133,7 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
     expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
-    const finalOrder = await prisma().order.findFirst({ where: { mongoId: orderId } });
+    const finalOrder = await prisma().order.findFirst({ where: { id: orderId } });
     expect(finalOrder).toBeTruthy();
     expect(finalOrder?.workflowStatus).toBe('APPROVED');
     expect(finalOrder?.affiliateStatus).toBe('Pending_Cooling');
@@ -238,7 +238,7 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
     expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
-    const finalOrder = await prisma().order.findFirst({ where: { mongoId: orderId } });
+    const finalOrder = await prisma().order.findFirst({ where: { id: orderId } });
     expect(finalOrder).toBeTruthy();
     expect(finalOrder?.workflowStatus).toBe('APPROVED');
     expect(finalOrder?.affiliateStatus).toBe('Pending_Cooling');

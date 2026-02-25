@@ -1,42 +1,38 @@
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
+import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
-import { CampaignModel } from '../models/Campaign.js';
-import { DealModel } from '../models/Deal.js';
 
 describe('api smoke', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('serves health and core protected endpoints', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
-    const campaign = await CampaignModel.findOne({
-      title: 'E2E Campaign',
-      deletedAt: null,
-    }).lean();
+    const campaign = await prisma().campaign.findFirst({
+      where: { title: 'E2E Campaign', deletedAt: null },
+    });
     expect(campaign).toBeTruthy();
 
     // Ensure buyer has at least one visible deal.
-      const existingDeal = await DealModel.findOne({
-        campaignId: (campaign as any)._id,
+    const existingDeal = await prisma().deal.findFirst({
+      where: {
+        campaignId: campaign!.id,
         mediatorCode: 'MED_TEST',
         deletedAt: null,
-      }).lean();
+      },
+    });
 
-      if (!existingDeal) {
-        await DealModel.create({
-          campaignId: (campaign as any)._id,
+    if (!existingDeal) {
+      await prisma().deal.create({
+        data: {
+          mongoId: randomUUID(),
+          campaignId: campaign!.id,
           mediatorCode: 'MED_TEST',
           title: 'E2E Deal',
           description: 'E2E deal for buyer app',
@@ -48,10 +44,11 @@ describe('api smoke', () => {
           originalPricePaise: 199900,
           pricePaise: 99900,
           commissionPaise: 15000,
-          payoutPaise: 15000, // CRITICAL: Added required field
+          payoutPaise: 15000,
           active: true,
-        });
-      }
+        },
+      });
+    }
 
     const app = createApp(env);
 

@@ -86,7 +86,7 @@ describe('mediator pending approval flow', () => {
     const approveRes = await request(app)
       .post('/api/ops/mediators/approve')
       .set('Authorization', `Bearer ${agencyToken}`)
-      .send({ id: pendingMediator!.mongoId });
+      .send({ id: pendingMediator!.id });
     expect(approveRes.status).toBe(200);
 
     // 7. Verify mediator is now active (PG)
@@ -122,7 +122,7 @@ describe('mediator pending approval flow', () => {
 
     // Look up pending mediator in PG (controller uses { mongoId: body.id })
     const pendingMediator = await db.user.findFirst({ where: { mobile: mediatorMobile, deletedAt: null } });
-    const mediatorId = pendingMediator?.mongoId;
+    const mediatorId = pendingMediator?.id;
 
     // Create a second agency (via admin invite) to ensure its code differs.
     const adminLoginRes = await request(app)

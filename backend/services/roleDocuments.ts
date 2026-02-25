@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../middleware/errors.js';
 import { prisma } from '../database/prisma.js';
@@ -54,7 +54,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
         status: String(user?.status ?? 'active'),
       },
       create: {
-        mongoId: new Types.ObjectId().toString(),
+        mongoId: randomUUID(),
         agencyCode,
         name,
         ownerUserId: pgUserId,
@@ -81,7 +81,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
         connectedAgencyCodes,
       },
       create: {
-        mongoId: new Types.ObjectId().toString(),
+        mongoId: randomUUID(),
         brandCode,
         name,
         ownerUserId: pgUserId,
@@ -104,7 +104,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
         status: String(user?.status ?? 'active'),
       },
       create: {
-        mongoId: new Types.ObjectId().toString(),
+        mongoId: randomUUID(),
         userId: pgUserId,
         mediatorCode,
         parentAgencyCode: String(user?.parentCode ?? '').trim() || null,
@@ -127,7 +127,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
     } else {
       await db.shopperProfile.create({
         data: {
-          mongoId: new Types.ObjectId().toString(),
+          mongoId: randomUUID(),
           userId: pgUserId,
           defaultMediatorCode: String(user?.parentCode ?? '').trim() || null,
           createdBy: resolvedCreatedBy,

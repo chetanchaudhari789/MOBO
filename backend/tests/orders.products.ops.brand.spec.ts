@@ -60,12 +60,12 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     const dealId = String(productsRes.body[0].id || productsRes.body[0]._id || '');
     expect(dealId).toBeTruthy();
 
-    const deal = await db.deal.findFirst({ where: { mongoId: dealId, deletedAt: null } });
+    const deal = await db.deal.findFirst({ where: { id: dealId, deletedAt: null } });
     expect(deal).toBeTruthy();
     const payoutPaise = Number(deal?.payoutPaise ?? 0);
     expect(payoutPaise).toBeGreaterThan(0);
 
-    const brandWalletBefore = await db.wallet.findFirst({ where: { ownerUserId: seeded.pgBrand.id, deletedAt: null } });
+    const brandWalletBefore = await db.wallet.findFirst({ where: { ownerUserId: seeded.brand.id, deletedAt: null } });
     expect(brandWalletBefore).toBeTruthy();
     const brandAvailableBefore = Number(brandWalletBefore?.availablePaise ?? 0);
     // Redirect tracking creates a pre-order
@@ -137,7 +137,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(settleRes.status).toBe(200);
     expect(settleRes.body).toHaveProperty('ok', true);
 
-    const brandWalletAfter = await db.wallet.findFirst({ where: { ownerUserId: seeded.pgBrand.id, deletedAt: null } });
+    const brandWalletAfter = await db.wallet.findFirst({ where: { ownerUserId: seeded.brand.id, deletedAt: null } });
     expect(brandWalletAfter).toBeTruthy();
     const brandAvailableAfter = Number(brandWalletAfter?.availablePaise ?? 0);
 
@@ -175,9 +175,9 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
       .set('Authorization', `Bearer ${brand.token}`)
       .send({ agencyId: E2E_ACCOUNTS.agency.agencyCode, amount: 10, ref: `REF_${Date.now()}` });
 
-    // NOTE: payout endpoint expects agencyId (Mongo id), not agencyCode.
-    // So the call above should fail; verify contract and then do a correct call.
-    expect(payoutRes.status).toBe(400);
+    // NOTE: payout endpoint expects agencyId (PG UUID), not agencyCode.
+    // Sending an agencyCode string fails with 404 — not a valid user ID.
+    expect([400, 404]).toContain(payoutRes.status);
 
     // Fetch agencies list and pay using actual agency id.
     const agenciesRes = await request(app)

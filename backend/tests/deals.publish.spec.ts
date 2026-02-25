@@ -1,11 +1,10 @@
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
-import { CampaignModel } from '../models/Campaign.js';
 
 async function login(app: any, mobile: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ mobile, password });
@@ -17,17 +16,8 @@ async function login(app: any, mobile: string, password: string) {
 }
 
 describe('ops deals: publish', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('allows mediator to publish when campaign has a slot assignment (even if allowedAgencyCodes is missing)', async () => {
-    const env = loadEnv({
-      NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-    });
-
-    await connectMongo(env);
+    const env = loadEnv({ NODE_ENV: 'test' });
     const seeded = await seedE2E();
 
     const app = createApp(env);
@@ -38,32 +28,11 @@ describe('ops deals: publish', () => {
 
     const mediatorCode = E2E_ACCOUNTS.mediator.mediatorCode;
 
-    const campaign = await CampaignModel.create({
-      title: 'Publish Campaign (missing allowedAgencyCodes)',
-      brandUserId: agency.userId as any,
-      brandName: 'Agency Inventory',
-      platform: 'Amazon',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      originalPricePaise: 1000_00,
-      pricePaise: 900_00,
-      payoutPaise: 100_00,
-      returnWindowDays: 14,
-      dealType: 'Discount',
-      totalSlots: 10,
-      usedSlots: 0,
-      status: 'active',
-      allowedAgencyCodes: [],
-      assignments: new Map([[mediatorCode, { limit: 3 }]]),
-      createdBy: agency.userId as any,
-    });
-
-    // Create PG campaign (controllers query PG only)
     const pgCampaign = await db.campaign.create({
       data: {
-        mongoId: String(campaign._id),
+        mongoId: randomUUID(),
         title: 'Publish Campaign (missing allowedAgencyCodes)',
-        brandUserId: seeded.pgAgency.id,
+        brandUserId: seeded.agency.id,
         brandName: 'Agency Inventory',
         platform: 'Amazon',
         image: 'https://placehold.co/600x400',
@@ -78,7 +47,7 @@ describe('ops deals: publish', () => {
         status: 'active',
         allowedAgencyCodes: [],
         assignments: { [mediatorCode]: { limit: 3 } },
-        createdBy: seeded.pgAgency.id,
+        createdBy: seeded.agency.id,
       },
     });
 
@@ -86,7 +55,7 @@ describe('ops deals: publish', () => {
       .post('/api/ops/deals/publish')
       .set('Authorization', `Bearer ${mediator.token}`)
       .send({
-        id: String(campaign._id),
+        id: pgCampaign.id,
         commission: 50,
         mediatorCode,
       });
@@ -100,12 +69,7 @@ describe('ops deals: publish', () => {
   });
 
   it('allows publishing with commission omitted (defaults to 0)', async () => {
-    const env = loadEnv({
-      NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-    });
-
-    await connectMongo(env);
+    const env = loadEnv({ NODE_ENV: 'test' });
     const seeded = await seedE2E();
 
     const app = createApp(env);
@@ -116,32 +80,11 @@ describe('ops deals: publish', () => {
 
     const mediatorCode = E2E_ACCOUNTS.mediator.mediatorCode;
 
-    const campaign = await CampaignModel.create({
-      title: 'Publish Campaign (no commission field)',
-      brandUserId: agency.userId as any,
-      brandName: 'Agency Inventory',
-      platform: 'Amazon',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      originalPricePaise: 1000_00,
-      pricePaise: 900_00,
-      payoutPaise: 0,
-      returnWindowDays: 14,
-      dealType: 'Discount',
-      totalSlots: 10,
-      usedSlots: 0,
-      status: 'active',
-      allowedAgencyCodes: [],
-      assignments: new Map([[mediatorCode, { limit: 3 }]]),
-      createdBy: agency.userId as any,
-    });
-
-    // Create PG campaign
     const pgCampaign = await db.campaign.create({
       data: {
-        mongoId: String(campaign._id),
+        mongoId: randomUUID(),
         title: 'Publish Campaign (no commission field)',
-        brandUserId: seeded.pgAgency.id,
+        brandUserId: seeded.agency.id,
         brandName: 'Agency Inventory',
         platform: 'Amazon',
         image: 'https://placehold.co/600x400',
@@ -156,7 +99,7 @@ describe('ops deals: publish', () => {
         status: 'active',
         allowedAgencyCodes: [],
         assignments: { [mediatorCode]: { limit: 3 } },
-        createdBy: seeded.pgAgency.id,
+        createdBy: seeded.agency.id,
       },
     });
 
@@ -164,7 +107,7 @@ describe('ops deals: publish', () => {
       .post('/api/ops/deals/publish')
       .set('Authorization', `Bearer ${mediator.token}`)
       .send({
-        id: String(campaign._id),
+        id: pgCampaign.id,
         mediatorCode,
       });
 
@@ -178,12 +121,7 @@ describe('ops deals: publish', () => {
   });
 
   it('rejects publishing when buyer discount exceeds agency commission', async () => {
-    const env = loadEnv({
-      NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-    });
-
-    await connectMongo(env);
+    const env = loadEnv({ NODE_ENV: 'test' });
     const seeded = await seedE2E();
 
     const app = createApp(env);
@@ -194,32 +132,11 @@ describe('ops deals: publish', () => {
 
     const mediatorCode = E2E_ACCOUNTS.mediator.mediatorCode;
 
-    const campaign = await CampaignModel.create({
-      title: 'Publish Campaign (negative commission exceeds agency commission)',
-      brandUserId: agency.userId as any,
-      brandName: 'Agency Inventory',
-      platform: 'Amazon',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      originalPricePaise: 1000_00,
-      pricePaise: 900_00,
-      payoutPaise: 0,
-      returnWindowDays: 14,
-      dealType: 'Discount',
-      totalSlots: 10,
-      usedSlots: 0,
-      status: 'active',
-      allowedAgencyCodes: [],
-      assignments: new Map([[mediatorCode, { limit: 3, payout: 500 }]]),  // ₹5 agency commission
-      createdBy: agency.userId as any,
-    });
-
-    // Create PG campaign
     const pgCampaign = await db.campaign.create({
       data: {
-        mongoId: String(campaign._id),
+        mongoId: randomUUID(),
         title: 'Publish Campaign (negative commission exceeds agency commission)',
-        brandUserId: seeded.pgAgency.id,
+        brandUserId: seeded.agency.id,
         brandName: 'Agency Inventory',
         platform: 'Amazon',
         image: 'https://placehold.co/600x400',
@@ -234,7 +151,7 @@ describe('ops deals: publish', () => {
         status: 'active',
         allowedAgencyCodes: [],
         assignments: { [mediatorCode]: { limit: 3, payout: 500 } },
-        createdBy: seeded.pgAgency.id,
+        createdBy: seeded.agency.id,
       },
     });
 
@@ -242,7 +159,7 @@ describe('ops deals: publish', () => {
       .post('/api/ops/deals/publish')
       .set('Authorization', `Bearer ${mediator.token}`)
       .send({
-        id: String(campaign._id),
+        id: pgCampaign.id,
         commission: -10,  // ₹-10 buyer discount, net = 5 + (-10) = -5 < 0
         mediatorCode,
       });

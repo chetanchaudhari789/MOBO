@@ -56,8 +56,8 @@ describe('brand payouts + ledger', () => {
       .post('/api/brand/payout')
       .set('Authorization', `Bearer ${brandToken}`)
       .send({
-        brandId: brand!.mongoId || brand!.id,
-        agencyId: agency!.mongoId || agency!.id,
+        brandId: brand!.id,
+        agencyId: agency!.id,
         amount: 123,
         ref: 'UTR123',
       });
@@ -66,7 +66,7 @@ describe('brand payouts + ledger', () => {
     expect(payoutRes.body).toMatchObject({ ok: true });
 
     const ledgerRes = await request(app)
-      .get(`/api/brand/transactions?brandId=${brand!.mongoId || brand!.id}`)
+      .get(`/api/brand/transactions?brandId=${brand!.id}`)
       .set('Authorization', `Bearer ${brandToken}`);
 
     expect(ledgerRes.status).toBe(200);

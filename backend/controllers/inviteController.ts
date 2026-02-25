@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../database/prisma.js';
 import { createInviteSchema, opsGenerateInviteSchema, revokeInviteSchema } from '../validations/invites.js';
 import { generateHumanCode } from '../services/codes.js';
@@ -39,7 +39,7 @@ export function makeInviteController() {
 
         const invite = await db().invite.create({
           data: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             code,
             role: body.role as any,
             label: body.label,
@@ -189,7 +189,7 @@ export function makeInviteController() {
 
         const invite = await db().invite.create({
           data: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             code,
             role: 'mediator' as any,
             parentUserId: agency.id,
@@ -250,7 +250,7 @@ export function makeInviteController() {
 
         const invite = await db().invite.create({
           data: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             code,
             role: 'shopper' as any,
             parentUserId: mediator.id,

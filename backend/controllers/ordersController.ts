@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { Env } from '../config/env.js';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog } from '../config/logger.js';
@@ -532,7 +532,7 @@ export function makeOrdersController(env: Env) {
 
           const order = await tx.order.create({
             data: {
-              mongoId: new Types.ObjectId().toString(),
+              mongoId: randomUUID(),
               userId: userPgId,
               brandUserId: campaign.brandUserId,
               items: {

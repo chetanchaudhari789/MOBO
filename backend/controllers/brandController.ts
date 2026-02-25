@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
@@ -37,7 +37,7 @@ async function recordManualPayoutLedger(args: {
     where: { idempotencyKey: args.idempotencyKey },
     update: {},
     create: {
-      mongoId: new Types.ObjectId().toString(),
+      mongoId: randomUUID(),
       idempotencyKey: args.idempotencyKey,
       type: 'agency_payout' as any,
       status: 'completed' as any,
@@ -62,7 +62,7 @@ async function recordManualPayoutLedger(args: {
     where: { idempotencyKey: creditKey },
     update: {},
     create: {
-      mongoId: new Types.ObjectId().toString(),
+      mongoId: randomUUID(),
       idempotencyKey: creditKey,
       type: 'agency_receipt' as any,
       status: 'completed' as any,
@@ -568,7 +568,7 @@ export function makeBrandController() {
 
         const campaign = await db().campaign.create({
           data: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             title: body.title,
             brandUserId: brandPgId,
             brandName: isPrivileged(roles) ? (body.brand ?? 'Brand') : String((user as any)?.name || 'Brand'),
@@ -811,7 +811,7 @@ export function makeBrandController() {
 
         const newCampaign = await db().campaign.create({
           data: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             title: `${campaign.title} (Copy)`,
             brandUserId: campaign.brandUserId,
             brandName: campaign.brandName,

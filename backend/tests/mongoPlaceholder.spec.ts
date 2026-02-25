@@ -1,21 +1,12 @@
-import mongoose from 'mongoose';
-
-import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../database/mongo.js';
 
-describe('connectMongo placeholder handling', () => {
-  afterEach(async () => {
-    await disconnectMongo();
+describe('connectMongo stub (MongoDB removed)', () => {
+  it('connectMongo is a no-op stub and does not throw', async () => {
+    // connectMongo is now a no-op — MongoDB has been removed.
+    await expect(connectMongo({} as any)).resolves.toBeUndefined();
   });
 
-  it('uses in-memory Mongo when MONGODB_URI contains REPLACE_ME in non-production', async () => {
-    const env = loadEnv({
-      NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-    });
-
-    await connectMongo(env);
-
-    expect(mongoose.connection.readyState).toBeGreaterThanOrEqual(1);
+  it('disconnectMongo is a no-op stub and does not throw', async () => {
+    await expect(disconnectMongo()).resolves.toBeUndefined();
   });
 });

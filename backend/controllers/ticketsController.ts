@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
@@ -184,7 +184,7 @@ export function makeTicketsController() {
           await assertCanReferenceOrder({ orderId: body.orderId, pgUserId, roles, user });
         }
 
-        const mongoId = new Types.ObjectId().toString();
+        const mongoId = randomUUID();
         const ticket = await db.ticket.create({
           data: {
             mongoId,

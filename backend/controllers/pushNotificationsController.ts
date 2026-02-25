@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import { getRequester } from '../services/authz.js';
@@ -53,7 +53,7 @@ export function makePushNotificationsController(env: Env) {
         await db.pushSubscription.upsert({
           where: { endpoint: body.subscription.endpoint },
           create: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             userId: pgUserId,
             app: body.app as any,
             endpoint: body.subscription.endpoint,

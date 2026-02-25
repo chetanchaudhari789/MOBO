@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import { prisma } from '../database/prisma.js';
@@ -424,7 +424,7 @@ export function makeAdminController() {
           if (user.status === 'suspended') {
             await db().suspension.create({
               data: {
-                mongoId: new Types.ObjectId().toString(),
+                mongoId: randomUUID(),
                 targetUserId: user.id,
                 action: 'suspend' as any,
                 reason: body.reason,
@@ -495,7 +495,7 @@ export function makeAdminController() {
           if (before.status === 'suspended' && user.status === 'active') {
             await db().suspension.create({
               data: {
-                mongoId: new Types.ObjectId().toString(),
+                mongoId: randomUUID(),
                 targetUserId: user.id,
                 action: 'unsuspend' as any,
                 reason: body.reason,

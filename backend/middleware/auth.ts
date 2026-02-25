@@ -131,7 +131,7 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
   }
 
   const authUser: AuthUser = {
-    _id: user.mongoId ?? userId,
+    _id: user.id,
     status: user.status,
     roles: user.roles as string[],
     role: user.role as string,

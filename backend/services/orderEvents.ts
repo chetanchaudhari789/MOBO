@@ -1,5 +1,3 @@
-import type { Types } from 'mongoose';
-
 export type OrderEventType =
   | 'ORDERED'
   | 'PROOF_SUBMITTED'
@@ -19,7 +17,7 @@ export type OrderEventType =
 export type OrderEvent = {
   type: OrderEventType;
   at: Date;
-  actorUserId?: Types.ObjectId | string;
+  actorUserId?: string;
   metadata?: any;
 };
 

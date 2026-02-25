@@ -1,13 +1,10 @@
-import mongoose from 'mongoose';
-
-import { UserModel } from '../models/User.js';
-import { WalletModel } from '../models/Wallet.js';
-import { CampaignModel } from '../models/Campaign.js';
-import { DealModel } from '../models/Deal.js';
+// MongoDB removed — dev seeding is PG-only via Prisma.
+import { randomUUID } from 'node:crypto';
 
 import { hashPassword } from '../services/passwords.js';
 import { ensureRoleDocumentsForUser } from '../services/roleDocuments.js';
 import { seedAdminOnly } from './admin.js';
+import { prisma } from '../database/prisma.js';
 
 export const DEV_ACCOUNTS = {
   admin: {
@@ -57,66 +54,66 @@ async function upsertUserByMobile(params: {
   password: string;
   role: 'agency' | 'mediator' | 'brand' | 'shopper';
   roles: string[];
-  mutate: (u: any) => void;
+  extra: Record<string, any>;
+  adminId: string;
 }) {
+  const db = prisma();
   const forcePassword = String(process.env.SEED_DEV_FORCE_PASSWORD || '').toLowerCase() === 'true';
 
-  let user = await UserModel.findOne({ mobile: params.mobile, deletedAt: null });
+  let user = await db.user.findFirst({ where: { mobile: params.mobile, deletedAt: null } });
   if (!user) {
     const passwordHash = await hashPassword(params.password);
-    user = new UserModel({
-      name: params.name,
-      mobile: params.mobile,
-      passwordHash,
-      role: params.role,
-      roles: params.roles,
-      status: 'active',
-      deletedAt: null,
+    user = await db.user.create({
+      data: {
+        mongoId: randomUUID(),
+        name: params.name,
+        mobile: params.mobile,
+        passwordHash,
+        role: params.role as any,
+        roles: params.roles as any,
+        status: 'active' as any,
+        createdBy: params.adminId,
+        ...params.extra,
+      },
     });
   } else {
-    user.name = params.name;
-    (user as any).role = params.role;
-    (user as any).roles = Array.from(new Set([...(user as any).roles ?? [], ...params.roles]));
-    (user as any).status = 'active';
-    (user as any).deletedAt = null;
-
+    const updateData: any = {
+      name: params.name,
+      role: params.role,
+      roles: Array.from(new Set([...(user.roles as string[] ?? []), ...params.roles])),
+      status: 'active',
+      deletedAt: null,
+      ...params.extra,
+    };
     if (forcePassword) {
-      user.passwordHash = await hashPassword(params.password);
+      updateData.passwordHash = await hashPassword(params.password);
     }
+    user = await db.user.update({ where: { id: user.id }, data: updateData });
   }
 
-  params.mutate(user);
-  await user.save();
   return user;
 }
 
-async function ensureBrandWalletFunds(brandUserId: any) {
+async function ensureBrandWalletFunds(brandUserId: string, adminId: string) {
+  const db = prisma();
   const target = 50_000_00; // ₹50,000
-  const wallet = await WalletModel.findOneAndUpdate(
-    { ownerUserId: brandUserId, deletedAt: null },
-    {
-      $setOnInsert: {
-        ownerUserId: brandUserId,
-        currency: 'INR',
-      },
+  await db.wallet.upsert({
+    where: { ownerUserId: brandUserId },
+    create: {
+      mongoId: randomUUID(),
+      ownerUserId: brandUserId,
+      currency: 'INR' as any,
+      availablePaise: target,
+      pendingPaise: 0,
+      lockedPaise: 0,
+      version: 0,
+      createdBy: adminId,
     },
-    { upsert: true, new: true }
-  );
-
-  const available = Number((wallet as any).availablePaise ?? 0);
-  if (available < target) {
-    (wallet as any).availablePaise = target;
-    (wallet as any).pendingPaise = Number((wallet as any).pendingPaise ?? 0);
-    (wallet as any).lockedPaise = Number((wallet as any).lockedPaise ?? 0);
-    await (wallet as any).save();
-  }
+    update: { availablePaise: target, pendingPaise: 0, lockedPaise: 0 },
+  });
 }
 
 export async function seedDev(): Promise<SeededDev> {
-  if (mongoose.connection.readyState === 0) {
-    throw new Error('seedDev() requires an active Mongo connection');
-  }
-
   if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') {
     throw new Error('seedDev() is disabled in production');
   }
@@ -136,12 +133,8 @@ export async function seedDev(): Promise<SeededDev> {
     password: DEV_ACCOUNTS.agency.password,
     role: 'agency',
     roles: ['agency'],
-    mutate: (u) => {
-      // For agencies, the system stores the agency code in legacy `mediatorCode`.
-      u.mediatorCode = DEV_ACCOUNTS.agency.agencyCode;
-      u.kycStatus = u.kycStatus ?? 'verified';
-      u.createdBy = u.createdBy ?? admin._id;
-    },
+    adminId: admin.id,
+    extra: { mediatorCode: DEV_ACCOUNTS.agency.agencyCode, kycStatus: 'verified' },
   });
 
   const mediator = await upsertUserByMobile({
@@ -150,11 +143,11 @@ export async function seedDev(): Promise<SeededDev> {
     password: DEV_ACCOUNTS.mediator.password,
     role: 'mediator',
     roles: ['mediator'],
-    mutate: (u) => {
-      u.mediatorCode = DEV_ACCOUNTS.mediator.mediatorCode;
-      u.parentCode = DEV_ACCOUNTS.agency.agencyCode;
-      u.kycStatus = u.kycStatus ?? 'verified';
-      u.createdBy = u.createdBy ?? admin._id;
+    adminId: admin.id,
+    extra: {
+      mediatorCode: DEV_ACCOUNTS.mediator.mediatorCode,
+      parentCode: DEV_ACCOUNTS.agency.agencyCode,
+      kycStatus: 'verified',
     },
   });
 
@@ -164,10 +157,8 @@ export async function seedDev(): Promise<SeededDev> {
     password: DEV_ACCOUNTS.brand.password,
     role: 'brand',
     roles: ['brand'],
-    mutate: (u) => {
-      u.brandCode = DEV_ACCOUNTS.brand.brandCode;
-      u.createdBy = u.createdBy ?? admin._id;
-    },
+    adminId: admin.id,
+    extra: { brandCode: DEV_ACCOUNTS.brand.brandCode },
   });
 
   const shopper = await upsertUserByMobile({
@@ -176,10 +167,10 @@ export async function seedDev(): Promise<SeededDev> {
     password: DEV_ACCOUNTS.shopper.password,
     role: 'shopper',
     roles: ['shopper'],
-    mutate: (u) => {
-      u.isVerifiedByMediator = true;
-      u.parentCode = DEV_ACCOUNTS.mediator.mediatorCode;
-      u.createdBy = u.createdBy ?? admin._id;
+    adminId: admin.id,
+    extra: {
+      isVerifiedByMediator: true,
+      parentCode: DEV_ACCOUNTS.mediator.mediatorCode,
     },
   });
 
@@ -188,57 +179,66 @@ export async function seedDev(): Promise<SeededDev> {
   await ensureRoleDocumentsForUser({ user: brand });
   await ensureRoleDocumentsForUser({ user: shopper });
 
-  await ensureBrandWalletFunds(brand._id);
+  await ensureBrandWalletFunds(brand.id, admin.id);
+
+  const db = prisma();
 
   // Minimal campaign + deal so Buyer portal has something to browse.
   const campaignTitle = 'DEV Campaign';
-  const campaign =
-    (await CampaignModel.findOne({ title: campaignTitle, brandUserId: brand._id }).lean()) ??
-    (await CampaignModel.create({
-      title: campaignTitle,
-      brandUserId: brand._id,
-      brandName: DEV_ACCOUNTS.brand.name,
-      platform: 'Amazon',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      originalPricePaise: 1200_00,
-      pricePaise: 999_00,
-      payoutPaise: 100_00,
-      returnWindowDays: 14,
-      dealType: 'Discount',
-      totalSlots: 100,
-      usedSlots: 0,
-      status: 'active',
-      allowedAgencyCodes: [DEV_ACCOUNTS.agency.agencyCode],
-      assignments: {
-        [DEV_ACCOUNTS.mediator.mediatorCode]: { limit: 100 },
+  let campaign = await db.campaign.findFirst({ where: { title: campaignTitle, brandUserId: brand.id } });
+  if (!campaign) {
+    campaign = await db.campaign.create({
+      data: {
+        mongoId: randomUUID(),
+        title: campaignTitle,
+        brandUserId: brand.id,
+        brandName: DEV_ACCOUNTS.brand.name,
+        platform: 'Amazon',
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/product',
+        originalPricePaise: 1200_00,
+        pricePaise: 999_00,
+        payoutPaise: 100_00,
+        returnWindowDays: 14,
+        dealType: 'Discount' as any,
+        totalSlots: 100,
+        usedSlots: 0,
+        status: 'active' as any,
+        allowedAgencyCodes: [DEV_ACCOUNTS.agency.agencyCode],
+        assignments: { [DEV_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
+        createdBy: admin.id,
       },
-      createdBy: admin._id,
-    }));
+    });
+  }
 
   const dealTitle = 'DEV Deal';
-  const existingDeal = await DealModel.findOne({ title: dealTitle, mediatorCode: DEV_ACCOUNTS.mediator.mediatorCode }).lean();
-  const deal =
-    existingDeal ??
-    (await DealModel.create({
-      campaignId: (campaign as any)._id,
-      mediatorCode: DEV_ACCOUNTS.mediator.mediatorCode,
-      title: dealTitle,
-      description: 'Seeded demo deal',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      platform: 'Amazon',
-      brandName: DEV_ACCOUNTS.brand.name,
-      dealType: 'Discount',
-      originalPricePaise: 1200_00,
-      pricePaise: 999_00,
-      commissionPaise: 50_00,
-      payoutPaise: 100_00,
-      rating: 5,
-      category: 'General',
-      active: true,
-      createdBy: admin._id,
-    }));
+  let deal = await db.deal.findFirst({
+    where: { title: dealTitle, mediatorCode: DEV_ACCOUNTS.mediator.mediatorCode },
+  });
+  if (!deal) {
+    deal = await db.deal.create({
+      data: {
+        mongoId: randomUUID(),
+        campaignId: campaign.id,
+        mediatorCode: DEV_ACCOUNTS.mediator.mediatorCode,
+        title: dealTitle,
+        description: 'Seeded demo deal',
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/product',
+        platform: 'Amazon',
+        brandName: DEV_ACCOUNTS.brand.name,
+        dealType: 'Discount' as any,
+        originalPricePaise: 1200_00,
+        pricePaise: 999_00,
+        commissionPaise: 50_00,
+        payoutPaise: 100_00,
+        rating: 5,
+        category: 'General',
+        active: true,
+        createdBy: admin.id,
+      },
+    });
+  }
 
   return { admin, agency, mediator, brand, shopper, campaign, deal };
 }

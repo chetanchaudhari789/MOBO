@@ -1,10 +1,4 @@
-import type { HydratedDocument } from 'mongoose';
-import type { UserDoc } from '../models/User.js';
-import type { CampaignDoc } from '../models/Campaign.js';
-import type { WalletDoc } from '../models/Wallet.js';
-import type { OrderDoc } from '../models/Order.js';
-import type { DealDoc } from '../models/Deal.js';
-import type { TicketDoc } from '../models/Ticket.js';
+// Mongoose types removed — all mappers accept `any` (PG rows or legacy shapes).
 import { paiseToRupees } from './money.js';
 
 /** Safely convert a value to ISO string, returning undefined for invalid dates. */
@@ -25,8 +19,8 @@ export function toUiRole(role: string): 'user' | 'agency' | 'mediator' | 'brand'
 }
 
 export function toUiUser(
-  user: HydratedDocument<UserDoc> | (UserDoc & { _id?: any }) | any,
-  wallet?: WalletDoc | null
+  user: any,
+  wallet?: any
 ) {
   const walletBalancePaise = wallet?.availablePaise ?? user.walletBalancePaise ?? 0;
   const walletPendingPaise = wallet?.pendingPaise ?? user.walletPendingPaise ?? 0;
@@ -71,7 +65,7 @@ export function toUiUser(
   };
 }
 
-export function toUiCampaign(c: CampaignDoc & { _id?: any } | any) {
+export function toUiCampaign(c: any) {
   const statusMap: Record<string, 'Active' | 'Paused' | 'Completed' | 'Draft'> = {
     active: 'Active',
     paused: 'Paused',
@@ -130,7 +124,7 @@ export function toUiCampaign(c: CampaignDoc & { _id?: any } | any) {
   };
 }
 
-export function toUiDeal(d: DealDoc & { _id?: any } | any) {
+export function toUiDeal(d: any) {
   const placeholderImage =
     'data:image/svg+xml;utf8,' +
     encodeURIComponent(
@@ -164,7 +158,7 @@ export function toUiDeal(d: DealDoc & { _id?: any } | any) {
   };
 }
 
-export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
+export function toUiOrder(o: any) {
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
@@ -285,7 +279,7 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
 }
 
 // Brand must never receive buyer PII (name, phone, etc.) but CAN see proof artifacts.
-export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
+export function toUiOrderForBrand(o: any) {
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
@@ -397,7 +391,7 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
   };
 }
 
-export function toUiTicketForBrand(t: TicketDoc & { _id?: any } | any) {
+export function toUiTicketForBrand(t: any) {
   return {
     id: String(t._id ?? t.id),
     // Do not leak who the buyer is to brands.
@@ -410,7 +404,7 @@ export function toUiTicketForBrand(t: TicketDoc & { _id?: any } | any) {
     createdAt: safeIso(t.createdAt) ?? new Date().toISOString(),
   };
 }
-export function toUiTicket(t: TicketDoc & { _id?: any } | any) {
+export function toUiTicket(t: any) {
   return {
     id: String(t._id ?? t.id),
     userId: String(t.userId),

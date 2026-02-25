@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
@@ -107,7 +107,7 @@ export function makeAuthController(env: Env) {
             throw new AppError(400, 'INVALID_INVITE_PARENT', 'Invite parent mediator is not valid');
           }
 
-          const mongoId = new Types.ObjectId().toString();
+          const mongoId = randomUUID();
           const newUser = await tx.user.create({
             data: {
               mongoId,
@@ -153,8 +153,8 @@ export function makeAuthController(env: Env) {
           });
         }
 
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
 
         const wallet = await ensureWallet(user.id);
 
@@ -162,7 +162,7 @@ export function makeAuthController(env: Env) {
           req,
           action: 'USER_REGISTERED',
           entityType: 'User',
-          entityId: user.mongoId!,
+          entityId: user.id,
           metadata: { role: 'shopper', mobile: user.mobile, parentCode: String(user.parentCode || '') },
         }).catch(() => {});
 
@@ -364,8 +364,8 @@ export function makeAuthController(env: Env) {
           : null;
 
         // Sign tokens synchronously (fast, CPU-only)
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
 
         // Parallel: wallet + reset + audit (non-blocking for fast response)
         const [wallet] = await Promise.all([
@@ -374,7 +374,7 @@ export function makeAuthController(env: Env) {
           writeAuditLog({
             req,
             action: 'AUTH_LOGIN_SUCCESS',
-            actorUserId: user.mongoId!,
+            actorUserId: user.id,
             actorRoles: user.roles as any,
             metadata: { role: user.role },
           }).catch(() => {}),
@@ -417,8 +417,8 @@ export function makeAuthController(env: Env) {
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
         }
 
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const newRefreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const newRefreshToken = signRefreshToken(env, user.id, user.roles as any);
         const wallet = await ensureWallet(user.id);
 
         res.json({
@@ -526,7 +526,7 @@ export function makeAuthController(env: Env) {
             mediatorCode = generateHumanCode(mediatorCodePrefix);
           }
 
-          const mongoId = new Types.ObjectId().toString();
+          const mongoId = randomUUID();
           const newUser = await tx.user.create({
             data: {
               mongoId,
@@ -606,8 +606,8 @@ export function makeAuthController(env: Env) {
           return;
         }
 
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
 
         const wallet = await ensureWallet(user.id);
         res.status(201).json({ user: toUiUser(pgUser(user), pgWallet(wallet)), tokens: { accessToken, refreshToken } });
@@ -649,7 +649,7 @@ export function makeAuthController(env: Env) {
             brandCode = generateHumanCode('BRD');
           }
 
-          const mongoId = new Types.ObjectId().toString();
+          const mongoId = randomUUID();
           const newUser = await tx.user.create({
             data: {
               mongoId,
@@ -696,8 +696,8 @@ export function makeAuthController(env: Env) {
           ts: new Date().toISOString(),
           audience: { roles: ['admin', 'ops'] },
         });
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
 
         const wallet = await ensureWallet(user.id);
 
