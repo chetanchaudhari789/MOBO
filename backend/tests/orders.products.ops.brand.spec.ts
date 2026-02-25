@@ -57,7 +57,12 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(Array.isArray(productsRes.body)).toBe(true);
     expect(productsRes.body.length).toBeGreaterThan(0);
 
-    const dealId = String(productsRes.body[0].id || productsRes.body[0]._id || '');
+    // Find the E2E Deal specifically (other tests may have created deals with payoutPaise=0)
+    const e2eDeal = productsRes.body.find((p: any) => {
+      const title = String(p.title || '');
+      return title === 'E2E Deal';
+    }) || productsRes.body[0];
+    const dealId = String(e2eDeal.id || e2eDeal._id || '');
     expect(dealId).toBeTruthy();
 
     const deal = await db.deal.findFirst({ where: { id: dealId, deletedAt: null } });

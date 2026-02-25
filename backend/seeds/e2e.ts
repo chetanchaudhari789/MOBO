@@ -54,127 +54,97 @@ export type SeededE2E = {
 const E2E_MOBILES = Object.values(E2E_ACCOUNTS).map((a) => a.mobile);
 
 /**
- * Wipe test data before re-seeding.
+ * Targeted cleanup: removes ONLY data created by E2E test accounts
+ * (orders, order-items, invites, transactions, payouts, tickets, audit-logs,
+ *  pre-orders, pending-connections, test-registered users).
  *
- * In NODE_ENV=test (vitest / CI) we use a full PG TRUNCATE so every test run
- * starts from a clean slate.
- *
- * Outside of test mode (e.g. SEED_E2E from the dev server), we do targeted
- * deletion by E2E mobile numbers so production data stays intact.
+ * Production / migrated data is NEVER touched — we filter by E2E user IDs
+ * and known test-created mobile numbers.
  */
-async function wipeCollections() {
-  const db = prisma();
 
-  const isTestEnv =
-    String(process.env.NODE_ENV || '').toLowerCase() === 'test' ||
-    typeof (globalThis as any).__vitest_worker__ !== 'undefined';
+// Mobiles used by test-registered users (auth.register, mediator.pending-approval, campaign.assign-slots)
+const TEST_REGISTERED_MOBILES = [
+  '9111111111', '9222222222', '9222000000', '9333333333',
+  '9111000000', '9777777777', '9444444444', '9555555555', '9666666666',
+  '9111222333', '9111444555', '9222333444',
+];
 
-  if (isTestEnv) {
-    // Try bulk TRUNCATE first (fastest). If the DB user lacks TRUNCATE
-    // permission, fall back to per-table deleteMany with best-effort error
-    // handling so tests still run even with restricted permissions.
-    const truncated = await (async () => {
-      try {
-        const tables = [
-          'audit_logs', 'transactions', 'payouts', 'wallets',
-          'order_items', 'orders', 'deals', 'campaigns',
-          'invites', 'tickets', 'push_subscriptions', 'suspensions',
-          'shopper_profiles', 'mediator_profiles', 'brands', 'agencies',
-          'pending_connections', 'system_configs', 'migration_sync', 'users',
-        ].map(t => `"${t}"`);
-        await db.$executeRawUnsafe(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
-        return true;
-      } catch { return false; }
-    })();
+async function cleanE2ETestData(db: ReturnType<typeof prisma>) {
+  // Collect IDs for both E2E seed accounts and test-registered users
+  const allTestMobiles = [...E2E_MOBILES, ...TEST_REGISTERED_MOBILES];
+  const allTestUsers = await db.user.findMany({
+    where: { mobile: { in: allTestMobiles } },
+    select: { id: true },
+  });
+  const allTestIds = allTestUsers.map((u) => u.id);
 
-    if (!truncated) {
-      // Best-effort per-table cleanup (order matters for FK constraints)
-      const ops: Array<() => Promise<any>> = [
-        () => db.auditLog.deleteMany({}),
-        () => db.transaction.deleteMany({}),
-        () => db.payout.deleteMany({}),
-        () => db.orderItem.deleteMany({}),
-        () => db.wallet.deleteMany({}),
-        () => db.order.deleteMany({}),
-        () => db.deal.deleteMany({}),
-        () => db.campaign.deleteMany({}),
-        () => db.invite.deleteMany({}),
-        () => db.ticket.deleteMany({}),
-        () => db.pushSubscription.deleteMany({}),
-        () => db.suspension.deleteMany({}),
-        () => db.shopperProfile.deleteMany({}),
-        () => db.mediatorProfile.deleteMany({}),
-        () => db.brand.deleteMany({}),
-        () => db.agency.deleteMany({}),
-        () => db.pendingConnection.deleteMany({}),
-        () => db.systemConfig.deleteMany({}),
-        () => db.migrationSync.deleteMany({}),
-        () => db.user.deleteMany({}),
-      ];
-      for (const op of ops) {
-        try { await op(); } catch { /* skip tables the user lacks permission on */ }
-      }
-    }
-    return;
-  }
-
-  // Targeted wipe (non-test): only remove E2E accounts
-  const pgE2eUsers = await db.user.findMany({
+  const e2eUsers = allTestUsers.filter((_, i) => i < E2E_MOBILES.length); // rough but sufficient
+  // Better: get E2E IDs specifically
+  const e2eSeedUsers = await db.user.findMany({
     where: { mobile: { in: E2E_MOBILES } },
     select: { id: true },
   });
-  const pgIds = pgE2eUsers.map((u) => u.id);
+  const e2eIds = e2eSeedUsers.map((u) => u.id);
 
-  if (pgIds.length > 0) {
-    // audit_logs cleanup is best-effort (test user may lack permissions)
-    try { await db.auditLog.deleteMany({ where: { actorUserId: { in: pgIds } } }); } catch { /* ignore */ }
-    await db.suspension.deleteMany({
-      where: { OR: [{ targetUserId: { in: pgIds } }, { adminUserId: { in: pgIds } }] },
+  if (allTestIds.length === 0) return;
+
+  // Order items cascade-delete with orders (ON DELETE CASCADE in schema).
+  // Still delete explicitly to be safe across all Prisma adapters.
+  await db.orderItem.deleteMany({ where: { order: { userId: { in: allTestIds } } } }).catch(() => {});
+  await db.order.deleteMany({ where: { userId: { in: allTestIds } } });
+  await db.invite.deleteMany({ where: { createdBy: { in: allTestIds } } });
+  await db.transaction.deleteMany({ where: { OR: [{ fromUserId: { in: allTestIds } }, { toUserId: { in: allTestIds } }] } });
+  await db.payout.deleteMany({ where: { beneficiaryUserId: { in: allTestIds } } });
+  await db.ticket.deleteMany({ where: { userId: { in: allTestIds } } });
+  await db.auditLog.deleteMany({ where: { actorUserId: { in: allTestIds } } });
+  await db.pendingConnection.deleteMany({ where: { userId: { in: allTestIds } } });
+
+  // Clean up test-created deals and campaigns (not the E2E Campaign/Deal — those are upserted later).
+  // deals.publish and other tests create extra campaigns/deals with createdBy = E2E users.
+  await db.deal.deleteMany({ where: { createdBy: { in: e2eIds }, title: { not: 'E2E Deal' } } }).catch(() => {});
+  await db.campaign.deleteMany({ where: { createdBy: { in: e2eIds }, title: { not: 'E2E Campaign' } } }).catch(() => {});
+
+  // Remove test-registered users (NOT the E2E seed accounts themselves)
+  if (TEST_REGISTERED_MOBILES.length > 0) {
+    // Delete role documents for test-registered users
+    const testRegUsers = await db.user.findMany({
+      where: { mobile: { in: TEST_REGISTERED_MOBILES } },
+      select: { id: true, role: true },
     });
-    await db.invite.deleteMany({ where: { createdBy: { in: pgIds } } });
-    await db.ticket.deleteMany({ where: { userId: { in: pgIds } } });
-
-    const walletIds = (
-      await db.wallet.findMany({ where: { ownerUserId: { in: pgIds } }, select: { id: true } })
-    ).map((w) => w.id);
-    if (walletIds.length) {
-      await db.transaction.deleteMany({ where: { walletId: { in: walletIds } } });
-      await db.payout.deleteMany({ where: { walletId: { in: walletIds } } });
+    for (const u of testRegUsers) {
+      // MediatorProfile & ShopperProfile cascade-delete with user (onDelete: Cascade)
+      // Brand & Agency use ownerUserId without cascade — delete manually
+      await db.brand.deleteMany({ where: { ownerUserId: u.id } }).catch(() => {});
+      await db.agency.deleteMany({ where: { ownerUserId: u.id } }).catch(() => {});
+      // Wallet: no cascade from User
+      await db.wallet.deleteMany({ where: { ownerUserId: u.id } }).catch(() => {});
     }
-    await db.wallet.deleteMany({ where: { ownerUserId: { in: pgIds } } });
-
-    const orderIds = (
-      await db.order.findMany({ where: { userId: { in: pgIds } }, select: { id: true } })
-    ).map((o) => o.id);
-    if (orderIds.length) {
-      await db.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
-    }
-    await db.order.deleteMany({ where: { userId: { in: pgIds } } });
-
-    const campaignIds = (
-      await db.campaign.findMany({ where: { brandUserId: { in: pgIds } }, select: { id: true } })
-    ).map((c) => c.id);
-    if (campaignIds.length) {
-      await db.deal.deleteMany({ where: { campaignId: { in: campaignIds } } });
-    }
-    await db.campaign.deleteMany({ where: { brandUserId: { in: pgIds } } });
-
-    await db.brand.deleteMany({ where: { ownerUserId: { in: pgIds } } });
-    await db.agency.deleteMany({ where: { ownerUserId: { in: pgIds } } });
-    await db.user.deleteMany({ where: { mobile: { in: E2E_MOBILES } } });
+    await db.user.deleteMany({ where: { mobile: { in: TEST_REGISTERED_MOBILES } } });
   }
+
+  // Also delete test invite codes that tests create
+  await db.invite.deleteMany({
+    where: { code: { startsWith: 'INV_' } },
+  }).catch(() => {});
+
+  // Reset brand's connectedAgencies so connect-flow tests start clean
+  await db.user.updateMany({
+    where: { mobile: { in: E2E_MOBILES }, roles: { has: 'brand' as any } },
+    data: { connectedAgencies: [] },
+  });
 }
 
 export async function seedE2E(): Promise<SeededE2E> {
   await connectPrisma();
-  // Wipe is best-effort: if the DB user lacks DELETE/TRUNCATE permissions,
-  // we proceed with upserts which only need INSERT + UPDATE.
-  try { await wipeCollections(); } catch { /* proceed with upserts */ }
+  // Clean up ONLY E2E test-created data (orders, invites, etc.) — production data stays.
+  // E2E accounts themselves are upserted by mobile number.
 
   const db = prisma();
 
+  await cleanE2ETestData(db);
+
   const adminPasswordHash = await hashPassword(E2E_ACCOUNTS.admin.password);
-  const adminUpsertData = {
+  const adminCreateData = {
     mongoId: randomUUID(),
     name: E2E_ACCOUNTS.admin.name,
     mobile: E2E_ACCOUNTS.admin.mobile,
@@ -186,101 +156,141 @@ export async function seedE2E(): Promise<SeededE2E> {
   };
   const admin = await db.user.upsert({
     where: { mobile: E2E_ACCOUNTS.admin.mobile },
-    create: adminUpsertData,
-    update: adminUpsertData,
+    create: adminCreateData,
+    update: {
+      name: E2E_ACCOUNTS.admin.name,
+      username: E2E_ACCOUNTS.admin.username,
+      passwordHash: adminPasswordHash,
+      role: 'admin' as any,
+      roles: ['admin', 'ops'] as any,
+      status: 'active' as any,
+    },
   });
 
   const agencyPasswordHash = await hashPassword(E2E_ACCOUNTS.agency.password);
-  const agencyUpsertData = {
-    mongoId: randomUUID(),
-    name: E2E_ACCOUNTS.agency.name,
-    mobile: E2E_ACCOUNTS.agency.mobile,
-    passwordHash: agencyPasswordHash,
-    role: 'agency' as any,
-    roles: ['agency'] as any,
-    status: 'active' as any,
-    mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
-    createdBy: admin.id,
-  };
   const agency = await db.user.upsert({
     where: { mobile: E2E_ACCOUNTS.agency.mobile },
-    create: agencyUpsertData,
-    update: agencyUpsertData,
+    create: {
+      mongoId: randomUUID(),
+      name: E2E_ACCOUNTS.agency.name,
+      mobile: E2E_ACCOUNTS.agency.mobile,
+      passwordHash: agencyPasswordHash,
+      role: 'agency' as any,
+      roles: ['agency'] as any,
+      status: 'active' as any,
+      mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
+      createdBy: admin.id,
+    },
+    update: {
+      name: E2E_ACCOUNTS.agency.name,
+      passwordHash: agencyPasswordHash,
+      role: 'agency' as any,
+      roles: ['agency'] as any,
+      status: 'active' as any,
+      mediatorCode: E2E_ACCOUNTS.agency.agencyCode,
+    },
   });
 
   const mediatorPasswordHash = await hashPassword(E2E_ACCOUNTS.mediator.password);
-  const mediatorUpsertData = {
-    mongoId: randomUUID(),
-    name: E2E_ACCOUNTS.mediator.name,
-    mobile: E2E_ACCOUNTS.mediator.mobile,
-    passwordHash: mediatorPasswordHash,
-    role: 'mediator' as any,
-    roles: ['mediator'] as any,
-    status: 'active' as any,
-    mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-    parentCode: E2E_ACCOUNTS.agency.agencyCode,
-    createdBy: admin.id,
-  };
   const mediator = await db.user.upsert({
     where: { mobile: E2E_ACCOUNTS.mediator.mobile },
-    create: mediatorUpsertData,
-    update: mediatorUpsertData,
+    create: {
+      mongoId: randomUUID(),
+      name: E2E_ACCOUNTS.mediator.name,
+      mobile: E2E_ACCOUNTS.mediator.mobile,
+      passwordHash: mediatorPasswordHash,
+      role: 'mediator' as any,
+      roles: ['mediator'] as any,
+      status: 'active' as any,
+      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      parentCode: E2E_ACCOUNTS.agency.agencyCode,
+      createdBy: admin.id,
+    },
+    update: {
+      name: E2E_ACCOUNTS.mediator.name,
+      passwordHash: mediatorPasswordHash,
+      role: 'mediator' as any,
+      roles: ['mediator'] as any,
+      status: 'active' as any,
+      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      parentCode: E2E_ACCOUNTS.agency.agencyCode,
+    },
   });
 
   const brandPasswordHash = await hashPassword(E2E_ACCOUNTS.brand.password);
-  const brandUpsertData = {
-    mongoId: randomUUID(),
-    name: E2E_ACCOUNTS.brand.name,
-    mobile: E2E_ACCOUNTS.brand.mobile,
-    passwordHash: brandPasswordHash,
-    role: 'brand' as any,
-    roles: ['brand'] as any,
-    status: 'active' as any,
-    brandCode: E2E_ACCOUNTS.brand.brandCode,
-    createdBy: admin.id,
-  };
   const brand = await db.user.upsert({
     where: { mobile: E2E_ACCOUNTS.brand.mobile },
-    create: brandUpsertData,
-    update: brandUpsertData,
+    create: {
+      mongoId: randomUUID(),
+      name: E2E_ACCOUNTS.brand.name,
+      mobile: E2E_ACCOUNTS.brand.mobile,
+      passwordHash: brandPasswordHash,
+      role: 'brand' as any,
+      roles: ['brand'] as any,
+      status: 'active' as any,
+      brandCode: E2E_ACCOUNTS.brand.brandCode,
+      createdBy: admin.id,
+    },
+    update: {
+      name: E2E_ACCOUNTS.brand.name,
+      passwordHash: brandPasswordHash,
+      role: 'brand' as any,
+      roles: ['brand'] as any,
+      status: 'active' as any,
+      brandCode: E2E_ACCOUNTS.brand.brandCode,
+    },
   });
 
   const shopperPasswordHash = await hashPassword(E2E_ACCOUNTS.shopper.password);
-  const shopperUpsertData = {
-    mongoId: randomUUID(),
-    name: E2E_ACCOUNTS.shopper.name,
-    mobile: E2E_ACCOUNTS.shopper.mobile,
-    passwordHash: shopperPasswordHash,
-    role: 'shopper' as any,
-    roles: ['shopper'] as any,
-    status: 'active' as any,
-    isVerifiedByMediator: true,
-    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
-    createdBy: admin.id,
-  };
   const shopper = await db.user.upsert({
     where: { mobile: E2E_ACCOUNTS.shopper.mobile },
-    create: shopperUpsertData,
-    update: shopperUpsertData,
+    create: {
+      mongoId: randomUUID(),
+      name: E2E_ACCOUNTS.shopper.name,
+      mobile: E2E_ACCOUNTS.shopper.mobile,
+      passwordHash: shopperPasswordHash,
+      role: 'shopper' as any,
+      roles: ['shopper'] as any,
+      status: 'active' as any,
+      isVerifiedByMediator: true,
+      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      createdBy: admin.id,
+    },
+    update: {
+      name: E2E_ACCOUNTS.shopper.name,
+      passwordHash: shopperPasswordHash,
+      role: 'shopper' as any,
+      roles: ['shopper'] as any,
+      status: 'active' as any,
+      isVerifiedByMediator: true,
+      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    },
   });
 
   const shopper2PasswordHash = await hashPassword(E2E_ACCOUNTS.shopper2.password);
-  const shopper2UpsertData = {
-    mongoId: randomUUID(),
-    name: E2E_ACCOUNTS.shopper2.name,
-    mobile: E2E_ACCOUNTS.shopper2.mobile,
-    passwordHash: shopper2PasswordHash,
-    role: 'shopper' as any,
-    roles: ['shopper'] as any,
-    status: 'active' as any,
-    isVerifiedByMediator: true,
-    parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
-    createdBy: admin.id,
-  };
   const shopper2 = await db.user.upsert({
     where: { mobile: E2E_ACCOUNTS.shopper2.mobile },
-    create: shopper2UpsertData,
-    update: shopper2UpsertData,
+    create: {
+      mongoId: randomUUID(),
+      name: E2E_ACCOUNTS.shopper2.name,
+      mobile: E2E_ACCOUNTS.shopper2.mobile,
+      passwordHash: shopper2PasswordHash,
+      role: 'shopper' as any,
+      roles: ['shopper'] as any,
+      status: 'active' as any,
+      isVerifiedByMediator: true,
+      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+      createdBy: admin.id,
+    },
+    update: {
+      name: E2E_ACCOUNTS.shopper2.name,
+      passwordHash: shopper2PasswordHash,
+      role: 'shopper' as any,
+      roles: ['shopper'] as any,
+      status: 'active' as any,
+      isVerifiedByMediator: true,
+      parentCode: E2E_ACCOUNTS.mediator.mediatorCode,
+    },
   });
 
   await ensureRoleDocumentsForUser({ user: agency });
@@ -289,67 +299,93 @@ export async function seedE2E(): Promise<SeededE2E> {
   await ensureRoleDocumentsForUser({ user: shopper });
   await ensureRoleDocumentsForUser({ user: shopper2 });
 
-  const walletUpsertData = {
-    mongoId: randomUUID(),
-    ownerUserId: brand.id,
-    currency: 'INR' as any,
-    availablePaise: 50_000_00,
-    pendingPaise: 0,
-    lockedPaise: 0,
-    version: 0,
-    createdBy: admin.id,
-  };
+  // Wallet: upsert — reset balance on each test run since transactions are cleaned
   await db.wallet.upsert({
     where: { ownerUserId: brand.id },
-    create: walletUpsertData,
-    update: { availablePaise: 50_000_00, pendingPaise: 0, lockedPaise: 0, version: 0 },
-  });
-
-  const campaign = await db.campaign.create({
-    data: {
+    create: {
       mongoId: randomUUID(),
-      title: 'E2E Campaign',
-      brandUserId: brand.id,
-      brandName: E2E_ACCOUNTS.brand.name,
-      platform: 'Amazon',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      originalPricePaise: 1200_00,
-      pricePaise: 999_00,
-      payoutPaise: 100_00,
-      returnWindowDays: 14,
-      dealType: 'Discount' as any,
-      totalSlots: 100,
-      usedSlots: 0,
-      status: 'active' as any,
-      allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
-      assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
+      ownerUserId: brand.id,
+      currency: 'INR' as any,
+      availablePaise: 50_000_00,
+      pendingPaise: 0,
+      lockedPaise: 0,
+      version: 0,
       createdBy: admin.id,
     },
+    update: { availablePaise: 50_000_00, pendingPaise: 0, lockedPaise: 0 },
   });
 
-  await db.deal.create({
-    data: {
-      mongoId: randomUUID(),
-      campaignId: campaign.id,
-      mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-      title: 'E2E Deal',
-      description: 'Exclusive',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      platform: 'Amazon',
-      brandName: E2E_ACCOUNTS.brand.name,
-      dealType: 'Discount' as any,
-      originalPricePaise: 1200_00,
-      pricePaise: 999_00,
-      commissionPaise: 50_00,
-      payoutPaise: 100_00,
-      rating: 5,
-      category: 'General',
-      active: true,
-      createdBy: admin.id,
-    },
+  // Campaign: find existing or create — never duplicate
+  let campaign = await db.campaign.findFirst({
+    where: { title: 'E2E Campaign', brandUserId: brand.id, deletedAt: null },
   });
+  if (!campaign) {
+    campaign = await db.campaign.create({
+      data: {
+        mongoId: randomUUID(),
+        title: 'E2E Campaign',
+        brandUserId: brand.id,
+        brandName: E2E_ACCOUNTS.brand.name,
+        platform: 'Amazon',
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/product',
+        originalPricePaise: 1200_00,
+        pricePaise: 999_00,
+        payoutPaise: 100_00,
+        returnWindowDays: 14,
+        dealType: 'Discount' as any,
+        totalSlots: 100,
+        usedSlots: 0,
+        status: 'active' as any,
+        allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
+        assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
+        createdBy: admin.id,
+      },
+    });
+  } else {
+    // Ensure campaign is still active and properly configured
+    await db.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: 'active' as any,
+        usedSlots: 0,
+        allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
+        assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: { limit: 100 } },
+      },
+    });
+  }
+
+  // Deal: find existing or create — never duplicate
+  const existingDeal = await db.deal.findFirst({
+    where: { campaignId: campaign.id, mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode, deletedAt: null },
+  });
+  if (!existingDeal) {
+    await db.deal.create({
+      data: {
+        mongoId: randomUUID(),
+        campaignId: campaign.id,
+        mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
+        title: 'E2E Deal',
+        description: 'Exclusive',
+        image: 'https://placehold.co/600x400',
+        productUrl: 'https://example.com/product',
+        platform: 'Amazon',
+        brandName: E2E_ACCOUNTS.brand.name,
+        dealType: 'Discount' as any,
+        originalPricePaise: 1200_00,
+        pricePaise: 999_00,
+        commissionPaise: 50_00,
+        payoutPaise: 100_00,
+        rating: 5,
+        category: 'General',
+        active: true,
+        createdBy: admin.id,
+      },
+    });
+  } else {
+    // Ensure deal is still active for tests
+    await db.deal.update({ where: { id: existingDeal.id }, data: { active: true } });
+  }
 
   return { admin, agency, mediator, brand, shopper, shopper2 };
 }
