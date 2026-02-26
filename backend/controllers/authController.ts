@@ -17,6 +17,7 @@ import {
 } from '../validations/auth.js';
 import { generateHumanCode } from '../services/codes.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logAuthEvent, logChangeEvent, logSecurityIncident } from '../config/appLogs.js';
 import { consumeInvite } from '../services/invites.js';
 import { ensureWallet } from '../services/walletService.js';
 import { toUiUser } from '../utils/uiMappers.js';
@@ -166,6 +167,24 @@ export function makeAuthController(env: Env) {
           metadata: { role: 'shopper', mobile: user.mobile, parentCode: String(user.parentCode || '') },
         }).catch(() => {});
 
+        logAuthEvent('REGISTRATION', {
+          userId: user.id,
+          roles: user.roles as string[],
+          identifier: user.mobile,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+        });
+        logChangeEvent({
+          actorUserId: user.id,
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'CREATE',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { role: 'shopper', mobile: user.mobile },
+        });
+
         const upstreamMediatorCode = String(user.parentCode || '').trim();
         if (upstreamMediatorCode) {
           const agencyCode = (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '';
@@ -228,6 +247,13 @@ export function makeAuthController(env: Env) {
           : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null }, select: authSelect });
 
         if (!authUser) {
+          logAuthEvent('LOGIN_FAILURE', {
+            identifier: mobile || username,
+            ip: req.ip,
+            reason: 'user_not_found',
+            requestId: String(res.locals.requestId || ''),
+            userAgent: req.get('user-agent'),
+          });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
@@ -267,6 +293,23 @@ export function makeAuthController(env: Env) {
         const lockoutUntil = authUser.lockoutUntil ? new Date(authUser.lockoutUntil) : null;
         if (lockoutUntil && lockoutUntil.getTime() > Date.now()) {
           const minutesLeft = Math.ceil((lockoutUntil.getTime() - Date.now()) / 60_000);
+          logAuthEvent('LOGIN_FAILURE', {
+            userId: authUser.id,
+            identifier: mobile || username,
+            ip: req.ip,
+            reason: 'account_locked',
+            requestId: String(res.locals.requestId || ''),
+            userAgent: req.get('user-agent'),
+          });
+          logSecurityIncident('BRUTE_FORCE_DETECTED', {
+            severity: 'high',
+            ip: req.ip,
+            userId: authUser.id,
+            route: req.originalUrl,
+            method: req.method,
+            requestId: String(res.locals.requestId || ''),
+            metadata: { lockoutUntil: lockoutUntil.toISOString() },
+          });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
@@ -287,6 +330,15 @@ export function makeAuthController(env: Env) {
                 ? { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) }
                 : {}),
             },
+          });
+          logAuthEvent('LOGIN_FAILURE', {
+            userId: authUser.id,
+            identifier: mobile || username,
+            ip: req.ip,
+            reason: 'invalid_password',
+            requestId: String(res.locals.requestId || ''),
+            userAgent: req.get('user-agent'),
+            metadata: { failedAttempts: newAttempts },
           });
           await writeAuditLog({
             req,
@@ -336,6 +388,16 @@ export function makeAuthController(env: Env) {
           }).catch(() => {}),
         ]);
 
+        // Structured auth event for access/auth log file
+        logAuthEvent('LOGIN_SUCCESS', {
+          userId: authUser.id,
+          roles: authUser.roles as string[],
+          identifier: mobile || username,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+        });
+
         res.json({
           user: toUiUser(pgUser(user!), pgWallet(wallet)),
           tokens: { accessToken, refreshToken },
@@ -377,11 +439,25 @@ export function makeAuthController(env: Env) {
         const newRefreshToken = signRefreshToken(env, user.id, user.roles as any);
         const wallet = await ensureWallet(user.id);
 
+        logAuthEvent('TOKEN_REFRESH', {
+          userId: user.id,
+          roles: user.roles as string[],
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+        });
+
         res.json({
           user: toUiUser(pgUser(user), pgWallet(wallet)),
           tokens: { accessToken, refreshToken: newRefreshToken },
         });
       } catch (err) {
+        if (err instanceof AppError && err.statusCode === 401) {
+          logAuthEvent('TOKEN_REFRESH_FAILURE', {
+            ip: req.ip,
+            reason: err.message,
+            requestId: String(res.locals.requestId || ''),
+          });
+        }
         next(err);
       }
     },

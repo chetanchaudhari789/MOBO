@@ -6,6 +6,7 @@ import { connectPrisma, disconnectPrisma, isPrismaAvailable } from './database/p
 import { createApp } from './app.js';
 import type { Server } from 'node:http';
 import { startupLog, logEvent, getSystemMetrics } from './config/logger.js';
+import { logAvailabilityEvent, logDatabaseEvent, startAvailabilityMonitor, stopAvailabilityMonitor } from './config/appLogs.js';
 import { setReady, setShuttingDown } from './config/lifecycle.js';
 
 // ── Lifecycle state ──────────────────────────────────────────────────
@@ -44,6 +45,13 @@ async function shutdown(signal: string) {
     shutdownTimeoutMs,
   });
 
+  logAvailabilityEvent('APPLICATION_SHUTDOWN_START', {
+    component: 'backend',
+    status: 'stopping',
+    uptimeSeconds: Math.floor(process.uptime()),
+    metadata: { signal, inFlightRequests },
+  });
+
   const forceTimer = setTimeout(() => {
     startupLog.error('Force shutdown after timeout', { inFlightRequests });
     process.exit(1);
@@ -73,6 +81,12 @@ async function shutdown(signal: string) {
     startupLog.error('Error while disconnecting Prisma', { error: err });
   } finally {
     clearTimeout(forceTimer);
+    stopAvailabilityMonitor();
+    logAvailabilityEvent('APPLICATION_SHUTDOWN_COMPLETE', {
+      component: 'backend',
+      status: 'down',
+      uptimeSeconds: Math.floor(process.uptime()),
+    });
     startupLog.info('Shutdown complete.');
   }
 }
@@ -81,14 +95,37 @@ async function shutdown(signal: string) {
 async function main() {
   const env = loadEnv();
 
+  logAvailabilityEvent('APPLICATION_STARTING', {
+    component: 'backend',
+    status: 'starting',
+    metadata: {
+      nodeEnv: env.NODE_ENV,
+      port: env.PORT,
+      nodeVersion: process.version,
+      platform: process.platform,
+    },
+  });
+
   // Connect PostgreSQL (Prisma) — PRIMARY and ONLY database.
+  const dbStart = performance.now();
   await connectPrisma();
 
   if (!isPrismaAvailable()) {
+    logAvailabilityEvent('DATABASE_ERROR', {
+      component: 'postgresql',
+      status: 'down',
+    });
     startupLog.error('PostgreSQL connection failed. Cannot start without primary database.');
     process.exit(1);
   }
 
+  const dbConnectMs = Math.round(performance.now() - dbStart);
+  logDatabaseEvent('CONNECTED', { durationMs: dbConnectMs });
+  logAvailabilityEvent('DATABASE_CONNECTED', {
+    component: 'postgresql',
+    status: 'up',
+    responseTimeMs: dbConnectMs,
+  });
   startupLog.info('PostgreSQL connected — primary database ready');
 
   const app = createApp(env);
@@ -125,6 +162,16 @@ async function main() {
         ...metrics,
       },
     });
+
+    logAvailabilityEvent('APPLICATION_READY', {
+      component: 'backend',
+      status: 'up',
+      uptimeSeconds: Math.round(process.uptime()),
+      metadata: { port: env.PORT, nodeEnv: env.NODE_ENV },
+    });
+
+    // Start periodic health/memory monitoring (every 5 min, warn at 512MB RSS)
+    startAvailabilityMonitor();
   });
 }
 

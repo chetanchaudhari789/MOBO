@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import logger, { securityLog, logEvent } from '../config/logger.js';
+import { logErrorEvent, logSecurityIncident } from '../config/appLogs.js';
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -120,6 +121,18 @@ export function errorHandler(
         return;
       case 'P2024': // Connection pool timeout
         logger.error('Database connection pool timeout', { requestId, error: anyErr });
+        logErrorEvent({
+          category: 'DATABASE',
+          severity: 'high',
+          error: anyErr,
+          message: 'Database connection pool timeout',
+          errorCode: 'P2024',
+          operation: `${req.method} ${req.originalUrl}`,
+          requestId,
+          ip: req.ip,
+          retryable: true,
+          userFacing: true,
+        });
         res.setHeader('Retry-After', '5');
         res.status(503).json({
           error: {
@@ -170,6 +183,13 @@ export function errorHandler(
   }
   if (anyErr?.name === 'JsonWebTokenError') {
     securityLog.warn('Invalid JWT token attempt', { requestId, ip: req.ip, error: anyErr.message });
+    logSecurityIncident('INVALID_TOKEN', {
+      severity: 'medium',
+      ip: req.ip,
+      route: req.originalUrl,
+      method: req.method,
+      requestId,
+    });
     res.status(401).json({
       error: {
         code: 'INVALID_TOKEN',
@@ -183,6 +203,18 @@ export function errorHandler(
   const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN']);
   if (anyErr?.code && networkCodes.has(String(anyErr.code))) {
     logger.error('Network error during request', { requestId, code: anyErr.code, error: anyErr.message });
+    logErrorEvent({
+      category: 'NETWORK',
+      severity: 'high',
+      error: anyErr,
+      message: `Network error: ${anyErr.code}`,
+      errorCode: String(anyErr.code),
+      operation: `${req.method} ${req.originalUrl}`,
+      requestId,
+      ip: req.ip,
+      retryable: true,
+      userFacing: true,
+    });
     res.setHeader('Retry-After', '10');
     res.status(503).json({
       error: {

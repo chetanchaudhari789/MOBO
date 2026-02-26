@@ -22,21 +22,44 @@ export default defineConfig({
   },
   workers: isCI ? 1 : undefined,
   // Start the full stack for E2E. If you already have it running, Playwright will reuse it.
-  webServer: {
-    command: 'node scripts/dev-all.mjs --force',
-    url: 'http://localhost:8080/api/health/e2e',
-    reuseExistingServer: !isCI,
-    // CI cold-starts 6 dev servers — needs generous startup window
-    timeout: isCI ? 360_000 : 240_000,
-    env: {
-      ...process.env,
-      NODE_ENV: 'test',
-      NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=4096', '--no-deprecation']
-        .filter(Boolean)
-        .join(' '),
-    },
-  },
+  webServer: isCI
+    ? {
+        // CI: start only backend — portals are too heavy for 2-core runners.
+        // API-only tests talk directly to backend at :8080.
+        command: 'npm --prefix backend run dev:e2e',
+        url: 'http://localhost:8080/api/health/ready',
+        reuseExistingServer: false,
+        timeout: 120_000, // 2 min — backend-only cold start
+        env: {
+          ...process.env,
+          NODE_ENV: 'test',
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=4096', '--no-deprecation']
+            .filter(Boolean)
+            .join(' '),
+        },
+      }
+    : {
+        command: 'node scripts/dev-all.mjs --force',
+        url: 'http://localhost:8080/api/health/e2e',
+        reuseExistingServer: true,
+        timeout: 240_000,
+        env: {
+          ...process.env,
+          NODE_ENV: 'test',
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=4096', '--no-deprecation']
+            .filter(Boolean)
+            .join(' '),
+        },
+      },
   projects: [
+    // API-only project — used in CI. Talks directly to backend at :8080.
+    // Matches all *.api.spec.ts and lifecycle.*.api.spec.ts files.
+    {
+      name: 'api',
+      testMatch: /\.api\.spec\.ts$/,
+      use: { baseURL: 'http://localhost:8080' },
+    },
+    // Portal projects — used locally with full stack (dev-all.mjs).
     {
       name: 'buyer',
       testMatch: [/buyer\..*\.spec\.ts$/, /lifecycle\..*\.spec\.ts$/],

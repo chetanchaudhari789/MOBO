@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
 import { httpLog, logEvent } from './config/logger.js';
+import { logSecurityIncident } from './config/appLogs.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
@@ -198,6 +199,13 @@ export function createApp(env: Env) {
       skip: (req) => req.path === '/api/realtime/stream' || req.path === '/api/realtime/health',
       handler: (_req, res) => {
         httpLog.warn('Rate limit exceeded', { ip: _req.ip });
+        logSecurityIncident('RATE_LIMIT_HIT', {
+          severity: 'medium',
+          ip: _req.ip,
+          route: _req.originalUrl,
+          method: _req.method,
+          requestId: String(res.locals.requestId || ''),
+        });
         res.setHeader('Retry-After', '60');
         res.status(429).json({
           error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
@@ -228,6 +236,14 @@ export function createApp(env: Env) {
   app.use((req, res, next) => {
     const origin = req.header('origin');
     if (origin && !isOriginAllowed(origin, corsOrigins)) {
+      logSecurityIncident('CORS_VIOLATION', {
+        severity: 'medium',
+        ip: req.ip,
+        route: req.originalUrl,
+        method: req.method,
+        requestId: String(res.locals.requestId || ''),
+        metadata: { origin },
+      });
       return res.status(403).json({
         error: 'origin_not_allowed',
       });

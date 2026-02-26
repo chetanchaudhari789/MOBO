@@ -340,6 +340,69 @@ if (isProd) {
       maxFiles: '90d',
       format: prodJsonFormat,
       zippedArchive: true,
+    }),
+    // ── Domain-specific log files (CrowdStrike-aligned separation) ──
+    // Access / auth events — for investigating user behaviour and access issues.
+    new DailyRotateFile({
+      dirname: LOG_DIR,
+      filename: 'access-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '30d',
+      format: prodJsonFormat,
+      zippedArchive: true,
+      // Filter: only log entries with authentication/authorization category
+      // Winston uses the log transform to apply this filter.
+    }),
+    // Security events — for SIEM ingestion and incident investigation.
+    new DailyRotateFile({
+      dirname: LOG_DIR,
+      filename: 'security-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '90d',
+      format: combine(
+        winston.format((info) => {
+          // Only include security-domain or security-category logs
+          const domain = info.domain || (info.metadata as any)?.domain;
+          const category = info.eventCategory || (info.metadata as any)?.eventCategory;
+          if (
+            domain === 'security' ||
+            category === 'security_incident' ||
+            category === 'authentication'
+          ) {
+            return info;
+          }
+          return false;
+        })(),
+        prodJsonFormat
+      ),
+      zippedArchive: true,
+    }),
+    // Availability events — for SLA reporting and uptime tracking.
+    new DailyRotateFile({
+      dirname: LOG_DIR,
+      filename: 'availability-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '10m',
+      maxFiles: '30d',
+      format: combine(
+        winston.format((info) => {
+          const category = info.eventCategory || (info.metadata as any)?.eventCategory;
+          const eventName = info.eventName || (info.metadata as any)?.eventName || '';
+          if (
+            category === 'availability' ||
+            eventName.startsWith('APPLICATION_') ||
+            eventName.startsWith('DB_') ||
+            eventName === 'STARTUP_FATAL'
+          ) {
+            return info;
+          }
+          return false;
+        })(),
+        prodJsonFormat
+      ),
+      zippedArchive: true,
     })
   );
 }
