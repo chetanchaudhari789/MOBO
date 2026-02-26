@@ -110,6 +110,9 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
+      - name: Check migration safety
+        run: cd backend && bash scripts/check-migration-safety.sh
+
       - name: Apply Prisma migrations to CI database
         run: cd backend && npx prisma migrate deploy
 
@@ -285,6 +288,9 @@ jobs:
 
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
+
+      - name: Check migration safety (production)
+        run: cd backend && bash scripts/check-migration-safety.sh
 
       - name: Apply Prisma migrations to production database
         if: env.DATABASE_URL != ''
