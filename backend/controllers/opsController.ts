@@ -29,7 +29,8 @@ import {
   declineOfferSchema,
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
-import { toUiCampaign, toUiDeal, toUiOrder, toUiUser, safeIso } from '../utils/uiMappers.js';
+import { toUiCampaign, toUiDeal, toUiOrder, toUiOrderSummary, toUiUser, safeIso } from '../utils/uiMappers.js';
+import { orderListSelect } from '../utils/querySelect.js';
 import { idWhere } from '../utils/idWhere.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
@@ -446,15 +447,15 @@ export function makeOpsController(env: Env) {
             managerName: { in: managerCodes },
             deletedAt: null,
           },
-          include: { items: true },
+          select: orderListSelect,
           orderBy: { createdAt: 'desc' },
           skip: (oPage - 1) * oLimit,
           take: oLimit,
         });
 
         const mapped = orders.map((o: any) => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[getOrders] toUiOrder failed for order ${o.id}`, { error: e }); return null; }
+          try { return toUiOrderSummary(pgOrder(o)); }
+          catch (e) { orderLog.error(`[getOrders] toUiOrderSummary failed for order ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {

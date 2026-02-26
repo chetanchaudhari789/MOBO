@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -187,6 +188,18 @@ export function createApp(env: Env) {
     res.setHeader('Pragma', 'no-cache');
     next();
   });
+
+  // ── Compression ────────────────────────────────────────────────
+  // Gzip responses >1 KB for ~3-5x size reduction on JSON payloads.
+  // Skip SSE streams (realtime) — they use chunked transfer encoding.
+  app.use(compression({
+    threshold: 1024,
+    level: 6,
+    filter: (req, res) => {
+      if (req.path.startsWith('/api/realtime/')) return false;
+      return compression.filter(req, res);
+    },
+  }));
 
   // ── Request timeout ────────────────────────────────────────────────
   // Prevents hung handlers from holding connections indefinitely.

@@ -7,7 +7,8 @@ import { orderLog, businessLog, walletLog } from '../config/logger.js';
 import { logChangeEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
-import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
+import { toUiCampaign, toUiOrderSummary, toUiOrderSummaryForBrand, toUiUser } from '../utils/uiMappers.js';
+import { orderListSelect } from '../utils/querySelect.js';
 import { pgUser, pgOrder, pgCampaign } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
@@ -150,17 +151,17 @@ export function makeBrandController() {
         }
         const orders = await db().order.findMany({
           where,
-          include: { items: true },
+          select: orderListSelect,
           orderBy: { createdAt: 'desc' },
           take: 5000,
         });
         if (!isPrivileged(roles) && roles.includes('brand')) {
-          res.json(orders.map((o: any) => { try { return toUiOrderForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean));
+          res.json(orders.map((o: any) => { try { return toUiOrderSummaryForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummaryForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean));
           return;
         }
         const mapped = orders.map((o: any) => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[brand/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
+          try { return toUiOrderSummary(pgOrder(o)); }
+          catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {

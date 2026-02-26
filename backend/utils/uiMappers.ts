@@ -158,6 +158,136 @@ export function toUiDeal(d: any) {
   };
 }
 
+/**
+ * Lightweight order summary for LIST endpoints.
+ * Strips screenshots, events, AI verification, and missing-proof details
+ * to reduce payload from ~5-20 KB/order to ~0.5-1 KB/order.
+ */
+export function toUiOrderSummary(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrderSummary: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
+  const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
+  const requiresReview = dealTypes.includes('Review');
+  const requiresRating = dealTypes.includes('Rating');
+  const requiresReturnWindow = requiresReview || requiresRating;
+
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
+
+  return {
+    id: String(o._id ?? o.id),
+    userId: String(o.userId),
+    items: (o.items ?? []).map((it: any) => ({
+      title: it.title,
+      dealType: it.dealType,
+      quantity: it.quantity,
+      platform: it.platform,
+      brandName: it.brandName,
+    })),
+    total: paiseToRupees(o.totalPaise),
+    status: o.status,
+    workflowStatus: o.workflowStatus,
+    frozen: !!o.frozen,
+    paymentStatus: o.paymentStatus,
+    affiliateStatus: o.affiliateStatus,
+    externalOrderId: o.externalOrderId,
+    hasOrderProof: !!(o.screenshots?.order || o.screenshots?.payment),
+    hasReviewProof: !!(o.reviewLink || o.screenshots?.review),
+    hasRatingProof: !!o.screenshots?.rating,
+    hasReturnWindowProof: !!o.screenshots?.returnWindow,
+    verification: {
+      orderVerified: !!orderVerifiedAt,
+      reviewVerified: !!reviewVerifiedAt,
+      ratingVerified: !!ratingVerifiedAt,
+      returnWindowVerified: !!returnWindowVerifiedAt,
+    },
+    requirements: {
+      required: [
+        ...(requiresReview ? (['review'] as const) : []),
+        ...(requiresRating ? (['rating'] as const) : []),
+        ...(requiresReturnWindow ? (['returnWindow'] as const) : []),
+      ],
+    },
+    rejection: o.rejection
+      ? { type: o.rejection.type, reason: o.rejection.reason }
+      : undefined,
+    managerName: o.managerName,
+    agencyName: o.agencyName,
+    buyerName: o.buyerName,
+    brandName: o.brandName,
+    createdAt: safeIso(o.createdAt ?? o.createdAtIso) ?? new Date().toISOString(),
+    expectedSettlementDate: safeIso(o.expectedSettlementDate),
+  };
+}
+
+/**
+ * Lightweight order summary for brand list endpoints.
+ * Excludes buyer PII (name, mobile) and heavy data.
+ */
+export function toUiOrderSummaryForBrand(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrderSummaryForBrand: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
+  const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
+  const requiresReview = dealTypes.includes('Review');
+  const requiresRating = dealTypes.includes('Rating');
+  const requiresReturnWindow = requiresReview || requiresRating;
+
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
+
+  return {
+    id: String(o._id ?? o.id),
+    items: (o.items ?? []).map((it: any) => ({
+      title: it.title,
+      dealType: it.dealType,
+      quantity: it.quantity,
+      platform: it.platform,
+      brandName: it.brandName,
+    })),
+    total: paiseToRupees(o.totalPaise),
+    status: o.status,
+    workflowStatus: o.workflowStatus,
+    frozen: !!o.frozen,
+    paymentStatus: o.paymentStatus,
+    affiliateStatus: o.affiliateStatus,
+    externalOrderId: o.externalOrderId,
+    hasOrderProof: !!(o.screenshots?.order || o.screenshots?.payment),
+    hasReviewProof: !!(o.reviewLink || o.screenshots?.review),
+    hasRatingProof: !!o.screenshots?.rating,
+    hasReturnWindowProof: !!o.screenshots?.returnWindow,
+    verification: {
+      orderVerified: !!orderVerifiedAt,
+      reviewVerified: !!reviewVerifiedAt,
+      ratingVerified: !!ratingVerifiedAt,
+      returnWindowVerified: !!returnWindowVerifiedAt,
+    },
+    requirements: {
+      required: [
+        ...(requiresReview ? (['review'] as const) : []),
+        ...(requiresRating ? (['rating'] as const) : []),
+        ...(requiresReturnWindow ? (['returnWindow'] as const) : []),
+      ],
+    },
+    rejection: o.rejection
+      ? { type: o.rejection.type, reason: o.rejection.reason }
+      : undefined,
+    managerName: o.managerName,
+    agencyName: o.agencyName,
+    reviewerName: o.reviewerName,
+    brandName: o.brandName,
+    createdAt: safeIso(o.createdAt ?? o.createdAtIso) ?? new Date().toISOString(),
+    expectedSettlementDate: safeIso(o.expectedSettlementDate),
+  };
+}
+
 export function toUiOrder(o: any) {
   if (!o || typeof o !== 'object') {
     throw new Error('toUiOrder: received null or non-object input');

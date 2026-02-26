@@ -6,7 +6,8 @@ import { prisma } from '../database/prisma.js';
 import { orderLog, businessLog, securityLog } from '../config/logger.js';
 import { logChangeEvent } from '../config/appLogs.js';
 import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
-import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
+import { toUiOrderSummary, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
+import { orderListSelect } from '../utils/querySelect.js';
 import { writeAuditLog } from '../services/audit.js';
 import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../services/orderWorkflow.js';
 import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
@@ -110,13 +111,13 @@ export function makeAdminController() {
 
         const orders = await db().order.findMany({
           where,
-          include: { items: true },
+          select: orderListSelect,
           orderBy: { createdAt: 'desc' },
           take: 5000,
         });
         const mapped = orders.map(o => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[admin/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
+          try { return toUiOrderSummary(pgOrder(o)); }
+          catch (e) { orderLog.error(`[admin/getFinancials] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {

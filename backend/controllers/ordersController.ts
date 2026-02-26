@@ -7,7 +7,8 @@ import { orderLog } from '../config/logger.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
-import { toUiOrder } from '../utils/uiMappers.js';
+import { toUiOrder, toUiOrderSummary } from '../utils/uiMappers.js';
+import { orderListSelect } from '../utils/querySelect.js';
 import { pushOrderEvent, isTerminalAffiliateStatus } from '../services/orderEvents.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import type { Role } from '../middleware/auth.js';
@@ -204,14 +205,14 @@ export function makeOrdersController(env: Env) {
 
         const orders = await db().order.findMany({
           where: { userId: targetUser.id, deletedAt: null },
-          include: { items: true },
+          select: orderListSelect,
           orderBy: { createdAt: 'desc' },
           take: 2000,
         });
 
         const mapped = orders.map((o: any) => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[orders/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
+          try { return toUiOrderSummary(pgOrder(o)); }
+          catch (e) { orderLog.error(`[orders/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
       } catch (err) {

@@ -4,6 +4,7 @@ import type { Env } from '../config/env.js';
 import { AppError } from './errors.js';
 import { prisma } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
+import { authCacheGet, authCacheSet } from '../utils/authCache.js';
 
 export type Role = 'shopper' | 'mediator' | 'agency' | 'brand' | 'admin' | 'ops';
 
@@ -54,6 +55,10 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
   if (!userId) {
     throw new AppError(401, 'UNAUTHENTICATED', 'Invalid token');
   }
+
+  // Check auth cache — avoids 1-4 DB queries for repeat requests within TTL
+  const cached = authCacheGet(userId);
+  if (cached) return cached;
 
   const db = prisma();
 
@@ -143,7 +148,9 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
     name: user.name,
   };
 
-  return { userId, pgUserId: user.id, roles, user: authUser };
+  const result: AuthContext = { userId, pgUserId: user.id, roles, user: authUser };
+  authCacheSet(userId, result);
+  return result;
 }
 
 export function requireAuth(env: Env) {
