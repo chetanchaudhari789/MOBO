@@ -155,6 +155,36 @@ export function createApp(env: Env) {
   // Permissions-Policy: restrict sensitive browser APIs (not part of Helmet types)
   app.use((_req, res, next) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    // Prevent intermediary caches from storing sensitive API responses.
+    // Individual routes (e.g. public product listings) can override this.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    next();
+  });
+
+  // ── Request timeout ────────────────────────────────────────────────
+  // Prevents hung handlers from holding connections indefinitely.
+  // This is a safety net — individual routes can set shorter timeouts.
+  const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS) || 30_000;
+  app.use((req, res, next) => {
+    // Skip SSE streams — they're intentionally long-lived.
+    if (req.path.startsWith('/api/realtime/')) return next();
+    const timer = setTimeout(() => {
+      if (!res.headersSent) {
+        httpLog.warn('Request timeout', {
+          method: req.method,
+          path: req.originalUrl,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+          ip: req.ip,
+        });
+        res.status(504).json({
+          error: { code: 'GATEWAY_TIMEOUT', message: 'The request took too long. Please try again.' },
+        });
+      }
+    }, REQUEST_TIMEOUT_MS);
+    // Don't prevent process exit.
+    timer.unref();
+    res.on('close', () => clearTimeout(timer));
     next();
   });
 
@@ -168,6 +198,7 @@ export function createApp(env: Env) {
       skip: (req) => req.path === '/api/realtime/stream' || req.path === '/api/realtime/health',
       handler: (_req, res) => {
         httpLog.warn('Rate limit exceeded', { ip: _req.ip });
+        res.setHeader('Retry-After', '60');
         res.status(429).json({
           error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
         });
@@ -182,6 +213,7 @@ export function createApp(env: Env) {
     standardHeaders: true,
     legacyHeaders: false,
     handler: (_req, res) => {
+      res.setHeader('Retry-After', '300');
       res.status(429).json({
         error: { code: 'AUTH_RATE_LIMITED', message: 'Too many login attempts. Please wait a few minutes and try again.' },
       });

@@ -120,6 +120,7 @@ export function errorHandler(
         return;
       case 'P2024': // Connection pool timeout
         logger.error('Database connection pool timeout', { requestId, error: anyErr });
+        res.setHeader('Retry-After', '5');
         res.status(503).json({
           error: {
             code: 'SERVICE_UNAVAILABLE',
@@ -182,6 +183,7 @@ export function errorHandler(
   const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN']);
   if (anyErr?.code && networkCodes.has(String(anyErr.code))) {
     logger.error('Network error during request', { requestId, code: anyErr.code, error: anyErr.message });
+    res.setHeader('Retry-After', '10');
     res.status(503).json({
       error: {
         code: 'SERVICE_UNAVAILABLE',

@@ -2,6 +2,11 @@ import { Router } from 'express';
 
 import type { Env } from '../config/env.js';
 import { prisma, isPrismaAvailable, pingPg } from '../database/prisma.js';
+import { isReady } from '../config/lifecycle.js';
+
+// Build-time metadata — injected via env or fallback to runtime values.
+const BUILD_SHA = process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || 'unknown';
+const BUILD_TIME = process.env.BUILD_TIME || new Date().toISOString();
 
 async function isHttpOk(url: string, timeoutMs = 1500): Promise<boolean> {
   const controller = new AbortController();
@@ -17,7 +22,6 @@ async function isHttpOk(url: string, timeoutMs = 1500): Promise<boolean> {
 }
 
 async function hasE2EUsers(): Promise<boolean> {
-  // Must match the accounts seeded by backend/seeds/e2e.ts
   const requiredMobiles = ['9000000000', '9000000001', '9000000002', '9000000003', '9000000004', '9000000005'];
 
   if (isPrismaAvailable()) {
@@ -37,19 +41,42 @@ async function hasE2EUsers(): Promise<boolean> {
 export function healthRoutes(env: Env): Router {
   const router = Router();
 
-  router.get('/health', async (_req, res) => {
-    // Check PostgreSQL health with actual connectivity ping
-    const pgOk = await pingPg();
+  // ── Liveness probe (/health/live) ────────────────────────────────
+  // Returns 200 if the process is alive. No I/O — cannot hang.
+  // K8s: livenessProbe → if this fails, container is restarted.
+  router.get('/health/live', (_req, res) => {
+    res.status(200).json({ status: 'alive' });
+  });
 
-    // Include uptime and memory for production monitoring
+  // ── Readiness probe (/health/ready) ──────────────────────────────
+  // Returns 200 only when the server is fully initialized AND the DB is connected.
+  // K8s: readinessProbe → if this fails, pod is removed from service endpoints.
+  router.get('/health/ready', async (_req, res) => {
+    const pgOk = isReady && await pingPg();
+    res.status(pgOk ? 200 : 503).json({
+      status: pgOk ? 'ready' : 'not_ready',
+      checks: {
+        server: isReady ? 'up' : 'starting',
+        database: pgOk ? 'connected' : 'disconnected',
+      },
+    });
+  });
+
+  // ── Full health (/health) — detailed for dashboards ──────────────
+  router.get('/health', async (_req, res) => {
+    const pgOk = await pingPg();
     const uptimeSec = Math.floor(process.uptime());
     const memMB = Math.round(process.memoryUsage.rss() / 1024 / 1024);
 
     res.status(pgOk ? 200 : 503).json({
       status: pgOk ? 'ok' : 'degraded',
+      version: BUILD_SHA,
+      buildTime: BUILD_TIME,
       timestamp: new Date().toISOString(),
       uptime: uptimeSec,
       memoryMB: memMB,
+      pid: process.pid,
+      nodeVersion: process.version,
       database: {
         status: pgOk ? 'connected' : 'disconnected',
         postgres: { status: pgOk ? 'connected' : 'disconnected' },
@@ -57,17 +84,13 @@ export function healthRoutes(env: Env): Router {
     });
   });
 
-  // Playwright uses this endpoint as the single source of readiness truth.
-  // It is intentionally conservative: only returns 200 once the DB is connected,
-  // the E2E seed accounts exist (when SEED_E2E), and all portal dev servers are responding.
+  // ── E2E readiness (dev/test only) ────────────────────────────────
   router.get('/health/e2e', async (_req, res) => {
-    // Production guard: do not expose internal topology in production.
     if (env.NODE_ENV === 'production') {
       res.status(404).json({ error: 'not_found' });
       return;
     }
     try {
-      // Check PG connectivity
       const pgOk = await pingPg();
       const dbOk = pgOk;
 

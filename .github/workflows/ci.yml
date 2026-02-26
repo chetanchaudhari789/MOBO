@@ -258,6 +258,8 @@ jobs:
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GIT_SHA: ${{ github.sha }}
+      BUILD_TIME: ${{ github.event.head_commit.timestamp }}
 
     steps:
       - name: Checkout

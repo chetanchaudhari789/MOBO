@@ -11,8 +11,12 @@ const envSchema = z.object({
   REQUEST_BODY_LIMIT: z.string().trim().min(1).default('20mb'),
 
   // PostgreSQL — primary and only database via Prisma.
-  // When not provided (e.g. unit tests that mock DB), Prisma init is skipped.
+  // Required in production. Optional in dev/test where mocks or env files supply it.
   DATABASE_URL: z.string().min(1).optional(),
+
+  // Server tuning
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(5000).default(30_000),
+  REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5000).default(30_000),
 
   JWT_ACCESS_SECRET: z.string().optional(),
   JWT_REFRESH_SECRET: z.string().optional(),
@@ -124,6 +128,12 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
   // Production safety: do not default to "allow all origins".
   // The API is consumed by multiple portals, so an explicit allowlist should always be configured.
   if (env.NODE_ENV === 'production') {
+    if (!env.DATABASE_URL) {
+      throw new Error(
+        'Invalid environment configuration:\nDATABASE_URL: must be set in production — the application cannot start without a database'
+      );
+    }
+
     const cors = parseCorsOrigins(env.CORS_ORIGINS);
     if (!cors.length) {
       throw new Error(
