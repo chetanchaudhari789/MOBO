@@ -73,20 +73,20 @@ Set these in Render:
 
 - `NODE_ENV=production`
 - `PORT=8080` (Render may set `PORT` automatically; keep it if they do)
-- `MONGODB_URI=<your MongoDB Atlas connection string>`
+- `DATABASE_URL=<your PostgreSQL connection string>`
 - `JWT_ACCESS_SECRET=<strong random secret, >= 20 chars>`
 - `JWT_REFRESH_SECRET=<strong random secret, >= 20 chars>`
 - `CORS_ORIGINS=<comma-separated list of portal origins>`
 
 Example **without custom domains** (use your actual Vercel URLs):
 
-- `CORS_ORIGINS=https://buyer-app-xxxxx.vercel.app,https://mediator-app-xxxxx.vercel.app,https://agency-web-xxxxx.vercel.app,https://brand-web-xxxxx.vercel.app,https://admin-web-xxxxx.vercel.app`
+- `CORS_ORIGINS=https://buyer-app-xxxxx.vercel.app,https://mediator-app-xxxxx.vercel.app,https://agency-web-xxxxx.vercel.app,https://brand-web-xxxxx.vercel.app,https://admin-web-xxxxx.vercel.app,.vercel.app`
 
 Notes:
 
 - `CORS_ORIGINS` must be **origins only** (scheme + host), not paths.
-- Recommended: keep it tight (exact portal origins).
-- If you use many preview deployments and need flexibility, wildcard/hostname entries are supported (less strict), e.g. `https://*.vercel.app` or `.vercel.app`.
+- Adding `.vercel.app` (hostname suffix) allows all Vercel preview deployments automatically.
+- For strict production, list exact portal origins only (remove `.vercel.app` suffix entry).
 
 ## Step 1.5 — Seed ONLY the admin user (production)
 
