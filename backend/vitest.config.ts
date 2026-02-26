@@ -8,20 +8,15 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(rootDir, '.env') });
 
 export default defineConfig({
-  root: rootDir,
-  // Forks are more reliable than threads for ESM in CI/Windows.
-  pool: 'forks',
-  poolOptions: {
-    forks: {
-      singleFork: true,
-    },
-  },
   test: {
+    root: rootDir,
     include: ['tests/**/*.spec.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/build/**', '**/coverage/**'],
     environment: 'node',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
+    // Forks are more reliable than threads for ESM in CI/Windows.
+    pool: 'forks',
     // Keep a single worker and disable isolation to prevent connection pool races.
     maxWorkers: 1,
     isolate: false,

@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
-import { orderLog } from '../config/logger.js';
+import { orderLog, businessLog, walletLog } from '../config/logger.js';
+import { logChangeEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
@@ -12,6 +13,7 @@ import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';
 import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchema } from '../validations/brand.js';
+import { copyCampaignSchema } from '../validations/ops.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 
@@ -341,6 +343,8 @@ export function makeBrandController() {
           entityId: brandMongoId,
           metadata: { agencyId: agencyMongoId, agencyCode, amountPaise, ref, mode: payoutMode },
         });
+        walletLog.info('Brand→agency payout recorded', { brandId: brandMongoId, agencyId: agencyMongoId, agencyCode, amountPaise, ref, mode: payoutMode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Wallet', entityId: brandMongoId, action: 'AGENCY_PAYOUT', changedFields: ['balance'], before: {}, after: { amountPaise, agencyCode, ref, mode: payoutMode } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         const audience = {
@@ -412,6 +416,8 @@ export function makeBrandController() {
           entityId: brand.mongoId || brand.id,
           metadata: { agencyCode },
         });
+        businessLog.info(`Brand connection ${body.action}d`, { brandId: brand.mongoId || brand.id, agencyCode, action: body.action });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: brand.mongoId || brand.id, action: body.action === 'approve' ? 'CONNECTION_APPROVED' : 'CONNECTION_REJECTED', changedFields: ['connectedAgencies'], before: {}, after: { agencyCode, action: body.action } });
 
         const ts = new Date().toISOString();
         publishRealtime({
@@ -469,6 +475,8 @@ export function makeBrandController() {
           entityId: brand.mongoId || brand.id,
           metadata: { agencyCode: body.agencyCode },
         });
+        businessLog.info('Brand agency removed', { brandId: brand.mongoId || brand.id, agencyCode: body.agencyCode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: brand.mongoId || brand.id, action: 'AGENCY_REMOVED', changedFields: ['connectedAgencies'], before: { connectedAgencies: connected }, after: { connectedAgencies: filtered } });
 
         // Cascade: remove the agency from allowedAgencyCodes on all this brand's campaigns.
         const agencyCode = String(body.agencyCode || '').trim();
@@ -617,6 +625,8 @@ export function makeBrandController() {
           entityId: campaignId,
           metadata: { title: body.title, platform: body.platform, totalSlots: body.totalSlots, allowedAgencies: normalizedAllowed },
         });
+        businessLog.info('Brand campaign created', { campaignId, title: body.title, platform: body.platform, totalSlots: body.totalSlots, allowedAgencies: normalizedAllowed });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignId, action: 'CAMPAIGN_CREATED', changedFields: ['id', 'title', 'status'], before: {}, after: { title: body.title, status: 'active', platform: body.platform, totalSlots: body.totalSlots } });
 
         res.status(201).json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
@@ -781,6 +791,8 @@ export function makeBrandController() {
           entityId: campaignMongoId,
           metadata: { updatedFields: Object.keys(update) },
         });
+        businessLog.info('Brand campaign updated', { campaignId: campaignMongoId, updatedFields: Object.keys(update) });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignMongoId, action: 'CAMPAIGN_UPDATED', changedFields: Object.keys(update), before: { status: existing.status }, after: update });
 
         res.json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
@@ -790,10 +802,7 @@ export function makeBrandController() {
 
     copyCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { id } = req.body;
-        if (!id || typeof id !== 'string') {
-          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
-        }
+        const { id } = copyCampaignSchema.parse(req.body);
         const { roles, userId } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
@@ -841,6 +850,8 @@ export function makeBrandController() {
           entityId: newId,
           metadata: { sourceCampaignId: id },
         });
+        businessLog.info('Brand campaign copied', { newCampaignId: newId, sourceCampaignId: id, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: newId, action: 'CAMPAIGN_COPIED', changedFields: ['id'], before: { sourceCampaignId: id }, after: { newCampaignId: newId, status: 'draft' } });
 
         const ts = new Date().toISOString();
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
@@ -906,6 +917,8 @@ export function makeBrandController() {
           entityType: 'Campaign',
           entityId: campaignMongoId,
         });
+        businessLog.info('Brand campaign deleted', { campaignId: campaignMongoId, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignMongoId, action: 'CAMPAIGN_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: now.toISOString() } });
 
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
           ? (campaign.allowedAgencyCodes as string[]).filter(Boolean)

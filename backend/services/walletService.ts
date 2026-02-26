@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { writeAuditLog } from './audit.js';
+import { walletLog } from '../config/logger.js';
+import { logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 
 /** Re-export the union so callers don't have to change imports. */
 export type TransactionType =
@@ -64,12 +66,17 @@ export async function applyWalletCredit(input: WalletMutationInput) {
   if (input.amountPaise <= 0) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be positive');
   if (!Number.isInteger(input.amountPaise)) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be an integer (paise)');
 
+  walletLog.info('Wallet credit initiated', { userId: input.ownerUserId, type: input.type, amountPaise: input.amountPaise, key: input.idempotencyKey, orderId: input.orderId, campaignId: input.campaignId });
+
   const execute = async (tx: any) => {
     // Idempotency: if a transaction with this key already exists, return it.
     const existingTx = await tx.transaction.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
     });
-    if (existingTx) return existingTx;
+    if (existingTx) {
+      walletLog.info('Wallet credit idempotency hit (duplicate key)', { userId: input.ownerUserId, type: input.type, key: input.idempotencyKey });
+      return existingTx;
+    }
 
     // Safety limit: prevent runaway balances (default 1 crore paise = ₹1,00,000).
     const MAX_BALANCE_PAISE = Number(process.env.WALLET_MAX_BALANCE_PAISE) || 1_00_00_000;
@@ -107,7 +114,11 @@ export async function applyWalletCredit(input: WalletMutationInput) {
     if (updated.count === 0) {
       // Distinguish wallet-not-found from limit exceeded
       const existing = await tx.wallet.findUnique({ where: { ownerUserId: input.ownerUserId } });
-      if (!existing || existing.deletedAt) throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+      if (!existing || existing.deletedAt) {
+        logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'high', message: 'Wallet credit failed — wallet not found', operation: 'applyWalletCredit', userId: input.ownerUserId, metadata: { type: input.type, amountPaise: input.amountPaise } });
+        throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+      }
+      logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'medium', message: 'Wallet credit failed — balance limit exceeded', operation: 'applyWalletCredit', userId: input.ownerUserId, metadata: { type: input.type, amountPaise: input.amountPaise } });
       throw new AppError(409, 'BALANCE_LIMIT_EXCEEDED', 'Wallet balance limit exceeded');
     }
 
@@ -132,18 +143,21 @@ export async function applyWalletCredit(input: WalletMutationInput) {
       },
     });
 
+    walletLog.info('Wallet credit completed', { userId: input.ownerUserId, type: input.type, amountPaise: input.amountPaise, txnId: txn.id, walletId: wallet?.id });
     return txn;
   };
 
   // If the caller provides an external tx, run within it (no new transaction).
   if (input.tx) {
     const result = await execute(input.tx);
+    logChangeEvent({ actorUserId: input.fromUserId, entityType: 'Wallet', entityId: input.ownerUserId, action: 'UPDATE', changedFields: ['availablePaise'], metadata: { operation: 'CREDIT', amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey, orderId: input.orderId } });
     writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     return result;
   }
 
   const db = prisma();
   const result = await db.$transaction(async (tx) => execute(tx));
+  logChangeEvent({ actorUserId: input.fromUserId, entityType: 'Wallet', entityId: input.ownerUserId, action: 'UPDATE', changedFields: ['availablePaise'], metadata: { operation: 'CREDIT', amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey, orderId: input.orderId } });
   writeAuditLog({ action: 'WALLET_CREDIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
   return result;
 }
@@ -152,12 +166,17 @@ export async function applyWalletDebit(input: WalletMutationInput) {
   if (input.amountPaise <= 0) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be positive');
   if (!Number.isInteger(input.amountPaise)) throw new AppError(400, 'INVALID_AMOUNT', 'Amount must be an integer (paise)');
 
+  walletLog.info('Wallet debit initiated', { userId: input.ownerUserId, type: input.type, amountPaise: input.amountPaise, key: input.idempotencyKey, orderId: input.orderId, campaignId: input.campaignId });
+
   const execute = async (tx: any) => {
     // Idempotency: if a transaction with this key already exists, return it.
     const existingTx = await tx.transaction.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
     });
-    if (existingTx) return existingTx;
+    if (existingTx) {
+      walletLog.info('Wallet debit idempotency hit (duplicate key)', { userId: input.ownerUserId, type: input.type, key: input.idempotencyKey });
+      return existingTx;
+    }
 
     // Atomic debit with balance-floor check via updateMany
     const updated = await tx.wallet.updateMany({
@@ -177,7 +196,11 @@ export async function applyWalletDebit(input: WalletMutationInput) {
       const existing = await tx.wallet.findUnique({
         where: { ownerUserId: input.ownerUserId },
       });
-      if (!existing || existing.deletedAt) throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+      if (!existing || existing.deletedAt) {
+        logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'high', message: 'Wallet debit failed — wallet not found', operation: 'applyWalletDebit', userId: input.ownerUserId, metadata: { type: input.type, amountPaise: input.amountPaise } });
+        throw new AppError(404, 'WALLET_NOT_FOUND', 'Wallet not found');
+      }
+      logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'medium', message: 'Wallet debit failed — insufficient funds', operation: 'applyWalletDebit', userId: input.ownerUserId, metadata: { type: input.type, amountPaise: input.amountPaise, available: existing.availablePaise } });
       throw new AppError(409, 'INSUFFICIENT_FUNDS', 'Insufficient available balance');
     }
 
@@ -208,12 +231,16 @@ export async function applyWalletDebit(input: WalletMutationInput) {
   // If the caller provides an external tx, run within it (no new transaction).
   if (input.tx) {
     const result = await execute(input.tx);
+    walletLog.info('Wallet debit completed', { userId: input.ownerUserId, type: input.type, amountPaise: input.amountPaise, txnId: result.id });
+    logChangeEvent({ actorUserId: input.toUserId, entityType: 'Wallet', entityId: input.ownerUserId, action: 'UPDATE', changedFields: ['availablePaise'], metadata: { operation: 'DEBIT', amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey, orderId: input.orderId } });
     writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
     return result;
   }
 
   const db = prisma();
   const result = await db.$transaction(async (tx) => execute(tx));
+  walletLog.info('Wallet debit completed', { userId: input.ownerUserId, type: input.type, amountPaise: input.amountPaise, txnId: result.id });
+  logChangeEvent({ actorUserId: input.toUserId, entityType: 'Wallet', entityId: input.ownerUserId, action: 'UPDATE', changedFields: ['availablePaise'], metadata: { operation: 'DEBIT', amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey, orderId: input.orderId } });
   writeAuditLog({ action: 'WALLET_DEBIT', entityType: 'Wallet', entityId: input.ownerUserId, metadata: { amountPaise: input.amountPaise, type: input.type, idempotencyKey: input.idempotencyKey } });
   return result;
 }

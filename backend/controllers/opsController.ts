@@ -3,7 +3,8 @@ import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
 import { prisma as db } from '../database/prisma.js';
-import { orderLog } from '../config/logger.js';
+import { orderLog, pushLog, businessLog, walletLog } from '../config/logger.js';
+import { logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
 import {
   approveByIdSchema,
@@ -24,6 +25,8 @@ import {
   opsCodeQuerySchema,
   opsCampaignsQuerySchema,
   opsDealsQuerySchema,
+  copyCampaignSchema,
+  declineOfferSchema,
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiUser, safeIso } from '../utils/uiMappers.js';
@@ -199,6 +202,8 @@ export function makeOpsController(env: Env) {
           entityId: brand.mongoId!,
           metadata: { agencyCode, brandCode: body.brandCode },
         });
+        businessLog.info('Brand connection requested', { brandCode: body.brandCode, agencyCode, brandId: brand.mongoId, requestedBy: req.auth?.userId });
+        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'PendingConnection', entityId: brand.mongoId!, action: 'CREATE', metadata: { agencyCode, brandCode: body.brandCode, agencyName } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         const brandMongoId = brand.mongoId ?? '';
@@ -617,6 +622,8 @@ export function makeOpsController(env: Env) {
         });
 
         await writeAuditLog({ req, action: 'MEDIATOR_APPROVED', entityType: 'User', entityId: mediator.mongoId! });
+        businessLog.info('Mediator approved', { mediatorId: mediator.mongoId, mediatorCode: mediator.mediatorCode, agencyCode: String(mediator.parentCode || ''), approvedBy: req.auth?.userId });
+        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'User', entityId: mediator.mongoId!, action: 'STATUS_CHANGE', changedFields: ['kycStatus', 'status'], before: { kycStatus: mediator.kycStatus, status: mediator.status }, after: { kycStatus: 'verified', status: 'active' }, metadata: { role: 'mediator' } });
 
         const agencyCode = String(mediator.parentCode || '').trim();
         const mediatorMongoId = mediator.mongoId ?? '';
@@ -668,6 +675,8 @@ export function makeOpsController(env: Env) {
         });
 
         await writeAuditLog({ req, action: 'MEDIATOR_REJECTED', entityType: 'User', entityId: mediator.mongoId! });
+        businessLog.info('Mediator rejected', { mediatorId: mediator.mongoId, kycStatus: 'rejected', status: 'suspended' });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: mediator.mongoId!, action: 'MEDIATOR_REJECTED', changedFields: ['kycStatus', 'status'], before: { kycStatus: mediator.kycStatus, status: mediator.status }, after: { kycStatus: 'rejected', status: 'suspended' } });
 
         const agencyCode = String(mediator.parentCode || '').trim();
         const mediatorMongoId = mediator.mongoId ?? '';
@@ -728,6 +737,8 @@ export function makeOpsController(env: Env) {
 
         const userMongoId = user.mongoId ?? '';
         await writeAuditLog({ req, action: 'BUYER_APPROVED', entityType: 'User', entityId: userMongoId });
+        businessLog.info('Buyer approved', { userId: userMongoId, mediatorCode: upstreamMediatorCode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: userMongoId, action: 'BUYER_APPROVED', changedFields: ['isVerifiedByMediator'], before: { isVerifiedByMediator: false }, after: { isVerifiedByMediator: true } });
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
@@ -789,6 +800,8 @@ export function makeOpsController(env: Env) {
 
         const userMongoId = user.mongoId ?? '';
         await writeAuditLog({ req, action: 'USER_REJECTED', entityType: 'User', entityId: userMongoId });
+        businessLog.info('User rejected', { userId: userMongoId, mediatorCode: upstreamMediatorCode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: userMongoId, action: 'USER_REJECTED', changedFields: ['status'], before: { status: buyerBefore.status }, after: { status: 'suspended' } });
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
@@ -890,6 +903,8 @@ export function makeOpsController(env: Env) {
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
 
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
+        orderLog.info('Order claim verified', { orderId: order.mongoId, step: 'order', approved: (finalize as any).approved, workflowStatus: wf });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ORDER_CLAIM_VERIFIED', changedFields: ['verification', 'workflowStatus'], before: { workflowStatus: wf }, after: { workflowStatus: (finalize as any).approved ? 'APPROVED' : wf } });
 
         const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -907,7 +922,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for verifyOrder', { err, buyerId }); });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1004,6 +1019,8 @@ export function makeOpsController(env: Env) {
         const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
+        orderLog.info('Order requirement verified', { orderId: order.mongoId, step: body.type, approved: (finalize as any).approved });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'REQUIREMENT_VERIFIED', changedFields: ['verification', body.type], before: { verified: false }, after: { verified: true, step: body.type } });
 
         const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -1019,7 +1036,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for verifyRequirement', { err, buyerId }); });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1120,6 +1137,8 @@ export function makeOpsController(env: Env) {
         const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
+        orderLog.info('All order steps verified', { orderId: order.mongoId, stepsVerified: required, approved: (finalize as any).approved });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ALL_STEPS_VERIFIED', changedFields: ['verification', 'workflowStatus'], before: { workflowStatus: wf }, after: { workflowStatus: (finalize as any).approved ? 'APPROVED' : wf, stepsVerified: required } });
 
         const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -1130,7 +1149,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Deal Verified!', body: 'All proofs verified! Your cashback is now in the cooling period.', url: '/orders' },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for verifyAllOrder', { err, userId: buyerId }); });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1257,6 +1276,8 @@ export function makeOpsController(env: Env) {
           entityId: order.mongoId!,
           metadata: { proofType: body.type, reason: body.reason },
         });
+        orderLog.info('Order proof rejected', { orderId: order.mongoId, proofType: body.type, reason: body.reason });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'PROOF_REJECTED', changedFields: ['affiliateStatus', 'rejectionType', 'rejectionReason'], before: { affiliateStatus: order.affiliateStatus }, after: { affiliateStatus: 'Rejected', rejectionType: body.type, rejectionReason: body.reason } });
 
         if (body.type === 'order') {
           const campaignId = order.items?.[0]?.campaignId;
@@ -1266,7 +1287,7 @@ export function makeOpsController(env: Env) {
               action: 'CAMPAIGN_SLOT_RELEASED',
               entityType: 'Campaign',
               entityId: String(campaignId),
-              metadata: { orderId: order.mongoId!, reason: 'proof_rejected' },
+              metadata: { orderId: order.mongoId ?? order.id, reason: 'proof_rejected' },
             }).catch(() => { });
           }
         }
@@ -1286,7 +1307,7 @@ export function makeOpsController(env: Env) {
               body: body.reason || 'Please re-upload the required proof.',
               url: '/orders',
             },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for rejectProof', { err, buyerId }); });
         }
 
         res.json({ ok: true });
@@ -1378,6 +1399,8 @@ export function makeOpsController(env: Env) {
           entityId: order.mongoId!,
           metadata: { proofType: body.type, note: body.note },
         });
+        orderLog.info('Missing proof requested', { orderId: order.mongoId, proofType: body.type, note: body.note });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'MISSING_PROOF_REQUESTED', changedFields: ['missingProofRequests'], before: {}, after: { requestedType: body.type, note: body.note } });
 
         const buyerId = audience.buyerMongoId;
         if (buyerId) {
@@ -1453,8 +1476,9 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Buyer is not active; settlement is blocked');
         }
 
+        const orderDisplayId = order.mongoId ?? order.id;
         const hasOpenDispute = await db().ticket.findFirst({
-          where: { orderId: order.mongoId!, status: 'Open', deletedAt: null },
+          where: { orderId: orderDisplayId, status: 'Open', deletedAt: null },
           select: { id: true },
         });
         if (hasOpenDispute) {
@@ -1472,7 +1496,7 @@ export function makeOpsController(env: Env) {
             req,
             action: 'ORDER_FROZEN_DISPUTED',
             entityType: 'Order',
-            entityId: order.mongoId!,
+            entityId: orderDisplayId,
             metadata: { reason: 'open_ticket' },
           });
           throw new AppError(409, 'FROZEN_DISPUTE', 'This transaction is frozen due to an open ticket.');
@@ -1645,6 +1669,9 @@ export function makeOpsController(env: Env) {
         });
 
         await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: order.mongoId!, metadata: { affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled' } });
+
+        businessLog.info('Order settlement completed', { orderId: orderDisplayId, settlementMode, isOverLimit, affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled', actorUserId: req.auth?.userId, mediatorCode, campaignId: campaignId ? String(campaignId) : undefined });
+        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'Order', entityId: orderDisplayId, action: 'STATUS_CHANGE', changedFields: ['paymentStatus', 'affiliateStatus', 'settlementMode'], after: { paymentStatus: isOverLimit ? 'Failed' : 'Paid', affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled', settlementMode }, metadata: { source: 'settleOrderPayment' } });
 
         const audience = await buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -1828,6 +1855,8 @@ export function makeOpsController(env: Env) {
           entityId: order.mongoId!,
           metadata: { previousWorkflow: wf, previousAffiliateStatus: prevAffiliateStatus },
         });
+        businessLog.info('Order unsettled', { orderId: order.mongoId, previousWorkflow: wf, previousAffiliateStatus: prevAffiliateStatus, settlementMode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ORDER_UNSETTLED', changedFields: ['workflowStatus', 'paymentStatus', 'affiliateStatus'], before: { workflowStatus: wf, paymentStatus: 'Paid', affiliateStatus: prevAffiliateStatus }, after: { workflowStatus: 'APPROVED', paymentStatus: 'Pending', affiliateStatus: 'Pending_Cooling' } });
 
         const managerCode = String(order.managerName || '').trim();
         const agencyCode = managerCode ? ((await getAgencyCodeForMediatorCode(managerCode)) || '') : '';
@@ -1887,6 +1916,8 @@ export function makeOpsController(env: Env) {
           });
 
           await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
+          businessLog.info('Campaign created (privileged)', { campaignId: campaign.mongoId ?? campaign.id, title: body.title, platform: body.platform, brandUserId: brand.id, totalSlots: body.totalSlots, payoutRupees: body.payout, dealType: body.dealType, createdBy: pgUserId });
+          logChangeEvent({ actorUserId: pgUserId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CREATE', metadata: { title: body.title, platform: body.platform, brandName: brand.name, totalSlots: body.totalSlots, payout: body.payout, dealType: body.dealType, allowedAgencies: allowed } });
           const ts = new Date().toISOString();
           publishRealtime({
             type: 'deals.changed',
@@ -2035,6 +2066,8 @@ export function makeOpsController(env: Env) {
           entityId: campaign.mongoId ?? campaign.id,
           metadata: { previousStatus, newStatus: nextStatus },
         });
+        businessLog.info('Campaign status changed', { campaignId: campaign.mongoId ?? campaign.id, previousStatus, newStatus: nextStatus });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'STATUS_CHANGE', changedFields: ['status'], before: { status: previousStatus }, after: { status: nextStatus } });
 
         res.json(toUiCampaign(pgCampaign(updated)));
       } catch (err) {
@@ -2087,6 +2120,8 @@ export function makeOpsController(env: Env) {
           entityType: 'Campaign',
           entityId: campaign.mongoId ?? campaign.id,
         });
+        businessLog.info('Campaign deleted', { campaignId: campaign.mongoId ?? campaign.id, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CAMPAIGN_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: now.toISOString() } });
 
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
           ? campaign.allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
@@ -2252,13 +2287,18 @@ export function makeOpsController(env: Env) {
           updateData.lockedReason = 'SLOT_ASSIGNMENT';
         }
 
-        // Optimistic concurrency via updatedAt check
+        // Optimistic concurrency via updatedAt check — prevents slot overwrites
+        // when two requests try to assign simultaneously.
         try {
-          await db().campaign.update({
-            where: { id: campaign.id },
+          const updated = await db().campaign.updateMany({
+            where: { id: campaign.id, updatedAt: campaign.updatedAt },
             data: updateData,
           });
+          if (updated.count === 0) {
+            throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Campaign was modified concurrently, please retry');
+          }
         } catch (saveErr: any) {
+          if (saveErr instanceof AppError) throw saveErr;
           if (saveErr?.code === 'P2025') {
             throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Campaign was modified concurrently, please retry');
           }
@@ -2266,6 +2306,8 @@ export function makeOpsController(env: Env) {
         }
 
         await writeAuditLog({ req, action: 'CAMPAIGN_SLOTS_ASSIGNED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
+        businessLog.info('Campaign slots assigned', { campaignId: campaign.mongoId ?? campaign.id, totalAssigned, mediators: positiveEntries.map(([c]) => c) });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'SLOTS_ASSIGNED', changedFields: ['assignments', 'locked'], before: { locked: campaign.locked }, after: { locked: true, totalAssigned, assignedMediators: positiveEntries.map(([c]) => c) } });
 
         const assignmentCodes = positiveEntries.map(([c]) => String(c).trim()).filter(Boolean);
         const inferredAgencyCodes = (
@@ -2414,6 +2456,8 @@ export function makeOpsController(env: Env) {
           entityId: `${campaignDisplayId}:${requestedCode}`,
           metadata: { campaignId: campaignDisplayId, mediatorCode: requestedCode },
         });
+        businessLog.info('Deal published', { campaignId: campaignDisplayId, mediatorCode: requestedCode, isUpdate: !!existingDeal, commissionPaise, payoutPaise, pricePaise });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Deal', entityId: `${campaignDisplayId}:${requestedCode}`, action: 'DEAL_PUBLISHED', changedFields: ['active', 'commissionPaise', 'pricePaise', 'payoutPaise'], before: { existed: !!existingDeal }, after: { active: true, commissionPaise, pricePaise, payoutPaise, mediatorCode: requestedCode } });
 
         const agencyCode = (await getAgencyCodeForMediatorCode(requestedCode)) || '';
         publishRealtime({
@@ -2516,6 +2560,11 @@ export function makeOpsController(env: Env) {
           const payoutDisplayId = payoutDoc.mongoId ?? payoutDoc.id;
           const userDisplayId = user.mongoId ?? user.id;
           await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: payoutDisplayId, metadata: { beneficiaryUserId: userDisplayId, amountPaise, recordOnly: canAgency } });
+          businessLog.info('Payout processed', { payoutId: payoutDisplayId, beneficiaryId: userDisplayId, amountPaise, mode: canAny ? 'paid' : 'recorded', mediatorCode: user.mediatorCode });
+          logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Payout', entityId: payoutDisplayId, action: 'PAYOUT_PROCESSED', changedFields: ['status', 'amountPaise'], before: {}, after: { status: canAny ? 'paid' : 'recorded', amountPaise, beneficiaryUserId: userDisplayId } });
+          if (canAny) {
+            walletLog.info('Payout debit applied', { payoutId: payoutDisplayId, beneficiaryId: userDisplayId, amountPaise });
+          }
         });
 
         res.json({ ok: true });
@@ -2573,6 +2622,8 @@ export function makeOpsController(env: Env) {
           entityId: payoutDisplayId,
           metadata: { beneficiaryUserId: beneficiaryDisplayId },
         });
+        businessLog.info('Payout deleted', { payoutId: payoutDisplayId, beneficiaryId: beneficiaryDisplayId, amountPaise: payout.amountPaise });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Payout', entityId: payoutDisplayId, action: 'PAYOUT_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: now.toISOString() } });
 
         const agencyCode = String(beneficiary.parentCode || '').trim();
         const ts = new Date().toISOString();
@@ -2620,10 +2671,7 @@ export function makeOpsController(env: Env) {
 
     copyCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { id } = req.body;
-        if (!id || typeof id !== 'string') {
-          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
-        }
+        const { id } = copyCampaignSchema.parse(req.body);
         const { roles, pgUserId, user: requester } = getRequester(req);
         const campaign = await db().campaign.findFirst({ where: { ...idWhere(id), deletedAt: null } });
         if (!campaign) {
@@ -2673,6 +2721,8 @@ export function makeOpsController(env: Env) {
           entityId: newDisplayId,
           metadata: { sourceCampaignId: id },
         });
+        businessLog.info('Campaign copied', { newCampaignId: newDisplayId, sourceCampaignId: id, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: newDisplayId, action: 'CAMPAIGN_COPIED', changedFields: ['id'], before: { sourceCampaignId: id }, after: { newCampaignId: newDisplayId, status: 'draft', usedSlots: 0 } });
 
         res.json({ ok: true, id: newDisplayId });
       } catch (err) {
@@ -2682,10 +2732,7 @@ export function makeOpsController(env: Env) {
 
     declineOffer: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { id } = req.body;
-        if (!id || typeof id !== 'string') {
-          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
-        }
+        const { id } = declineOfferSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
         requireAnyRole(roles, 'agency');
 
@@ -2723,6 +2770,8 @@ export function makeOpsController(env: Env) {
           entityId: campaignDisplayId,
           metadata: { agencyCode },
         });
+        businessLog.info('Offer declined', { campaignId: campaignDisplayId, agencyCode, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignDisplayId, action: 'OFFER_DECLINED', changedFields: ['allowedAgencyCodes'], before: { allowedAgencyCodes: allowed }, after: { allowedAgencyCodes: newCodes } });
 
         // Resolve brandUserId (PG UUID) to mongoId for realtime audience
         let brandMongoId = '';

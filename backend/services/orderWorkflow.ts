@@ -4,6 +4,7 @@ import type { Env } from '../config/env.js';
 import type { OrderWorkflowStatus } from '../generated/prisma/client.js';
 // pushOrderEvent import removed — events now handled inline
 import { orderLog } from '../config/logger.js';
+import { logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { notifyOrderWorkflowPush } from './pushNotifications.js';
 import { writeAuditLog } from './audit.js';
 
@@ -92,11 +93,15 @@ export async function transitionOrderWorkflow(params: {
   });
 
   if (updated.count === 0) {
+    logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'medium', message: `Order transition conflict: ${params.from} → ${params.to}`, operation: 'transitionOrderWorkflow', metadata: { orderId: params.orderId, from: params.from, to: params.to, actorUserId: params.actorUserId } });
     throw new AppError(409, 'ORDER_STATE_MISMATCH', 'Order state changed concurrently');
   }
 
   // Re-read full order to return
   const order = await client.order.findUnique({ where: { id: current.id }, include: { items: true } });
+
+  orderLog.info(`Order workflow: ${params.from} → ${params.to}`, { orderId: current.id, mongoId: current.mongoId, from: params.from, to: params.to, actorUserId: params.actorUserId });
+  logChangeEvent({ actorUserId: params.actorUserId, entityType: 'Order', entityId: current.id, action: 'STATUS_CHANGE', changedFields: ['workflowStatus'], before: { workflowStatus: params.from }, after: { workflowStatus: params.to }, metadata: { orderId: params.orderId, mongoId: current.mongoId } });
 
   if (params.env && order) {
     notifyOrderWorkflowPush({
@@ -147,6 +152,9 @@ export async function freezeOrders(params: {
     metadata: { reason: params.reason, actorUserId: params.actorUserId, matchedCount: res.count, modifiedCount: res.count },
   });
 
+  orderLog.warn('Orders frozen (bulk)', { count: res.count, reason: params.reason, actorUserId: params.actorUserId });
+  logChangeEvent({ actorUserId: params.actorUserId, entityType: 'Order', entityId: 'bulk', action: 'STATUS_CHANGE', changedFields: ['frozen', 'frozenAt', 'frozenReason'], metadata: { reason: params.reason, frozenCount: res.count } });
+
   return res;
 }
 
@@ -193,6 +201,9 @@ export async function reactivateOrder(params: { orderId: string; actorUserId: st
     entityId: params.orderId,
     metadata: { actorUserId: params.actorUserId, reason: params.reason },
   });
+
+  orderLog.info('Order reactivated', { orderId: params.orderId, actorUserId: params.actorUserId, reason: params.reason });
+  logChangeEvent({ actorUserId: params.actorUserId, entityType: 'Order', entityId: params.orderId, action: 'STATUS_CHANGE', changedFields: ['frozen'], before: { frozen: true }, after: { frozen: false }, metadata: { reason: params.reason } });
 
   return order;
 }

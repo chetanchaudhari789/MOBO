@@ -10,6 +10,7 @@ import { loadEnv } from './config/env.js';
 import { connectPrisma } from './database/prisma.js';
 import { createApp } from './app.js';
 import { startupLog } from './config/logger.js';
+import { setReady } from './config/lifecycle.js';
 
 async function tryRunE2ESeed() {
   // In E2E we run under tsx (TypeScript); import the TS module directly.
@@ -32,7 +33,8 @@ async function main() {
   const app = createApp(env);
 
   app.listen(env.PORT, () => {
-    startupLog.info(`Backend listening on :${env.PORT}`);
+    setReady(true);
+    startupLog.info(`E2E backend listening on :${env.PORT}`);
   });
 }
 

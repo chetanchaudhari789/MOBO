@@ -204,7 +204,44 @@ export type ChangeAction =
   | 'PERMISSION_CHANGE'
   | 'CONFIG_CHANGE'
   | 'STATUS_CHANGE'
-  | 'BULK_OPERATION';
+  | 'BULK_OPERATION'
+  // Business operations – ops
+  | 'MEDIATOR_REJECTED'
+  | 'BUYER_APPROVED'
+  | 'USER_REJECTED'
+  | 'ORDER_CLAIM_VERIFIED'
+  | 'REQUIREMENT_VERIFIED'
+  | 'ALL_STEPS_VERIFIED'
+  | 'PROOF_REJECTED'
+  | 'MISSING_PROOF_REQUESTED'
+  | 'ORDER_UNSETTLED'
+  | 'CAMPAIGN_DELETED'
+  | 'SLOTS_ASSIGNED'
+  | 'DEAL_PUBLISHED'
+  | 'PAYOUT_PROCESSED'
+  | 'PAYOUT_DELETED'
+  | 'CAMPAIGN_COPIED'
+  | 'OFFER_DECLINED'
+  // Business operations – admin
+  | 'CONFIG_UPDATED'
+  | 'DEAL_DELETED'
+  | 'USER_DELETED'
+  | 'WALLET_DELETED'
+  | 'STATUS_UPDATED'
+  | 'ORDER_REACTIVATED'
+  // Business operations – brand
+  | 'AGENCY_PAYOUT'
+  | 'CONNECTION_APPROVED'
+  | 'CONNECTION_REJECTED'
+  | 'AGENCY_REMOVED'
+  | 'CAMPAIGN_CREATED'
+  | 'CAMPAIGN_UPDATED'
+  // Business operations – invites
+  | 'INVITE_CREATED'
+  | 'INVITE_REVOKED'
+  | 'INVITE_DELETED'
+  | 'MEDIATOR_INVITE_CREATED'
+  | 'BUYER_INVITE_CREATED';
 
 export interface ChangeEventPayload {
   /** Who made the change. */
