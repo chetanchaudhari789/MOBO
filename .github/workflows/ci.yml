@@ -349,11 +349,16 @@ jobs:
       - name: Verify database connectivity & permissions
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Accept self-signed certificates on production DB
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
           cd backend
           node -e "
             const { Client } = require('pg');
-            const c = new Client({ connectionString: process.env.DATABASE_URL });
+            const c = new Client({
+              connectionString: process.env.DATABASE_URL,
+              ssl: { rejectUnauthorized: false }
+            });
             (async () => {
               await c.connect();
               // Check CREATE privilege on public schema
@@ -373,11 +378,13 @@ jobs:
       - name: Apply Prisma migrations to production database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: cd backend && npx prisma migrate deploy
 
       - name: Verify production migration state
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: cd backend && npx prisma migrate status
 
       - name: Trigger Render backend deploy
