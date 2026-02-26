@@ -554,6 +554,7 @@ model Order {
   returnWindowDays       Int     @default(14) @map("return_window_days")
 
   // AI verification results (JSONB because deeply nested)
+  orderAiVerification        Json? @map("order_ai_verification")
   ratingAiVerification       Json? @map("rating_ai_verification")
   returnWindowAiVerification Json? @map("return_window_ai_verification")
 

@@ -16,7 +16,6 @@ import { DesktopShell } from '../components/DesktopShell';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
-import { urlToBase64 } from '../utils/imageHelpers';
 import {
   LayoutDashboard,
   Users,
@@ -2808,48 +2807,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
   const [_orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
-  // AI Analysis state
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const lastAnalyzedOrderRef = useRef<string | null>(null);
 
-  const analysisAbortRef = useRef<AbortController | null>(null);
-
-  const runAgencyAnalysis = async (order: Order) => {
-    if (!order.screenshots?.order) return;
-    analysisAbortRef.current?.abort();
-    const controller = new AbortController();
-    analysisAbortRef.current = controller;
-    setIsAnalyzing(true);
-    setAiAnalysis(null);
-    try {
-      const imageBase64 = await urlToBase64(order.screenshots.order);
-      if (controller.signal.aborted) return;
-      const result = await api.ops.analyzeProof(
-        order.id,
-        imageBase64,
-        order.externalOrderId || '',
-        order.total
-      );
-      if (controller.signal.aborted) return;
-      setAiAnalysis(result);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      console.error(e);
-      toast.error('Analysis failed. Try again.');
-    } finally {
-      if (!controller.signal.aborted) setIsAnalyzing(false);
-    }
-  };
-
-  // Auto-trigger AI analysis when proof modal opens
-  useEffect(() => {
-    if (proofOrder && proofOrder.screenshots?.order && proofOrder.id !== lastAnalyzedOrderRef.current) {
-      lastAnalyzedOrderRef.current = proofOrder.id;
-      runAgencyAnalysis(proofOrder);
-    }
-    return () => { analysisAbortRef.current?.abort(); };
-  }, [proofOrder]);
 
   // Keep proof modal in sync when allOrders updates from real-time
   useEffect(() => {
@@ -3428,53 +3386,39 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         className="w-full h-auto block"
                       />
                     </div>
-                    {/* AI Analysis Section */}
+                    {/* AI Verification — stored from buyer's proof submission */}
+                    {proofOrder.orderAiVerification && (
                     <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mt-3 relative overflow-hidden">
                       <div className="flex justify-between items-center mb-3">
                         <h4 className="font-bold text-indigo-600 flex items-center gap-2 text-xs uppercase tracking-widest">
-                          <Sparkles size={14} className="text-indigo-500" /> AI Assistant
+                          <Sparkles size={14} className="text-indigo-500" /> AI Verification
                         </h4>
-                        {!aiAnalysis && !isAnalyzing && (
-                          <button
-                            type="button"
-                            onClick={() => runAgencyAnalysis(proofOrder)}
-                            className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow active:scale-95"
-                          >
-                            Analyze
-                          </button>
-                        )}
                       </div>
-                      {isAnalyzing && (
-                        <div className="flex flex-col items-center justify-center py-4">
-                          <Loader2 className="animate-spin text-indigo-500 mb-2" size={24} />
-                          <p className="text-xs font-bold text-indigo-400 animate-pulse">Analyzing Screenshot...</p>
-                        </div>
-                      )}
-                      {aiAnalysis && (
                         <div className="space-y-3 animate-fade-in">
                           {(() => {
-                            const n = Number(aiAnalysis.confidenceScore);
+                            const aiData = proofOrder.orderAiVerification;
+                            const n = Number(aiData?.confidenceScore);
                             const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
                             return (
                               <>
                                 <div className="flex gap-2">
-                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>Order ID</p>
-                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}</p>
-                                    {(aiAnalysis as any).detectedOrderId && (
-                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono break-all">Detected: {(aiAnalysis as any).detectedOrderId}</p>
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiData?.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiData?.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>Order ID</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiData?.orderIdMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {aiData?.detectedOrderId && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono break-all">Detected: {aiData.detectedOrderId}</p>
                                     )}
                                   </div>
-                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>Amount</p>
-                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}</p>
-                                    {(aiAnalysis as any).detectedAmount != null && (
-                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono">Detected: ₹{(aiAnalysis as any).detectedAmount}</p>
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiData?.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiData?.amountMatch ? 'text-green-600' : 'text-red-600'}`}>Amount</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiData?.amountMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {aiData?.detectedAmount != null && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono">Detected: {formatCurrency(aiData.detectedAmount)}</p>
                                     )}
                                   </div>
                                 </div>
                                 <div className="bg-slate-100 p-2 rounded-lg">
-                                  <p className="text-[10px] text-slate-600 leading-relaxed">{aiAnalysis.discrepancyNote || 'Verified. Details match expected values.'}</p>
+                                  <p className="text-[10px] text-slate-600 leading-relaxed">{aiData?.discrepancyNote || 'Verified. Details match expected values.'}</p>
                                 </div>
                                 <div className="flex justify-between items-center pt-1">
                                   <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence Score</span>
@@ -3492,8 +3436,8 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                             );
                           })()}
                         </div>
-                      )}
                     </div>
+                    )}
                   </>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
@@ -3700,7 +3644,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             </div>
 
             <button
-              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAiAnalysis(null); lastAnalyzedOrderRef.current = null; }}
+              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); }}
               className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
             >
               Close Viewer

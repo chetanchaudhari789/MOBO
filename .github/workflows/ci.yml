@@ -349,43 +349,55 @@ jobs:
       - name: Verify database connectivity & permissions
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # Accept self-signed certificates on production DB
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
           cd backend
+          # Determine schema based on branch
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            SCHEMA="buzzma"
+          else
+            SCHEMA="buzzma_test"
+          fi
+          echo "DB_SCHEMA=$SCHEMA" >> "$GITHUB_ENV"
+          echo "Using schema: $SCHEMA"
           node -e "
             const { Client } = require('pg');
             const c = new Client({
               connectionString: process.env.DATABASE_URL,
               ssl: { rejectUnauthorized: false }
             });
+            const schema = '$SCHEMA';
             (async () => {
               await c.connect();
-              // Check CREATE privilege on public schema
-              const { rows } = await c.query(
-                \"SELECT has_schema_privilege(current_user, 'public', 'CREATE') AS can_create\"
-              );
-              if (!rows[0].can_create) {
-                console.error('::error::Database user lacks CREATE privilege on public schema.');
-                console.error('Run as superuser: GRANT CREATE, USAGE ON SCHEMA public TO <your_user>;');
-                process.exit(1);
-              }
-              console.log('✅ Database connectivity & schema permissions OK');
+              // Create schema if it doesn't exist
+              await c.query('CREATE SCHEMA IF NOT EXISTS ' + schema);
+              // Set search_path for this session
+              await c.query('SET search_path TO ' + schema + ', public');
+              console.log('✅ Schema \"' + schema + '\" ready, connectivity OK');
               await c.end();
-            })().catch(e => { console.error('::error::DB connectivity check failed:', e.message); process.exit(1); });
+            })().catch(e => { console.error('::error::DB check failed:', e.message); process.exit(1); });
           "
 
       - name: Apply Prisma migrations to production database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
-        run: cd backend && npx prisma migrate deploy
+        run: |
+          # Append search_path to DATABASE_URL
+          SEPARATOR="&"
+          echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
+          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA},public"
+          cd backend && npx prisma migrate deploy
 
       - name: Verify production migration state
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
-        run: cd backend && npx prisma migrate status
+        run: |
+          SEPARATOR="&"
+          echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
+          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA},public"
+          cd backend && npx prisma migrate status
 
       - name: Trigger Render backend deploy
         if: success()

@@ -163,6 +163,15 @@ export interface Order {
     requestedBy?: string;
   }>;
 
+  // AI verification for purchase proof screenshot
+  orderAiVerification?: {
+    orderIdMatch?: boolean;
+    amountMatch?: boolean;
+    detectedOrderId?: string;
+    detectedAmount?: number;
+    confidenceScore?: number;
+    discrepancyNote?: string;
+  };
   // AI verification for rating screenshot
   ratingAiVerification?: {
     accountNameMatch?: boolean;

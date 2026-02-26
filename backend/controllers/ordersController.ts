@@ -889,6 +889,17 @@ export function makeOrdersController(env: Env) {
           }
 
           updateData.screenshotOrder = body.data;
+          // Persist AI purchase proof verification result
+          if (aiOrderVerification) {
+            updateData.orderAiVerification = {
+              orderIdMatch: aiOrderVerification.orderIdMatch,
+              amountMatch: aiOrderVerification.amountMatch,
+              detectedOrderId: aiOrderVerification.detectedOrderId,
+              detectedAmount: aiOrderVerification.detectedAmount,
+              confidenceScore: aiOrderVerification.confidenceScore,
+              discrepancyNote: aiOrderVerification.discrepancyNote,
+            };
+          }
           if (order.rejectionType === 'order') {
             updateData.rejectionType = null;
             updateData.rejectionReason = null;

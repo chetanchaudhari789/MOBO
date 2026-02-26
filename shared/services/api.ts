@@ -773,22 +773,6 @@ export const api = {
         body: JSON.stringify({ brandCode }),
       });
     },
-    analyzeProof: async (
-      orderId: string,
-      proofUrl: string,
-      expectedOrderId: string,
-      expectedAmount: number
-    ) => {
-      return fetchJson('/ai/verify-proof', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({
-          imageBase64: proofUrl,
-          expectedOrderId,
-          expectedAmount,
-        }),
-      });
-    },
   },
   /** [FIX] Added missing brand object used in BrandDashboard.tsx */
   brand: {
@@ -1000,17 +984,6 @@ export const api = {
       image?: string;
     }) => {
       return fetchJson('/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify(payload),
-      });
-    },
-    verifyProof: async (payload: {
-      imageBase64: string;
-      expectedOrderId: string;
-      expectedAmount: number;
-    }) => {
-      return fetchJson('/ai/verify-proof', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),

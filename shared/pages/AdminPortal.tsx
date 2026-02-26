@@ -47,7 +47,6 @@ import {
   ChevronUp,
   Clock,
   Sparkles,
-  Loader2,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -219,9 +218,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [_orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
   const [orderAuditLoading, setOrderAuditLoading] = useState(false);
   const [orderAuditExpanded, setOrderAuditExpanded] = useState(false);
-  // AI purchase proof analysis
-  const [adminAiAnalysis, setAdminAiAnalysis] = useState<any>(null);
-  const [adminIsAnalyzing, setAdminIsAnalyzing] = useState(false);
+
 
   // Admin-specific: show up to 2 decimal places
   const formatCurrency = (amount: number) => formatCurrencyBase(amount, { maximumFractionDigits: 2 });
@@ -242,27 +239,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     }
   };
 
-  // AI Purchase Proof Analysis (Admin)
-  const adminRunAnalysis = async () => {
-    if (!proofModal || !proofModal.screenshots?.order) return;
-    setAdminIsAnalyzing(true);
-    setAdminAiAnalysis(null);
-    try {
-      const imageBase64 = proofModal.screenshots.order;
-      const result = await api.ops.analyzeProof(
-        proofModal.id,
-        imageBase64,
-        proofModal.externalOrderId || '',
-        proofModal.total,
-      );
-      setAdminAiAnalysis(result);
-    } catch (e) {
-      console.error('Admin AI analysis error:', e);
-      toast.error('AI analysis failed. Please try again.');
-    } finally {
-      setAdminIsAnalyzing(false);
-    }
-  };
+
 
   // Settings State
   const [configEmail, setConfigEmail] = useState('admin@buzzma.world');
@@ -1866,14 +1843,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
       {/* Proof Viewer Modal */}
       {proofModal && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAdminAiAnalysis(null); }}>
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900">Order Proofs &amp; Audit</h3>
                 <p className="text-xs text-slate-500 font-mono mt-1">{proofModal.externalOrderId || proofModal.id}</p>
               </div>
-              <button type="button" aria-label="Close proof modal" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAdminAiAnalysis(null); }} className="p-2 rounded-lg hover:bg-slate-100">
+              <button type="button" aria-label="Close proof modal" onClick={() => { setProofModal(null); setOrderAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); }} className="p-2 rounded-lg hover:bg-slate-100">
                 <span className="text-slate-400 text-xl font-bold">&times;</span>
               </button>
             </div>
@@ -1898,66 +1875,55 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                 {proofModal.screenshots?.order ? (
                   <>
                     <ZoomableImage src={proofModal.screenshots.order} alt="Purchase Proof" className="w-full max-h-[300px] object-contain rounded-xl border border-blue-200 bg-blue-50" />
-                    {/* AI Analysis Section */}
+                    {/* AI Verification — stored from buyer's proof submission */}
+                    {proofModal.orderAiVerification && (
                     <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200 mt-3">
                       <div className="flex justify-between items-center mb-2">
                         <h5 className="font-bold text-indigo-600 flex items-center gap-2 text-[10px] uppercase tracking-widest">
-                          <Sparkles size={12} className="text-indigo-500" /> AI Analysis
+                          <Sparkles size={12} className="text-indigo-500" /> AI Verification
                         </h5>
-                        {!adminAiAnalysis && !adminIsAnalyzing && (
-                          <button type="button" onClick={adminRunAnalysis} className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm">
-                            Analyze
-                          </button>
-                        )}
                       </div>
-                      {adminIsAnalyzing && (
-                        <div className="flex items-center justify-center py-3">
-                          <Loader2 className="animate-spin text-indigo-500 mr-2" size={18} />
-                          <span className="text-xs font-bold text-indigo-500">Analyzing Screenshot...</span>
-                        </div>
-                      )}
-                      {adminAiAnalysis && (
                         <div className="space-y-2">
-                          <div className="flex gap-2">
-                            <div className={`flex-1 p-2 rounded-lg border text-center ${adminAiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
-                              <p className={`text-xs font-bold ${adminAiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
-                                {adminAiAnalysis.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
-                              </p>
-                              {adminAiAnalysis.detectedOrderId && <p className="text-[9px] text-slate-500 font-mono mt-0.5">Detected: {adminAiAnalysis.detectedOrderId}</p>}
-                            </div>
-                            <div className={`flex-1 p-2 rounded-lg border text-center ${adminAiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
-                              <p className={`text-xs font-bold ${adminAiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
-                                {adminAiAnalysis.amountMatch ? '✓ Match' : '✗ Mismatch'}
-                              </p>
-                              {adminAiAnalysis.detectedAmount != null && <p className="text-[9px] text-slate-500 font-mono mt-0.5">Detected: ₹{adminAiAnalysis.detectedAmount}</p>}
-                            </div>
-                          </div>
-                          {adminAiAnalysis.discrepancyNote && (
-                            <p className="text-[10px] text-slate-500 bg-white rounded-lg p-2 border border-slate-100">{adminAiAnalysis.discrepancyNote}</p>
-                          )}
                           {(() => {
-                            const n = Number(adminAiAnalysis.confidenceScore);
+                            const aiData = proofModal.orderAiVerification;
+                            const n = Number(aiData?.confidenceScore);
                             const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
                             return (
-                              <div className="flex justify-between items-center pt-1">
-                                <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence</span>
-                                <div className="flex items-center gap-2">
-                                  <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
+                              <>
+                                <div className="flex gap-2">
+                                  <div className={`flex-1 p-2 rounded-lg border text-center ${aiData?.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase">Order ID</p>
+                                    <p className={`text-xs font-bold ${aiData?.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                      {aiData?.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
+                                    </p>
+                                    {aiData?.detectedOrderId && <p className="text-[9px] text-slate-500 font-mono mt-0.5">Detected: {aiData.detectedOrderId}</p>}
                                   </div>
-                                  <span className="text-xs font-bold text-slate-700">{score}%</span>
+                                  <div className={`flex-1 p-2 rounded-lg border text-center ${aiData?.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase">Amount</p>
+                                    <p className={`text-xs font-bold ${aiData?.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                      {aiData?.amountMatch ? '✓ Match' : '✗ Mismatch'}
+                                    </p>
+                                    {aiData?.detectedAmount != null && <p className="text-[9px] text-slate-500 font-mono mt-0.5">Detected: {formatCurrency(aiData.detectedAmount)}</p>}
+                                  </div>
                                 </div>
-                              </div>
+                                {aiData?.discrepancyNote && (
+                                  <p className="text-[10px] text-slate-500 bg-white rounded-lg p-2 border border-slate-100">{aiData.discrepancyNote}</p>
+                                )}
+                                <div className="flex justify-between items-center pt-1">
+                                  <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence</span>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-700">{score}%</span>
+                                  </div>
+                                </div>
+                              </>
                             );
                           })()}
                         </div>
-                      )}
-                      {!adminAiAnalysis && !adminIsAnalyzing && (
-                        <p className="text-[10px] text-slate-400 text-center">Click Analyze to verify purchase proof with AI</p>
-                      )}
                     </div>
+                    )}
                   </>
                 ) : (
                   <div className="py-4 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-200"><AlertCircle size={16} className="inline mr-1" />Not uploaded</div>

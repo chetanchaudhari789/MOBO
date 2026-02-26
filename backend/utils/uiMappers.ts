@@ -251,6 +251,24 @@ export function toUiOrder(o: any) {
       detectedProductName: o.ratingAiVerification.detectedProductName,
       confidenceScore: o.ratingAiVerification.confidenceScore,
     } : undefined,
+    orderAiVerification: o.orderAiVerification ? {
+      orderIdMatch: o.orderAiVerification.orderIdMatch,
+      amountMatch: o.orderAiVerification.amountMatch,
+      detectedOrderId: o.orderAiVerification.detectedOrderId,
+      detectedAmount: o.orderAiVerification.detectedAmount,
+      confidenceScore: o.orderAiVerification.confidenceScore,
+      discrepancyNote: o.orderAiVerification.discrepancyNote,
+    } : undefined,
+    returnWindowAiVerification: o.returnWindowAiVerification ? {
+      orderIdMatch: o.returnWindowAiVerification.orderIdMatch,
+      productNameMatch: o.returnWindowAiVerification.productNameMatch,
+      amountMatch: o.returnWindowAiVerification.amountMatch,
+      soldByMatch: o.returnWindowAiVerification.soldByMatch,
+      returnWindowClosed: o.returnWindowAiVerification.returnWindowClosed,
+      confidenceScore: o.returnWindowAiVerification.confidenceScore,
+      detectedReturnWindow: o.returnWindowAiVerification.detectedReturnWindow,
+      discrepancyNote: o.returnWindowAiVerification.discrepancyNote,
+    } : undefined,
     returnWindowDays: o.returnWindowDays ?? 10,
     missingProofRequests: Array.isArray(o.missingProofRequests)
       ? o.missingProofRequests.map((r: any) => ({

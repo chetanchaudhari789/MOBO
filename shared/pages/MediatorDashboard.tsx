@@ -10,7 +10,6 @@ import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv as downloadCsvFile } from '../utils/csvHelpers';
-import { urlToBase64 } from '../utils/imageHelpers';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
 import { User, Campaign, Order, Product, Ticket } from '../types';
@@ -1604,9 +1603,7 @@ export const MediatorDashboard: React.FC = () => {
     }
   }, [dealBuilder]);
 
-  // AI Analysis State
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // AI Analysis — now reads stored data from order, no Gemini calls needed
 
   useEffect(() => {
     loadData();
@@ -1721,46 +1718,6 @@ export const MediatorDashboard: React.FC = () => {
       toast.error(msg);
     }
   };
-
-  const analysisAbortRef = useRef<AbortController | null>(null);
-
-  const runAnalysis = async () => {
-    if (!proofModal || !proofModal.screenshots?.order) return;
-    // Cancel any in-flight analysis
-    analysisAbortRef.current?.abort();
-    const controller = new AbortController();
-    analysisAbortRef.current = controller;
-    setIsAnalyzing(true);
-    setAiAnalysis(null);
-    try {
-      const imageBase64 = await urlToBase64(proofModal.screenshots.order);
-      if (controller.signal.aborted) return;
-      const result = await api.ops.analyzeProof(
-        proofModal.id,
-        imageBase64,
-        proofModal.externalOrderId || '',
-        proofModal.total
-      );
-      if (controller.signal.aborted) return;
-      setAiAnalysis(result);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      console.error(e);
-      toast.error('Analysis failed. Try again.');
-    } finally {
-      if (!controller.signal.aborted) setIsAnalyzing(false);
-    }
-  };
-
-  // Auto-trigger extraction when modal opens (skip if already analyzed for same order)
-  const lastAnalyzedOrderRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (proofModal && proofModal.screenshots?.order && proofModal.id !== lastAnalyzedOrderRef.current) {
-      lastAnalyzedOrderRef.current = proofModal.id;
-      runAnalysis();
-    }
-    return () => { analysisAbortRef.current?.abort(); };
-  }, [proofModal]);
 
   const hasNotifications = unreadCount > 0;
 
@@ -1900,7 +1857,6 @@ export const MediatorDashboard: React.FC = () => {
             onRefresh={loadData}
             onViewProof={(order: Order) => {
               setProofModal(order);
-              setAiAnalysis(null);
             }}
           />
         )}
@@ -2059,81 +2015,61 @@ export const MediatorDashboard: React.FC = () => {
                     alt="Order Proof"
                   />
 
-                  {/* AI ANALYSIS SECTION */}
+                  {/* AI VERIFICATION RESULTS (stored from buyer's proof submission) */}
+                  {proofModal.orderAiVerification && (
                   <div className="bg-indigo-500/10 p-4 rounded-xl border border-indigo-500/20 mt-4 relative overflow-hidden">
                     <div className="flex justify-between items-center mb-3 relative z-10">
                       <h4 className="font-bold text-indigo-300 flex items-center gap-2 text-xs uppercase tracking-widest">
-                        <Sparkles size={14} className="text-indigo-400" /> AI Assistant
+                        <Sparkles size={14} className="text-indigo-400" /> AI Verification
                       </h4>
-                      {!aiAnalysis && !isAnalyzing && (
-                        <button
-                          type="button"
-                          onClick={runAnalysis}
-                          className="bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]"
-                        >
-                          Analyze
-                        </button>
-                      )}
                     </div>
 
-                    {isAnalyzing && (
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <Loader2
-                          className="animate-spin motion-reduce:animate-none text-indigo-400 mb-2"
-                          size={24}
-                        />
-                        <p className="text-xs font-bold text-indigo-300 animate-pulse motion-reduce:animate-none">
-                          Analyzing Screenshot...
-                        </p>
-                      </div>
-                    )}
-
-                    {aiAnalysis && (
                       <div className="space-y-3 animate-fade-in">
                         {(() => {
-                          const n = Number(aiAnalysis.confidenceScore);
+                          const aiData = proofModal.orderAiVerification;
+                          const n = Number(aiData?.confidenceScore);
                           const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
                           return (
                             <>
                               <div className="flex gap-2">
                                 <div
-                                  className={`flex-1 p-2 rounded-lg border ${aiAnalysis.orderIdMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
+                                  className={`flex-1 p-2 rounded-lg border ${aiData?.orderIdMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
                                 >
                                   <p
-                                    className={`text-[9px] font-bold uppercase ${aiAnalysis.orderIdMatch ? 'text-green-400' : 'text-red-400'}`}
+                                    className={`text-[9px] font-bold uppercase ${aiData?.orderIdMatch ? 'text-green-400' : 'text-red-400'}`}
                                   >
                                     Order ID
                                   </p>
                                   <p className="text-xs font-bold text-white">
-                                    {aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}
+                                    {aiData?.orderIdMatch ? 'Matched' : 'Mismatch'}
                                   </p>
-                                  {(aiAnalysis as any).detectedOrderId && (
+                                  {aiData?.detectedOrderId && (
                                     <p className="text-[9px] text-zinc-400 mt-0.5 font-mono break-all">
-                                      Detected: {(aiAnalysis as any).detectedOrderId}
+                                      Detected: {aiData.detectedOrderId}
                                     </p>
                                   )}
                                 </div>
                                 <div
-                                  className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
+                                  className={`flex-1 p-2 rounded-lg border ${aiData?.amountMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
                                 >
                                   <p
-                                    className={`text-[9px] font-bold uppercase ${aiAnalysis.amountMatch ? 'text-green-400' : 'text-red-400'}`}
+                                    className={`text-[9px] font-bold uppercase ${aiData?.amountMatch ? 'text-green-400' : 'text-red-400'}`}
                                   >
                                     Amount
                                   </p>
                                   <p className="text-xs font-bold text-white">
-                                    {aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}
+                                    {aiData?.amountMatch ? 'Matched' : 'Mismatch'}
                                   </p>
-                                  {(aiAnalysis as any).detectedAmount != null && (
+                                  {aiData?.detectedAmount != null && (
                                     <p className="text-[9px] text-zinc-400 mt-0.5 font-mono">
-                                      Detected: ₹{(aiAnalysis as any).detectedAmount}
+                                      Detected: {formatCurrency(aiData.detectedAmount)}
                                     </p>
                                   )}
                                 </div>
                               </div>
                               <div className="bg-black/30 p-2 rounded-lg">
                                 <p className="text-[10px] text-zinc-400 leading-relaxed">
-                                  {aiAnalysis.discrepancyNote ||
+                                  {aiData?.discrepancyNote ||
                                     'Verified. Details match expected values.'}
                                 </p>
                               </div>
@@ -2155,8 +2091,8 @@ export const MediatorDashboard: React.FC = () => {
                           );
                         })()}
                       </div>
-                    )}
                   </div>
+                  )}
                 </div>
               ) : (
                 <div className="mt-4 p-4 text-center border border-dashed border-zinc-700 rounded-xl text-zinc-500 text-xs">
