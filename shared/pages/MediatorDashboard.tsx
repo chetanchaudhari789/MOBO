@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useToast } from '../context/ToastContext';
@@ -224,7 +224,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-[0.8rem] flex items-center justify-center font-black text-sm shadow-inner overflow-hidden">
                     {u.avatar ? (
-                      <img
+                      <img loading="lazy"
                         src={u.avatar}
                         alt={u.name ? `${u.name} avatar` : 'Avatar'}
                         className="w-full h-full object-cover"
@@ -425,7 +425,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                   )}
                   <div className="p-2 pb-0 flex gap-3 mb-3">
                     <div className="w-14 h-14 bg-[#F4F4F5] rounded-[1rem] p-1.5 flex-shrink-0 relative overflow-hidden">
-                      <img
+                      <img loading="lazy"
                         src={o.items?.[0]?.image}
                         alt={o.items?.[0]?.title}
                         className="w-full h-full object-contain mix-blend-multiply relative z-10"
@@ -691,7 +691,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                        <img
+                        <img loading="lazy"
                           src={d.image}
                           alt={d.title}
                           className="w-full h-full object-contain mix-blend-multiply"
@@ -798,7 +798,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                        <img
+                        <img loading="lazy"
                           src={c.image}
                           alt={c.title}
                           className="w-full h-full object-contain mix-blend-multiply"
@@ -973,7 +973,7 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-zinc-100 rounded-[0.8rem] flex items-center justify-center font-black text-zinc-500 text-sm overflow-hidden">
                       {u.avatar ? (
-                        <img
+                        <img loading="lazy"
                           src={u.avatar}
                           alt={u.name ? `${u.name} avatar` : 'Avatar'}
                           className="w-full h-full object-cover"
@@ -1072,7 +1072,7 @@ const MediatorProfileView = () => {
         >
           <div className="w-24 h-24 rounded-full bg-zinc-100 border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
             {avatar ? (
-              <img
+              <img loading="lazy"
                 src={avatar}
                 alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                 className="w-full h-full object-cover"
@@ -1168,7 +1168,7 @@ const MediatorProfileView = () => {
           >
             {qrCode ? (
               <div className="relative">
-                <img
+                <img loading="lazy"
                   src={qrCode}
                   alt="Payment QR"
                   className="h-32 w-32 object-contain rounded-lg"
@@ -1282,7 +1282,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-[0.8rem] bg-white/10 flex items-center justify-center font-bold text-sm overflow-hidden">
                 {buyer.avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={buyer.avatar}
                     alt={buyer.name ? `${buyer.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -1419,7 +1419,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-zinc-50 rounded-[0.8rem] p-1.5 flex-shrink-0">
-                        <img
+                        <img loading="lazy"
                           src={o.items?.[0]?.image}
                           alt={o.items?.[0]?.title}
                           className="w-full h-full object-contain mix-blend-multiply"
@@ -1531,7 +1531,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             </button>
             <h3 className="font-bold text-lg text-zinc-900 mb-4">Payment QR</h3>
             <div className="p-2 border-2 border-dashed border-zinc-200 rounded-xl mb-4">
-              <img src={buyer.qrCode} alt="Payment QR" className="w-48 h-48 object-contain" />
+              <img loading="lazy" src={buyer.qrCode} alt="Payment QR" className="w-48 h-48 object-contain" />
             </div>
             <p className="text-center text-xs font-bold text-zinc-500">{buyer.name}</p>
             <p className="text-center text-[10px] text-zinc-400 font-mono">{buyer.upiId}</p>
@@ -1728,7 +1728,7 @@ export const MediatorDashboard: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-[0.8rem] bg-[#18181B] text-white flex items-center justify-center font-black text-lg shadow-lg border-2 border-white overflow-hidden">
             {user?.avatar ? (
-              <img
+              <img loading="lazy"
                 src={user.avatar}
                 alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                 className="w-full h-full object-cover"
@@ -2570,7 +2570,7 @@ export const MediatorDashboard: React.FC = () => {
             <div className="w-12 h-1 bg-zinc-200 rounded-full mx-auto mb-6"></div>
             <div className="flex gap-4 mb-6">
               <div className="w-16 h-16 rounded-[1rem] bg-zinc-50 p-2 border border-zinc-100 flex items-center justify-center">
-                <img
+                <img loading="lazy"
                   src={dealBuilder.image}
                   className="w-full h-full object-contain mix-blend-multiply"
                 />

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
@@ -74,7 +74,8 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-} from 'recharts';
+  ChartSuspense,
+} from '../components/LazyCharts';
 
 // formatCurrency, getPrimaryOrderId, urlToBase64, csvSafe, downloadCsv imported from shared/utils
 
@@ -211,7 +212,7 @@ const AgencyProfile = ({ user }: any) => {
             <div className="w-32 h-32 rounded-[2rem] bg-white p-2 shadow-lg border border-slate-100 flex-shrink-0">
               <div className="w-full h-full bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-4xl font-black text-white overflow-hidden relative group-hover:scale-[1.02] transition-transform duration-500">
                 {avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={avatar}
                     alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -1434,6 +1435,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
             </select>
           </div>
           <div className="flex-1 w-full min-h-0">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data}>
                 <defs>
@@ -1476,6 +1478,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                 />
               </AreaChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
 
@@ -1484,6 +1487,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
           <h3 className="text-lg font-bold text-slate-900 mb-1">Brand Performance</h3>
           <p className="text-xs text-slate-400 font-medium mb-6">Top performing brands by volume</p>
           <div className="flex-1 min-h-0">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={brandData} layout="vertical" barSize={24}>
                 <XAxis type="number" hide />
@@ -1506,6 +1510,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                 <Bar dataKey="count" fill="#a855f7" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
       </div>
@@ -1982,7 +1987,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="p-5 pl-8">
                         <div className="flex items-center gap-4">
-                          <img
+                          <img loading="lazy"
                             src={c.image}
                             className="w-10 h-10 object-contain rounded-lg bg-slate-50 border border-slate-100 p-1 group-hover:scale-105 transition-transform"
                           />
@@ -2163,7 +2168,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   >
                     <div className="flex gap-4 mb-5">
                       <div className="w-20 h-20 bg-slate-50 rounded-2xl p-2 border border-slate-100 flex-shrink-0 flex items-center justify-center">
-                        <img
+                        <img loading="lazy"
                           src={c.image}
                           className="w-full h-full object-contain mix-blend-multiply group-hover:scale-110 transition-transform"
                         />
@@ -2427,7 +2432,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             <div className="bg-slate-50 p-3 2xl:p-4 rounded-2xl mb-2 border border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
               <div className="flex gap-3 items-center min-w-0">
                 <div className="w-10 h-10 bg-white rounded-lg p-1.5 border border-slate-200 shadow-sm flex-shrink-0">
-                  <img
+                  <img loading="lazy"
                     src={assignModal.image}
                     className="w-full h-full object-contain mix-blend-multiply"
                   />
@@ -2664,7 +2669,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       <div className="col-span-4 flex items-center gap-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
                           {m.avatar ? (
-                            <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                            <img loading="lazy" src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
                             (m.name || '?').charAt(0)
                           )}
@@ -3012,7 +3017,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center font-black text-slate-500 shadow-inner overflow-hidden">
                           {m.avatar ? (
-                            <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                            <img loading="lazy" src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
                             (m.name || '?').charAt(0)
                           )}
@@ -3097,7 +3102,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               <div className="flex gap-4 items-center">
                 <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center font-black text-2xl overflow-hidden">
                   {selectedMediator.avatar ? (
-                    <img
+                    <img loading="lazy"
                       src={selectedMediator.avatar}
                       alt={selectedMediator.name ? `${selectedMediator.name} avatar` : 'Avatar'}
                       className="w-full h-full object-cover"
@@ -3152,7 +3157,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         className="p-4 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-colors flex gap-4 items-center"
                       >
                         <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-                          <img
+                          <img loading="lazy"
                             src={o.items?.[0]?.image}
                             className="w-full h-full object-contain mix-blend-multiply"
                           />
@@ -3248,7 +3253,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         </p>
                         {selectedMediator.qrCode ? (
                           <div className="bg-white border border-slate-200 rounded-xl p-3 w-fit">
-                            <img
+                            <img loading="lazy"
                               src={selectedMediator.qrCode}
                               alt="UPI QR"
                               className="w-36 h-36 object-contain"
@@ -3356,7 +3361,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             <div className="flex-1 overflow-y-auto scrollbar-hide space-y-6 pr-2">
               {/* Product Summary */}
               <div className="flex gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <img
+                <img loading="lazy"
                   src={proofOrder.items?.[0]?.image}
                   alt={proofOrder.items?.[0]?.title}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-slate-100 p-1"
@@ -3629,7 +3634,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   ) : (
                     <>
                     {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
-                      <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
+                      <div key={log.id || `audit-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
                         <span className="font-bold text-zinc-600 shrink-0">{auditActionLabel(log.action)}</span>
                         <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
@@ -3854,7 +3859,7 @@ export const AgencyDashboard: React.FC = () => {
             >
               <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm overflow-hidden">
                 {user?.avatar ? (
-                  <img src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                  <img loading="lazy" src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                 ) : (
                   (user?.name || '?').charAt(0)
                 )}

@@ -121,7 +121,7 @@ export const ZoomableImage: React.FC<{
           className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in"
           onClick={() => setZoomed(false)}
         >
-          <img
+          <img loading="lazy"
             src={src}
             alt={alt}
             decoding="async"

@@ -187,7 +187,7 @@ export const Profile: React.FC = () => {
             >
               <div className="w-24 h-24 rounded-[1.5rem] bg-zinc-100 flex items-center justify-center text-4xl font-black text-zinc-300 shadow-inner overflow-hidden border-4 border-white">
                 {avatar ? (
-                  <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
+                  <img loading="lazy" src={avatar} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
                   (name || '?').charAt(0)
                 )}

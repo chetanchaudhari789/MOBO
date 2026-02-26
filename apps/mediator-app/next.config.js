@@ -4,11 +4,12 @@ import withPWAInit from '@ducanh2912/next-pwa';
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  output: 'standalone',
   eslint: {
     ignoreDuringBuilds: true,
   },
   images: {
-    formats: ['image/webp'],
+    formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60 * 60 * 24 * 30,
     deviceSizes: [640, 750, 828, 1080, 1200],
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
@@ -20,13 +21,6 @@ const nextConfig = {
   },
   experimental: {
     externalDir: true,
-    optimizeCss: true,
-  },
-  webpack: (config, { dev }) => {
-    if (!dev) {
-      config.cache = { type: 'memory' };
-    }
-    return config;
   },
   async headers() {
     return [
@@ -39,6 +33,7 @@ const nextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'none'" },
         ],
       },
     ];

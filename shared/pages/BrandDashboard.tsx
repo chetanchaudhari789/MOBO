@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
@@ -72,7 +72,8 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-} from 'recharts';
+  ChartSuspense,
+} from '../components/LazyCharts';
 
 // --- TYPES ---
 type Tab = 'dashboard' | 'agencies' | 'campaigns' | 'requests' | 'orders' | 'profile';
@@ -221,7 +222,7 @@ const BrandProfileView = () => {
             <div className="w-36 h-36 rounded-[2rem] bg-white p-2 shadow-2xl border border-zinc-100 rotate-3 transition-transform group-hover:rotate-0">
               <div className="w-full h-full bg-zinc-100 rounded-[1.5rem] flex items-center justify-center text-5xl font-black text-zinc-300 overflow-hidden relative">
                 {avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={avatar}
                     alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -465,6 +466,7 @@ const DashboardView = ({
             </div>
           </div>
           <div className="absolute inset-x-0 bottom-0 top-20 px-4 pb-4">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={revenueData}>
                 <defs>
@@ -510,6 +512,7 @@ const DashboardView = ({
                 />
               </AreaChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
 
@@ -527,6 +530,7 @@ const DashboardView = ({
             </div>
           </div>
           <div className="flex-1 min-h-0">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={campaignPerformance}
@@ -564,6 +568,7 @@ const DashboardView = ({
                 <Bar dataKey="remaining" stackId="a" fill="#f4f4f5" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
       </div>
@@ -942,7 +947,7 @@ const OrdersView = ({ user }: any) => {
                       <td className="p-6">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-white rounded-lg border border-zinc-100 p-1 flex-shrink-0">
-                            <img
+                            <img loading="lazy"
                               src={o.items?.[0]?.image}
                               className="w-full h-full object-contain mix-blend-multiply"
                             />
@@ -1149,7 +1154,7 @@ const OrdersView = ({ user }: any) => {
             <div className="flex-1 overflow-y-auto scrollbar-hide space-y-6 pr-2">
               {/* Product Summary */}
               <div className="flex gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                <img
+                <img loading="lazy"
                   src={viewProofOrder.items?.[0]?.image}
                   alt={viewProofOrder.items?.[0]?.title}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-zinc-100 p-1"
@@ -1390,7 +1395,7 @@ const OrdersView = ({ user }: any) => {
                   ) : (
                     <>
                     {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
-                      <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
+                      <div key={log.id || `audit-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
                         <span className="font-bold text-zinc-600 shrink-0">{auditActionLabel(log.action)}</span>
                         <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
@@ -1794,7 +1799,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
               <div className="flex gap-4 mb-4">
                 <div className="w-24 h-24 rounded-2xl bg-zinc-50 p-2 flex-shrink-0 flex items-center justify-center border border-zinc-100">
                   {form.image ? (
-                    <img
+                    <img loading="lazy"
                       src={form.image}
                       className="w-full h-full object-contain mix-blend-multiply"
                     />
@@ -1948,7 +1953,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
             >
               <div className="flex gap-4 mb-4">
                 <div className="w-20 h-20 bg-zinc-50 rounded-2xl p-2 flex-shrink-0 border border-zinc-100 flex items-center justify-center">
-                  <img src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  <img loading="lazy" src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 </div>
                 <div className="flex-1 min-w-0 py-1">
                   <div className="flex justify-between items-start mb-1">
@@ -2360,7 +2365,7 @@ export const BrandDashboard: React.FC = () => {
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold shadow-md text-sm shrink-0 overflow-hidden">
                   {user?.avatar ? (
-                    <img src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                    <img loading="lazy" src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                   ) : (
                     user?.name?.charAt(0) || 'B'
                   )}
@@ -2432,7 +2437,7 @@ export const BrandDashboard: React.FC = () => {
                   >
                     <div className="w-20 h-20 bg-zinc-50 rounded-[1.5rem] flex items-center justify-center font-bold text-2xl text-zinc-400 shadow-inner overflow-hidden">
                       {ag.avatar ? (
-                        <img
+                        <img loading="lazy"
                           src={ag.avatar}
                           alt={ag.name ? `${ag.name} avatar` : 'Avatar'}
                           className="w-full h-full object-cover"
@@ -2686,7 +2691,7 @@ export const BrandDashboard: React.FC = () => {
             <div className="flex items-center gap-4 mb-8">
               <div className="w-16 h-16 bg-zinc-900 text-white rounded-2xl flex items-center justify-center font-bold text-2xl shadow-lg overflow-hidden">
                 {selectedAgency.avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={selectedAgency.avatar}
                     alt={selectedAgency.name ? `${selectedAgency.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"

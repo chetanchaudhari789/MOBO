@@ -42,6 +42,7 @@ import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { sendPushToUser } from '../services/pushNotifications.js';
 import { normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 
 async function buildOrderAudience(order: any, agencyCode?: string) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -570,11 +571,16 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const payouts = await db().payout.findMany({
-          where: payoutWhere,
-          orderBy: { requestedAt: 'desc' },
-          take: 2000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query, { limit: 100 });
+        const [payouts, payoutTotal] = await Promise.all([
+          db().payout.findMany({
+            where: payoutWhere,
+            orderBy: { requestedAt: 'desc' },
+            take: limit,
+            skip,
+          }),
+          db().payout.count({ where: payoutWhere }),
+        ]);
 
         const beneficiaryIds = payouts.map((p: any) => p.beneficiaryUserId).filter(Boolean);
         const users = await db().user.findMany({
@@ -583,19 +589,18 @@ export function makeOpsController(env: Env) {
         });
         const byId = new Map(users.map((u: any) => [String(u.id), u]));
 
-        res.json(
-          payouts.map((p: any) => {
-            const u = byId.get(String(p.beneficiaryUserId));
-            return {
-              id: p.mongoId ?? p.id,
-              mediatorName: u?.name ?? 'Mediator',
-              mediatorCode: u?.mediatorCode,
-              amount: Math.round((p.amountPaise ?? 0) / 100),
-              date: safeIso(p.requestedAt ?? p.createdAt) ?? new Date().toISOString(),
-              status: p.status === 'paid' ? 'Success' : String(p.status),
-            };
-          })
-        );
+        const mapped = payouts.map((p: any) => {
+          const u = byId.get(String(p.beneficiaryUserId));
+          return {
+            id: p.mongoId ?? p.id,
+            mediatorName: u?.name ?? 'Mediator',
+            mediatorCode: u?.mediatorCode,
+            amount: Math.round((p.amountPaise ?? 0) / 100),
+            date: safeIso(p.requestedAt ?? p.createdAt) ?? new Date().toISOString(),
+            status: p.status === 'paid' ? 'Success' : String(p.status),
+          };
+        });
+        res.json(paginatedResponse(mapped, payoutTotal, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }
@@ -2660,12 +2665,17 @@ export function makeOpsController(env: Env) {
           ];
         }
 
-        const transactions = await db().transaction.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          take: 500,
-        });
-        res.json(transactions);
+        const { page, limit, skip, isPaginated } = parsePagination(req.query, { limit: 100 });
+        const [transactions, txTotal] = await Promise.all([
+          db().transaction.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip,
+          }),
+          db().transaction.count({ where }),
+        ]);
+        res.json(paginatedResponse(transactions, txTotal, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }

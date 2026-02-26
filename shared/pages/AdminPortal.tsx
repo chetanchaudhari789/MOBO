@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
@@ -56,7 +56,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-} from 'recharts';
+  ChartSuspense,
+} from '../components/LazyCharts';
 import { User, Order, Product, Invite, Ticket } from '../types';
 import { formatCurrency as formatCurrencyBase } from '../utils/formatCurrency';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
@@ -1033,6 +1034,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       </div>
                     </div>
                     <div className="flex-1 w-full min-h-0">
+                      <ChartSuspense>
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData}>
                           <defs>
@@ -1075,6 +1077,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                           />
                         </AreaChart>
                       </ResponsiveContainer>
+                      </ChartSuspense>
                     </div>
                   </div>
 
@@ -1305,7 +1308,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm shadow-inner group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors overflow-hidden">
                                 {u.avatar ? (
-                                  <img
+                                  <img loading="lazy"
                                     src={u.avatar}
                                     alt={u.name ? `${u.name} avatar` : 'Avatar'}
                                     className="w-full h-full object-cover"
@@ -1444,8 +1447,8 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {invites.map((inv, i) => (
-                        <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                      {invites.map((inv) => (
+                        <tr key={inv.code || inv.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="p-6 font-mono text-sm font-bold text-slate-800">
                             {inv.code}
                           </td>
@@ -1626,7 +1629,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-5">
                           <div className="flex items-center gap-3">
-                            <img src={p.image} alt={p.title ? String(p.title) : 'Product image'} className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-100 p-1" />
+                            <img loading="lazy" src={p.image} alt={p.title ? String(p.title) : 'Product image'} className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-100 p-1" />
                             <span className="truncate max-w-[200px] text-slate-900 font-bold">
                               {p.title}
                             </span>
@@ -2022,7 +2025,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     ) : orderAuditLogs.length > 0 ? (
                       <div className="space-y-2 max-h-[200px] overflow-y-auto">
                         {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
-                          <div key={i} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                          <div key={log.id || `audit-${i}`} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
                             <Clock size={12} className="text-slate-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-[10px] font-bold text-slate-600 uppercase">{auditActionLabel(log.action)}</p>

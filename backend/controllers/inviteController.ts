@@ -12,6 +12,7 @@ import { logChangeEvent } from '../config/appLogs.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgInvite } from '../utils/pgMappers.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 
 function db() { return prisma(); }
 
@@ -114,10 +115,14 @@ export function makeInviteController() {
       }
     },
 
-    adminListInvites: async (_req: Request, res: Response, next: NextFunction) => {
+    adminListInvites: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const invites = await db().invite.findMany({ orderBy: { createdAt: 'desc' }, take: 500 });
-        res.json(invites.map(pgInvite));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query);
+        const [invites, total] = await Promise.all([
+          db().invite.findMany({ orderBy: { createdAt: 'desc' }, take: limit, skip }),
+          db().invite.count(),
+        ]);
+        res.json(paginatedResponse(invites.map(pgInvite), total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }

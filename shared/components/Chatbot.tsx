@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   X,
   ArrowRight,
@@ -67,7 +67,7 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
     <span>
       {parts.map((part, i) =>
         i % 2 === 1 ? (
-          <strong key={i} className="font-extrabold text-slate-900">
+          <strong key={`bold-${i}`} className="font-extrabold text-slate-900">
             {part}
           </strong>
         ) : (
@@ -724,7 +724,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                 >
                 {msg.image && (
                   <div className="rounded-2xl overflow-hidden border-4 border-white shadow-md max-w-[200px]">
-                    <img src={msg.image} className="w-full h-auto bg-gray-100" alt="Attachment" />
+                    <img loading="lazy" src={msg.image} className="w-full h-auto bg-gray-100" alt="Attachment" />
                   </div>
                 )}
                 {msg.text && (
@@ -772,7 +772,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                       ></div>
                       <div className="flex gap-4">
                         <div className="w-14 h-14 bg-slate-50 rounded-xl p-1.5 border border-slate-100 flex-shrink-0">
-                          <img
+                          <img loading="lazy"
                             src={proxyImageUrl(order.items?.[0]?.image) || ''}
                             className="w-full h-full object-contain mix-blend-multiply"
                             alt=""
@@ -832,9 +832,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
       <div className="shrink-0 w-full px-4 pb-28 safe-bottom">
         <div className="flex flex-nowrap gap-2 justify-center pb-3 overflow-x-auto scrollbar-hide">
-          {quickActions.map((action, i) => (
+          {quickActions.map((action) => (
             <button
-              key={i}
+              key={action.command}
               onClick={() => handleSendMessage(undefined, action.command)}
               disabled={isTyping}
               className={`px-3.5 py-2 bg-white shadow-sm border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 active:scale-95 flex items-center gap-2 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F4F4F5] whitespace-nowrap ${isTyping ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -846,7 +846,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
         {previewUrl && (
           <div className="bg-white p-3 rounded-[1.5rem] shadow-xl border border-slate-100 mb-2 w-fit relative animate-slide-up">
-            <img src={previewUrl} className="h-20 w-auto rounded-xl object-cover" alt="Preview" />
+            <img loading="lazy" src={previewUrl} className="h-20 w-auto rounded-xl object-cover" alt="Preview" />
             <button
               onClick={clearAttachment}
               aria-label="Remove attachment"

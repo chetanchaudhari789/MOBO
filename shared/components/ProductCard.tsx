@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { ExternalLink, Star } from 'lucide-react';
 import { Product } from '../types';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
@@ -67,7 +67,7 @@ export const ProductCard = React.memo<ProductCardComponentProps>(({ product }) =
       {/* Top Section: Image & Key Info */}
       <div className="flex gap-4 mb-4">
         <div className="w-24 h-24 rounded-2xl bg-gray-50 border border-gray-100 p-2 flex-shrink-0 flex items-center justify-center relative">
-            <img
+            <img loading="lazy"
               src={imageSrc}
               alt={product.title}
               className="w-full h-full object-contain mix-blend-multiply"
@@ -89,7 +89,7 @@ export const ProductCard = React.memo<ProductCardComponentProps>(({ product }) =
             <div className="flex text-yellow-400">
               {[...Array(5)].map((_, i) => (
                 <Star
-                  key={i}
+                  key={`star-${i}`}
                   size={10}
                   fill={i < Math.floor(product.rating || 5) ? 'currentColor' : 'none'}
                   strokeWidth={0}
