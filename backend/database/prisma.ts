@@ -123,14 +123,13 @@ function buildPoolConfig(url: string) {
 /**
  * Connect to PostgreSQL via Prisma with connection pooling.
  * Safe to call multiple times.  Retries up to `maxRetries` with exponential
- * back-off so transient network hiccups (especially when MongoMemoryServer
- * is starting in parallel during tests) don't cause a cascade of failures.
+ * back-off so transient network hiccups don't cause a cascade of failures.
  * Returns silently when DATABASE_URL is not configured (PG is optional).
  */
 export async function connectPrisma(maxRetries = 3): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    dbLog.info('DATABASE_URL not set – PostgreSQL dual-write disabled');
+    dbLog.info('DATABASE_URL not set – PostgreSQL connection skipped');
     return;
   }
 
@@ -193,7 +192,7 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
             stack: err instanceof Error ? err.stack : undefined,
             metadata: { attempt, maxRetries },
           });
-          // Non-fatal — Mongo is still the primary. PG is a shadow.
+          // All retries exhausted — PostgreSQL is unavailable.
           _prisma = null;
         } else {
           dbLog.warn(`${msg} – retrying in ${attempt}s…`, { error: (err as Error).message });

@@ -62,20 +62,9 @@ export function errorHandler(
     return;
   }
 
-  // Common Mongoose failure when an endpoint expects an ObjectId but receives an invalid string.
-  const anyErr = err as any;
-  if (anyErr && anyErr.name === 'CastError') {
-    res.status(400).json({
-      error: {
-        code: 'INVALID_ID',
-        message: 'The provided identifier is not valid.',
-      },
-    });
-    return;
-  }
-
   // Malformed JSON from express.json() / body-parser should never be a 500.
   // This commonly appears as a SyntaxError with type='entity.parse.failed'.
+  const anyErr = err as any;
   if (
     anyErr &&
     (anyErr.type === 'entity.parse.failed' ||
@@ -96,17 +85,6 @@ export function errorHandler(
       error: {
         code: 'PAYLOAD_TOO_LARGE',
         message: 'The uploaded data is too large. Please reduce the file size and try again.',
-      },
-    });
-    return;
-  }
-
-  // MongoDB duplicate key error (E11000) — surface a clean 409 instead of a raw 500.
-  if (anyErr && (Number(anyErr.code) === 11000 || Number(anyErr.errorResponse?.code) === 11000)) {
-    res.status(409).json({
-      error: {
-        code: 'DUPLICATE_ENTRY',
-        message: 'This entry already exists. Please use a different value.',
       },
     });
     return;

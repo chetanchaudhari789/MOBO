@@ -211,81 +211,23 @@ export function makeAuthController(env: Env) {
           typeof (body as any).username === 'string' ? String((body as any).username).trim() : '';
         const username = usernameRaw ? usernameRaw.toLowerCase() : '';
 
-        // Fast login: only fetch fields needed for authentication (no relations)
-        const user = mobile
-          ? await db().user.findFirst({
-              where: { mobile, deletedAt: null },
-              select: {
-                id: true,
-                mongoId: true,
-                name: true,
-                mobile: true,
-                email: true,
-                avatar: true,
-                role: true,
-                roles: true,
-                status: true,
-                passwordHash: true,
-                failedLoginAttempts: true,
-                lockoutUntil: true,
-                parentCode: true,
-                mediatorCode: true,
-                brandCode: true,
-                isVerifiedByMediator: true,
-                username: true,
-                upiId: true,
-                qrCode: true,
-                bankAccountNumber: true,
-                bankIfsc: true,
-                bankName: true,
-                bankHolderName: true,
-                kycStatus: true,
-                connectedAgencies: true,
-                pendingConnections: true,
-                generatedCodes: true,
-                walletBalancePaise: true,
-                walletPendingPaise: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            })
-          : await db().user.findFirst({
-              where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null },
-              select: {
-                id: true,
-                mongoId: true,
-                name: true,
-                mobile: true,
-                email: true,
-                avatar: true,
-                role: true,
-                roles: true,
-                status: true,
-                passwordHash: true,
-                failedLoginAttempts: true,
-                lockoutUntil: true,
-                parentCode: true,
-                mediatorCode: true,
-                brandCode: true,
-                isVerifiedByMediator: true,
-                username: true,
-                upiId: true,
-                qrCode: true,
-                bankAccountNumber: true,
-                bankIfsc: true,
-                bankName: true,
-                bankHolderName: true,
-                kycStatus: true,
-                connectedAgencies: true,
-                pendingConnections: true,
-                generatedCodes: true,
-                walletBalancePaise: true,
-                walletPendingPaise: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            });
-        if (!user) {
+        // Phase 1: Fast auth-only query — minimal columns for password check + lockout.
+        // Uses the @@index([mobile, deletedAt]) / @@index([username, deletedAt]) index.
+        const authSelect = {
+          id: true,
+          role: true,
+          roles: true,
+          status: true,
+          passwordHash: true,
+          failedLoginAttempts: true,
+          lockoutUntil: true,
+        } as const;
+
+        const authUser = mobile
+          ? await db().user.findFirst({ where: { mobile, deletedAt: null }, select: authSelect })
+          : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null }, select: authSelect });
+
+        if (!authUser) {
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
@@ -296,25 +238,25 @@ export function makeAuthController(env: Env) {
 
         // Admin/ops must use username login (mobile is not accepted for these roles).
         if (mobile) {
-          const primaryRole = String(user.role || '').toLowerCase();
-          const roles = Array.isArray(user.roles) ? user.roles.map((r: any) => String(r).toLowerCase()) : [];
-          const isAdminOrOps = primaryRole === 'admin' || primaryRole === 'ops' || roles.includes('admin') || roles.includes('ops');
+          const primaryRole = String(authUser.role || '').toLowerCase();
+          const userRoles = Array.isArray(authUser.roles) ? authUser.roles.map((r: any) => String(r).toLowerCase()) : [];
+          const isAdminOrOps = primaryRole === 'admin' || primaryRole === 'ops' || userRoles.includes('admin') || userRoles.includes('ops');
           if (isAdminOrOps) {
             await writeAuditLog({
               req,
               action: 'AUTH_LOGIN_FAILED',
-              actorUserId: user.mongoId!,
+              actorUserId: authUser.id,
               metadata: { reason: 'username_required' },
             });
             throw new AppError(400, 'USERNAME_REQUIRED', 'Admin login requires username and password');
           }
         }
-        if (user.status !== 'active') {
+        if (authUser.status !== 'active') {
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: user.mongoId!,
-            metadata: { reason: 'user_not_active', status: user.status },
+            actorUserId: authUser.id,
+            metadata: { reason: 'user_not_active', status: authUser.status },
           });
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
         }
@@ -322,23 +264,23 @@ export function makeAuthController(env: Env) {
         // --- Account lockout enforcement ---
         const MAX_FAILED_ATTEMPTS = 7;
         const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
-        const lockoutUntil = user.lockoutUntil ? new Date(user.lockoutUntil) : null;
+        const lockoutUntil = authUser.lockoutUntil ? new Date(authUser.lockoutUntil) : null;
         if (lockoutUntil && lockoutUntil.getTime() > Date.now()) {
           const minutesLeft = Math.ceil((lockoutUntil.getTime() - Date.now()) / 60_000);
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: user.mongoId!,
+            actorUserId: authUser.id,
             metadata: { reason: 'account_locked', lockoutUntil: lockoutUntil.toISOString() },
           });
           throw new AppError(429, 'ACCOUNT_LOCKED', `Account locked. Try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`);
         }
 
-        const ok = await verifyPassword(password, user.passwordHash);
+        const ok = await verifyPassword(password, authUser.passwordHash);
         if (!ok) {
-          const newAttempts = (user.failedLoginAttempts ?? 0) + 1;
+          const newAttempts = (authUser.failedLoginAttempts ?? 0) + 1;
           await db().user.update({
-            where: { id: user.id },
+            where: { id: authUser.id },
             data: {
               failedLoginAttempts: { increment: 1 },
               ...(newAttempts >= MAX_FAILED_ATTEMPTS
@@ -349,39 +291,53 @@ export function makeAuthController(env: Env) {
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: user.mongoId!,
+            actorUserId: authUser.id,
             metadata: { reason: 'invalid_password' },
           });
           throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
         }
 
-        // Reset failed attempts on successful login
-        const resetPromise = (user.failedLoginAttempts ?? 0) > 0 || user.lockoutUntil
+        // Password verified — sign tokens immediately (CPU-only, no I/O)
+        const accessToken = signAccessToken(env, authUser.id, authUser.roles as any);
+        const refreshToken = signRefreshToken(env, authUser.id, authUser.roles as any);
+
+        // Phase 2: Parallel — fetch full profile, wallet, reset lockout, audit log
+        // This runs concurrently for maximum speed.
+        const resetPromise = (authUser.failedLoginAttempts ?? 0) > 0 || authUser.lockoutUntil
           ? db().user.update({
-              where: { id: user.id },
+              where: { id: authUser.id },
               data: { failedLoginAttempts: 0, lockoutUntil: null },
             })
           : null;
 
-        // Sign tokens synchronously (fast, CPU-only)
-        const accessToken = signAccessToken(env, user.id, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
-
-        // Parallel: wallet + reset + audit (non-blocking for fast response)
-        const [wallet] = await Promise.all([
-          ensureWallet(user.id),
+        const [user, wallet] = await Promise.all([
+          db().user.findFirst({
+            where: { id: authUser.id },
+            select: {
+              id: true, mongoId: true, name: true, mobile: true, email: true,
+              avatar: true, role: true, roles: true, status: true,
+              parentCode: true, mediatorCode: true, brandCode: true,
+              isVerifiedByMediator: true, username: true,
+              upiId: true, qrCode: true, bankAccountNumber: true,
+              bankIfsc: true, bankName: true, bankHolderName: true,
+              kycStatus: true, connectedAgencies: true, pendingConnections: true,
+              generatedCodes: true, walletBalancePaise: true, walletPendingPaise: true,
+              createdAt: true, updatedAt: true,
+            },
+          }),
+          ensureWallet(authUser.id),
           resetPromise,
           writeAuditLog({
             req,
             action: 'AUTH_LOGIN_SUCCESS',
-            actorUserId: user.id,
-            actorRoles: user.roles as any,
-            metadata: { role: user.role },
+            actorUserId: authUser.id,
+            actorRoles: authUser.roles as any,
+            metadata: { role: authUser.role },
           }).catch(() => {}),
         ]);
 
         res.json({
-          user: toUiUser(pgUser(user), pgWallet(wallet)),
+          user: toUiUser(pgUser(user!), pgWallet(wallet)),
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {

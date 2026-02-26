@@ -63,7 +63,7 @@ export function ordersRoutes(env: Env): Router {
         let allowed = false;
 
         if (roles.includes('shopper')) {
-          // Check both PG id and mongoId
+          // Check user owns the order
           const pgUser = await db.user.findFirst({ where: idWhere(userId), select: { id: true } });
           allowed = !!pgUser && order.userId === pgUser.id;
         }

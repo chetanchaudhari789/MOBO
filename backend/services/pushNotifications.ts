@@ -1,6 +1,6 @@
 import webpush from 'web-push';
 import type { Env } from '../config/env.js';
-import type { OrderWorkflowStatus } from '../models/Order.js';
+import type { OrderWorkflowStatus } from '../generated/prisma/client.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 
@@ -70,7 +70,7 @@ export async function sendPushToUser(params: {
   let subscriptions: Array<{ endpoint: string; keysP256dh: string | null; keysAuth: string | null; expirationTime: Date | number | null }> = [];
   if (isPrismaAvailable()) {
     const db = prisma();
-    // Resolve userId (could be mongoId or PG UUID)
+    // Resolve userId (UUID or legacy mongoId)
     const pgUser = await db.user.findFirst({
       where: idWhere(params.userId),
       select: { id: true },
@@ -171,7 +171,7 @@ export async function notifyOrderWorkflowPush(params: {
     if (params.to === 'UNDER_REVIEW') {
       const mediatorCode = String(params.order?.managerName || '').trim();
       if (mediatorCode) {
-        // Find mediators from PG (primary), fall back to MongoDB
+        // Find mediators by mediator code
         let mediatorIds: string[] = [];
         if (isPrismaAvailable()) {
           const db = prisma();

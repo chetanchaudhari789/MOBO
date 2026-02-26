@@ -3,7 +3,6 @@ import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
 import { exportToGoogleSheet, refreshUserGoogleToken, type SheetExportRequest } from '../services/sheetsService.js';
 import { writeAuditLog } from '../services/audit.js';
-import { UserModel } from '../models/User.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 
@@ -57,41 +56,24 @@ export function sheetsRoutes(env: Env): Router {
       let sharingEmail: string | null = null;
       try {
         const userId = (req as any).auth?.userId;
-        if (userId) {
-          // Read from PG (primary), fall back to MongoDB
-          let refreshToken: string | null = null;
-          let pgUserId: string | null = null;
-          if (isPrismaAvailable()) {
-            const db = prisma();
-            const pgUser = await db.user.findFirst({
-              where: idWhere(userId),
-              select: { id: true, googleRefreshToken: true, googleEmail: true, email: true },
-            });
-            if (pgUser) {
-              refreshToken = pgUser.googleRefreshToken || null;
-              sharingEmail = pgUser.googleEmail || pgUser.email || null;
-              pgUserId = pgUser.id;
-            }
-          }
-          if (!refreshToken) {
-            // Fallback to MongoDB
-            const userDoc = await UserModel.findById(userId).select('+googleRefreshToken googleEmail email').lean();
-            refreshToken = (userDoc as any)?.googleRefreshToken || null;
-            sharingEmail = sharingEmail || (userDoc as any)?.googleEmail || (userDoc as any)?.email || null;
-          }
-          if (refreshToken) {
-            userAccessToken = await refreshUserGoogleToken(refreshToken, env);
-            if (!userAccessToken) {
-              // Token refresh failed — clear invalid tokens in both PG and MongoDB
-              if (isPrismaAvailable() && pgUserId) {
-                await prisma().user.update({
-                  where: { id: pgUserId },
+        if (userId && isPrismaAvailable()) {
+          const db = prisma();
+          const pgUser = await db.user.findFirst({
+            where: idWhere(userId),
+            select: { id: true, googleRefreshToken: true, googleEmail: true, email: true },
+          });
+          if (pgUser) {
+            const refreshToken = pgUser.googleRefreshToken || null;
+            sharingEmail = pgUser.googleEmail || pgUser.email || null;
+            if (refreshToken) {
+              userAccessToken = await refreshUserGoogleToken(refreshToken, env);
+              if (!userAccessToken) {
+                // Token refresh failed — clear invalid token
+                await db.user.update({
+                  where: { id: pgUser.id },
                   data: { googleRefreshToken: null },
                 }).catch(() => {});
               }
-              await UserModel.findByIdAndUpdate(userId, {
-                $unset: { googleRefreshToken: 1 },
-              });
             }
           }
         }

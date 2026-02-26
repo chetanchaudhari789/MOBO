@@ -412,12 +412,38 @@ export const aiLog = logger.child({ module: 'ai' });
 export const orderLog = logger.child({ module: 'orders' });
 export const walletLog = logger.child({ module: 'wallet' });
 export const notifLog = logger.child({ module: 'notifications' });
-export const migrationLog = logger.child({ module: 'migration' });
-export const seedLog = logger.child({ module: 'seed' });
 export const startupLog = logger.child({ module: 'startup' });
 export const securityLog = logger.child({ module: 'security' });
 export const cronLog = logger.child({ module: 'cron' });
 export const businessLog = logger.child({ module: 'business' });
+export const perfLog = logger.child({ module: 'performance' });
+
+// ─── Performance Tracing Utility ─────────────────────────────────────────────
+/**
+ * Lightweight performance timer for measuring operation latency.
+ * Usage:
+ *   const timer = startTimer('db_query');
+ *   await someOperation();
+ *   timer.end({ query: 'users', rows: 42 });
+ *
+ * Logs at 'info' for normal operations, 'warn' if duration > slowThresholdMs.
+ */
+export function startTimer(operation: string, slowThresholdMs = 500) {
+  const start = performance.now();
+  return {
+    end(meta?: Record<string, unknown>) {
+      const durationMs = Math.round(performance.now() - start);
+      const level = durationMs > slowThresholdMs ? 'warn' : 'info';
+      perfLog.log(level, `${operation} completed in ${durationMs}ms`, {
+        operation,
+        durationMs,
+        slow: durationMs > slowThresholdMs,
+        ...meta,
+      });
+      return durationMs;
+    },
+  };
+}
 
 // ─── Exported Utilities ──────────────────────────────────────────────────────
 export { sanitize, getSystemMetrics, maskEmail, maskMobile };

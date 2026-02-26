@@ -1,7 +1,7 @@
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import type { Env } from '../config/env.js';
-import type { OrderWorkflowStatus } from '../models/Order.js';
+import type { OrderWorkflowStatus } from '../generated/prisma/client.js';
 // pushOrderEvent import removed — events now handled inline
 import { orderLog } from '../config/logger.js';
 import { notifyOrderWorkflowPush } from './pushNotifications.js';

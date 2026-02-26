@@ -16,9 +16,10 @@ on:
 env:
   REGISTRY: gitea.local.coddicted.com
   IMAGE_NAME: mobo-backend
+  NODE_VERSION: '20'
+  NPM_VERSION: '11.6.2'
 
 jobs:
-
   build-and-test:
     runs-on: ubuntu-latest
 
@@ -26,24 +27,17 @@ jobs:
       NODE_ENV: test
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install PostgreSQL client and Flyway
-        run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client wget tar
-          wget -qO- https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/10.0.0/flyway-commandline-10.0.0-linux-x64.tar.gz | tar -xvz
-          sudo ln -s $(pwd)/flyway-10.0.0/flyway /usr/local/bin/flyway
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Pin npm version
-        run: npm i -g npm@11.6.2
+        run: npm i -g npm@${{ env.NPM_VERSION }}
 
       - name: Install dependencies
         run: npm ci
