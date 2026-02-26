@@ -108,8 +108,8 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
-      - name: Push Prisma schema to CI database
-        run: cd backend && npx prisma db push --skip-generate
+      - name: Apply Prisma migrations to CI database
+        run: cd backend && npx prisma migrate deploy
 
       - name: Run Vitest
         run: npm run test:backend
@@ -209,8 +209,8 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
-      - name: Push Prisma schema to CI database
-        run: cd backend && npx prisma db push --skip-generate
+      - name: Apply Prisma migrations to CI database
+        run: cd backend && npx prisma migrate deploy
 
       - name: Cache Playwright browsers
         id: pw-cache
@@ -278,9 +278,9 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
-      - name: Push Prisma schema to production database
+      - name: Apply Prisma migrations to production database
         if: env.DATABASE_URL != ''
-        run: cd backend && npx prisma db push --skip-generate
+        run: cd backend && npx prisma migrate deploy
 
       - name: Trigger Render backend deploy
         if: env.RENDER_DEPLOY_HOOK != ''

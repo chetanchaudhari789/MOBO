@@ -9,17 +9,16 @@
     "dev:e2e": "tsx watch index.e2e.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
-    "migrate": "tsx scripts/migrate.ts",
-    "migrate:status": "tsx scripts/migrate.ts --status",
     "test": "vitest run -c vitest.config.ts",
     "test:watch": "vitest",
     "lint": "eslint \"**/*.ts\"",
     "ai:check": "tsx scripts/checkAiKey.ts",
     "postinstall": "npx prisma generate",
     "pg:generate": "npx prisma generate",
-    "pg:push": "npx prisma db push",
-    "migrate:pg": "tsx scripts/flyway.ts",
-    "migrate:pg:status": "tsx scripts/flyway.ts info"
+    "pg:migrate:dev": "npx prisma migrate dev",
+    "pg:migrate:deploy": "npx prisma migrate deploy",
+    "pg:migrate:status": "npx prisma migrate status",
+    "pg:migrate:reset": "npx prisma migrate reset"
   },
   "dependencies": {
     "@google/genai": "^1.31.0",
