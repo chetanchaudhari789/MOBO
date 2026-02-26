@@ -21,7 +21,6 @@ function getDbUrl() {
 
 const dbUrl = getDbUrl();
 // Resolve MIGRATIONS_DIR dynamically based on where the script is executed from
-const isRoot = !__dirname.includes('backend/scripts') || process.cwd().endsWith('backend');
 const baseDir = process.cwd().endsWith('backend') ? process.cwd() : path.join(process.cwd(), 'backend');
 const MIGRATIONS_DIR = path.resolve(baseDir, 'db/migrations');
 
@@ -58,7 +57,7 @@ try {
     console.log(`Executing local Flyway: ${commandArgs.join(' ')}`);
     execSync(localCmd, { stdio: 'inherit' });
     process.exit(0);
-} catch (_error) {
+} catch {
     // Flyway locally not found, proceed to run via Docker
     console.log('Local Flyway binary not found, falling back to Docker...');
 }
@@ -100,7 +99,7 @@ console.log(`Executing Docker Flyway: ${commandArgs.join(' ')}`);
 
 try {
     execSync(dockerCmd, { stdio: 'inherit' });
-} catch (_error) {
+} catch {
     if (process.env.NODE_ENV === 'test') {
         console.warn('Docker Flyway fallback failed in test environment. Please install Flyway CLI natively or ensure Docker volume mounting works.');
     } else {

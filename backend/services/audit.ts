@@ -1,5 +1,4 @@
 import type { Request } from 'express';
-import { randomUUID } from 'node:crypto';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import logger from '../config/logger.js';
 

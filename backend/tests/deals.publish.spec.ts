@@ -23,7 +23,7 @@ describe('ops deals: publish', () => {
     const app = createApp(env);
     const db = prisma();
 
-    const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
+    const _agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
     const mediator = await login(app, E2E_ACCOUNTS.mediator.mobile, E2E_ACCOUNTS.mediator.password);
 
     const mediatorCode = E2E_ACCOUNTS.mediator.mediatorCode;
@@ -75,7 +75,7 @@ describe('ops deals: publish', () => {
     const app = createApp(env);
     const db = prisma();
 
-    const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
+    const _agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
     const mediator = await login(app, E2E_ACCOUNTS.mediator.mobile, E2E_ACCOUNTS.mediator.password);
 
     const mediatorCode = E2E_ACCOUNTS.mediator.mediatorCode;
@@ -127,7 +127,7 @@ describe('ops deals: publish', () => {
     const app = createApp(env);
     const db = prisma();
 
-    const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
+    const _agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
     const mediator = await login(app, E2E_ACCOUNTS.mediator.mobile, E2E_ACCOUNTS.mediator.password);
 
     const mediatorCode = E2E_ACCOUNTS.mediator.mediatorCode;

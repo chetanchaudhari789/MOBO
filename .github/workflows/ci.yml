@@ -354,7 +354,7 @@ jobs:
           cd backend
           # Determine schema based on branch
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            SCHEMA="buzzma"
+            SCHEMA="buzzma_production"
           else
             SCHEMA="buzzma_test"
           fi
@@ -369,11 +369,26 @@ jobs:
             const schema = '$SCHEMA';
             (async () => {
               await c.connect();
-              // Create schema if it doesn't exist
-              await c.query('CREATE SCHEMA IF NOT EXISTS ' + schema);
+              // Check if schema already exists
+              const res = await c.query(
+                \"SELECT 1 FROM information_schema.schemata WHERE schema_name = \$1\",
+                [schema]
+              );
+              if (res.rows.length === 0) {
+                // Schema does not exist — try to create it
+                try {
+                  await c.query('CREATE SCHEMA ' + schema);
+                  console.log('✅ Created schema \"' + schema + '\"');
+                } catch (createErr) {
+                  console.error('::error::Cannot create schema \"' + schema + '\":', createErr.message);
+                  process.exit(1);
+                }
+              } else {
+                console.log('✅ Schema \"' + schema + '\" already exists');
+              }
               // Set search_path for this session
               await c.query('SET search_path TO ' + schema + ', public');
-              console.log('✅ Schema \"' + schema + '\" ready, connectivity OK');
+              console.log('✅ Connectivity OK, search_path set');
               await c.end();
             })().catch(e => { console.error('::error::DB check failed:', e.message); process.exit(1); });
           "

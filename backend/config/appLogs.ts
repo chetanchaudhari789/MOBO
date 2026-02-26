@@ -24,11 +24,8 @@
  *
  * ─────────────────────────────────────────────────────────────────────────────
  */
-import logger, {
+import {
   logEvent,
-  authLog,
-  securityLog,
-  startupLog,
   dbLog,
   perfLog,
   getSystemMetrics,

@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog, pushLog, businessLog, walletLog } from '../config/logger.js';
-import { logChangeEvent, logErrorEvent } from '../config/appLogs.js';
+import { logChangeEvent } from '../config/appLogs.js';
 import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
 import {
   approveByIdSchema,
