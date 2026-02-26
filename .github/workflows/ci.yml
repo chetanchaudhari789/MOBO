@@ -109,7 +109,7 @@ jobs:
         run: npm -w @mobo/backend run pg:generate
 
       - name: Push Prisma schema to CI database
-        run: cd backend && npx prisma db push --accept-data-loss
+        run: cd backend && npx prisma db push --skip-generate
 
       - name: Run Vitest
         run: npm run test:backend
