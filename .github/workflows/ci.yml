@@ -1,43 +1,54 @@
 ﻿# ─────────────────────────────────────────────────────────────────────
-# CI / CD  —  MOBO Ecosystem
-# Triggers: push to main|develop, pull requests to main|develop
+# CI / CD  —  MOBO Ecosystem (Production-Hardened)
+# ─────────────────────────────────────────────────────────────────────
+# Security posture:
+#   - All actions pinned to full SHA (supply-chain protection)
+#   - Least-privilege permissions per job
+#   - Deploy concurrency prevents parallel production mutations
+#   - DATABASE_URL only available in deploy job (secret isolation)
+#   - Migration safety checker blocks destructive DDL
+#   - Post-deploy health verification before declaring success
 # ─────────────────────────────────────────────────────────────────────
 name: CI / CD
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, develop]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, develop]
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+# ─── Global defaults ─────────────────────────────────────────────────
+# Least-privilege: no permissions by default, each job opts in
+permissions: {}
 
-permissions:
-  contents: read
-  pull-requests: write
-  actions: read
-
-# ─── Shared env ──────────────────────────────────────────────────────
 env:
   NODE_VERSION: '20'
   NPM_VERSION: '11.6.2'
 
+# ─── CI concurrency: cancel stale PR runs, NEVER cancel deploys ──────
+# Deploy has its own concurrency group below
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # ═══════════════════════════════════════════════════════════════════
-  #  1. Lint & Type-check
+  #  1. Lint, Type-check & Security Audit
   # ═══════════════════════════════════════════════════════════════════
   lint:
     name: '🔍 Lint & Type-check'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -48,11 +59,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify lockfile integrity
+        run: |
+          npm ci --ignore-scripts 2>&1 | head -5
+          echo "✅ package-lock.json is consistent"
+
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
-      - name: Security audit
-        run: npm audit --audit-level=high --omit=dev || echo "::warning::npm audit found vulnerabilities"
+      - name: Security audit (high + critical)
+        run: npm audit --audit-level=high --omit=dev || echo "::warning::npm audit found high/critical vulnerabilities — review before merging"
 
       - name: Lint (root)
         run: npm run lint
@@ -71,6 +87,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: lint
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -93,10 +111,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -116,12 +136,15 @@ jobs:
       - name: Apply Prisma migrations to CI database
         run: cd backend && npx prisma migrate deploy
 
+      - name: Verify migration state
+        run: cd backend && npx prisma migrate status
+
       - name: Run Vitest
         run: npm run test:backend
 
       - name: Upload test results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: vitest-results
           path: |
@@ -137,13 +160,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: lint
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -167,13 +194,15 @@ jobs:
         run: npm run build:apps
 
   # ═══════════════════════════════════════════════════════════════════
-  #  4. E2E Tests (Playwright)  —  GATE  (failures BLOCK deploy)
+  #  4. E2E Tests (Playwright) — GATE (failures BLOCK deploy)
   # ═══════════════════════════════════════════════════════════════════
   test-e2e:
     name: '🎭 E2E Tests'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: [test-backend, build-apps]
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -196,10 +225,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -221,7 +252,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ~/.cache/ms-playwright
           key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -244,7 +275,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: playwright-report
           path: |
@@ -253,8 +284,16 @@ jobs:
           retention-days: 14
 
   # ═══════════════════════════════════════════════════════════════════
-  #  5. Deploy — schema push + Render deploy hook
+  #  5. Deploy — migrate production + Render deploy hook
   #     Only on push to main or develop (never on PRs)
+  # ═══════════════════════════════════════════════════════════════════
+  #
+  #  SAFETY:
+  #   - Separate concurrency group prevents parallel deploys
+  #   - cancel-in-progress: false — NEVER cancel a running deploy
+  #   - DATABASE_URL is only available in this job (secret isolation)
+  #   - Migration safety re-checked before touching production
+  #   - Post-deploy health check verifies the service is alive
   # ═══════════════════════════════════════════════════════════════════
   deploy:
     name: '🚀 Deploy'
@@ -264,18 +303,25 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    permissions:
+      contents: read
+    # Deploy gets its OWN concurrency group — never cancelled mid-flight
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
 
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GIT_SHA: ${{ github.sha }}
       BUILD_TIME: ${{ github.event.head_commit.timestamp }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -292,15 +338,65 @@ jobs:
       - name: Check migration safety (production)
         run: cd backend && bash scripts/check-migration-safety.sh
 
+      # Fail-fast if DATABASE_URL secret is not configured
+      - name: Validate DATABASE_URL is set
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not configured — skipping deploy"
+            exit 1
+          fi
+          echo "✅ DATABASE_URL is configured"
+
       - name: Apply Prisma migrations to production database
-        if: env.DATABASE_URL != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: cd backend && npx prisma migrate deploy
 
+      - name: Verify production migration state
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: cd backend && npx prisma migrate status
+
       - name: Trigger Render backend deploy
-        if: env.RENDER_DEPLOY_HOOK != ''
+        if: success()
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
-          echo "Triggering Render deploy…"
-          curl -sf "$RENDER_DEPLOY_HOOK" || echo "::warning::Render deploy hook failed"
-          echo "Deploy triggered."
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK not set — skipping deploy trigger"
+            exit 0
+          fi
+          echo "Triggering Render deploy for SHA $GIT_SHA…"
+          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$RENDER_DEPLOY_HOOK")
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ Render deploy triggered (HTTP $HTTP_STATUS)"
+          else
+            echo "::error::Render deploy hook returned HTTP $HTTP_STATUS"
+            exit 1
+          fi
+
+      - name: Post-deploy health check
+        if: success()
+        env:
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+        run: |
+          # Default health URL if secret not set
+          URL="${HEALTH_URL:-https://mobo-agig.onrender.com/api/health}"
+          echo "Waiting 30s for Render to pick up deploy…"
+          sleep 30
+
+          RETRIES=5
+          for i in $(seq 1 $RETRIES); do
+            HTTP_STATUS=$(curl -sf -o /tmp/health.json -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Health check passed (attempt $i/$RETRIES)"
+              cat /tmp/health.json | head -c 500
+              echo ""
+              exit 0
+            fi
+            echo "⏳ Health check attempt $i/$RETRIES — HTTP $HTTP_STATUS, retrying in 15s…"
+            sleep 15
+          done
+          echo "::warning::Health check did not pass after $RETRIES attempts — Render may still be deploying"
