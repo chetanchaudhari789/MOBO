@@ -31,6 +31,7 @@ jobs:
   lint:
     name: '🔍 Lint & Type-check'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,6 +69,7 @@ jobs:
   test-backend:
     name: '🧪 Backend Tests'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: lint
 
     services:
@@ -130,6 +132,7 @@ jobs:
   build-apps:
     name: '🏗️ Build Portals'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: lint
 
     steps:
@@ -166,6 +169,7 @@ jobs:
   test-e2e:
     name: '🎭 E2E Tests'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [test-backend, build-apps]
 
     services:
@@ -230,8 +234,9 @@ jobs:
 
       # ⛔  NO continue-on-error — E2E failures BLOCK the pipeline
       - name: Run Playwright E2E tests
+        timeout-minutes: 20
         env:
-          NODE_OPTIONS: '--max-old-space-size=1536 --no-deprecation'
+          NODE_OPTIONS: '--max-old-space-size=4096 --no-deprecation'
         run: npm run test:e2e
 
       - name: Upload Playwright report
@@ -251,6 +256,7 @@ jobs:
   deploy:
     name: '🚀 Deploy'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [test-e2e]
     if: >-
       github.event_name == 'push' &&

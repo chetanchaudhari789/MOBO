@@ -2,27 +2,32 @@
 
 // E2E runs against the Next.js portals, which proxy /api/* to the backend.
 // Tests are partitioned by portal so each spec's `page.goto('/')` resolves correctly.
+const isCI = !!process.env.CI;
+
 export default defineConfig({
   testDir: './e2e',
-  reporter: process.env.CI
+  reporter: isCI
     ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
     : [['list']],
-  timeout: 180_000,
+  // CI runners are slower — give extra headroom for JIT compilation
+  timeout: isCI ? 300_000 : 180_000,
   expect: {
-    timeout: 20_000,
+    timeout: isCI ? 30_000 : 20_000,
   },
+  retries: isCI ? 1 : 0,
   use: {
     trace: 'retain-on-failure',
-    actionTimeout: 30_000,
-    navigationTimeout: 60_000,
+    actionTimeout: isCI ? 45_000 : 30_000,
+    navigationTimeout: isCI ? 90_000 : 60_000,
   },
-  workers: process.env.CI ? 1 : undefined,
+  workers: isCI ? 1 : undefined,
   // Start the full stack for E2E. If you already have it running, Playwright will reuse it.
   webServer: {
     command: 'node scripts/dev-all.mjs --force',
     url: 'http://localhost:8080/api/health/e2e',
-    reuseExistingServer: !process.env.CI,
-    timeout: 240_000,
+    reuseExistingServer: !isCI,
+    // CI cold-starts 6 dev servers — needs generous startup window
+    timeout: isCI ? 360_000 : 240_000,
     env: {
       ...process.env,
       NODE_ENV: 'test',

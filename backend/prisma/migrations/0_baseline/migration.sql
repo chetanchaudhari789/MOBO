@@ -1,12 +1,3 @@
-﻿node.exe : Loaded Prisma config from prisma.config.ts.
-At line:1 char:1
-+ & "C:\Program Files\nodejs/node.exe" "C:\Users\LENOVO\AppData\Roaming ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (Loaded Prisma c...isma.config.ts. 
-   :String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
