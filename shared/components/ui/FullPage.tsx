@@ -50,6 +50,11 @@ export function FullPageError({
   onAction?: () => void;
   className?: string;
 }) {
+  // In production, never expose raw error messages — they may contain stack traces,
+  // database errors, or internal implementation details.
+  const isProd = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+  const safeDetails = isProd ? undefined : details;
+
   return (
     <div
       className={cn(
@@ -61,9 +66,9 @@ export function FullPageError({
         <CardContent className="p-8">
           <div className="text-lg font-extrabold text-slate-900">{title}</div>
           <div className="mt-1 text-sm font-medium text-slate-600">{description}</div>
-          {details ? (
-            <pre className="mt-4 text-xs bg-slate-100 border border-slate-200 rounded-xl p-3 overflow-auto text-slate-700">
-              {details}
+          {safeDetails ? (
+            <pre className="mt-4 text-xs bg-slate-100 border border-slate-200 rounded-xl p-3 overflow-auto text-slate-700 max-h-40">
+              {safeDetails}
             </pre>
           ) : null}
           {onAction ? (

@@ -72,6 +72,20 @@ function isOriginAllowed(origin: string, allowed: string[]): boolean {
   });
 }
 
+// ── In-flight request tracking (for graceful shutdown drain) ─────
+let inFlightRequests = 0;
+let drainResolve: (() => void) | null = null;
+
+export function getInFlightCount() { return inFlightRequests; }
+
+export function waitForDrain(timeoutMs: number): Promise<void> {
+  if (inFlightRequests <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    drainResolve = resolve;
+    setTimeout(resolve, timeoutMs);
+  });
+}
+
 export function createApp(env: Env) {
   const app = express();
 
@@ -79,6 +93,17 @@ export function createApp(env: Env) {
   initAiServiceConfig(env);
 
   app.disable('x-powered-by');
+
+  // Track in-flight requests for graceful shutdown draining.
+  // Must be registered BEFORE routes so every request is counted.
+  app.use((req, res, next) => {
+    inFlightRequests++;
+    res.on('close', () => {
+      inFlightRequests--;
+      if (inFlightRequests <= 0 && drainResolve) drainResolve();
+    });
+    next();
+  });
 
   // Response timing headers for performance monitoring.
   app.use(responseTimingMiddleware());

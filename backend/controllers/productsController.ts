@@ -9,6 +9,8 @@ import { writeAuditLog } from '../services/audit.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgDeal } from '../utils/pgMappers.js';
 import { idWhere } from '../utils/idWhere.js';
+import { orderLog, businessLog } from '../config/logger.js';
+import { logChangeEvent } from '../config/appLogs.js';
 
 function db() { return prisma(); }
 
@@ -133,6 +135,8 @@ export function makeProductsController() {
           entityId: mongoId,
           metadata: { dealId, campaignId: deal.campaignId, mediatorCode },
         });
+        orderLog.info('Order redirect tracked', { orderId: mongoId, dealId, campaignId: deal.campaignId, mediatorCode, userId: requesterId });
+        logChangeEvent({ actorUserId: requesterId, entityType: 'Order', entityId: mongoId, action: 'STATUS_CHANGE', changedFields: ['workflowStatus'], before: {}, after: { workflowStatus: 'REDIRECTED' } });
 
         const ts = new Date().toISOString();
         publishRealtime({

@@ -480,6 +480,7 @@ export const securityLog = logger.child({ module: 'security' });
 export const cronLog = logger.child({ module: 'cron' });
 export const businessLog = logger.child({ module: 'business' });
 export const perfLog = logger.child({ module: 'performance' });
+export const pushLog = logger.child({ module: 'push' });
 
 // ─── Performance Tracing Utility ─────────────────────────────────────────────
 /**

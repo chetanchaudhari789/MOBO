@@ -32,25 +32,41 @@ let _geminiLastFailTimestamp = 0;
 let _circuitBreakerThreshold = 3;      // overridden by env
 let _circuitBreakerCooldownMs = 300_000; // 5 min, overridden by env
 
+/** Circuit state for proper half-open handling. */
+let _circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
+
 function isGeminiCircuitOpen(): boolean {
-  if (_geminiConsecutiveFails < _circuitBreakerThreshold) return false;
+  if (_circuitState === 'CLOSED') return false;
+  if (_circuitState === 'HALF_OPEN') return false; // allow one probe request
+
+  // Circuit is OPEN — check if cooldown has expired
   const elapsed = Date.now() - _geminiLastFailTimestamp;
   if (elapsed >= _circuitBreakerCooldownMs) {
-    // Cooldown expired — half-open: allow retry
-    _geminiConsecutiveFails = 0;
+    // Transition to HALF_OPEN: allow exactly one probe request
+    _circuitState = 'HALF_OPEN';
+    aiLog.info(`[Circuit Breaker] HALF_OPEN — allowing probe request after ${Math.round(elapsed / 1000)}s cooldown`);
     return false;
   }
   return true; // circuit is OPEN → skip Gemini
 }
 
 function recordGeminiSuccess(): void {
+  if (_circuitState === 'HALF_OPEN') {
+    aiLog.info('[Circuit Breaker] CLOSED — probe request succeeded');
+  }
   _geminiConsecutiveFails = 0;
+  _circuitState = 'CLOSED';
 }
 
 function recordGeminiFailure(): void {
   _geminiConsecutiveFails++;
   _geminiLastFailTimestamp = Date.now();
-  if (_geminiConsecutiveFails >= _circuitBreakerThreshold) {
+  if (_circuitState === 'HALF_OPEN') {
+    // Probe failed — immediately re-open the circuit
+    _circuitState = 'OPEN';
+    aiLog.warn(`[Circuit Breaker] OPEN (probe failed) — re-opening for ${_circuitBreakerCooldownMs / 1000}s.`);
+  } else if (_geminiConsecutiveFails >= _circuitBreakerThreshold) {
+    _circuitState = 'OPEN';
     aiLog.warn(`[Circuit Breaker] OPEN — ${_geminiConsecutiveFails} consecutive Gemini failures. Skipping Gemini for ${_circuitBreakerCooldownMs / 1000}s.`);
   }
 }
@@ -106,14 +122,34 @@ async function _initOcrPool(): Promise<void> {
   }
 }
 
-/** Get a worker from the pool or create a fresh one on demand. */
+/** Maximum total OCR workers (pool + temporary) to prevent OOM under burst load. */
+const MAX_TOTAL_OCR_WORKERS = Math.max(OCR_POOL_SIZE + 4, 8);
+let _activeOcrWorkerCount = 0;
+
+/** Get a worker from the pool or create a fresh one on demand (bounded). */
 async function acquireOcrWorker(): Promise<Awaited<ReturnType<typeof createWorker>>> {
   // Lazy-init pool on first call
   if (!_ocrPoolReady) _ocrPoolReady = _initOcrPool();
   await _ocrPoolReady;
 
   const w = _ocrPool.pop();
-  if (w) return w;
+  if (w) {
+    _activeOcrWorkerCount++;
+    return w;
+  }
+
+  // Cap total workers to prevent memory exhaustion
+  if (_activeOcrWorkerCount >= MAX_TOTAL_OCR_WORKERS) {
+    aiLog.warn(`[OCR] Worker limit reached (${_activeOcrWorkerCount}/${MAX_TOTAL_OCR_WORKERS}). Waiting for release...`);
+    // Wait briefly for a worker to be returned to the pool
+    await new Promise((r) => setTimeout(r, 500));
+    const retryW = _ocrPool.pop();
+    if (retryW) { _activeOcrWorkerCount++; return retryW; }
+    // If still none available, create one anyway but log a warning
+    aiLog.warn('[OCR] Creating overflow worker beyond limit — request will proceed but memory pressure is high');
+  }
+
+  _activeOcrWorkerCount++;
   // Pool exhausted — create a temporary worker
   return createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH });
 }
@@ -121,6 +157,7 @@ async function acquireOcrWorker(): Promise<Awaited<ReturnType<typeof createWorke
 /** Return a worker to the pool (or terminate if pool is full). */
 async function releaseOcrWorker(worker: Awaited<ReturnType<typeof createWorker>> | null, hadError = false): Promise<void> {
   if (!worker) return;
+  _activeOcrWorkerCount = Math.max(0, _activeOcrWorkerCount - 1);
   // If the worker errored, it may be in a broken state. Terminate and create a fresh one.
   if (hadError) {
     try { await worker.terminate(); } catch { /* ignore */ }
@@ -309,6 +346,10 @@ function sanitizeUserMessage(env: Env, message: string): string {
 
   // Reject prompt injection attempts before further processing.
   if (containsPromptInjection(message)) {
+    aiLog.warn('[Security] Prompt injection attempt detected and blocked', {
+      inputLength: message.length,
+      preview: message.slice(0, 80),
+    });
     return 'How can I help you today?';
   }
 
@@ -2548,6 +2589,7 @@ export async function extractOrderDetailsWithAi(
       // Wrap in a timeout to prevent hangs on maliciously-crafted images
       const PREPROCESS_TIMEOUT = 15_000; // 15 seconds max per image
       try {
+        let preprocessTimer: ReturnType<typeof setTimeout>;
         const result = await Promise.race([
           (async () => {
         const rawBuf = getImageBuffer(base64);
@@ -2599,10 +2641,10 @@ export async function extractOrderDetailsWithAi(
 
         return `data:image/jpeg;base64,${processed.toString('base64')}`;
           })(),
-          new Promise<string>((_, reject) =>
-            setTimeout(() => reject(new Error('Preprocessing timeout')), PREPROCESS_TIMEOUT)
-          ),
-        ]);
+          new Promise<string>((_, reject) => {
+            preprocessTimer = setTimeout(() => reject(new Error('Preprocessing timeout')), PREPROCESS_TIMEOUT);
+          }),
+        ]).finally(() => clearTimeout(preprocessTimer));
         return result;
       } catch (err) {
         aiLog.warn('OCR preprocessing failed, using original image', { error: err });

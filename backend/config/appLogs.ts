@@ -241,7 +241,12 @@ export type ChangeAction =
   | 'INVITE_REVOKED'
   | 'INVITE_DELETED'
   | 'MEDIATOR_INVITE_CREATED'
-  | 'BUYER_INVITE_CREATED';
+  | 'BUYER_INVITE_CREATED'
+  // Business operations – tickets
+  | 'TICKET_CREATED'
+  | 'TICKET_STATUS_CHANGE'
+  // Business operations – orders/products
+  | 'ORDER_REDIRECT_CREATED';
 
 export interface ChangeEventPayload {
   /** Who made the change. */

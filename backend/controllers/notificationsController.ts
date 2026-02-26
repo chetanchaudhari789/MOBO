@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import { paiseToRupees } from '../utils/money.js';
 import { getRequester } from '../services/authz.js';
 import { safeIso } from '../utils/uiMappers.js';
+import { businessLog } from '../config/logger.js';
 
 function db() { return prisma(); }
 
@@ -223,6 +224,7 @@ export function makeNotificationsController() {
 
         // Sort newest-first and cap.
         notifications.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+        businessLog.info('Notifications listed', { userId, role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other', count: Math.min(notifications.length, 50) });
         res.json(notifications.slice(0, 50));
       } catch (err) {
         next(err);

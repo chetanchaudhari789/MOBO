@@ -19,10 +19,14 @@ export class AppError extends Error {
 }
 
 export function notFoundHandler(req: Request, res: Response): void {
+  // Don't leak internal route paths in production — only expose the HTTP method.
+  const isProd = process.env.NODE_ENV === 'production';
   res.status(404).json({
     error: {
       code: 'NOT_FOUND',
-      message: `Route not found: ${req.method} ${req.path}`,
+      message: isProd
+        ? 'The requested endpoint does not exist.'
+        : `Route not found: ${req.method} ${req.path}`,
     },
   });
 }
@@ -36,12 +40,24 @@ export function errorHandler(
   // requestId is kept for internal logging only — never exposed in API responses.
   const requestId = String((res.locals as any)?.requestId || res.getHeader?.('x-request-id') || '').trim();
 
+  // Guard: if headers already sent (e.g., during SSE streaming), we can't write another response.
+  if (res.headersSent) {
+    logger.error('Error after headers sent — cannot respond', {
+      requestId,
+      method: req.method,
+      route: req.originalUrl,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       error: {
         code: err.code,
         message: err.message,
         details: err.details,
+        ...(requestId ? { requestId } : {}),
       },
     });
     return;
@@ -247,6 +263,7 @@ export function errorHandler(
     error: {
       code: 'INTERNAL_SERVER_ERROR',
       message,
+      ...(requestId ? { requestId } : {}),
     },
   });
 }

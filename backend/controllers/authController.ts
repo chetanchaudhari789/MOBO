@@ -551,11 +551,15 @@ export function makeAuthController(env: Env) {
           const roles = body.role === 'agency' ? ['agency'] : ['mediator'];
           const mediatorCodePrefix = body.role === 'agency' ? 'AGY' : 'MED';
           let mediatorCode = generateHumanCode(mediatorCodePrefix);
-          for (let i = 0; i < 5; i += 1) {
+          let codeIsUnique = false;
+          for (let i = 0; i < 10; i += 1) {
             // eslint-disable-next-line no-await-in-loop
             const codeExists = await tx.user.findFirst({ where: { mediatorCode }, select: { id: true } });
-            if (!codeExists) break;
+            if (!codeExists) { codeIsUnique = true; break; }
             mediatorCode = generateHumanCode(mediatorCodePrefix);
+          }
+          if (!codeIsUnique) {
+            throw new AppError(500, 'CODE_GENERATION_FAILED', 'Unable to generate a unique code; please retry');
           }
 
           const mongoId = randomUUID();
@@ -674,11 +678,15 @@ export function makeAuthController(env: Env) {
 
           // Generate a stable brand code for downstream linking (Brand -> Agency connections).
           let brandCode = generateHumanCode('BRD');
-          for (let i = 0; i < 5; i += 1) {
+          let brandCodeUnique = false;
+          for (let i = 0; i < 10; i += 1) {
             // eslint-disable-next-line no-await-in-loop
             const exists = await tx.user.findFirst({ where: { brandCode }, select: { id: true } });
-            if (!exists) break;
+            if (!exists) { brandCodeUnique = true; break; }
             brandCode = generateHumanCode('BRD');
+          }
+          if (!brandCodeUnique) {
+            throw new AppError(500, 'CODE_GENERATION_FAILED', 'Unable to generate a unique brand code; please retry');
           }
 
           const mongoId = randomUUID();

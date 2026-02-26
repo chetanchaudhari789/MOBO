@@ -63,24 +63,37 @@ export function healthRoutes(env: Env): Router {
   });
 
   // ── Full health (/health) — detailed for dashboards ──────────────
-  router.get('/health', async (_req, res) => {
+  router.get('/health', async (req, res) => {
     const pgOk = await pingPg();
     const uptimeSec = Math.floor(process.uptime());
-    const memMB = Math.round(process.memoryUsage.rss() / 1024 / 1024);
+    const mem = process.memoryUsage();
+    const memMB = Math.round(mem.rss / 1024 / 1024);
+
+    // Only expose internal diagnostics to admin/ops tokens or local requests.
+    const isPrivileged = (req as any).auth?.roles?.some?.((r: string) => r === 'admin' || r === 'ops');
+    const isLocal = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+
+    const base = {
+      status: pgOk ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+      database: { status: pgOk ? 'connected' : 'disconnected' },
+    };
+
+    // Public callers get minimal info — no PID, node version, memory.
+    if (!isPrivileged && !isLocal) {
+      res.status(pgOk ? 200 : 503).json(base);
+      return;
+    }
 
     res.status(pgOk ? 200 : 503).json({
-      status: pgOk ? 'ok' : 'degraded',
+      ...base,
       version: BUILD_SHA,
       buildTime: BUILD_TIME,
-      timestamp: new Date().toISOString(),
       uptime: uptimeSec,
       memoryMB: memMB,
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
       pid: process.pid,
       nodeVersion: process.version,
-      database: {
-        status: pgOk ? 'connected' : 'disconnected',
-        postgres: { status: pgOk ? 'connected' : 'disconnected' },
-      },
     });
   });
 

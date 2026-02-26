@@ -211,6 +211,7 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
 
 /**
  * Lightweight ping to check if the PG connection is alive.
+ * Attempts auto-reconnection (once) if the connection has dropped.
  * Returns true if the connection is healthy, false otherwise.
  * Used by the health endpoint for real connectivity checks.
  */
@@ -219,7 +220,19 @@ export async function pingPg(): Promise<boolean> {
   try {
     await _prisma.$queryRawUnsafe('SELECT 1');
     return true;
-  } catch {
+  } catch (err) {
+    // Connection may have dropped — attempt a single reconnection.
+    dbLog.warn('PG ping failed — attempting reconnection', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    try {
+      _prisma = null; // Clear stale client
+      await connectPrisma(1); // Single attempt reconnect
+      if (_prisma) {
+        dbLog.info('PG reconnected successfully after ping failure');
+        return true;
+      }
+    } catch { /* reconnection failed — fall through */ }
     return false;
   }
 }

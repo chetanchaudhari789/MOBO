@@ -358,6 +358,7 @@ model Brand {
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([deletedAt, status])
   @@map("brands")
 }
 
@@ -378,6 +379,7 @@ model Agency {
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([deletedAt, status])
   @@map("agencies")
 }
 
@@ -399,6 +401,7 @@ model MediatorProfile {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([parentAgencyCode])
   @@map("mediator_profiles")
 }
 
@@ -462,6 +465,7 @@ model Campaign {
   orders OrderItem[]
 
   @@index([status, brandUserId, createdAt(sort: Desc)])
+  @@index([brandUserId])
   @@index([deletedAt, createdAt(sort: Desc)])
   @@map("campaigns")
 }
@@ -504,6 +508,7 @@ model Deal {
   @@unique([campaignId, mediatorCode])
   @@index([mediatorCode, createdAt(sort: Desc)])
   @@index([active])
+  @@index([deletedAt, active])
   @@map("deals")
 }
 
@@ -585,8 +590,8 @@ model Order {
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  user      User        @relation("OrderUser", fields: [userId], references: [id])
-  brandUser User?       @relation("OrderBrandUser", fields: [brandUserId], references: [id])
+  user      User        @relation("OrderUser", fields: [userId], references: [id], onDelete: Restrict)
+  brandUser User?       @relation("OrderBrandUser", fields: [brandUserId], references: [id], onDelete: Restrict)
   items     OrderItem[]
 
   @@index([userId, createdAt(sort: Desc)])
@@ -603,6 +608,7 @@ model Order {
   @@index([externalOrderId])                       // duplicate-check during order creation
   @@index([userId, workflowStatus, deletedAt])     // buyer dashboard filtered listing
   @@index([brandUserId, workflowStatus, deletedAt]) // brand dashboard filtered listing
+  @@index([buyerMobile, deletedAt])                  // velocity check lookups
   @@map("orders")
 }
 
@@ -622,7 +628,7 @@ model OrderItem {
   brandName            String? @map("brand_name")
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  campaign Campaign @relation(fields: [campaignId], references: [id])
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
   @@index([campaignId])
@@ -647,7 +653,7 @@ model Wallet {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  owner        User          @relation(fields: [ownerUserId], references: [id])
+  owner        User          @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
   transactions Transaction[]
   payouts      Payout[]
 
@@ -719,8 +725,8 @@ model Payout {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  beneficiary User   @relation(fields: [beneficiaryUserId], references: [id])
-  wallet      Wallet @relation(fields: [walletId], references: [id])
+  beneficiary User   @relation(fields: [beneficiaryUserId], references: [id], onDelete: Restrict)
+  wallet      Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
 
   @@unique([provider, providerRef])
   @@index([status, requestedAt(sort: Desc)])
@@ -759,7 +765,7 @@ model Invite {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  creator User? @relation("InviteCreatedBy", fields: [createdBy], references: [id])
+  creator User? @relation("InviteCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
 
   @@index([status, expiresAt])
   @@index([code, status, useCount])
@@ -790,7 +796,7 @@ model Ticket {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([status, createdAt(sort: Desc)])
   @@index([userId, deletedAt, createdAt(sort: Desc)]) // user-specific ticket listing
@@ -829,8 +835,8 @@ model Suspension {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  target User @relation("SuspensionTarget", fields: [targetUserId], references: [id])
-  admin  User @relation("SuspensionAdmin", fields: [adminUserId], references: [id])
+  target User @relation("SuspensionTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  admin  User @relation("SuspensionAdmin", fields: [adminUserId], references: [id], onDelete: Restrict)
 
   @@index([targetUserId, createdAt(sort: Desc)])
   @@map("suspensions")
@@ -851,7 +857,7 @@ model AuditLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  actor User? @relation(fields: [actorUserId], references: [id])
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([createdAt(sort: Desc), action])
   @@index([entityType, entityId, createdAt(sort: Desc)])

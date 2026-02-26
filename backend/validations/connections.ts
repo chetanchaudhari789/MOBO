@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId');
+// Accept both legacy MongoDB ObjectIds (24 hex chars) and PostgreSQL UUIDs
+const entityId = z.string().regex(
+  /^([0-9a-fA-F]{24}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/,
+  'Invalid ID format (expected ObjectId or UUID)',
+);
 
 export const requestBrandConnectionSchema = z.object({
   brandCode: z.string().min(2).max(64),
@@ -8,7 +12,7 @@ export const requestBrandConnectionSchema = z.object({
 
 export const resolveBrandConnectionSchema = z.object({
   // UI historically sends agencyId; some internal tools send agencyCode.
-  agencyId: objectId.optional(),
+  agencyId: entityId.optional(),
   agencyCode: z.string().min(2).max(128).optional(),
   action: z.enum(['approve', 'reject']).default('approve'),
 }).refine((v) => Boolean(v.agencyId || v.agencyCode), {

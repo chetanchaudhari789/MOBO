@@ -185,6 +185,26 @@ function assertOnlineForWrite(init?: RequestInit) {
 /** Default request timeout (60s). Increased for AI endpoints that may take 15-45s. */
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+/** Max retries for transient failures (502, 503, 429, network errors). */
+const MAX_TRANSIENT_RETRIES = 2;
+
+/** Base delay in ms for exponential backoff (doubled each retry). */
+const RETRY_BASE_DELAY_MS = 800;
+
+/** HTTP status codes that are safe to retry (server-side transient errors). */
+const RETRYABLE_STATUS_CODES = new Set([502, 503, 429]);
+
+/** Returns true if the method is idempotent and safe to retry automatically. */
+function isIdempotentMethod(init?: RequestInit): boolean {
+  const method = String(init?.method || 'GET').toUpperCase();
+  return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+}
+
+/** Sleep utility for retry backoff. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   // If the caller already provides an AbortSignal, respect it.
   if (init?.signal) return fetch(url, init).catch(wrapFetchError);
@@ -193,6 +213,41 @@ function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, { ...init, signal: controller.signal })
     .catch(wrapFetchError)
     .finally(() => clearTimeout(timer));
+}
+
+/**
+ * Fetch with automatic retry for transient failures (502, 503, 429, network errors).
+ * Only retries idempotent requests (GET/HEAD/OPTIONS) to avoid duplicating side effects.
+ * Uses exponential backoff: 800ms → 1600ms.
+ */
+async function fetchWithRetry(url: string, init?: RequestInit): Promise<Response> {
+  const canRetry = isIdempotentMethod(init);
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, init);
+
+      // Retry on transient server errors for idempotent requests only
+      if (canRetry && RETRYABLE_STATUS_CODES.has(res.status) && attempt < MAX_TRANSIENT_RETRIES) {
+        // Respect Retry-After header if present (cap at 10s)
+        const retryAfter = res.headers.get('Retry-After');
+        const delay = retryAfter
+          ? Math.min(parseInt(retryAfter, 10) * 1000 || RETRY_BASE_DELAY_MS, 10_000)
+          : RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+        await sleep(delay);
+        continue;
+      }
+
+      return res;
+    } catch (err) {
+      // Retry network/timeout errors for idempotent requests only
+      if (canRetry && attempt < MAX_TRANSIENT_RETRIES && (isNetworkError(err) || isTimeoutError(err))) {
+        await sleep(RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 /** Convert raw fetch errors (network, abort) into user-friendly Error instances. */
@@ -208,7 +263,7 @@ function wrapFetchError(err: unknown): never {
 
 async function fetchJson(path: string, init?: RequestInit): Promise<any> {
   assertOnlineForWrite(init);
-  const res = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(init));
+  const res = await fetchWithRetry(`${API_URL}${path}`, withRequestId(init));
   const payload = await readPayloadSafe(res);
 
   if (!res.ok && isAuthError(res, payload)) {
@@ -218,7 +273,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
         ...init,
         headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
       };
-      const retryRes = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(retryInit));
+      const retryRes = await fetchWithRetry(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, httpStatusToFriendlyMessage(retryRes.status));
       return fixMojibakeDeep(retryPayload);
@@ -233,7 +288,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<any> {
 
 async function fetchOk(path: string, init?: RequestInit): Promise<void> {
   assertOnlineForWrite(init);
-  const res = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(init));
+  const res = await fetchWithRetry(`${API_URL}${path}`, withRequestId(init));
   const payload = await readPayloadSafe(res);
 
   if (!res.ok && isAuthError(res, payload)) {
@@ -243,7 +298,7 @@ async function fetchOk(path: string, init?: RequestInit): Promise<void> {
         ...init,
         headers: { ...(init?.headers || {}), Authorization: `Bearer ${refreshed.accessToken}` },
       };
-      const retryRes = await fetchWithTimeout(`${API_URL}${path}`, withRequestId(retryInit));
+      const retryRes = await fetchWithRetry(`${API_URL}${path}`, withRequestId(retryInit));
       const retryPayload = await readPayloadSafe(retryRes);
       if (!retryRes.ok) throw toErrorFromPayload(retryPayload, httpStatusToFriendlyMessage(retryRes.status));
       return;

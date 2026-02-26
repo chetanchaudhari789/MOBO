@@ -99,14 +99,24 @@ export function realtimeRoutes(env: Env) {
 
     let cleaned = false;
     let ping: ReturnType<typeof setInterval> | null = null;
+    let maxLifetimeTimer: ReturnType<typeof setTimeout> | null = null;
     let unsubscribe: (() => void) | null = null;
     let eventsDelivered = 0;
+
+    // Maximum stream lifetime: 4 hours. Forces client to reconnect,
+    // preventing indefinite connections from exhausting server resources.
+    const MAX_STREAM_LIFETIME_MS = 4 * 60 * 60 * 1000;
 
     const cleanup = () => {
       if (cleaned) return;
       cleaned = true;
       try {
         if (ping) clearInterval(ping);
+      } catch {
+        // ignore
+      }
+      try {
+        if (maxLifetimeTimer) clearTimeout(maxLifetimeTimer);
       } catch {
         // ignore
       }
@@ -153,7 +163,14 @@ export function realtimeRoutes(env: Env) {
         cleanup();
       }
     }, 25_000);
-
+    // Close the stream after the maximum lifetime.
+    // The client should auto-reconnect via EventSource.
+    maxLifetimeTimer = setTimeout(() => {
+      realtimeLog.info('SSE stream max lifetime reached', { requestId, userId });
+      writeSse(res, { event: 'reconnect', data: { reason: 'max_lifetime' } });
+      cleanup();
+    }, MAX_STREAM_LIFETIME_MS);
+    maxLifetimeTimer.unref();
     req.on('close', cleanup);
     req.on('aborted', cleanup);
     res.on('close', cleanup);

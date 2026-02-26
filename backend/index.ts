@@ -3,7 +3,7 @@ import { loadDotenv } from './config/dotenvLoader.js';
 loadDotenv();
 import { loadEnv } from './config/env.js';
 import { connectPrisma, disconnectPrisma, isPrismaAvailable } from './database/prisma.js';
-import { createApp } from './app.js';
+import { createApp, getInFlightCount, waitForDrain } from './app.js';
 import type { Server } from 'node:http';
 import { startupLog, logEvent, getSystemMetrics } from './config/logger.js';
 import { logAvailabilityEvent, logDatabaseEvent, startAvailabilityMonitor, stopAvailabilityMonitor } from './config/appLogs.js';
@@ -14,25 +14,6 @@ let server: Server | null = null;
 let shuttingDown = false;
 const shutdownTimeoutMs = Number(process.env.SHUTDOWN_TIMEOUT_MS) || 30_000;
 
-// ── In-flight request tracking ───────────────────────────────────────
-// Allows graceful shutdown to wait for active requests to complete.
-let inFlightRequests = 0;
-let drainResolve: (() => void) | null = null;
-
-function onRequestStart() { inFlightRequests++; }
-function onRequestEnd() {
-  inFlightRequests--;
-  if (inFlightRequests <= 0 && drainResolve) drainResolve();
-}
-
-function waitForDrain(timeoutMs: number): Promise<void> {
-  if (inFlightRequests <= 0) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    drainResolve = resolve;
-    setTimeout(resolve, timeoutMs);
-  });
-}
-
 // ── Graceful shutdown ────────────────────────────────────────────────
 async function shutdown(signal: string) {
   if (shuttingDown) return;
@@ -41,7 +22,7 @@ async function shutdown(signal: string) {
   setReady(false); // immediately stop accepting new traffic via health probes
 
   startupLog.info(`Received ${signal}. Shutting down gracefully…`, {
-    inFlightRequests,
+    inFlightRequests: getInFlightCount(),
     shutdownTimeoutMs,
   });
 
@@ -49,11 +30,11 @@ async function shutdown(signal: string) {
     component: 'backend',
     status: 'stopping',
     uptimeSeconds: Math.floor(process.uptime()),
-    metadata: { signal, inFlightRequests },
+    metadata: { signal, inFlightRequests: getInFlightCount() },
   });
 
   const forceTimer = setTimeout(() => {
-    startupLog.error('Force shutdown after timeout', { inFlightRequests });
+    startupLog.error('Force shutdown after timeout', { inFlightRequests: getInFlightCount() });
     process.exit(1);
   }, shutdownTimeoutMs);
   forceTimer.unref();
@@ -67,8 +48,9 @@ async function shutdown(signal: string) {
 
     // 2. Wait for in-flight requests to drain (up to half the shutdown budget)
     const drainBudget = Math.floor(shutdownTimeoutMs * 0.6);
-    if (inFlightRequests > 0) {
-      startupLog.info(`Draining ${inFlightRequests} in-flight request(s)…`, { drainBudget });
+    const currentInFlight = getInFlightCount();
+    if (currentInFlight > 0) {
+      startupLog.info(`Draining ${currentInFlight} in-flight request(s)…`, { drainBudget });
       await waitForDrain(drainBudget);
     }
   } catch (err) {
@@ -129,13 +111,6 @@ async function main() {
   startupLog.info('PostgreSQL connected — primary database ready');
 
   const app = createApp(env);
-
-  // Track in-flight requests for graceful draining.
-  app.use((req, res, next) => {
-    onRequestStart();
-    res.on('close', onRequestEnd);
-    next();
-  });
 
   server = app.listen(env.PORT, () => {
     // ── Server hardening for reverse proxy (ALB/NGINX/Render) ──

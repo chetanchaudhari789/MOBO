@@ -7,6 +7,7 @@ export function getRequester(req: Request) {
   const roles = req.auth?.roles ?? [];
   const user = req.auth?.user;
   if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
+  if (!pgUserId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing PG user ID — token may be stale');
   return { userId, pgUserId: pgUserId as string, roles, user };
 }
 

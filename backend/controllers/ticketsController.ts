@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
-import { orderLog } from '../config/logger.js';
+import { orderLog, businessLog } from '../config/logger.js';
+import { logChangeEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { createTicketSchema, updateTicketSchema } from '../validations/tickets.js';
 import { toUiTicket, toUiTicketForBrand } from '../utils/uiMappers.js';
@@ -205,6 +206,8 @@ export function makeTicketsController() {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
         await writeAuditLog({ req, action: 'TICKET_CREATED', entityType: 'Ticket', entityId: String(mapped._id), metadata: { issueType: body.issueType, orderId: body.orderId, actorRole: role } });
+        businessLog.info('Ticket created', { ticketId: String(mapped._id), issueType: body.issueType, orderId: body.orderId, role });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: String(mapped._id), action: 'TICKET_CREATED', changedFields: ['status', 'issueType'], before: {}, after: { status: 'Open', issueType: body.issueType } });
 
         res.status(201).json(toUiTicket(mapped));
       } catch (err) {
@@ -252,6 +255,8 @@ export function makeTicketsController() {
           : (previousStatus === 'Resolved' || previousStatus === 'Rejected') && body.status === 'Open' ? 'TICKET_REOPENED'
           : 'TICKET_UPDATED';
         await writeAuditLog({ req, action: auditAction, entityType: 'Ticket', entityId: id, metadata: { previousStatus, newStatus: body.status, actorRole: String(user?.role || roles[0] || '') } });
+        businessLog.info(`Ticket ${auditAction.toLowerCase().replace('ticket_', '')}`, { ticketId: id, previousStatus, newStatus: body.status });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'TICKET_STATUS_CHANGE', changedFields: ['status'], before: { status: previousStatus }, after: { status: body.status } });
 
         res.json(toUiTicket(mapped));
       } catch (err) {
@@ -290,6 +295,8 @@ export function makeTicketsController() {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
         await writeAuditLog({ req, action: 'TICKET_DELETED', entityType: 'Ticket', entityId: id, metadata: { status: String(existing.status) } });
+        businessLog.info('Ticket deleted', { ticketId: id, status: String(existing.status) });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'DELETE', changedFields: ['deletedAt'], before: { status: String(existing.status) }, after: { deleted: true } });
 
         res.json({ ok: true });
       } catch (err) {

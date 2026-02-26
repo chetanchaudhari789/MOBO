@@ -159,6 +159,10 @@ export function toUiDeal(d: any) {
 }
 
 export function toUiOrder(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrder: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
@@ -168,10 +172,10 @@ export function toUiOrder(o: any) {
   const hasRatingProof = !!o.screenshots?.rating;
   const hasReturnWindowProof = !!o.screenshots?.returnWindow;
 
-  const orderVerifiedAt = o.verification?.order?.verifiedAt ? new Date(o.verification.order.verifiedAt) : null;
-  const reviewVerifiedAt = o.verification?.review?.verifiedAt ? new Date(o.verification.review.verifiedAt) : null;
-  const ratingVerifiedAt = o.verification?.rating?.verifiedAt ? new Date(o.verification.rating.verifiedAt) : null;
-  const returnWindowVerifiedAt = o.verification?.returnWindow?.verifiedAt ? new Date(o.verification.returnWindow.verifiedAt) : null;
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
 
   const requiredSteps: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview ? (['review'] as const) : []),
@@ -280,6 +284,10 @@ export function toUiOrder(o: any) {
 
 // Brand must never receive buyer PII (name, phone, etc.) but CAN see proof artifacts.
 export function toUiOrderForBrand(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrderForBrand: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
@@ -289,10 +297,10 @@ export function toUiOrderForBrand(o: any) {
   const hasRatingProof = !!o.screenshots?.rating;
   const hasReturnWindowProof = !!o.screenshots?.returnWindow;
 
-  const orderVerifiedAt = o.verification?.order?.verifiedAt ? new Date(o.verification.order.verifiedAt) : null;
-  const reviewVerifiedAt = o.verification?.review?.verifiedAt ? new Date(o.verification.review.verifiedAt) : null;
-  const ratingVerifiedAt = o.verification?.rating?.verifiedAt ? new Date(o.verification.rating.verifiedAt) : null;
-  const returnWindowVerifiedAt = o.verification?.returnWindow?.verifiedAt ? new Date(o.verification.returnWindow.verifiedAt) : null;
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
 
   const requiredSteps: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview ? (['review'] as const) : []),
