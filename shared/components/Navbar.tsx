@@ -1,7 +1,7 @@
 import React from 'react';
 import { Package } from 'lucide-react';
 
-export const Navbar: React.FC = () => {
+export const Navbar: React.FC = React.memo(() => {
   return (
     <nav className="flex-none bg-white/80 backdrop-blur-md border-b border-gray-100 z-30 sticky top-0 safe-top">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -15,4 +15,5 @@ export const Navbar: React.FC = () => {
       </div>
     </nav>
   );
-};
+});
+(Navbar as any).displayName = 'Navbar';

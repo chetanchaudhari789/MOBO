@@ -13,6 +13,7 @@ import { getRequester, isPrivileged } from '../services/authz.js';
 import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { writeAuditLog } from '../services/audit.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 
 async function buildTicketAudience(ticket: any) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -66,7 +67,7 @@ async function getScopedOrderMongoIds(params: {
       where: { brandUserId: pgUserId, deletedAt: null },
       select: { mongoId: true },
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take: 1000,
     });
     return orders.map((o) => o.mongoId!).filter(Boolean);
   }
@@ -78,7 +79,7 @@ async function getScopedOrderMongoIds(params: {
       where: { managerName: mediatorCode, deletedAt: null },
       select: { mongoId: true },
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take: 1000,
     });
     return orders.map((o) => o.mongoId!).filter(Boolean);
   }
@@ -92,7 +93,7 @@ async function getScopedOrderMongoIds(params: {
       where: { managerName: { in: mediatorCodes }, deletedAt: null },
       select: { mongoId: true },
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take: 1000,
     });
     return orders.map((o) => o.mongoId!).filter(Boolean);
   }
@@ -142,32 +143,48 @@ export function makeTicketsController() {
         const db = prisma();
 
         if (isPrivileged(roles)) {
-          const tickets = await db.ticket.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 5000 });
-          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
+          const ticketWhere = { deletedAt: null };
+          const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+          const [tickets, total] = await Promise.all([
+            db.ticket.findMany({ where: ticketWhere, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+            db.ticket.count({ where: ticketWhere }),
+          ]);
+          res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
           return;
         }
 
         if (roles.includes('shopper')) {
-          const tickets = await db.ticket.findMany({ where: { userId: pgUserId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 2000 });
-          res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
+          const shopperWhere = { userId: pgUserId, deletedAt: null };
+          const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+          const [tickets, total] = await Promise.all([
+            db.ticket.findMany({ where: shopperWhere, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+            db.ticket.count({ where: shopperWhere }),
+          ]);
+          res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
           return;
         }
 
         const orderMongoIds = await getScopedOrderMongoIds({ roles, pgUserId, requesterUser: user });
-        const tickets = await db.ticket.findMany({
-          where: {
+        const ticketWhere = {
             deletedAt: null,
             OR: [{ userId: pgUserId }, ...(orderMongoIds.length ? [{ orderId: { in: orderMongoIds } }] : [])],
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 5000,
-        });
+        };
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [tickets, total] = await Promise.all([
+          db.ticket.findMany({
+            where: ticketWhere,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db.ticket.count({ where: ticketWhere }),
+        ]);
 
         if (roles.includes('brand')) {
-          res.json(tickets.map((t) => { try { return toUiTicketForBrand(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicketForBrand failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
+          res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicketForBrand(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicketForBrand failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
           return;
         }
-        res.json(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean));
+        res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }

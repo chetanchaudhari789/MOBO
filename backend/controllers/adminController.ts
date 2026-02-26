@@ -8,6 +8,7 @@ import { logChangeEvent } from '../config/appLogs.js';
 import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrderSummary, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { orderListSelect } from '../utils/querySelect.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { writeAuditLog } from '../services/audit.js';
 import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../services/orderWorkflow.js';
 import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
@@ -91,11 +92,22 @@ export function makeAdminController() {
           ];
         }
 
-        const users = await db().user.findMany({ where, orderBy: { createdAt: 'desc' }, take: 5000 });
-        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map(u => u.id) }, deletedAt: null } });
-        const byUserId = new Map(wallets.map(w => [w.ownerUserId, w]));
-
-        res.json(users.map(u => toUiUser(pgUser(u), byUserId.has(u.id) ? pgWallet(byUserId.get(u.id)!) : undefined)));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [users, total] = await Promise.all([
+          db().user.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+            include: { wallets: { where: { deletedAt: null }, take: 1 } },
+          }),
+          db().user.count({ where }),
+        ]);
+        const mapped = users.map(u => {
+          const wallet = (u as any).wallets?.[0];
+          return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
+        });
+        res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }
@@ -109,17 +121,22 @@ export function makeAdminController() {
           where.affiliateStatus = queryParams.status;
         }
 
-        const orders = await db().order.findMany({
-          where,
-          select: orderListSelect,
-          orderBy: { createdAt: 'desc' },
-          take: 5000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [orders, total] = await Promise.all([
+          db().order.findMany({
+            where,
+            select: orderListSelect,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().order.count({ where }),
+        ]);
         const mapped = orders.map(o => {
           try { return toUiOrderSummary(pgOrder(o)); }
           catch (e) { orderLog.error(`[admin/getFinancials] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json(mapped);
+        res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }
@@ -208,8 +225,12 @@ export function makeAdminController() {
           ];
         }
 
-        const deals = await db().deal.findMany({ where, orderBy: { createdAt: 'desc' }, take: 5000 });
-        res.json(deals.map(d => toUiDeal(pgDeal(d))));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [deals, total] = await Promise.all([
+          db().deal.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+          db().deal.count({ where }),
+        ]);
+        res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }

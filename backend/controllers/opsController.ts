@@ -5,7 +5,7 @@ import type { Role } from '../middleware/auth.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog, pushLog, businessLog, walletLog } from '../config/logger.js';
 import { logChangeEvent } from '../config/appLogs.js';
-import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
+import { pgUser, pgOrder, pgCampaign, pgDeal, pgWallet } from '../utils/pgMappers.js';
 import {
   approveByIdSchema,
   assignSlotsSchema,
@@ -63,12 +63,6 @@ async function buildOrderAudience(order: any, agencyCode?: string) {
     agencyCodes: normalizedAgencyCode ? [normalizedAgencyCode] : undefined,
     buyerMongoId,
   };
-}
-
-function mapUsersWithWallets(users: any[], wallets: any[]) {
-  const byUserId = new Map<string, any>();
-  for (const w of wallets) byUserId.set(String(w.ownerUserId), w);
-  return users.map((u) => toUiUser(pgUser(u), byUserId.get(String(u.id))));
 }
 
 function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'returnWindow'> {
@@ -259,12 +253,13 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
+          include: { wallets: { where: { deletedAt: null }, take: 1 } },
         });
 
-        const wallets = await db().wallet.findMany({
-          where: { ownerUserId: { in: mediators.map((m: any) => m.id) } },
-        });
-        res.json(mapUsersWithWallets(mediators, wallets));
+        res.json(mediators.map((m: any) => {
+          const wallet = m.wallets?.[0];
+          return toUiUser(pgUser(m), wallet ? pgWallet(wallet) : undefined);
+        }));
       } catch (err) {
         next(err);
       }
@@ -492,10 +487,13 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip: (puPage - 1) * puLimit,
           take: puLimit,
+          include: { wallets: { where: { deletedAt: null }, take: 1 } },
         });
 
-        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map((u: any) => u.id) } } });
-        res.json(mapUsersWithWallets(users, wallets));
+        res.json(users.map((u: any) => {
+          const wallet = u.wallets?.[0];
+          return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
+        }));
       } catch (err) {
         next(err);
       }
@@ -530,10 +528,13 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip: (vuPage - 1) * vuLimit,
           take: vuLimit,
+          include: { wallets: { where: { deletedAt: null }, take: 1 } },
         });
 
-        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map((u: any) => u.id) } } });
-        res.json(mapUsersWithWallets(users, wallets));
+        res.json(users.map((u: any) => {
+          const wallet = u.wallets?.[0];
+          return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
+        }));
       } catch (err) {
         next(err);
       }

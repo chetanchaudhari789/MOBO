@@ -45,6 +45,7 @@ export function healthRoutes(env: Env): Router {
   // Returns 200 if the process is alive. No I/O — cannot hang.
   // K8s: livenessProbe → if this fails, container is restarted.
   router.get('/health/live', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=5');
     res.status(200).json({ status: 'alive' });
   });
 
@@ -53,6 +54,7 @@ export function healthRoutes(env: Env): Router {
   // K8s: readinessProbe → if this fails, pod is removed from service endpoints.
   router.get('/health/ready', async (_req, res) => {
     const pgOk = isReady && await pingPg();
+    res.setHeader('Cache-Control', 'public, max-age=5');
     res.status(pgOk ? 200 : 503).json({
       status: pgOk ? 'ready' : 'not_ready',
       checks: {

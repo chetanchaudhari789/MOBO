@@ -134,8 +134,18 @@ jobs:
       - name: Verify migration state
         run: cd backend && npx prisma migrate status
 
-      - name: Run Vitest
-        run: npm run test:backend
+      - name: Run Vitest with coverage
+        run: npm run test:backend -- --coverage --reporter=json --reporter=default --outputFile=backend/vitest-result.json
+        continue-on-error: false
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: coverage-report
+          path: |
+            backend/coverage/
+          retention-days: 14
 
       - name: Upload test results
         if: failure()
@@ -184,6 +194,16 @@ jobs:
 
       - name: Build backend (tsc)
         run: npm -w @mobo/backend run build
+
+      - name: Cache Next.js build output
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            apps/*/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/**/*.tsx', 'apps/**/*.ts', 'shared/**/*.tsx', 'shared/**/*.ts') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-
 
       - name: Build all portals
         run: npm run build:apps

@@ -359,6 +359,7 @@ model Brand {
 
   @@index([status, createdAt(sort: Desc)])
   @@index([deletedAt, status])
+  @@index([ownerUserId])
   @@map("brands")
 }
 
@@ -380,6 +381,7 @@ model Agency {
 
   @@index([status, createdAt(sort: Desc)])
   @@index([deletedAt, status])
+  @@index([ownerUserId])
   @@map("agencies")
 }
 
@@ -421,6 +423,7 @@ model ShopperProfile {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([defaultMediatorCode])
   @@map("shopper_profiles")
 }
 
@@ -467,6 +470,7 @@ model Campaign {
   @@index([status, brandUserId, createdAt(sort: Desc)])
   @@index([brandUserId])
   @@index([deletedAt, createdAt(sort: Desc)])
+  @@index([status])
   @@map("campaigns")
 }
 
@@ -633,6 +637,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([campaignId])
+  @@index([productId])
   @@map("order_items")
 }
 
@@ -732,6 +737,7 @@ model Payout {
   @@unique([provider, providerRef])
   @@index([status, requestedAt(sort: Desc)])
   @@index([beneficiaryUserId, requestedAt(sort: Desc)])
+  @@index([walletId])
   @@map("payouts")
 }
 

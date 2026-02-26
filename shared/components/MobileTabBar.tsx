@@ -11,7 +11,7 @@ export type MobileTabBarItem = {
   ariaLabel?: string;
 };
 
-export function MobileTabBar({
+export const MobileTabBar = React.memo(function MobileTabBar({
   items,
   activeId,
   onChange,
@@ -117,4 +117,5 @@ export function MobileTabBar({
       })}
     </div>
   );
-}
+});
+MobileTabBar.displayName = 'MobileTabBar';

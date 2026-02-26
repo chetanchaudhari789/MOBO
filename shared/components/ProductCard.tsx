@@ -10,18 +10,20 @@ interface ProductCardProps {
 // Allow React's special props (e.g. `key`) without leaking them into runtime.
 type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
-export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) => {
-  const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
+const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
+
+const placeholderImage =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">' +
+      '<rect width="160" height="160" rx="24" fill="#F3F4F6"/>' +
+      '<circle cx="80" cy="64" r="24" fill="#E5E7EB"/>' +
+      '<rect x="32" y="104" width="96" height="16" rx="8" fill="#E5E7EB"/>' +
+    '</svg>'
+  );
+
+export const ProductCard = React.memo<ProductCardComponentProps>(({ product }) => {
   const getApiBase = getApiBaseAbsolute;
-  const placeholderImage =
-    'data:image/svg+xml;utf8,' +
-    encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">' +
-        '<rect width="160" height="160" rx="24" fill="#F3F4F6"/>' +
-        '<circle cx="80" cy="64" r="24" fill="#E5E7EB"/>' +
-        '<rect x="32" y="104" width="96" height="16" rx="8" fill="#E5E7EB"/>' +
-      '</svg>'
-    );
   const rawImage = sanitizeLabel(product.image);
   const proxiedImage =
     rawImage && /^https?:\/\//i.test(rawImage)
@@ -143,4 +145,5 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
       </button>
     </div>
   );
-};
+});
+ProductCard.displayName = 'ProductCard';

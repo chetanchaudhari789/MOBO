@@ -38,7 +38,7 @@ export function makeProductsController() {
             deletedAt: null,
           },
           orderBy: { createdAt: 'desc' },
-          take: 2000,
+          take: 500,
         });
 
         res.json(deals.map(d => toUiDeal(pgDeal(d))));

@@ -9,6 +9,7 @@ import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrderSummary, toUiOrderSummaryForBrand, toUiUser } from '../utils/uiMappers.js';
 import { orderListSelect } from '../utils/querySelect.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pgUser, pgOrder, pgCampaign } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
@@ -103,8 +104,12 @@ export function makeBrandController() {
           where.mediatorCode = { in: connected };
         }
 
-        const agencies = await db().user.findMany({ where, orderBy: { createdAt: 'desc' } });
-        res.json(agencies.map((a: any) => toUiUser(pgUser(a), null)));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [agencies, total] = await Promise.all([
+          db().user.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+          db().user.count({ where }),
+        ]);
+        res.json(paginatedResponse(agencies.map((a: any) => toUiUser(pgUser(a), null)), total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }
@@ -124,11 +129,17 @@ export function makeBrandController() {
           brandPgId = (req.auth as any)?.pgUserId;
         }
 
-        const campaigns = await db().campaign.findMany({
-          where: { brandUserId: brandPgId, deletedAt: null },
-          orderBy: { createdAt: 'desc' },
-        });
-        res.json(campaigns.map((c: any) => toUiCampaign(pgCampaign(c))));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [campaigns, total] = await Promise.all([
+          db().campaign.findMany({
+            where: { brandUserId: brandPgId, deletedAt: null },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().campaign.count({ where: { brandUserId: brandPgId, deletedAt: null } }),
+        ]);
+        res.json(paginatedResponse(campaigns.map((c: any) => toUiCampaign(pgCampaign(c))), total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }
@@ -149,21 +160,26 @@ export function makeBrandController() {
             { brandUserId: null, brandName: (user as any)?.name },
           ];
         }
-        const orders = await db().order.findMany({
-          where,
-          select: orderListSelect,
-          orderBy: { createdAt: 'desc' },
-          take: 5000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [orders, total] = await Promise.all([
+          db().order.findMany({
+            where,
+            select: orderListSelect,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().order.count({ where }),
+        ]);
         if (!isPrivileged(roles) && roles.includes('brand')) {
-          res.json(orders.map((o: any) => { try { return toUiOrderSummaryForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummaryForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean));
+          res.json(paginatedResponse(orders.map((o: any) => { try { return toUiOrderSummaryForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummaryForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
           return;
         }
         const mapped = orders.map((o: any) => {
           try { return toUiOrderSummary(pgOrder(o)); }
           catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json(mapped);
+        res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }
@@ -184,11 +200,17 @@ export function makeBrandController() {
         }
 
         // Brand ledger = outbound agency payouts from this brand.
-        const txns = await db().transaction.findMany({
-          where: { deletedAt: null, fromUserId: brandPgId, type: 'agency_payout' as any },
-          orderBy: { createdAt: 'desc' },
-          take: 5000,
-        });
+        const txWhere = { deletedAt: null, fromUserId: brandPgId, type: 'agency_payout' as any };
+        const { page, limit, skip, isPaginated } = parsePagination((_req.query as any));
+        const [txns, txTotal] = await Promise.all([
+          db().transaction.findMany({
+            where: txWhere,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().transaction.count({ where: txWhere }),
+        ]);
 
         const agencyPgIds = Array.from(
           new Set(txns.map((t: any) => String(t.toUserId || '')).filter(Boolean))
@@ -202,8 +224,7 @@ export function makeBrandController() {
           : [];
         const byId = new Map(agencies.map((a: any) => [a.id, a]));
 
-        res.json(
-          txns.map((t: any) => {
+        const txMapped = txns.map((t: any) => {
             const agency = t.toUserId ? byId.get(t.toUserId) : undefined;
             const meta = (t.metadata && typeof t.metadata === 'object') ? (t.metadata as any) : {};
             return {
@@ -214,8 +235,8 @@ export function makeBrandController() {
               ref: String(meta.ref || ''),
               status: t.status === 'completed' ? 'Success' : String(t.status),
             };
-          })
-        );
+        });
+        res.json(paginatedResponse(txMapped, txTotal, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }
