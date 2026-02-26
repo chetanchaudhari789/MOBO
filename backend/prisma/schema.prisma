@@ -613,6 +613,7 @@ model Order {
   @@index([externalOrderId])                       // duplicate-check during order creation
   @@index([userId, workflowStatus, deletedAt])     // buyer dashboard filtered listing
   @@index([brandUserId, workflowStatus, deletedAt]) // brand dashboard filtered listing
+  @@index([managerName, deletedAt, createdAt(sort: Desc)]) // ops dashboard filtered listing
   @@index([buyerMobile, deletedAt])                  // velocity check lookups
   @@map("orders")
 }

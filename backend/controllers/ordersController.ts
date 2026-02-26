@@ -263,7 +263,7 @@ export function makeOrdersController(env: Env) {
         const resolvedExternalOrderId = body.externalOrderId || (allowE2eBypass ? `E2E-${Date.now()}` : undefined);
 
         if (resolvedExternalOrderId) {
-          const dup = await db().order.findFirst({ where: { externalOrderId: resolvedExternalOrderId, deletedAt: null } });
+          const dup = await db().order.findFirst({ where: { externalOrderId: resolvedExternalOrderId, deletedAt: null }, select: { id: true } });
           if (dup) {
             throw new AppError(
               409,
@@ -286,7 +286,7 @@ export function makeOrdersController(env: Env) {
           duplicateWhere.mongoId = { not: body.preOrderId };
         }
 
-        const existingDealOrder = await db().order.findFirst({ where: duplicateWhere });
+        const existingDealOrder = await db().order.findFirst({ where: duplicateWhere, select: { id: true } });
         if (existingDealOrder) {
           throw new AppError(
             409,

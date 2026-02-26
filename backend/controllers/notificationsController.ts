@@ -5,6 +5,7 @@ import { paiseToRupees } from '../utils/money.js';
 import { getRequester } from '../services/authz.js';
 import { safeIso } from '../utils/uiMappers.js';
 import { businessLog } from '../config/logger.js';
+import { orderNotificationSelect } from '../utils/querySelect.js';
 
 function db() { return prisma(); }
 
@@ -42,7 +43,7 @@ export function makeNotificationsController() {
         if (isShopper) {
           const orders = await db().order.findMany({
             where: { userId: pgUserId, deletedAt: null },
-            include: { items: true },
+            select: orderNotificationSelect,
             orderBy: { updatedAt: 'desc' },
             take: 100,
           });

@@ -14,7 +14,7 @@ import { pgUser, pgOrder, pgCampaign } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';
-import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchema } from '../validations/brand.js';
+import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchema, brandCampaignsQuerySchema, brandOrdersQuerySchema, brandTransactionsQuerySchema } from '../validations/brand.js';
 import { copyCampaignSchema } from '../validations/ops.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
 import { publishRealtime } from '../services/realtimeHub.js';
@@ -97,7 +97,7 @@ export function makeBrandController() {
         const where: any = { roles: { has: 'agency' as any }, deletedAt: null };
         if (!isPrivileged(roles)) {
           // Re-fetch brand user from DB to get connectedAgencies (not in auth user)
-          const brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+          const brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null }, select: { connectedAgencies: true } });
           const connected = Array.isArray((brandUser as any)?.connectedAgencies)
             ? (brandUser as any).connectedAgencies as string[]
             : [];
@@ -117,8 +117,9 @@ export function makeBrandController() {
 
     getCampaigns: async (req: Request, res: Response, next: NextFunction) => {
       try {
+        const q = brandCampaignsQuerySchema.parse(req.query);
         const { roles, userId: _userId } = getRequester(req);
-        const requested = typeof req.query.brandId === 'string' ? req.query.brandId : '';
+        const requested = typeof q.brandId === 'string' ? q.brandId : '';
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
@@ -129,7 +130,7 @@ export function makeBrandController() {
           brandPgId = (req.auth as any)?.pgUserId;
         }
 
-        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const { page, limit, skip, isPaginated } = parsePagination(q);
         const [campaigns, total] = await Promise.all([
           db().campaign.findMany({
             where: { brandUserId: brandPgId, deletedAt: null },
@@ -147,12 +148,13 @@ export function makeBrandController() {
 
     getOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
+        const q = brandOrdersQuerySchema.parse(req.query);
         const { roles, userId: _userId, user } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         const where: any = { deletedAt: null };
         if (isPrivileged(roles)) {
-          const brandName = typeof req.query.brandName === 'string' ? req.query.brandName : '';
+          const brandName = typeof q.brandName === 'string' ? q.brandName : '';
           if (brandName) where.brandName = brandName;
         } else {
           where.OR = [
@@ -160,7 +162,7 @@ export function makeBrandController() {
             { brandUserId: null, brandName: (user as any)?.name },
           ];
         }
-        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const { page, limit, skip, isPaginated } = parsePagination(q);
         const [orders, total] = await Promise.all([
           db().order.findMany({
             where,
@@ -187,8 +189,9 @@ export function makeBrandController() {
 
     getTransactions: async (_req: Request, res: Response, next: NextFunction) => {
       try {
+        const q = brandTransactionsQuerySchema.parse(_req.query);
         const { roles, userId: _userId } = getRequester(_req);
-        const requested = typeof (_req.query as any).brandId === 'string' ? String((_req.query as any).brandId) : '';
+        const requested = typeof q.brandId === 'string' ? String(q.brandId) : '';
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
@@ -201,7 +204,7 @@ export function makeBrandController() {
 
         // Brand ledger = outbound agency payouts from this brand.
         const txWhere = { deletedAt: null, fromUserId: brandPgId, type: 'agency_payout' as any };
-        const { page, limit, skip, isPaginated } = parsePagination((_req.query as any));
+        const { page, limit, skip, isPaginated } = parsePagination(q);
         const [txns, txTotal] = await Promise.all([
           db().transaction.findMany({
             where: txWhere,
@@ -256,13 +259,13 @@ export function makeBrandController() {
           const brandWhere = UUID_RE.test(body.brandId)
             ? { OR: [{ id: body.brandId }, { mongoId: body.brandId }], deletedAt: null }
             : { mongoId: String(body.brandId), deletedAt: null };
-          brandUser = await db().user.findFirst({ where: brandWhere as any });
+          brandUser = await db().user.findFirst({ where: brandWhere as any, select: { id: true, mongoId: true, roles: true, status: true, connectedAgencies: true } });
           if (!brandUser) throw new AppError(404, 'NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
           brandMongoId = brandUser.mongoId || brandUser.id;
         } else {
           // Re-fetch full brand user from DB (auth middleware doesn't include connectedAgencies)
-          brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+          brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null }, select: { id: true, mongoId: true, roles: true, status: true, connectedAgencies: true } });
           if (!brandUser) throw new AppError(404, 'NOT_FOUND', 'Brand user not found');
           brandPgId = brandUser.id;
           brandMongoId = brandUser.mongoId || brandUser.id;
@@ -408,6 +411,7 @@ export function makeBrandController() {
 
         const brand = await db().user.findFirst({
           where: { id: pgUserId, deletedAt: null },
+          select: { id: true, mongoId: true, roles: true, connectedAgencies: true },
         });
         if (!brand) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         if (!isPrivileged(roles) && !(brand.roles as string[])?.includes('brand')) {
@@ -474,7 +478,7 @@ export function makeBrandController() {
         const { roles } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const brand = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+        const brand = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null }, select: { id: true, mongoId: true, roles: true, connectedAgencies: true } });
         if (!brand) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         if (!isPrivileged(roles) && !(brand.roles as string[])?.includes('brand')) {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can remove agencies');

@@ -7,6 +7,73 @@
  */
 
 /**
+ * Prisma `select` for User existence checks.
+ * Only fetches id to confirm the record exists.
+ */
+export const userExistsSelect = {
+  id: true,
+} as const;
+
+/**
+ * Prisma `select` for User status/auth checks.
+ * Used when we need to verify a user's role, status, or identity.
+ */
+export const userStatusSelect = {
+  id: true,
+  mongoId: true,
+  status: true,
+  roles: true,
+  mediatorCode: true,
+  parentCode: true,
+  deletedAt: true,
+} as const;
+
+/**
+ * Prisma `select` for User lookups needing brand connection info.
+ */
+export const userBrandSelect = {
+  id: true,
+  mongoId: true,
+  name: true,
+  status: true,
+  roles: true,
+  connectedAgencies: true,
+} as const;
+
+/**
+ * Prisma `select` for Order existence checks.
+ */
+export const orderExistsSelect = {
+  id: true,
+} as const;
+
+/**
+ * Prisma `select` for notification order queries.
+ * Fetches only the fields needed for notification processing.
+ */
+export const orderNotificationSelect = {
+  id: true,
+  mongoId: true,
+  workflowStatus: true,
+  paymentStatus: true,
+  affiliateStatus: true,
+  screenshotOrder: true,
+  screenshotReview: true,
+  screenshotRating: true,
+  screenshotReturnWindow: true,
+  reviewLink: true,
+  verification: true,
+  rejectionReason: true,
+  missingProofRequests: true,
+  managerName: true,
+  buyerName: true,
+  brandName: true,
+  updatedAt: true,
+  createdAt: true,
+  items: true,
+} as const;
+
+/**
  * Prisma `select` for Order list queries.
  * Includes everything EXCEPT heavy JSON columns.
  */

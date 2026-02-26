@@ -57,6 +57,31 @@ export async function getAgencyCodeForMediatorCode(mediatorCode: string): Promis
   return result;
 }
 
+/** Batch version: resolve multiple mediator codes → agency codes in one query */
+export async function getAgencyCodesForMediatorCodes(mediatorCodes: string[]): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  const uncached: string[] = [];
+  for (const code of mediatorCodes) {
+    if (!code) { result.set(code, null); continue; }
+    const cached = getCached(agencyCodeCache, code);
+    if (cached !== undefined) { result.set(code, cached); } else { uncached.push(code); }
+  }
+  if (uncached.length > 0) {
+    const db = prisma();
+    const mediators = await db.user.findMany({
+      where: { roles: { has: 'mediator' as any }, mediatorCode: { in: uncached }, deletedAt: null },
+      select: { mediatorCode: true, parentCode: true },
+    });
+    const byCode = new Map(mediators.map((m) => [String(m.mediatorCode), String(m.parentCode || '').trim() || null]));
+    for (const code of uncached) {
+      const agencyCode = byCode.get(code) ?? null;
+      setCached(agencyCodeCache, code, agencyCode);
+      result.set(code, agencyCode);
+    }
+  }
+  return result;
+}
+
 export async function isAgencyActive(agencyCode: string): Promise<boolean> {
   if (!agencyCode) return false;
   const cached = getCached(activeCache, `agency:${agencyCode}`);

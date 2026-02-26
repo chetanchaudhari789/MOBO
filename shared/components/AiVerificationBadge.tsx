@@ -99,7 +99,7 @@ function VerifyItem({
 
 /* ── Rating AI Verification Badge ───────────────────────────────────── */
 
-export function RatingVerificationBadge({
+export const RatingVerificationBadge = React.memo(function RatingVerificationBadge({
   data,
   theme = 'light',
   className,
@@ -121,11 +121,11 @@ export function RatingVerificationBadge({
       )}
     </div>
   );
-}
+});
 
 /* ── Return Window AI Verification Badge ────────────────────────────── */
 
-export function ReturnWindowVerificationBadge({
+export const ReturnWindowVerificationBadge = React.memo(function ReturnWindowVerificationBadge({
   data,
   theme = 'light',
   className,
@@ -161,11 +161,11 @@ export function ReturnWindowVerificationBadge({
       )}
     </div>
   );
-}
+});
 
 /* ── Order Proof AI Verification Badge ──────────────────────────────── */
 
-export function OrderVerificationBadge({
+export const OrderVerificationBadge = React.memo(function OrderVerificationBadge({
   data,
   theme = 'light',
   className,
@@ -187,4 +187,4 @@ export function OrderVerificationBadge({
       )}
     </div>
   );
-}
+});

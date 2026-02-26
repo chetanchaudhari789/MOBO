@@ -57,7 +57,7 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerSchema.parse(req.body);
 
-        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null }, select: { id: true } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
@@ -103,6 +103,7 @@ export function makeAuthController(env: Env) {
               status: 'active',
               deletedAt: null,
             },
+            select: { id: true },
           });
           if (!mediator) {
             throw new AppError(400, 'INVALID_INVITE_PARENT', 'Invite parent mediator is not valid');
@@ -466,7 +467,7 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerOpsSchema.parse(req.body);
 
-        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null }, select: { id: true } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
@@ -656,7 +657,7 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerBrandSchema.parse(req.body);
 
-        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null }, select: { id: true } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }

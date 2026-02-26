@@ -5,7 +5,7 @@ import { idWhere } from '../utils/idWhere.js';
 import { prisma } from '../database/prisma.js';
 import { orderLog, businessLog, securityLog } from '../config/logger.js';
 import { logChangeEvent } from '../config/appLogs.js';
-import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
+import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, adminAuditLogsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrderSummary, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { orderListSelect } from '../utils/querySelect.js';
 import { parsePagination, paginatedResponse } from '../utils/pagination.js';
@@ -597,12 +597,12 @@ export function makeAdminController() {
           actorUserId,
           from,
           to,
-          page: pageStr,
-          limit: limitStr,
-        } = req.query as Record<string, string | undefined>;
+          page: parsedPage,
+          limit: parsedLimit,
+        } = adminAuditLogsQuerySchema.parse(req.query);
 
-        const page = Math.max(1, parseInt(pageStr || '1', 10) || 1);
-        const limit = Math.min(500, Math.max(1, parseInt(limitStr || '50', 10) || 50));
+        const page = Math.max(1, parsedPage ?? 1);
+        const limit = Math.min(500, Math.max(1, parsedLimit ?? 50));
         const skip = (page - 1) * limit;
 
         const where: any = {};

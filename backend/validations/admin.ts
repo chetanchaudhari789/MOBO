@@ -47,3 +47,14 @@ export const adminProductsQuerySchema = z.object({
     z.enum(['all', 'true', 'false']).default('all')
   ),
 });
+
+export const adminAuditLogsQuerySchema = z.object({
+  action: z.string().max(100).optional(),
+  entityType: z.string().max(100).optional(),
+  entityId: z.string().max(200).optional(),
+  actorUserId: z.string().max(200).optional(),
+  from: z.string().max(30).optional(),
+  to: z.string().max(30).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});

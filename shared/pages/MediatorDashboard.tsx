@@ -118,7 +118,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
     .filter((o: Order) => {
       if (new Date(o.createdAt).toDateString() !== new Date().toDateString()) return false;
       // Only count settled or cooling orders — exclude rejected/fraud/frozen.
-      const status = String((o as any).affiliateStatus || '');
+      const status = String(o.affiliateStatus || '');
       return status === 'Approved_Settled' || status === 'Pending_Cooling';
     })
     .reduce((acc: number, o: Order) => acc + (o.items[0]?.commission || 0), 0);
@@ -137,14 +137,14 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   const totalDeals = orders.length;
   const totalEarnings = orders
     .filter((o: Order) => {
-      const status = String((o as any).affiliateStatus || '');
+      const status = String(o.affiliateStatus || '');
       return status === 'Approved_Settled' || status === 'Pending_Cooling';
     })
     .reduce((acc: number, o: Order) => acc + (o.items[0]?.commission || 0), 0);
   const totalOrderValue = orders.reduce((acc: number, o: Order) => acc + (o.total || 0), 0);
-  const settledOrders = orders.filter((o: Order) => String((o as any).affiliateStatus || '') === 'Approved_Settled');
+  const settledOrders = orders.filter((o: Order) => String(o.affiliateStatus || '') === 'Approved_Settled');
   const pendingOrders = orders.filter((o: Order) => {
-    const s = String((o as any).affiliateStatus || '');
+    const s = String(o.affiliateStatus || '');
     return s === 'Pending_Cooling' || s === 'Pending_Verification';
   });
 
@@ -2159,22 +2159,22 @@ export const MediatorDashboard: React.FC = () => {
                     <>
                       <div className="flex items-center gap-1.5">
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
-                          (proofModal.verification as any)?.returnWindowVerified ? 'bg-green-500 text-white'
+                          proofModal.verification?.returnWindowVerified ? 'bg-green-500 text-white'
                             : (proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? 'bg-amber-500 text-amber-900'
                             : proofModal.verification?.orderVerified ? 'bg-purple-500 text-white'
                             : 'bg-zinc-600 text-zinc-400'
                         }`}>
-                          {(proofModal.verification as any)?.returnWindowVerified ? '✓' :
+                          {proofModal.verification?.returnWindowVerified ? '✓' :
                             ((proofModal.requirements?.required?.includes('review') && proofModal.requirements?.required?.includes('rating')) ? '4' :
                              (proofModal.requirements?.required?.includes('review') || proofModal.requirements?.required?.includes('rating')) ? '3' : '2')}
                         </div>
                         <span className={`text-[10px] font-bold ${
-                          (proofModal.verification as any)?.returnWindowVerified ? 'text-green-400'
+                          proofModal.verification?.returnWindowVerified ? 'text-green-400'
                             : (proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? 'text-amber-400'
                             : 'text-zinc-400'
                         }`}>Return{(proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? ' !' : ''}</span>
                       </div>
-                      <div className={`flex-1 h-0.5 rounded ${(proofModal.verification as any)?.returnWindowVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                      <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.returnWindowVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
                     </>
                   )}
                   <div className="flex items-center gap-1.5">
@@ -2250,9 +2250,9 @@ export const MediatorDashboard: React.FC = () => {
                 <h4 className="text-xs font-bold text-teal-400 uppercase mb-3 flex items-center gap-2">
                   <Package size={14} /> Return Window Check
                 </h4>
-                {(proofModal.screenshots as any)?.returnWindow ? (
+                {proofModal.screenshots?.returnWindow ? (
                   <ZoomableImage
-                    src={(proofModal.screenshots as any).returnWindow}
+                    src={proofModal.screenshots.returnWindow}
                     className="w-full rounded-xl border border-teal-500/20"
                     alt="Return Window Proof"
                   />
@@ -2262,7 +2262,7 @@ export const MediatorDashboard: React.FC = () => {
                   </div>
                 )}
                 <p className="text-[10px] text-zinc-500 mt-2">
-                  Cooling Period: {(proofModal as any).returnWindowDays ?? 10} days
+                  Cooling Period: {proofModal.returnWindowDays ?? 10} days
                 </p>
                 {/* AI Return Window Verification */}
                 {proofModal.returnWindowAiVerification && (

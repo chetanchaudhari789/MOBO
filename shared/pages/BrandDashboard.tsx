@@ -674,7 +674,7 @@ const OrdersView = ({ user }: any) => {
       if (st !== statusFilter.toLowerCase()) return false;
     }
     if (dealTypeFilter !== 'All') {
-      const dt = (o as any).dealType || o.items?.[0]?.dealType || 'Discount';
+      const dt = o.dealType || o.items?.[0]?.dealType || 'Discount';
       if (dt !== dealTypeFilter) return false;
     }
     return textMatch;
@@ -744,7 +744,7 @@ const OrdersView = ({ user }: any) => {
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         csvSafe(o.status || ''),
         csvSafe(o.paymentStatus || ''),
         csvSafe(o.affiliateStatus || ''),
@@ -758,7 +758,7 @@ const OrdersView = ({ user }: any) => {
         (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
           : 'No',
-        (o.screenshots as any)?.returnWindow
+        o.screenshots?.returnWindow
           ? hyperlinkYes(buildProofUrl(o.id, 'returnWindow'))
           : 'No',
       ];
@@ -790,7 +790,7 @@ const OrdersView = ({ user }: any) => {
         o.managerName || '',
         o.buyerName || '',
         o.buyerMobile || '',
-        (o as any).reviewerName || '',
+        o.reviewerName || '',
         o.status,
         o.paymentStatus,
         o.affiliateStatus || '',
@@ -1029,14 +1029,14 @@ const OrdersView = ({ user }: any) => {
                           <div className="text-[9px] text-zinc-400">Qty: {o.items?.[0]?.quantity || 1}</div>
                         </td>
                         <td className="p-6 text-right font-bold text-zinc-900">{formatCurrency(o.total)}</td>
-                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency((o as any).commission || 0)}</td>
+                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency(o.commission || 0)}</td>
                         <td className="p-6 text-right">
                           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                            (o as any).dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
-                            (o as any).dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                            o.dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                            o.dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
                             'bg-lime-50 text-lime-600'
                           }`}>
-                            {(o as any).dealType === 'Discount' ? 'Order' : (o as any).dealType || 'Order'}
+                            {o.dealType === 'Discount' ? 'Order' : o.dealType || 'Order'}
                           </span>
                         </td>
                       </tr>
@@ -1084,14 +1084,14 @@ const OrdersView = ({ user }: any) => {
                           <span className="text-xs font-bold text-zinc-600">{o.items?.[0]?.quantity || 1}</span>
                         </td>
                         <td className="p-6 text-right font-bold text-zinc-900">{formatCurrency(o.total)}</td>
-                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency((o as any).commission || 0)}</td>
+                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency(o.commission || 0)}</td>
                         <td className="p-6 text-right">
                           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                            (o as any).dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
-                            (o as any).dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                            o.dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                            o.dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
                             'bg-lime-50 text-lime-600'
                           }`}>
-                            {(o as any).dealType === 'Discount' ? 'Order' : (o as any).dealType || 'Order'}
+                            {o.dealType === 'Discount' ? 'Order' : o.dealType || 'Order'}
                           </span>
                         </td>
                       </tr>
@@ -1102,7 +1102,7 @@ const OrdersView = ({ user }: any) => {
                     <tr className="bg-zinc-50 border-t-2 border-zinc-200">
                       <td colSpan={5} className="p-6 text-xs font-extrabold text-zinc-700 uppercase">Total Payable</td>
                       <td className="p-6 text-right font-mono font-extrabold text-zinc-900">{formatCurrency(filtered.reduce((s, o) => s + (o.total || 0), 0))}</td>
-                      <td className="p-6 text-right font-mono font-extrabold text-lg text-green-600">{formatCurrency(filtered.reduce((s, o) => s + ((o as any).commission || 0), 0))}</td>
+                      <td className="p-6 text-right font-mono font-extrabold text-lg text-green-600">{formatCurrency(filtered.reduce((s, o) => s + (o.commission || 0), 0))}</td>
                       <td className="p-6"></td>
                     </tr>
                   </tfoot>
@@ -1317,14 +1317,14 @@ const OrdersView = ({ user }: any) => {
               )}
 
               {/* 4. Return Window Proof */}
-              {(viewProofOrder.screenshots as any)?.returnWindow && (
+              {viewProofOrder.screenshots?.returnWindow && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-widest">
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
                     <ZoomableImage
-                      src={(viewProofOrder.screenshots as any).returnWindow}
+                      src={viewProofOrder.screenshots.returnWindow}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
                     />

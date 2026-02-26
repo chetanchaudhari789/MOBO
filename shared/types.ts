@@ -194,6 +194,12 @@ export interface Order {
   // Return window cooling period
   returnWindowDays?: number;
 
+  // Top-level convenience fields (derived from items / assignment)
+  dealType?: string;
+  commission?: number;
+  mediatorCode?: string;
+  managerCode?: string;
+
   // Audit trail - order event history
   events?: Array<{
     type: string;

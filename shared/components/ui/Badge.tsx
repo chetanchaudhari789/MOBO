@@ -3,7 +3,7 @@ import { cn } from './cn';
 
 type Variant = 'neutral' | 'success' | 'warning' | 'danger' | 'info';
 
-export function Badge({
+export const Badge = React.memo(function Badge({
   variant = 'neutral',
   className,
   ...props
@@ -26,4 +26,4 @@ export function Badge({
       {...props}
     />
   );
-}
+});

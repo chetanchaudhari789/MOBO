@@ -39,3 +39,22 @@ export const updateBrandCampaignSchema = z.object({
   status: z.string().min(1).max(30).optional(),
   allowedAgencies: z.array(z.string().min(1)).optional(),
 });
+
+// ─── Query param validation ─────────────────────────────────────
+export const brandCampaignsQuerySchema = z.object({
+  brandId: z.string().min(1).max(100).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+}).strict();
+
+export const brandOrdersQuerySchema = z.object({
+  brandName: z.string().min(1).max(200).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+}).strict();
+
+export const brandTransactionsQuerySchema = z.object({
+  brandId: z.string().min(1).max(100).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+}).strict();

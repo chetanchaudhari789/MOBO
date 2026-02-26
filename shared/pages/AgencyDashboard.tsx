@@ -535,21 +535,21 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         csvSafe(o.status || ''),
         csvSafe(o.paymentStatus || ''),
         csvSafe(o.affiliateStatus || ''),
         o.id,
-        csvSafe((o as any).soldBy || ''),
-        (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
-        csvSafe((o as any).extractedProductName || ''),
+        csvSafe(o.soldBy || ''),
+        o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+        csvSafe(o.extractedProductName || ''),
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
         (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
           : 'No',
-        (o.screenshots as any)?.returnWindow
+        o.screenshots?.returnWindow
           ? hyperlinkYes(buildProofUrl(o.id, 'returnWindow'))
           : 'No',
       ];
@@ -583,9 +583,9 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.paymentStatus,
         o.affiliateStatus || '',
         o.id,
-        (o as any).soldBy || '',
-        (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
-        (o as any).extractedProductName || '',
+        o.soldBy || '',
+        o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+        o.extractedProductName || '',
       ] as (string | number)[];
     });
 
@@ -781,7 +781,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                             {o.managerName || 'Unknown'}
                           </div>
                           <div className="text-[9px] text-slate-400 font-mono">
-                            {(o as any).mediatorCode || (o as any).managerCode || ''}
+                            {o.mediatorCode || o.managerCode || ''}
                           </div>
                         </div>
                       </div>
@@ -860,7 +860,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                           <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[9px] font-bold text-purple-600">M</div>
                           <div>
                             <div className="text-xs font-bold text-slate-700">{o.managerName || 'Unknown'}</div>
-                            <div className="text-[9px] text-slate-400 font-mono">{(o as any).mediatorCode || (o as any).managerCode || ''}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">{o.mediatorCode || o.managerCode || ''}</div>
                           </div>
                         </div>
                       </td>
@@ -926,7 +926,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                           <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[9px] font-bold text-purple-600">M</div>
                           <div>
                             <div className="text-xs font-bold text-slate-700">{o.managerName || 'Unknown'}</div>
-                            <div className="text-[9px] text-slate-400 font-mono">{(o as any).mediatorCode || (o as any).managerCode || ''}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">{o.mediatorCode || o.managerCode || ''}</div>
                           </div>
                         </div>
                       </td>
@@ -3533,14 +3533,14 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               )}
 
               {/* 4. Return Window Proof */}
-              {(proofOrder.screenshots as any)?.returnWindow && (
+              {proofOrder.screenshots?.returnWindow && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-widest">
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
                     <ZoomableImage
-                      src={(proofOrder.screenshots as any).returnWindow}
+                      src={proofOrder.screenshots.returnWindow}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
                     />

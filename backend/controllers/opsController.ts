@@ -34,7 +34,7 @@ import { orderListSelect } from '../utils/querySelect.js';
 import { idWhere } from '../utils/idWhere.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
-import { listMediatorCodesForAgency, getAgencyCodeForMediatorCode, isAgencyActive, isMediatorActive } from '../services/lineage.js';
+import { listMediatorCodesForAgency, getAgencyCodeForMediatorCode, getAgencyCodesForMediatorCodes, isAgencyActive, isMediatorActive } from '../services/lineage.js';
 import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
 import { requestBrandConnectionSchema } from '../validations/connections.js';
@@ -1478,7 +1478,7 @@ export function makeOpsController(env: Env) {
         }
 
         // Buyer must also be active — order.userId is PG UUID
-        const buyer = await db().user.findUnique({ where: { id: order.userId } });
+        const buyer = await db().user.findUnique({ where: { id: order.userId }, select: { id: true, status: true, deletedAt: true } });
         if (!buyer || buyer.deletedAt || buyer.status !== 'active') {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Buyer is not active; settlement is blocked');
         }
@@ -1584,7 +1584,7 @@ export function makeOpsController(env: Env) {
           const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
           let mediatorUserId: string | null = null;
           if (mediatorMarginPaise > 0 && mediatorCode) {
-            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null } });
+            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null }, select: { id: true } });
             if (mediator) {
               mediatorUserId = mediator.id;
               await ensureWallet(mediatorUserId);
@@ -1797,7 +1797,7 @@ export function makeOpsController(env: Env) {
 
           let unsettleMediatorUserId: string | null = null;
           if (mediatorMarginPaise > 0 && mediatorCode) {
-            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null } });
+            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null }, select: { id: true } });
             if (mediator) {
               unsettleMediatorUserId = mediator.id;
             }
@@ -2317,9 +2317,8 @@ export function makeOpsController(env: Env) {
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'SLOTS_ASSIGNED', changedFields: ['assignments', 'locked'], before: { locked: campaign.locked }, after: { locked: true, totalAssigned, assignedMediators: positiveEntries.map(([c]) => c) } });
 
         const assignmentCodes = positiveEntries.map(([c]) => String(c).trim()).filter(Boolean);
-        const inferredAgencyCodes = (
-          await Promise.all(assignmentCodes.map((c) => getAgencyCodeForMediatorCode(c)))
-        ).filter((c): c is string => typeof c === 'string' && !!c);
+        const agencyCodeMap = await getAgencyCodesForMediatorCodes(assignmentCodes);
+        const inferredAgencyCodes = [...agencyCodeMap.values()].filter((c): c is string => typeof c === 'string' && !!c);
 
         const agencyCodes = Array.from(
           new Set([
@@ -2594,7 +2593,7 @@ export function makeOpsController(env: Env) {
         const payout = await db().payout.findFirst({ where: { ...idWhere(payoutId), deletedAt: null } });
         if (!payout) throw new AppError(404, 'PAYOUT_NOT_FOUND', 'Payout not found');
 
-        const beneficiary = await db().user.findUnique({ where: { id: payout.beneficiaryUserId } });
+        const beneficiary = await db().user.findUnique({ where: { id: payout.beneficiaryUserId }, select: { id: true, mongoId: true, deletedAt: true, parentCode: true } });
         if (!beneficiary || beneficiary.deletedAt) throw new AppError(404, 'BENEFICIARY_NOT_FOUND', 'Beneficiary not found');
 
         if (!isPriv) {
