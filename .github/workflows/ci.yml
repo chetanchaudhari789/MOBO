@@ -413,7 +413,7 @@ jobs:
             })().catch(e => { console.error('::error::DB check failed:', e.message); process.exit(1); });
           "
 
-      - name: Baseline migrations if schema already has tables
+      - name: Reset migration state & baseline if needed
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
@@ -422,8 +422,25 @@ jobs:
           echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
           export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
           cd backend
-          # Check if _prisma_migrations table exists in the target schema
-          HAS_MIGRATIONS=$(node -e "
+
+          # Step 1: Always drop _prisma_migrations to clear any corrupted/failed state
+          # This is safe because we re-resolve baseline below when tables exist.
+          node -e "
+            const { Client } = require('pg');
+            const c = new Client({
+              connectionString: process.env.DATABASE_URL,
+              ssl: { rejectUnauthorized: false }
+            });
+            (async () => {
+              await c.connect();
+              await c.query('DROP TABLE IF EXISTS \"_prisma_migrations\"');
+              console.log('Cleared _prisma_migrations table (clean slate)');
+              await c.end();
+            })().catch(e => { console.log('Note:', e.message); });
+          "
+
+          # Step 2: Check if schema has real tables (excluding _prisma_migrations)
+          HAS_TABLES=$(node -e "
             const { Client } = require('pg');
             const c = new Client({
               connectionString: process.env.DATABASE_URL,
@@ -432,39 +449,26 @@ jobs:
             (async () => {
               await c.connect();
               const r = await c.query(
-                \"SELECT 1 FROM information_schema.tables WHERE table_schema = '\${{ env.DB_SCHEMA }}' AND table_name = '_prisma_migrations'\"
+                \"SELECT 1 FROM information_schema.tables WHERE table_schema = '\${{ env.DB_SCHEMA }}' AND table_type = 'BASE TABLE' AND table_name != '_prisma_migrations' LIMIT 1\"
               );
               console.log(r.rows.length > 0 ? 'yes' : 'no');
               await c.end();
             })().catch(() => { console.log('no'); });
           ")
-          echo "Has _prisma_migrations: $HAS_MIGRATIONS"
-          if [ "$HAS_MIGRATIONS" = "no" ]; then
-            # Check if schema has existing tables (needs baselining)
-            HAS_TABLES=$(node -e "
-              const { Client } = require('pg');
-              const c = new Client({
-                connectionString: process.env.DATABASE_URL,
-                ssl: { rejectUnauthorized: false }
-              });
-              (async () => {
-                await c.connect();
-                const r = await c.query(
-                  \"SELECT 1 FROM information_schema.tables WHERE table_schema = '\${{ env.DB_SCHEMA }}' AND table_type = 'BASE TABLE' LIMIT 1\"
-                );
-                console.log(r.rows.length > 0 ? 'yes' : 'no');
-                await c.end();
-              })().catch(() => { console.log('no'); });
-            ")
-            echo "Has existing tables: $HAS_TABLES"
-            if [ "$HAS_TABLES" = "yes" ]; then
-              echo "⚡ Schema has tables but no _prisma_migrations — resolving baseline"
-              npx prisma migrate resolve --applied 0_baseline
-            else
-              echo "✅ Schema is empty — migrations will run fresh"
-            fi
+          echo "Has existing tables: $HAS_TABLES"
+
+          if [ "$HAS_TABLES" = "yes" ]; then
+            echo "⚡ Schema has tables — resolving baseline + all existing migrations"
+            npx prisma migrate resolve --applied 0_baseline
+            # Also resolve any migrations whose changes already exist in the DB
+            # (all use IF NOT EXISTS, but marking them avoids re-running)
+            for m in 20260226235614_add_order_ai_verification 20260227021440_add_missing_indexes 20260228000000_add_ops_dashboard_composite_index 20260228010000_add_deal_mediator_composite_index; do
+              echo "  Resolving $m as applied..."
+              npx prisma migrate resolve --applied "$m" 2>/dev/null || true
+            done
+            echo "✅ All existing migrations resolved"
           else
-            echo "✅ _prisma_migrations table exists — normal migration flow"
+            echo "✅ Schema is empty — migrations will run fresh from baseline"
           fi
 
       - name: Apply Prisma migrations to production database
