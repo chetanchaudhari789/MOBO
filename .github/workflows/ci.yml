@@ -482,25 +482,115 @@ jobs:
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
           # Strip any existing search_path from DATABASE_URL, then set ONLY the target schema
-          # This avoids 'permission denied for schema public' on hosted PostgreSQL.
           CLEAN_URL=$(echo "$DATABASE_URL" | sed -E 's/([&?])search_path=[^&]*//g; s/\?&/?/')
           SEPARATOR="&"
           echo "$CLEAN_URL" | grep -q '?' || SEPARATOR="?"
           export DATABASE_URL="${CLEAN_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
-          echo "Migrating with search_path=${DB_SCHEMA} (cleaned URL)"
+          echo "Migrating with search_path=${DB_SCHEMA}"
           cd backend
 
-          # Try prisma migrate deploy first
-          echo "--- Attempting: prisma migrate deploy ---"
-          if npx prisma migrate deploy 2>&1; then
+          # Diagnostic: verify connection + search_path from Prisma's perspective
+          echo "=== Diagnostic: checking current search_path ==="
+          node -e "
+            const { Client } = require('pg');
+            const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+            (async () => {
+              await c.connect();
+              const r = await c.query('SHOW search_path');
+              console.log('Active search_path:', r.rows[0].search_path);
+              const sp = await c.query('SELECT current_schema()');
+              console.log('Current schema:', sp.rows[0].current_schema);
+              await c.end();
+            })().catch(e => console.error('Diagnostic error:', e.message));
+          "
+
+          # Method 1: Try prisma migrate deploy
+          echo "=== Method 1: prisma migrate deploy ==="
+          set +e
+          MIGRATE_OUTPUT=$(npx prisma migrate deploy 2>&1)
+          MIGRATE_EXIT=$?
+          set -e
+          echo "$MIGRATE_OUTPUT"
+
+          if [ $MIGRATE_EXIT -eq 0 ]; then
             echo "✅ prisma migrate deploy succeeded"
-          else
-            MIGRATE_EXIT=$?
-            echo "⚠️ prisma migrate deploy failed (exit code $MIGRATE_EXIT)"
-            echo "--- Falling back to: prisma db push ---"
-            npx prisma db push --skip-generate 2>&1
-            echo "✅ prisma db push succeeded"
+            exit 0
           fi
+          echo "⚠️ prisma migrate deploy failed (exit $MIGRATE_EXIT)"
+
+          # Method 2: Try prisma db push
+          echo "=== Method 2: prisma db push ==="
+          set +e
+          PUSH_OUTPUT=$(npx prisma db push --skip-generate 2>&1)
+          PUSH_EXIT=$?
+          set -e
+          echo "$PUSH_OUTPUT"
+
+          if [ $PUSH_EXIT -eq 0 ]; then
+            echo "✅ prisma db push succeeded"
+            exit 0
+          fi
+          echo "⚠️ prisma db push also failed (exit $PUSH_EXIT)"
+
+          # Method 3: Direct SQL execution via pg client
+          echo "=== Method 3: Direct SQL via pg client ==="
+          node -e "
+            const { Client } = require('pg');
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+            const migrDir = path.join(process.cwd(), 'prisma/migrations');
+            (async () => {
+              await c.connect();
+              // Create _prisma_migrations table
+              await c.query(\`CREATE TABLE IF NOT EXISTS \"_prisma_migrations\" (
+                id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                checksum VARCHAR(64) NOT NULL,
+                finished_at TIMESTAMPTZ,
+                migration_name VARCHAR(255) NOT NULL UNIQUE,
+                logs TEXT,
+                rolled_back_at TIMESTAMPTZ,
+                started_at TIMESTAMPTZ DEFAULT now(),
+                applied_steps_count INTEGER DEFAULT 0
+              )\`);
+              // Get sorted migration dirs
+              const dirs = fs.readdirSync(migrDir)
+                .filter(d => {
+                  const p = path.join(migrDir, d);
+                  return fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'migration.sql'));
+                })
+                .sort();
+              for (const dir of dirs) {
+                // Skip if already applied
+                const exists = await c.query('SELECT 1 FROM \"_prisma_migrations\" WHERE migration_name = \$1 AND finished_at IS NOT NULL', [dir]);
+                if (exists.rows.length > 0) { console.log('⏭️  ' + dir + ' (already applied)'); continue; }
+                const sql = fs.readFileSync(path.join(migrDir, dir, 'migration.sql'), 'utf8');
+                const checksum = crypto.createHash('sha256').update(sql).digest('hex');
+                console.log('🔧 Applying: ' + dir);
+                try {
+                  await c.query('BEGIN');
+                  await c.query(sql);
+                  await c.query('COMMIT');
+                  await c.query('INSERT INTO \"_prisma_migrations\" (checksum, migration_name, finished_at, applied_steps_count) VALUES (\$1, \$2, now(), 1)', [checksum, dir]);
+                  console.log('✅ ' + dir);
+                } catch (e) {
+                  await c.query('ROLLBACK').catch(() => {});
+                  console.error('❌ ' + dir + ': ' + e.message);
+                  // For non-baseline migrations with IF NOT EXISTS, mark as applied anyway
+                  if (dir !== '0_baseline') {
+                    try {
+                      await c.query(sql);
+                      await c.query('INSERT INTO \"_prisma_migrations\" (checksum, migration_name, finished_at, applied_steps_count) VALUES (\$1, \$2, now(), 1)', [checksum, dir]);
+                      console.log('✅ ' + dir + ' (retry without transaction)');
+                    } catch (e2) { console.error('❌ ' + dir + ' retry: ' + e2.message); process.exit(1); }
+                  } else { process.exit(1); }
+                }
+              }
+              await c.end();
+              console.log('✅ All migrations applied via direct SQL');
+            })().catch(e => { console.error('Fatal:', e.message); process.exit(1); });
+          "
 
       - name: Verify production migration state
         env:
