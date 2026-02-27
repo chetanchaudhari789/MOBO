@@ -406,22 +406,80 @@ jobs:
               } else {
                 console.log('✅ Schema \"' + schema + '\" already exists');
               }
-              // Set search_path for this session
-              await c.query('SET search_path TO ' + schema + ', public');
-              console.log('✅ Connectivity OK, search_path set');
+              // Verify we can create tables in this schema
+              await c.query('SET search_path TO ' + schema);
+              console.log('✅ Connectivity OK, search_path set to ' + schema);
               await c.end();
             })().catch(e => { console.error('::error::DB check failed:', e.message); process.exit(1); });
           "
+
+      - name: Baseline migrations if schema already has tables
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        run: |
+          SEPARATOR="&"
+          echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
+          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
+          cd backend
+          # Check if _prisma_migrations table exists in the target schema
+          HAS_MIGRATIONS=$(node -e "
+            const { Client } = require('pg');
+            const c = new Client({
+              connectionString: process.env.DATABASE_URL,
+              ssl: { rejectUnauthorized: false }
+            });
+            (async () => {
+              await c.connect();
+              const r = await c.query(
+                \"SELECT 1 FROM information_schema.tables WHERE table_schema = '\${{ env.DB_SCHEMA }}' AND table_name = '_prisma_migrations'\"
+              );
+              console.log(r.rows.length > 0 ? 'yes' : 'no');
+              await c.end();
+            })().catch(() => { console.log('no'); });
+          ")
+          echo "Has _prisma_migrations: $HAS_MIGRATIONS"
+          if [ "$HAS_MIGRATIONS" = "no" ]; then
+            # Check if schema has existing tables (needs baselining)
+            HAS_TABLES=$(node -e "
+              const { Client } = require('pg');
+              const c = new Client({
+                connectionString: process.env.DATABASE_URL,
+                ssl: { rejectUnauthorized: false }
+              });
+              (async () => {
+                await c.connect();
+                const r = await c.query(
+                  \"SELECT 1 FROM information_schema.tables WHERE table_schema = '\${{ env.DB_SCHEMA }}' AND table_type = 'BASE TABLE' LIMIT 1\"
+                );
+                console.log(r.rows.length > 0 ? 'yes' : 'no');
+                await c.end();
+              })().catch(() => { console.log('no'); });
+            ")
+            echo "Has existing tables: $HAS_TABLES"
+            if [ "$HAS_TABLES" = "yes" ]; then
+              echo "⚡ Schema has tables but no _prisma_migrations — resolving baseline"
+              npx prisma migrate resolve --applied 0_baseline
+            else
+              echo "✅ Schema is empty — migrations will run fresh"
+            fi
+          else
+            echo "✅ _prisma_migrations table exists — normal migration flow"
+          fi
 
       - name: Apply Prisma migrations to production database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
-          # Append search_path to DATABASE_URL
+          # Append search_path to DATABASE_URL — use ONLY the target schema, NOT public
+          # This ensures Prisma creates _prisma_migrations and all tables inside
+          # buzzma_test (develop) or buzzma_production (main), avoiding "permission
+          # denied for schema public" errors on hosted PostgreSQL.
           SEPARATOR="&"
           echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
-          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA},public"
+          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
+          echo "Migrating with search_path=${DB_SCHEMA}"
           cd backend && npx prisma migrate deploy
 
       - name: Verify production migration state
@@ -431,7 +489,7 @@ jobs:
         run: |
           SEPARATOR="&"
           echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
-          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA},public"
+          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
           cd backend && npx prisma migrate status
 
       - name: Trigger Render backend deploy

@@ -1,5 +1,5 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
+-- CreateSchema (no-op: schema is set via search_path / DATABASE_URL)
+-- Skipped: CREATE SCHEMA IF NOT EXISTS "public"; — not needed and may fail on hosted PG
 
 -- CreateEnum
 CREATE TYPE "user_role" AS ENUM ('shopper', 'mediator', 'agency', 'brand', 'admin', 'ops');
