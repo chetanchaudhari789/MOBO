@@ -547,7 +547,7 @@ jobs:
           # Bypasses Prisma Rust engine which has SSL + public schema issues
           echo "=== Direct SQL migration (deploy-migrate.js) ===" | tee -a "$LOGFILE"
           set +e
-          node scripts/deploy-migrate.js 2>&1 | tee -a "$LOGFILE"
+          node scripts/deploy-migrate.cjs 2>&1 | tee -a "$LOGFILE"
           MIGRATE_EXIT=${PIPESTATUS[0]}
           set -e
 

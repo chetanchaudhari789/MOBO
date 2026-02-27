@@ -54,7 +54,7 @@ COPY --from=builder /app/backend/generated backend/generated
 COPY --from=builder /app/backend/prisma backend/prisma
 
 # Copy deploy-migrate script (direct SQL migration runner for production)
-COPY backend/scripts/deploy-migrate.js backend/scripts/deploy-migrate.js
+COPY backend/scripts/deploy-migrate.cjs backend/scripts/deploy-migrate.cjs
 
 # Copy shared (needed at runtime for type imports resolved via dist)
 COPY --from=builder /app/shared shared/

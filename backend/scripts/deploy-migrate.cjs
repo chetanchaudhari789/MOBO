@@ -4,7 +4,7 @@
  * Used as fallback when `prisma migrate deploy` or `prisma db push`
  * fail due to hosted PostgreSQL permission restrictions.
  *
- * Usage: node scripts/deploy-migrate.js
+ * Usage: node scripts/deploy-migrate.cjs
  * Requires: DATABASE_URL env var with search_path set to target schema
  */
 

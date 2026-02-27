@@ -18,7 +18,7 @@ RUN npm ci --workspace=@mobo/backend --omit=dev
 COPY backend/dist ./backend/dist
 
 # Copy deploy-migrate script
-COPY backend/scripts/deploy-migrate.js ./backend/scripts/deploy-migrate.js
+COPY backend/scripts/deploy-migrate.cjs ./backend/scripts/deploy-migrate.cjs
 
 # Copy traineddata for OCR
 COPY backend/eng.traineddata ./backend/
