@@ -457,11 +457,12 @@ jobs:
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
           export DATABASE_URL="${DEPLOY_DATABASE_URL}"
+          echo "DATABASE_URL is ${#DATABASE_URL} chars (empty=${DATABASE_URL:+no}${DATABASE_URL:-YES})"
           cd backend
 
-          # Pre-create _prisma_migrations table (IF NOT EXISTS — safe, preserves state)
-          # Also clean up any incomplete migration entries from previous failed runs
+          # Step 1: Pre-create _prisma_migrations + clean incomplete entries
           node -e '
+            const fs = require("fs");
             const { Client } = require("pg");
             const c = new Client({
               connectionString: process.env.DATABASE_URL,
@@ -470,44 +471,55 @@ jobs:
             const schema = process.argv[1];
             (async () => {
               await c.connect();
-              // Create _prisma_migrations in the target schema
-              await c.query(`
-                CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
-                  id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
-                  checksum VARCHAR(64) NOT NULL,
-                  finished_at TIMESTAMPTZ,
-                  migration_name VARCHAR(255) NOT NULL UNIQUE,
-                  logs TEXT,
-                  rolled_back_at TIMESTAMPTZ,
-                  started_at TIMESTAMPTZ DEFAULT now(),
-                  applied_steps_count INTEGER DEFAULT 0
-                )
-              `);
-              console.log("✅ _prisma_migrations table ready");
+              console.log("Connected. Preparing migration state for schema:", schema);
 
-              // Clean up incomplete entries (started but never finished)
+              const sp = await c.query("SHOW search_path");
+              console.log("search_path:", sp.rows[0].search_path);
+
+              await c.query(
+                "CREATE TABLE IF NOT EXISTS \"_prisma_migrations\" (" +
+                "id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text, " +
+                "checksum VARCHAR(64) NOT NULL, " +
+                "finished_at TIMESTAMPTZ, " +
+                "migration_name VARCHAR(255) NOT NULL UNIQUE, " +
+                "logs TEXT, " +
+                "rolled_back_at TIMESTAMPTZ, " +
+                "started_at TIMESTAMPTZ DEFAULT now(), " +
+                "applied_steps_count INTEGER DEFAULT 0)"
+              );
+              console.log("_prisma_migrations table ready");
+
               const del = await c.query(
                 "DELETE FROM \"_prisma_migrations\" WHERE finished_at IS NULL"
               );
-              if (del.rowCount > 0) console.log("Cleaned " + del.rowCount + " incomplete migration entries");
+              if (del.rowCount > 0) console.log("Cleaned", del.rowCount, "incomplete entries");
 
-              // Check if schema has real tables
+              // Check for existing tables
               const r = await c.query(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = \x27BASE TABLE\x27 AND table_name != \x27_prisma_migrations\x27 ORDER BY table_name",
+                "SELECT table_name FROM information_schema.tables " +
+                "WHERE table_schema = $1 AND table_type = " + String.fromCharCode(39) + "BASE TABLE" + String.fromCharCode(39) +
+                " AND table_name != " + String.fromCharCode(39) + "_prisma_migrations" + String.fromCharCode(39) +
+                " ORDER BY table_name",
                 [schema]
               );
-              if (r.rows.length > 0) {
-                console.log("Found " + r.rows.length + " existing tables: " + r.rows.map(x => x.table_name).join(", "));
-                process.stdout.write("HAS_TABLES=yes");
+
+              const hasTables = r.rows.length > 0;
+              if (hasTables) {
+                console.log("Found", r.rows.length, "tables:", r.rows.map(x => x.table_name).join(", "));
               } else {
-                console.log("Schema is empty");
-                process.stdout.write("HAS_TABLES=no");
+                console.log("Schema is empty — no existing tables");
               }
+              fs.writeFileSync("/tmp/has_tables.txt", hasTables ? "yes" : "no");
+
               await c.end();
-            })().catch(e => { console.error("Error: " + e.message); process.exit(1); });
-          ' "${DB_SCHEMA}" > /tmp/has_tables.txt 2>&1
-          cat /tmp/has_tables.txt
-          eval "$(grep 'HAS_TABLES=' /tmp/has_tables.txt | tail -1)" || HAS_TABLES=no
+              console.log("Done.");
+            })().catch(e => {
+              console.error("::error::Prepare migration state failed:", e.message);
+              process.exit(1);
+            });
+          ' "${DB_SCHEMA}"
+
+          HAS_TABLES=$(cat /tmp/has_tables.txt 2>/dev/null || echo "no")
           echo "Has existing tables: $HAS_TABLES"
 
           if [ "$HAS_TABLES" = "yes" ]; then
