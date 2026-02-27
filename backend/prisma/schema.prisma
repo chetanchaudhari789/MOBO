@@ -809,6 +809,7 @@ model Ticket {
 
   @@index([status, createdAt(sort: Desc)])
   @@index([userId, deletedAt, createdAt(sort: Desc)]) // user-specific ticket listing
+  @@index([orderId])                                   // settlement dispute lookups
   @@map("tickets")
 }
 

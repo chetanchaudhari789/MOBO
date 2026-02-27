@@ -6,6 +6,7 @@ import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
@@ -1629,7 +1630,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                       <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-5">
                           <div className="flex items-center gap-3">
-                            <img loading="lazy" src={p.image} alt={p.title ? String(p.title) : 'Product image'} className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-100 p-1" />
+                            <ProxiedImage src={p.image} alt={p.title ? String(p.title) : 'Product image'} className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-100 p-1" />
                             <span className="truncate max-w-[200px] text-slate-900 font-bold">
                               {p.title}
                             </span>

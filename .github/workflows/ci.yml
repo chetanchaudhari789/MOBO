@@ -301,7 +301,7 @@ jobs:
           retention-days: 14
 
   # ═══════════════════════════════════════════════════════════════════
-  #  5. Deploy — migrate production + Render deploy hook
+  #  5. Deploy — migrate production database + trigger server deploy
   #     Only on push to main or develop (never on PRs)
   # ═══════════════════════════════════════════════════════════════════
   #
@@ -310,7 +310,8 @@ jobs:
   #   - cancel-in-progress: false — NEVER cancel a running deploy
   #   - DATABASE_URL is only available in this job (secret isolation)
   #   - Migration safety re-checked before touching production
-  #   - Post-deploy health check verifies the service is alive
+  #   - Uses deploy-migrate.js (direct SQL) — bypasses Prisma CLI
+  #     to avoid 'permission denied for schema public' issues
   # ═══════════════════════════════════════════════════════════════════
   deploy:
     name: '🚀 Deploy'
@@ -460,9 +461,11 @@ jobs:
           echo "DATABASE_URL is ${#DATABASE_URL} chars (empty=${DATABASE_URL:+no}${DATABASE_URL:-YES})"
           cd backend
 
-          # Step 1: Pre-create _prisma_migrations + clean incomplete entries
+          # Pre-create _prisma_migrations + clean incomplete entries (all via direct pg)
           node -e '
             const fs = require("fs");
+            const crypto = require("crypto");
+            const path = require("path");
             const { Client } = require("pg");
             const c = new Client({
               connectionString: process.env.DATABASE_URL,
@@ -506,10 +509,24 @@ jobs:
               const hasTables = r.rows.length > 0;
               if (hasTables) {
                 console.log("Found", r.rows.length, "tables:", r.rows.map(x => x.table_name).join(", "));
+
+                // Resolve all known migrations as applied (direct SQL, no Prisma CLI)
+                const migrations = ["0_baseline", "20260226235614_add_order_ai_verification", "20260227021440_add_missing_indexes", "20260228000000_add_ops_dashboard_composite_index", "20260228010000_add_deal_mediator_composite_index"];
+                for (const m of migrations) {
+                  const sqlFile = path.join("prisma/migrations", m, "migration.sql");
+                  if (!fs.existsSync(sqlFile)) { console.log("  Skip", m, "(no file)"); continue; }
+                  const sql = fs.readFileSync(sqlFile, "utf8");
+                  const checksum = crypto.createHash("sha256").update(sql).digest("hex");
+                  const exists = await c.query("SELECT 1 FROM \"_prisma_migrations\" WHERE migration_name = $1 AND finished_at IS NOT NULL", [m]);
+                  if (exists.rows.length > 0) { console.log("  Already resolved:", m); continue; }
+                  await c.query("DELETE FROM \"_prisma_migrations\" WHERE migration_name = $1", [m]);
+                  await c.query("INSERT INTO \"_prisma_migrations\" (checksum, migration_name, finished_at, applied_steps_count) VALUES ($1, $2, now(), 1)", [checksum, m]);
+                  console.log("  Resolved:", m);
+                }
+                console.log("✅ All existing migrations resolved");
               } else {
-                console.log("Schema is empty — no existing tables");
+                console.log("✅ Schema is empty — migrations will run fresh from baseline");
               }
-              fs.writeFileSync("/tmp/has_tables.txt", hasTables ? "yes" : "no");
 
               await c.end();
               console.log("Done.");
@@ -519,21 +536,7 @@ jobs:
             });
           ' "${DB_SCHEMA}"
 
-          HAS_TABLES=$(cat /tmp/has_tables.txt 2>/dev/null || echo "no")
-          echo "Has existing tables: $HAS_TABLES"
-
-          if [ "$HAS_TABLES" = "yes" ]; then
-            echo "⚡ Schema has tables — resolving all existing migrations"
-            for m in 0_baseline 20260226235614_add_order_ai_verification 20260227021440_add_missing_indexes 20260228000000_add_ops_dashboard_composite_index 20260228010000_add_deal_mediator_composite_index; do
-              echo "  Resolving $m..."
-              npx prisma migrate resolve --applied "$m" 2>&1 || true
-            done
-            echo "✅ All existing migrations resolved"
-          else
-            echo "✅ Schema is empty — migrations will run fresh from baseline"
-          fi
-
-      - name: Apply Prisma migrations to production database
+      - name: Apply migrations to production database
         env:
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
@@ -544,40 +547,26 @@ jobs:
           LOGFILE="/tmp/deploy-migrations.log"
           > "$LOGFILE"
 
-          # Run prisma migrate deploy
-          echo "=== prisma migrate deploy ===" | tee -a "$LOGFILE"
+          # Direct SQL migration via deploy-migrate.js (primary method)
+          # Bypasses Prisma Rust engine which has SSL + public schema issues
+          echo "=== Direct SQL migration (deploy-migrate.js) ===" | tee -a "$LOGFILE"
           set +e
-          npx prisma migrate deploy 2>&1 | tee -a "$LOGFILE"
+          node scripts/deploy-migrate.js 2>&1 | tee -a "$LOGFILE"
           MIGRATE_EXIT=${PIPESTATUS[0]}
           set -e
 
           if [ $MIGRATE_EXIT -eq 0 ]; then
-            echo "✅ prisma migrate deploy succeeded" | tee -a "$LOGFILE"
-            exit 0
-          fi
-          echo "⚠️ prisma migrate deploy failed (exit $MIGRATE_EXIT)" | tee -a "$LOGFILE"
-
-          # Fallback: Direct SQL via deploy-migrate.js (bypasses Prisma Rust engine)
-          echo "=== Fallback: Direct SQL via deploy-migrate.js ===" | tee -a "$LOGFILE"
-          set +e
-          node scripts/deploy-migrate.js 2>&1 | tee -a "$LOGFILE"
-          DIRECT_EXIT=${PIPESTATUS[0]}
-          set -e
-
-          if [ $DIRECT_EXIT -eq 0 ]; then
-            echo "✅ Direct SQL migration succeeded" | tee -a "$LOGFILE"
+            echo "✅ Migration succeeded" | tee -a "$LOGFILE"
             exit 0
           fi
 
-          # Capture full error output in annotation (visible without auth)
+          # Capture full error output in Summary
           echo "## Deploy Migration Log" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat "$LOGFILE" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-          # Put error details in annotation (visible on public summary page)
           ERROR_DETAIL=$(cat "$LOGFILE" | tail -80 | head -c 2000)
-          # Encode for GitHub annotation format
           ERROR_DETAIL="${ERROR_DETAIL//'%'/%25}"
           ERROR_DETAIL="${ERROR_DETAIL//$'\n'/%0A}"
           ERROR_DETAIL="${ERROR_DETAIL//$'\r'/%0D}"
@@ -598,8 +587,6 @@ jobs:
         run: |
           export DATABASE_URL="${DEPLOY_DATABASE_URL}"
           cd backend
-          echo "--- Migration status ---"
-          npx prisma migrate status 2>&1 || true
           echo "--- Verifying schema tables ---"
           node -e '
             const { Client } = require("pg");
@@ -610,54 +597,44 @@ jobs:
             const schema = process.argv[1];
             (async () => {
               await c.connect();
+
+              // List applied migrations
+              const migs = await c.query(
+                "SELECT migration_name, finished_at FROM \"_prisma_migrations\" WHERE finished_at IS NOT NULL ORDER BY migration_name"
+              );
+              console.log("Applied migrations:");
+              migs.rows.forEach(r => console.log("  ✅", r.migration_name, "—", r.finished_at));
+
+              // List tables
               const r = await c.query(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = \x27BASE TABLE\x27 ORDER BY table_name",
                 [schema]
               );
-              console.log("Tables in " + schema + ": " + r.rows.map(x => x.table_name).join(", "));
+              console.log("\nTables in " + schema + ": " + r.rows.map(x => x.table_name).join(", "));
               console.log("Total: " + r.rows.length + " tables");
+
+              if (r.rows.length < 10) {
+                console.error("::warning::Expected at least 10 tables but found " + r.rows.length);
+              }
               await c.end();
             })().catch(e => { console.error(e.message); });
           ' "${DB_SCHEMA}"
 
-      - name: Trigger Render backend deploy
+      # Deploy to self-hosted server (SSH/webhook) — placeholder
+      # Configure SERVER_DEPLOY_HOOK secret when your server is ready
+      - name: Trigger server deploy
         if: success()
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          SERVER_DEPLOY_HOOK: ${{ secrets.SERVER_DEPLOY_HOOK }}
         run: |
-          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
-            echo "::warning::RENDER_DEPLOY_HOOK not set — skipping deploy trigger"
+          if [ -z "$SERVER_DEPLOY_HOOK" ]; then
+            echo "::notice::SERVER_DEPLOY_HOOK not set — migrations applied, manual deploy needed"
             exit 0
           fi
-          echo "Triggering Render deploy for SHA $GIT_SHA…"
-          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$RENDER_DEPLOY_HOOK")
+          echo "Triggering server deploy for SHA $GIT_SHA…"
+          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" -X POST "$SERVER_DEPLOY_HOOK" 2>/dev/null || echo "000")
           if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-            echo "✅ Render deploy triggered (HTTP $HTTP_STATUS)"
+            echo "✅ Server deploy triggered (HTTP $HTTP_STATUS)"
           else
-            echo "::error::Render deploy hook returned HTTP $HTTP_STATUS"
-            exit 1
+            echo "::warning::Server deploy hook returned HTTP $HTTP_STATUS"
           fi
-
-      - name: Post-deploy health check
-        if: success()
-        env:
-          HEALTH_URL: ${{ secrets.HEALTH_URL }}
-        run: |
-          # Default health URL if secret not set
-          URL="${HEALTH_URL:-https://mobo-agig.onrender.com/api/health}"
-          echo "Waiting 30s for Render to pick up deploy…"
-          sleep 30
-
-          RETRIES=5
-          for i in $(seq 1 $RETRIES); do
-            HTTP_STATUS=$(curl -sf -o /tmp/health.json -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
-            if [ "$HTTP_STATUS" = "200" ]; then
-              echo "✅ Health check passed (attempt $i/$RETRIES)"
-              cat /tmp/health.json | head -c 500
-              echo ""
-              exit 0
-            fi
-            echo "⏳ Health check attempt $i/$RETRIES — HTTP $HTTP_STATUS, retrying in 15s…"
-            sleep 15
-          done
-          echo "::warning::Health check did not pass after $RETRIES attempts — Render may still be deploying"

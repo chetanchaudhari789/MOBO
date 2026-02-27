@@ -17,16 +17,13 @@ import { useChat } from '../context/ChatContext';
 import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
 import { Ticket, Order, Product, AiNavigateTo } from '../types';
-import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { ProductCard } from './ProductCard';
+import { ProxiedImage, proxyImageUrl as _proxyUrl } from './ProxiedImage';
 
 /** Return a proxied image URL for external marketplace images. */
 function proxyImageUrl(rawUrl: string | undefined): string | undefined {
   if (!rawUrl) return undefined;
-  if (/^https?:\/\//i.test(rawUrl)) {
-    return `${getApiBaseAbsolute()}/media/image?url=${encodeURIComponent(rawUrl)}`;
-  }
-  return rawUrl; // data URIs, relative paths, etc. are returned as-is
+  return _proxyUrl(rawUrl);
 }
 
 interface ChatbotProps {
@@ -724,7 +721,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                 >
                 {msg.image && (
                   <div className="rounded-2xl overflow-hidden border-4 border-white shadow-md max-w-[200px]">
-                    <img loading="lazy" src={msg.image} className="w-full h-auto bg-gray-100" alt="Attachment" />
+                    <ProxiedImage src={msg.image} className="w-full h-auto bg-gray-100" alt="Attachment" />
                   </div>
                 )}
                 {msg.text && (

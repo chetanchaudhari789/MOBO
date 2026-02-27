@@ -12,6 +12,7 @@ import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import {
   Clock,
@@ -958,10 +959,10 @@ export const Orders: React.FC = () => {
 
                 <div className="flex gap-4 mb-4">
                   <div className="w-20 h-20 bg-gray-50 rounded-2xl p-2 border border-gray-100 flex-shrink-0">
-                    <img loading="lazy"
+                    <ProxiedImage
                       src={firstItem.image}
                       className="w-full h-full object-contain mix-blend-multiply"
-                      alt="prod"
+                      alt={firstItem.title || 'Product'}
                     />
                   </div>
                   <div className="flex-1 min-w-0 py-1">
@@ -1419,10 +1420,10 @@ export const Orders: React.FC = () => {
                         }}
                         className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl hover:bg-gray-50 cursor-pointer active:scale-95 transition-transform"
                       >
-                        <img loading="lazy"
+                        <ProxiedImage
                           src={p.image}
                           className="w-12 h-12 object-contain mix-blend-multiply"
-                          alt=""
+                          alt={p.title || 'Product'}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-slate-900 truncate">{p.title}</p>
@@ -1440,10 +1441,10 @@ export const Orders: React.FC = () => {
               ) : (
                 <div className="space-y-5">
                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center gap-4 relative">
-                    <img loading="lazy"
+                    <ProxiedImage
                       src={selectedProduct.image}
                       className="w-16 h-16 object-contain mix-blend-multiply"
-                      alt=""
+                      alt={selectedProduct.title || 'Product'}
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-900 line-clamp-2">

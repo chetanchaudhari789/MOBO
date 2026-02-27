@@ -12,6 +12,7 @@ import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv as downloadCsvFile } from '../utils/csvHelpers';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { User, Campaign, Order, Product, Ticket } from '../types';
 import {
   LayoutGrid,
@@ -425,9 +426,9 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                   )}
                   <div className="p-2 pb-0 flex gap-3 mb-3">
                     <div className="w-14 h-14 bg-[#F4F4F5] rounded-[1rem] p-1.5 flex-shrink-0 relative overflow-hidden">
-                      <img loading="lazy"
+                      <ProxiedImage
                         src={o.items?.[0]?.image}
-                        alt={o.items?.[0]?.title}
+                        alt={o.items?.[0]?.title || 'Order item'}
                         className="w-full h-full object-contain mix-blend-multiply relative z-10"
                       />
                     </div>
@@ -691,7 +692,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                        <img loading="lazy"
+                        <ProxiedImage
                           src={d.image}
                           alt={d.title}
                           className="w-full h-full object-contain mix-blend-multiply"
@@ -798,7 +799,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                        <img loading="lazy"
+                        <ProxiedImage
                           src={c.image}
                           alt={c.title}
                           className="w-full h-full object-contain mix-blend-multiply"
@@ -1419,9 +1420,9 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-zinc-50 rounded-[0.8rem] p-1.5 flex-shrink-0">
-                        <img loading="lazy"
+                        <ProxiedImage
                           src={o.items?.[0]?.image}
-                          alt={o.items?.[0]?.title}
+                          alt={o.items?.[0]?.title || 'Order item'}
                           className="w-full h-full object-contain mix-blend-multiply"
                         />
                       </div>
@@ -2570,8 +2571,9 @@ export const MediatorDashboard: React.FC = () => {
             <div className="w-12 h-1 bg-zinc-200 rounded-full mx-auto mb-6"></div>
             <div className="flex gap-4 mb-6">
               <div className="w-16 h-16 rounded-[1rem] bg-zinc-50 p-2 border border-zinc-100 flex items-center justify-center">
-                <img loading="lazy"
+                <ProxiedImage
                   src={dealBuilder.image}
+                  alt={dealBuilder.title || 'Deal'}
                   className="w-full h-full object-contain mix-blend-multiply"
                 />
               </div>

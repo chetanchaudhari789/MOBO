@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
 import { formatErrorMessage } from '../utils/errors';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
@@ -1987,8 +1988,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="p-5 pl-8">
                         <div className="flex items-center gap-4">
-                          <img loading="lazy"
+                          <ProxiedImage
                             src={c.image}
+                            alt={c.title || 'Campaign'}
                             className="w-10 h-10 object-contain rounded-lg bg-slate-50 border border-slate-100 p-1 group-hover:scale-105 transition-transform"
                           />
                           <div>
@@ -2168,8 +2170,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   >
                     <div className="flex gap-4 mb-5">
                       <div className="w-20 h-20 bg-slate-50 rounded-2xl p-2 border border-slate-100 flex-shrink-0 flex items-center justify-center">
-                        <img loading="lazy"
+                        <ProxiedImage
                           src={c.image}
+                          alt={c.title || 'Campaign'}
                           className="w-full h-full object-contain mix-blend-multiply group-hover:scale-110 transition-transform"
                         />
                       </div>
@@ -2432,8 +2435,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             <div className="bg-slate-50 p-3 2xl:p-4 rounded-2xl mb-2 border border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
               <div className="flex gap-3 items-center min-w-0">
                 <div className="w-10 h-10 bg-white rounded-lg p-1.5 border border-slate-200 shadow-sm flex-shrink-0">
-                  <img loading="lazy"
+                  <ProxiedImage
                     src={assignModal.image}
+                    alt={assignModal.title || 'Campaign'}
                     className="w-full h-full object-contain mix-blend-multiply"
                   />
                 </div>
@@ -3157,8 +3161,9 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         className="p-4 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-colors flex gap-4 items-center"
                       >
                         <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-                          <img loading="lazy"
+                          <ProxiedImage
                             src={o.items?.[0]?.image}
+                            alt={o.items?.[0]?.title || 'Order item'}
                             className="w-full h-full object-contain mix-blend-multiply"
                           />
                         </div>
@@ -3361,9 +3366,9 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             <div className="flex-1 overflow-y-auto scrollbar-hide space-y-6 pr-2">
               {/* Product Summary */}
               <div className="flex gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <img loading="lazy"
+                <ProxiedImage
                   src={proofOrder.items?.[0]?.image}
-                  alt={proofOrder.items?.[0]?.title}
+                  alt={proofOrder.items?.[0]?.title || 'Product'}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-slate-100 p-1"
                 />
                 <div>

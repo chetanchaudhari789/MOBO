@@ -1,77 +1,36 @@
--- CreateSchema (no-op: schema is set via search_path / DATABASE_URL)
--- Skipped: CREATE SCHEMA IF NOT EXISTS "public"; — not needed and may fail on hosted PG
+-- ─────────────────────────────────────────────────────────────────
+-- MOBO Baseline Migration (Idempotent)
+-- All CREATE TYPE / CREATE TABLE / CREATE INDEX use IF NOT EXISTS
+-- Safe to re-run on existing schemas (buzzma_test, buzzma_production)
+-- ─────────────────────────────────────────────────────────────────
 
--- CreateEnum
-CREATE TYPE "user_role" AS ENUM ('shopper', 'mediator', 'agency', 'brand', 'admin', 'ops');
+-- CreateEnum (idempotent)
+DO $$ BEGIN CREATE TYPE "user_role" AS ENUM ('shopper', 'mediator', 'agency', 'brand', 'admin', 'ops'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "user_status" AS ENUM ('active', 'suspended', 'pending'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "kyc_status" AS ENUM ('none', 'pending', 'verified', 'rejected'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "brand_status" AS ENUM ('active', 'suspended', 'pending'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "agency_status" AS ENUM ('active', 'suspended', 'pending'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "order_workflow_status" AS ENUM ('CREATED', 'REDIRECTED', 'ORDERED', 'PROOF_SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'REWARD_PENDING', 'COMPLETED', 'FAILED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "order_status" AS ENUM ('Ordered', 'Shipped', 'Delivered', 'Cancelled', 'Returned'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "payment_status" AS ENUM ('Pending', 'Paid', 'Refunded', 'Failed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "affiliate_status" AS ENUM ('Unchecked', 'Pending_Cooling', 'Approved_Settled', 'Rejected', 'Fraud_Alert', 'Cap_Exceeded', 'Frozen_Disputed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "settlement_mode" AS ENUM ('wallet', 'external'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "deal_type" AS ENUM ('Discount', 'Review', 'Rating'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "campaign_status" AS ENUM ('draft', 'active', 'paused', 'completed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "transaction_type" AS ENUM ('brand_deposit', 'platform_fee', 'commission_lock', 'commission_settle', 'cashback_lock', 'cashback_settle', 'order_settlement_debit', 'commission_reversal', 'margin_reversal', 'agency_payout', 'agency_receipt', 'payout_request', 'payout_complete', 'payout_failed', 'refund'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "transaction_status" AS ENUM ('pending', 'completed', 'failed', 'reversed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "payout_status" AS ENUM ('requested', 'processing', 'paid', 'failed', 'canceled', 'recorded'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "currency" AS ENUM ('INR'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "invite_status" AS ENUM ('active', 'used', 'revoked', 'expired'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "ticket_status" AS ENUM ('Open', 'Resolved', 'Rejected'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "suspension_action" AS ENUM ('suspend', 'unsuspend'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "push_app" AS ENUM ('buyer', 'mediator'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "rejection_type" AS ENUM ('order', 'review', 'rating', 'returnWindow'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "missing_proof_type" AS ENUM ('review', 'rating', 'returnWindow'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "mediator_status" AS ENUM ('active', 'suspended', 'pending'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- CreateEnum
-CREATE TYPE "user_status" AS ENUM ('active', 'suspended', 'pending');
-
--- CreateEnum
-CREATE TYPE "kyc_status" AS ENUM ('none', 'pending', 'verified', 'rejected');
-
--- CreateEnum
-CREATE TYPE "brand_status" AS ENUM ('active', 'suspended', 'pending');
-
--- CreateEnum
-CREATE TYPE "agency_status" AS ENUM ('active', 'suspended', 'pending');
-
--- CreateEnum
-CREATE TYPE "order_workflow_status" AS ENUM ('CREATED', 'REDIRECTED', 'ORDERED', 'PROOF_SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'REWARD_PENDING', 'COMPLETED', 'FAILED');
-
--- CreateEnum
-CREATE TYPE "order_status" AS ENUM ('Ordered', 'Shipped', 'Delivered', 'Cancelled', 'Returned');
-
--- CreateEnum
-CREATE TYPE "payment_status" AS ENUM ('Pending', 'Paid', 'Refunded', 'Failed');
-
--- CreateEnum
-CREATE TYPE "affiliate_status" AS ENUM ('Unchecked', 'Pending_Cooling', 'Approved_Settled', 'Rejected', 'Fraud_Alert', 'Cap_Exceeded', 'Frozen_Disputed');
-
--- CreateEnum
-CREATE TYPE "settlement_mode" AS ENUM ('wallet', 'external');
-
--- CreateEnum
-CREATE TYPE "deal_type" AS ENUM ('Discount', 'Review', 'Rating');
-
--- CreateEnum
-CREATE TYPE "campaign_status" AS ENUM ('draft', 'active', 'paused', 'completed');
-
--- CreateEnum
-CREATE TYPE "transaction_type" AS ENUM ('brand_deposit', 'platform_fee', 'commission_lock', 'commission_settle', 'cashback_lock', 'cashback_settle', 'order_settlement_debit', 'commission_reversal', 'margin_reversal', 'agency_payout', 'agency_receipt', 'payout_request', 'payout_complete', 'payout_failed', 'refund');
-
--- CreateEnum
-CREATE TYPE "transaction_status" AS ENUM ('pending', 'completed', 'failed', 'reversed');
-
--- CreateEnum
-CREATE TYPE "payout_status" AS ENUM ('requested', 'processing', 'paid', 'failed', 'canceled', 'recorded');
-
--- CreateEnum
-CREATE TYPE "currency" AS ENUM ('INR');
-
--- CreateEnum
-CREATE TYPE "invite_status" AS ENUM ('active', 'used', 'revoked', 'expired');
-
--- CreateEnum
-CREATE TYPE "ticket_status" AS ENUM ('Open', 'Resolved', 'Rejected');
-
--- CreateEnum
-CREATE TYPE "suspension_action" AS ENUM ('suspend', 'unsuspend');
-
--- CreateEnum
-CREATE TYPE "push_app" AS ENUM ('buyer', 'mediator');
-
--- CreateEnum
-CREATE TYPE "rejection_type" AS ENUM ('order', 'review', 'rating', 'returnWindow');
-
--- CreateEnum
-CREATE TYPE "missing_proof_type" AS ENUM ('review', 'rating', 'returnWindow');
-
--- CreateEnum
-CREATE TYPE "mediator_status" AS ENUM ('active', 'suspended', 'pending');
-
--- CreateTable
-CREATE TABLE "users" (
+-- CreateTable (idempotent)
+CREATE TABLE IF NOT EXISTS "users" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "name" VARCHAR(120) NOT NULL,
@@ -111,24 +70,20 @@ CREATE TABLE "users" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "pending_connections" (
+CREATE TABLE IF NOT EXISTS "pending_connections" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "agency_id" TEXT,
     "agency_name" TEXT,
     "agency_code" TEXT,
     "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
     CONSTRAINT "pending_connections_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "brands" (
+CREATE TABLE IF NOT EXISTS "brands" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "name" VARCHAR(200) NOT NULL,
@@ -142,12 +97,10 @@ CREATE TABLE "brands" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "brands_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "agencies" (
+CREATE TABLE IF NOT EXISTS "agencies" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "name" VARCHAR(200) NOT NULL,
@@ -160,12 +113,10 @@ CREATE TABLE "agencies" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "agencies_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "mediator_profiles" (
+CREATE TABLE IF NOT EXISTS "mediator_profiles" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "user_id" UUID NOT NULL,
@@ -178,12 +129,10 @@ CREATE TABLE "mediator_profiles" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "mediator_profiles_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "shopper_profiles" (
+CREATE TABLE IF NOT EXISTS "shopper_profiles" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "user_id" UUID NOT NULL,
@@ -194,12 +143,10 @@ CREATE TABLE "shopper_profiles" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "shopper_profiles_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "campaigns" (
+CREATE TABLE IF NOT EXISTS "campaigns" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "title" VARCHAR(200) NOT NULL,
@@ -227,12 +174,10 @@ CREATE TABLE "campaigns" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "campaigns_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "deals" (
+CREATE TABLE IF NOT EXISTS "deals" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "campaign_id" UUID NOT NULL,
@@ -257,12 +202,10 @@ CREATE TABLE "deals" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "deals_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "orders" (
+CREATE TABLE IF NOT EXISTS "orders" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "user_id" UUID NOT NULL,
@@ -290,6 +233,7 @@ CREATE TABLE "orders" (
     "screenshot_return_window" TEXT,
     "review_link" TEXT,
     "return_window_days" INTEGER NOT NULL DEFAULT 14,
+    "order_ai_verification" JSONB,
     "rating_ai_verification" JSONB,
     "return_window_ai_verification" JSONB,
     "rejection_type" "rejection_type",
@@ -312,12 +256,10 @@ CREATE TABLE "orders" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "orders_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "order_items" (
+CREATE TABLE IF NOT EXISTS "order_items" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "order_id" UUID NOT NULL,
     "product_id" TEXT NOT NULL,
@@ -330,12 +272,10 @@ CREATE TABLE "order_items" (
     "quantity" INTEGER NOT NULL DEFAULT 1,
     "platform" TEXT,
     "brand_name" TEXT,
-
     CONSTRAINT "order_items_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "wallets" (
+CREATE TABLE IF NOT EXISTS "wallets" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "owner_user_id" UUID NOT NULL,
@@ -350,12 +290,10 @@ CREATE TABLE "wallets" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "wallets_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "transactions" (
+CREATE TABLE IF NOT EXISTS "transactions" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "idempotency_key" TEXT NOT NULL,
@@ -376,12 +314,10 @@ CREATE TABLE "transactions" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "transactions_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "payouts" (
+CREATE TABLE IF NOT EXISTS "payouts" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "beneficiary_user_id" UUID NOT NULL,
@@ -401,12 +337,10 @@ CREATE TABLE "payouts" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "payouts_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "invites" (
+CREATE TABLE IF NOT EXISTS "invites" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "code" TEXT NOT NULL,
@@ -426,12 +360,10 @@ CREATE TABLE "invites" (
     "revoked_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "invites_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "tickets" (
+CREATE TABLE IF NOT EXISTS "tickets" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "user_id" UUID NOT NULL,
@@ -450,12 +382,10 @@ CREATE TABLE "tickets" (
     "deleted_by" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "tickets_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "push_subscriptions" (
+CREATE TABLE IF NOT EXISTS "push_subscriptions" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "user_id" UUID NOT NULL,
@@ -467,12 +397,10 @@ CREATE TABLE "push_subscriptions" (
     "user_agent" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "push_subscriptions_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "suspensions" (
+CREATE TABLE IF NOT EXISTS "suspensions" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "target_user_id" UUID NOT NULL,
@@ -480,12 +408,10 @@ CREATE TABLE "suspensions" (
     "reason" TEXT,
     "admin_user_id" UUID NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
     CONSTRAINT "suspensions_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "audit_logs" (
+CREATE TABLE IF NOT EXISTS "audit_logs" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "actor_user_id" UUID,
@@ -497,24 +423,20 @@ CREATE TABLE "audit_logs" (
     "user_agent" TEXT,
     "metadata" JSONB,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
     CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "system_configs" (
+CREATE TABLE IF NOT EXISTS "system_configs" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "mongo_id" TEXT,
     "key" TEXT NOT NULL DEFAULT 'system',
     "admin_contact_email" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "system_configs_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "migration_sync" (
+CREATE TABLE IF NOT EXISTS "migration_sync" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "collection" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
@@ -523,313 +445,133 @@ CREATE TABLE "migration_sync" (
     "last_sync_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-
     CONSTRAINT "migration_sync_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE UNIQUE INDEX "users_mongo_id_key" ON "users"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
-
--- CreateIndex
-CREATE INDEX "users_role_idx" ON "users"("role");
-
--- CreateIndex
-CREATE INDEX "users_status_idx" ON "users"("status");
-
--- CreateIndex
-CREATE INDEX "users_parent_code_idx" ON "users"("parent_code");
-
--- CreateIndex
-CREATE INDEX "users_brand_code_roles_idx" ON "users"("brand_code", "roles");
-
--- CreateIndex
-CREATE INDEX "users_mediator_code_roles_idx" ON "users"("mediator_code", "roles");
-
--- CreateIndex
-CREATE INDEX "users_roles_status_idx" ON "users"("roles", "status");
-
--- CreateIndex
-CREATE INDEX "users_mobile_deleted_at_idx" ON "users"("mobile", "deleted_at");
-
--- CreateIndex
-CREATE INDEX "users_username_deleted_at_idx" ON "users"("username", "deleted_at");
-
--- CreateIndex
-CREATE INDEX "users_deleted_at_created_at_idx" ON "users"("deleted_at", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "User_mobile_unique" ON "users"("mobile");
-
--- CreateIndex
-CREATE INDEX "pending_connections_user_id_idx" ON "pending_connections"("user_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "brands_mongo_id_key" ON "brands"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "brands_brand_code_key" ON "brands"("brand_code");
-
--- CreateIndex
-CREATE INDEX "brands_status_created_at_idx" ON "brands"("status", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "agencies_mongo_id_key" ON "agencies"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "agencies_agency_code_key" ON "agencies"("agency_code");
-
--- CreateIndex
-CREATE INDEX "agencies_status_created_at_idx" ON "agencies"("status", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "mediator_profiles_mongo_id_key" ON "mediator_profiles"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "mediator_profiles_user_id_key" ON "mediator_profiles"("user_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "mediator_profiles_mediator_code_key" ON "mediator_profiles"("mediator_code");
-
--- CreateIndex
-CREATE UNIQUE INDEX "shopper_profiles_mongo_id_key" ON "shopper_profiles"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "shopper_profiles_user_id_key" ON "shopper_profiles"("user_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "campaigns_mongo_id_key" ON "campaigns"("mongo_id");
-
--- CreateIndex
-CREATE INDEX "campaigns_status_brand_user_id_created_at_idx" ON "campaigns"("status", "brand_user_id", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "campaigns_deleted_at_created_at_idx" ON "campaigns"("deleted_at", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "deals_mongo_id_key" ON "deals"("mongo_id");
-
--- CreateIndex
-CREATE INDEX "deals_mediator_code_created_at_idx" ON "deals"("mediator_code", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "deals_active_idx" ON "deals"("active");
-
--- CreateIndex
-CREATE UNIQUE INDEX "deals_campaign_id_mediator_code_key" ON "deals"("campaign_id", "mediator_code");
-
--- CreateIndex
-CREATE UNIQUE INDEX "orders_mongo_id_key" ON "orders"("mongo_id");
-
--- CreateIndex
-CREATE INDEX "orders_user_id_created_at_idx" ON "orders"("user_id", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "orders_manager_name_created_at_idx" ON "orders"("manager_name", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "orders_brand_user_id_created_at_idx" ON "orders"("brand_user_id", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "orders_workflow_status_idx" ON "orders"("workflow_status");
-
--- CreateIndex
-CREATE INDEX "orders_frozen_idx" ON "orders"("frozen");
-
--- CreateIndex
-CREATE INDEX "orders_status_idx" ON "orders"("status");
-
--- CreateIndex
-CREATE INDEX "orders_payment_status_idx" ON "orders"("payment_status");
-
--- CreateIndex
-CREATE INDEX "orders_affiliate_status_idx" ON "orders"("affiliate_status");
-
--- CreateIndex
-CREATE INDEX "orders_settlement_mode_idx" ON "orders"("settlement_mode");
-
--- CreateIndex
-CREATE INDEX "orders_deleted_at_created_at_idx" ON "orders"("deleted_at", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "orders_external_order_id_idx" ON "orders"("external_order_id");
-
--- CreateIndex
-CREATE INDEX "orders_user_id_workflow_status_deleted_at_idx" ON "orders"("user_id", "workflow_status", "deleted_at");
-
--- CreateIndex
-CREATE INDEX "orders_brand_user_id_workflow_status_deleted_at_idx" ON "orders"("brand_user_id", "workflow_status", "deleted_at");
-
--- CreateIndex
-CREATE INDEX "order_items_order_id_idx" ON "order_items"("order_id");
-
--- CreateIndex
-CREATE INDEX "order_items_campaign_id_idx" ON "order_items"("campaign_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "wallets_mongo_id_key" ON "wallets"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "wallets_owner_user_id_key" ON "wallets"("owner_user_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "transactions_mongo_id_key" ON "transactions"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "transactions_idempotency_key_key" ON "transactions"("idempotency_key");
-
--- CreateIndex
-CREATE INDEX "transactions_status_type_created_at_idx" ON "transactions"("status", "type", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "transactions_deleted_at_created_at_idx" ON "transactions"("deleted_at", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "transactions_wallet_id_created_at_idx" ON "transactions"("wallet_id", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "transactions_order_id_idx" ON "transactions"("order_id");
-
--- CreateIndex
-CREATE INDEX "transactions_campaign_id_idx" ON "transactions"("campaign_id");
-
--- CreateIndex
-CREATE INDEX "transactions_payout_id_idx" ON "transactions"("payout_id");
-
--- CreateIndex
-CREATE INDEX "transactions_from_user_id_idx" ON "transactions"("from_user_id");
-
--- CreateIndex
-CREATE INDEX "transactions_to_user_id_idx" ON "transactions"("to_user_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "payouts_mongo_id_key" ON "payouts"("mongo_id");
-
--- CreateIndex
-CREATE INDEX "payouts_status_requested_at_idx" ON "payouts"("status", "requested_at" DESC);
-
--- CreateIndex
-CREATE INDEX "payouts_beneficiary_user_id_requested_at_idx" ON "payouts"("beneficiary_user_id", "requested_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "payouts_provider_provider_ref_key" ON "payouts"("provider", "provider_ref");
-
--- CreateIndex
-CREATE UNIQUE INDEX "invites_mongo_id_key" ON "invites"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "invites_code_key" ON "invites"("code");
-
--- CreateIndex
-CREATE INDEX "invites_status_expires_at_idx" ON "invites"("status", "expires_at");
-
--- CreateIndex
-CREATE INDEX "invites_code_status_use_count_idx" ON "invites"("code", "status", "use_count");
-
--- CreateIndex
-CREATE INDEX "invites_parent_code_status_created_at_idx" ON "invites"("parent_code", "status", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "tickets_mongo_id_key" ON "tickets"("mongo_id");
-
--- CreateIndex
-CREATE INDEX "tickets_status_created_at_idx" ON "tickets"("status", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "tickets_user_id_deleted_at_created_at_idx" ON "tickets"("user_id", "deleted_at", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "push_subscriptions_mongo_id_key" ON "push_subscriptions"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "push_subscriptions_endpoint_key" ON "push_subscriptions"("endpoint");
-
--- CreateIndex
-CREATE INDEX "push_subscriptions_user_id_app_idx" ON "push_subscriptions"("user_id", "app");
-
--- CreateIndex
-CREATE UNIQUE INDEX "suspensions_mongo_id_key" ON "suspensions"("mongo_id");
-
--- CreateIndex
-CREATE INDEX "suspensions_target_user_id_created_at_idx" ON "suspensions"("target_user_id", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "audit_logs_mongo_id_key" ON "audit_logs"("mongo_id");
-
--- CreateIndex
-CREATE INDEX "audit_logs_created_at_action_idx" ON "audit_logs"("created_at" DESC, "action");
-
--- CreateIndex
-CREATE INDEX "audit_logs_entity_type_entity_id_created_at_idx" ON "audit_logs"("entity_type", "entity_id", "created_at" DESC);
-
--- CreateIndex
-CREATE INDEX "audit_logs_actor_user_id_created_at_idx" ON "audit_logs"("actor_user_id", "created_at" DESC);
-
--- CreateIndex
-CREATE UNIQUE INDEX "system_configs_mongo_id_key" ON "system_configs"("mongo_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "system_configs_key_key" ON "system_configs"("key");
-
--- CreateIndex
-CREATE UNIQUE INDEX "migration_sync_collection_key" ON "migration_sync"("collection");
-
--- CreateIndex
-CREATE INDEX "migration_sync_status_idx" ON "migration_sync"("status");
-
--- AddForeignKey
-ALTER TABLE "pending_connections" ADD CONSTRAINT "pending_connections_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "mediator_profiles" ADD CONSTRAINT "mediator_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "shopper_profiles" ADD CONSTRAINT "shopper_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "deals" ADD CONSTRAINT "deals_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "campaigns"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "orders" ADD CONSTRAINT "orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "orders" ADD CONSTRAINT "orders_brand_user_id_fkey" FOREIGN KEY ("brand_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "order_items" ADD CONSTRAINT "order_items_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "order_items" ADD CONSTRAINT "order_items_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "campaigns"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "wallets" ADD CONSTRAINT "wallets_owner_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "transactions" ADD CONSTRAINT "transactions_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payouts" ADD CONSTRAINT "payouts_beneficiary_user_id_fkey" FOREIGN KEY ("beneficiary_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payouts" ADD CONSTRAINT "payouts_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "invites" ADD CONSTRAINT "invites_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "tickets" ADD CONSTRAINT "tickets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "push_subscriptions" ADD CONSTRAINT "push_subscriptions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "suspensions" ADD CONSTRAINT "suspensions_target_user_id_fkey" FOREIGN KEY ("target_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "suspensions" ADD CONSTRAINT "suspensions_admin_user_id_fkey" FOREIGN KEY ("admin_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- CreateIndex (all idempotent with IF NOT EXISTS)
+CREATE UNIQUE INDEX IF NOT EXISTS "users_mongo_id_key" ON "users"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key" ON "users"("username");
+CREATE INDEX IF NOT EXISTS "users_role_idx" ON "users"("role");
+CREATE INDEX IF NOT EXISTS "users_status_idx" ON "users"("status");
+CREATE INDEX IF NOT EXISTS "users_parent_code_idx" ON "users"("parent_code");
+CREATE INDEX IF NOT EXISTS "users_brand_code_roles_idx" ON "users"("brand_code", "roles");
+CREATE INDEX IF NOT EXISTS "users_mediator_code_roles_idx" ON "users"("mediator_code", "roles");
+CREATE INDEX IF NOT EXISTS "users_roles_status_idx" ON "users"("roles", "status");
+CREATE INDEX IF NOT EXISTS "users_mobile_deleted_at_idx" ON "users"("mobile", "deleted_at");
+CREATE INDEX IF NOT EXISTS "users_username_deleted_at_idx" ON "users"("username", "deleted_at");
+CREATE INDEX IF NOT EXISTS "users_deleted_at_created_at_idx" ON "users"("deleted_at", "created_at" DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS "User_mobile_unique" ON "users"("mobile");
+
+CREATE INDEX IF NOT EXISTS "pending_connections_user_id_idx" ON "pending_connections"("user_id");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "brands_mongo_id_key" ON "brands"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "brands_brand_code_key" ON "brands"("brand_code");
+CREATE INDEX IF NOT EXISTS "brands_status_created_at_idx" ON "brands"("status", "created_at" DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "agencies_mongo_id_key" ON "agencies"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "agencies_agency_code_key" ON "agencies"("agency_code");
+CREATE INDEX IF NOT EXISTS "agencies_status_created_at_idx" ON "agencies"("status", "created_at" DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "mediator_profiles_mongo_id_key" ON "mediator_profiles"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "mediator_profiles_user_id_key" ON "mediator_profiles"("user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "mediator_profiles_mediator_code_key" ON "mediator_profiles"("mediator_code");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "shopper_profiles_mongo_id_key" ON "shopper_profiles"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "shopper_profiles_user_id_key" ON "shopper_profiles"("user_id");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "campaigns_mongo_id_key" ON "campaigns"("mongo_id");
+CREATE INDEX IF NOT EXISTS "campaigns_status_brand_user_id_created_at_idx" ON "campaigns"("status", "brand_user_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "campaigns_deleted_at_created_at_idx" ON "campaigns"("deleted_at", "created_at" DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "deals_mongo_id_key" ON "deals"("mongo_id");
+CREATE INDEX IF NOT EXISTS "deals_mediator_code_created_at_idx" ON "deals"("mediator_code", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "deals_active_idx" ON "deals"("active");
+CREATE UNIQUE INDEX IF NOT EXISTS "deals_campaign_id_mediator_code_key" ON "deals"("campaign_id", "mediator_code");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "orders_mongo_id_key" ON "orders"("mongo_id");
+CREATE INDEX IF NOT EXISTS "orders_user_id_created_at_idx" ON "orders"("user_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "orders_manager_name_created_at_idx" ON "orders"("manager_name", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "orders_brand_user_id_created_at_idx" ON "orders"("brand_user_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "orders_workflow_status_idx" ON "orders"("workflow_status");
+CREATE INDEX IF NOT EXISTS "orders_frozen_idx" ON "orders"("frozen");
+CREATE INDEX IF NOT EXISTS "orders_status_idx" ON "orders"("status");
+CREATE INDEX IF NOT EXISTS "orders_payment_status_idx" ON "orders"("payment_status");
+CREATE INDEX IF NOT EXISTS "orders_affiliate_status_idx" ON "orders"("affiliate_status");
+CREATE INDEX IF NOT EXISTS "orders_settlement_mode_idx" ON "orders"("settlement_mode");
+CREATE INDEX IF NOT EXISTS "orders_deleted_at_created_at_idx" ON "orders"("deleted_at", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "orders_external_order_id_idx" ON "orders"("external_order_id");
+CREATE INDEX IF NOT EXISTS "orders_user_id_workflow_status_deleted_at_idx" ON "orders"("user_id", "workflow_status", "deleted_at");
+CREATE INDEX IF NOT EXISTS "orders_brand_user_id_workflow_status_deleted_at_idx" ON "orders"("brand_user_id", "workflow_status", "deleted_at");
+
+CREATE INDEX IF NOT EXISTS "order_items_order_id_idx" ON "order_items"("order_id");
+CREATE INDEX IF NOT EXISTS "order_items_campaign_id_idx" ON "order_items"("campaign_id");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "wallets_mongo_id_key" ON "wallets"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "wallets_owner_user_id_key" ON "wallets"("owner_user_id");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "transactions_mongo_id_key" ON "transactions"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "transactions_idempotency_key_key" ON "transactions"("idempotency_key");
+CREATE INDEX IF NOT EXISTS "transactions_status_type_created_at_idx" ON "transactions"("status", "type", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "transactions_deleted_at_created_at_idx" ON "transactions"("deleted_at", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "transactions_wallet_id_created_at_idx" ON "transactions"("wallet_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "transactions_order_id_idx" ON "transactions"("order_id");
+CREATE INDEX IF NOT EXISTS "transactions_campaign_id_idx" ON "transactions"("campaign_id");
+CREATE INDEX IF NOT EXISTS "transactions_payout_id_idx" ON "transactions"("payout_id");
+CREATE INDEX IF NOT EXISTS "transactions_from_user_id_idx" ON "transactions"("from_user_id");
+CREATE INDEX IF NOT EXISTS "transactions_to_user_id_idx" ON "transactions"("to_user_id");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "payouts_mongo_id_key" ON "payouts"("mongo_id");
+CREATE INDEX IF NOT EXISTS "payouts_status_requested_at_idx" ON "payouts"("status", "requested_at" DESC);
+CREATE INDEX IF NOT EXISTS "payouts_beneficiary_user_id_requested_at_idx" ON "payouts"("beneficiary_user_id", "requested_at" DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS "payouts_provider_provider_ref_key" ON "payouts"("provider", "provider_ref");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "invites_mongo_id_key" ON "invites"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "invites_code_key" ON "invites"("code");
+CREATE INDEX IF NOT EXISTS "invites_status_expires_at_idx" ON "invites"("status", "expires_at");
+CREATE INDEX IF NOT EXISTS "invites_code_status_use_count_idx" ON "invites"("code", "status", "use_count");
+CREATE INDEX IF NOT EXISTS "invites_parent_code_status_created_at_idx" ON "invites"("parent_code", "status", "created_at" DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "tickets_mongo_id_key" ON "tickets"("mongo_id");
+CREATE INDEX IF NOT EXISTS "tickets_status_created_at_idx" ON "tickets"("status", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "tickets_user_id_deleted_at_created_at_idx" ON "tickets"("user_id", "deleted_at", "created_at" DESC);
+-- Additional index for ticket orderId lookups
+CREATE INDEX IF NOT EXISTS "tickets_order_id_idx" ON "tickets"("order_id");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "push_subscriptions_mongo_id_key" ON "push_subscriptions"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "push_subscriptions_endpoint_key" ON "push_subscriptions"("endpoint");
+CREATE INDEX IF NOT EXISTS "push_subscriptions_user_id_app_idx" ON "push_subscriptions"("user_id", "app");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "suspensions_mongo_id_key" ON "suspensions"("mongo_id");
+CREATE INDEX IF NOT EXISTS "suspensions_target_user_id_created_at_idx" ON "suspensions"("target_user_id", "created_at" DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "audit_logs_mongo_id_key" ON "audit_logs"("mongo_id");
+CREATE INDEX IF NOT EXISTS "audit_logs_created_at_action_idx" ON "audit_logs"("created_at" DESC, "action");
+CREATE INDEX IF NOT EXISTS "audit_logs_entity_type_entity_id_created_at_idx" ON "audit_logs"("entity_type", "entity_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "audit_logs_actor_user_id_created_at_idx" ON "audit_logs"("actor_user_id", "created_at" DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "system_configs_mongo_id_key" ON "system_configs"("mongo_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "system_configs_key_key" ON "system_configs"("key");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "migration_sync_collection_key" ON "migration_sync"("collection");
+CREATE INDEX IF NOT EXISTS "migration_sync_status_idx" ON "migration_sync"("status");
+
+-- AddForeignKey (idempotent — skip if constraint already exists)
+DO $$ BEGIN ALTER TABLE "pending_connections" ADD CONSTRAINT "pending_connections_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "mediator_profiles" ADD CONSTRAINT "mediator_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "shopper_profiles" ADD CONSTRAINT "shopper_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "deals" ADD CONSTRAINT "deals_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "campaigns"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "orders" ADD CONSTRAINT "orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "orders" ADD CONSTRAINT "orders_brand_user_id_fkey" FOREIGN KEY ("brand_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "order_items" ADD CONSTRAINT "order_items_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "order_items" ADD CONSTRAINT "order_items_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "campaigns"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "wallets" ADD CONSTRAINT "wallets_owner_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "transactions" ADD CONSTRAINT "transactions_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE SET NULL ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "payouts" ADD CONSTRAINT "payouts_beneficiary_user_id_fkey" FOREIGN KEY ("beneficiary_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "payouts" ADD CONSTRAINT "payouts_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "invites" ADD CONSTRAINT "invites_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "tickets" ADD CONSTRAINT "tickets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "push_subscriptions" ADD CONSTRAINT "push_subscriptions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "suspensions" ADD CONSTRAINT "suspensions_target_user_id_fkey" FOREIGN KEY ("target_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "suspensions" ADD CONSTRAINT "suspensions_admin_user_id_fkey" FOREIGN KEY ("admin_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
