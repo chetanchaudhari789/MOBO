@@ -470,6 +470,8 @@ jobs:
               await c.connect();
               console.log("Connected. Preparing migration state for schema:", schema);
 
+              // pg library does not apply search_path from URL — set explicitly
+              await c.query("SET search_path TO " + schema);
               const sp = await c.query("SHOW search_path");
               console.log("search_path:", sp.rows[0].search_path);
 
@@ -591,6 +593,9 @@ jobs:
             const schema = process.argv[1];
             (async () => {
               await c.connect();
+
+              // pg library does not apply search_path from URL — set explicitly
+              await c.query("SET search_path TO " + schema);
 
               // List applied migrations
               const migs = await c.query(

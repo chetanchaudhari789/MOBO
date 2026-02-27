@@ -30,6 +30,14 @@ async function main() {
   await client.connect();
   console.log("Connected to database");
 
+  // pg library does not apply search_path from URL — extract and set explicitly
+  const urlObj = new URL(url);
+  const schemaFromUrl = urlObj.searchParams.get("search_path");
+  if (schemaFromUrl) {
+    await client.query("SET search_path TO " + schemaFromUrl);
+    console.log("Set search_path to:", schemaFromUrl);
+  }
+
   // Show current search_path
   const spResult = await client.query("SHOW search_path");
   console.log("search_path:", spResult.rows[0].search_path);
