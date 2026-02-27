@@ -365,6 +365,8 @@ jobs:
             exit 1
           fi
           echo "✅ DATABASE_URL is configured"
+          # Debug: show URL structure (masked credentials)
+          echo "URL params: $(echo "$DATABASE_URL" | grep -oP '\?.*' | sed 's/=[^&]*/=***/g' || echo '(none)')"
 
       - name: Verify database connectivity & permissions
         env:
@@ -418,9 +420,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
+          # Strip any existing search_path from DATABASE_URL, then add ours
+          CLEAN_URL=$(echo "$DATABASE_URL" | sed -E 's/([&?])search_path=[^&]*//g; s/\?&/?/')
           SEPARATOR="&"
-          echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
-          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
+          echo "$CLEAN_URL" | grep -q '?' || SEPARATOR="?"
+          export DATABASE_URL="${CLEAN_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
+          echo "search_path set to: ${DB_SCHEMA}"
           cd backend
 
           # Step 1: Always drop _prisma_migrations to clear any corrupted/failed state
@@ -476,14 +481,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
-          # Append search_path to DATABASE_URL — use ONLY the target schema, NOT public
-          # This ensures Prisma creates _prisma_migrations and all tables inside
-          # buzzma_test (develop) or buzzma_production (main), avoiding "permission
-          # denied for schema public" errors on hosted PostgreSQL.
+          # Strip any existing search_path from DATABASE_URL, then set ONLY the target schema
+          # This avoids 'permission denied for schema public' on hosted PostgreSQL.
+          CLEAN_URL=$(echo "$DATABASE_URL" | sed -E 's/([&?])search_path=[^&]*//g; s/\?&/?/')
           SEPARATOR="&"
-          echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
-          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
-          echo "Migrating with search_path=${DB_SCHEMA}"
+          echo "$CLEAN_URL" | grep -q '?' || SEPARATOR="?"
+          export DATABASE_URL="${CLEAN_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
+          echo "Migrating with search_path=${DB_SCHEMA} (cleaned URL)"
           cd backend
 
           # Try prisma migrate deploy first
@@ -503,9 +507,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
+          CLEAN_URL=$(echo "$DATABASE_URL" | sed -E 's/([&?])search_path=[^&]*//g; s/\?&/?/')
           SEPARATOR="&"
-          echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
-          export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
+          echo "$CLEAN_URL" | grep -q '?' || SEPARATOR="?"
+          export DATABASE_URL="${CLEAN_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
           cd backend
           echo "--- Migration status ---"
           npx prisma migrate status 2>&1 || true
