@@ -1055,7 +1055,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             axisLine={false}
                             tickLine={false}
                             tick={{ fontSize: 11, fontWeight: 600, fill: '#94a3b8' }}
-                            tickFormatter={(v) => `${v / 1000}k`}
+                            tickFormatter={(v: number) => `${v / 1000}k`}
                           />
                           <Tooltip
                             cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -1448,7 +1448,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {invites.map((inv) => (
-                        <tr key={inv.code || inv.id} className="hover:bg-slate-50/50 transition-colors">
+                        <tr key={inv.code} className="hover:bg-slate-50/50 transition-colors">
                           <td className="p-6 font-mono text-sm font-bold text-slate-800">
                             {inv.code}
                           </td>

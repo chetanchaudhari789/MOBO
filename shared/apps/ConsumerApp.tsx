@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, lazy, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { CartProvider } from '../context/CartContext';
 import { ChatProvider } from '../context/ChatContext';
@@ -9,11 +9,22 @@ import { PortalGuard } from '../components/PortalGuard';
 import { MobileTabBar } from '../components/MobileTabBar';
 import { Button, Card, CardContent } from '../components/ui';
 import { AuthScreen } from '../pages/Auth';
-import { Home } from '../pages/Home';
-import { Orders } from '../pages/Orders';
-import { Profile } from '../pages/Profile';
-import { Explore } from '../pages/Explore';
 import { Home as HomeIcon, Package, User, LogOut, Search } from 'lucide-react';
+
+// Lazy-load heavy page components to reduce initial bundle size.
+// Orders alone is 102KB, Explore and Profile are also significant.
+const Home = lazy(() => import('../pages/Home').then(m => ({ default: m.Home })));
+const Explore = lazy(() => import('../pages/Explore').then(m => ({ default: m.Explore })));
+const Orders = lazy(() => import('../pages/Orders').then(m => ({ default: m.Orders })));
+const Profile = lazy(() => import('../pages/Profile').then(m => ({ default: m.Profile })));
+
+function TabSkeleton() {
+  return (
+    <div className="flex-1 flex items-center justify-center bg-[#F2F2F7]">
+      <div className="w-8 h-8 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+    </div>
+  );
+}
 
 interface ConsumerAppProps {
   onBack?: () => void;
@@ -88,10 +99,12 @@ export const ConsumerApp: React.FC<ConsumerAppProps> = ({ onBack }) => {
             <NotificationProvider>
             <div className="flex flex-col h-full bg-[#F2F2F7] relative overflow-hidden font-sans">
               <div className="flex-1 overflow-hidden">
-                {activeTab === 'home' && <Home onVoiceNavigate={setActiveTab} />}
-                {activeTab === 'explore' && <Explore />}
-                {activeTab === 'orders' && <Orders />}
-                {activeTab === 'profile' && <Profile />}
+                <Suspense fallback={<TabSkeleton />}>
+                  {activeTab === 'home' && <Home onVoiceNavigate={setActiveTab} />}
+                  {activeTab === 'explore' && <Explore />}
+                  {activeTab === 'orders' && <Orders />}
+                  {activeTab === 'profile' && <Profile />}
+                </Suspense>
               </div>
 
               <div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-40 w-[92vw] max-w-[360px]">

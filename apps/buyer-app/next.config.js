@@ -21,6 +21,7 @@ const nextConfig = {
   },
   experimental: {
     externalDir: true,
+    optimizePackageImports: ['lucide-react'],
   },
   async headers() {
     return [

@@ -4,6 +4,7 @@ import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { toUiDeal } from '../utils/uiMappers.js';
 import { normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
 import { publishRealtime } from '../services/realtimeHub.js';
@@ -31,17 +32,24 @@ export function makeProductsController() {
           return;
         }
 
-        const deals = await db().deal.findMany({
-          where: {
-            mediatorCode: { equals: mediatorCode, mode: 'insensitive' },
-            active: true,
-            deletedAt: null,
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 500,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as Record<string, unknown>, { limit: 50 });
+        const where = {
+          mediatorCode: { equals: mediatorCode, mode: 'insensitive' as const },
+          active: true,
+          deletedAt: null,
+        };
 
-        res.json(deals.map(d => toUiDeal(pgDeal(d))));
+        const [deals, total] = await Promise.all([
+          db().deal.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().deal.count({ where }),
+        ]);
+
+        res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }

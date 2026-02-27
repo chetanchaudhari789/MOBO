@@ -489,7 +489,7 @@ const DashboardView = ({
                   tickLine={false}
                   fontSize={12}
                   tick={{ fill: '#a1a1aa' }}
-                  tickFormatter={(v) => formatRupees(Number(v))}
+                  tickFormatter={(v: number) => formatRupees(Number(v))}
                 />
                 <Tooltip
                   cursor={{ stroke: '#d4d4d8', strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -549,7 +549,7 @@ const DashboardView = ({
                 />
                 <Tooltip
                   cursor={{ fill: 'transparent' }}
-                  content={({ active, payload }) => {
+                  content={({ active, payload }: { active?: boolean; payload?: any[] }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       return (

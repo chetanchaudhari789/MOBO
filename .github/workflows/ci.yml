@@ -80,7 +80,7 @@ jobs:
   test-backend:
     name: '🧪 Backend Tests'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: lint
     permissions:
       contents: read

@@ -9,6 +9,7 @@ import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiOrder, toUiOrderSummary } from '../utils/uiMappers.js';
 import { orderListSelect } from '../utils/querySelect.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pushOrderEvent, isTerminalAffiliateStatus } from '../services/orderEvents.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import type { Role } from '../middleware/auth.js';
@@ -203,18 +204,25 @@ export function makeOrdersController(env: Env) {
         const targetUser = await db().user.findFirst({ where: userWhere as any, select: { id: true } });
         if (!targetUser) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
-        const orders = await db().order.findMany({
-          where: { userId: targetUser.id, deletedAt: null },
-          select: orderListSelect,
-          orderBy: { createdAt: 'desc' },
-          take: 2000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as Record<string, unknown>, { limit: 50 });
+        const where = { userId: targetUser.id, deletedAt: null };
+
+        const [orders, total] = await Promise.all([
+          db().order.findMany({
+            where,
+            select: orderListSelect,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().order.count({ where }),
+        ]);
 
         const mapped = orders.map((o: any) => {
           try { return toUiOrderSummary(pgOrder(o)); }
           catch (e) { orderLog.error(`[orders/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json(mapped);
+        res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
       } catch (err) {
         next(err);
       }

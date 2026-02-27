@@ -1456,7 +1456,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
-                  tickFormatter={(v) => `${v / 1000}k`}
+                  tickFormatter={(v: number) => `${v / 1000}k`}
                 />
                 <Tooltip
                   contentStyle={{

@@ -511,6 +511,7 @@ model Deal {
 
   @@unique([campaignId, mediatorCode])
   @@index([mediatorCode, createdAt(sort: Desc)])
+  @@index([mediatorCode, deletedAt, active])
   @@index([active])
   @@index([deletedAt, active])
   @@map("deals")

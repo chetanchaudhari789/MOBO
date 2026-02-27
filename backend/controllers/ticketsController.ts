@@ -67,7 +67,7 @@ async function getScopedOrderMongoIds(params: {
       where: { brandUserId: pgUserId, deletedAt: null },
       select: { mongoId: true },
       orderBy: { createdAt: 'desc' },
-      take: 1000,
+      take: 500,
     });
     return orders.map((o) => o.mongoId!).filter(Boolean);
   }
@@ -79,7 +79,7 @@ async function getScopedOrderMongoIds(params: {
       where: { managerName: mediatorCode, deletedAt: null },
       select: { mongoId: true },
       orderBy: { createdAt: 'desc' },
-      take: 1000,
+      take: 500,
     });
     return orders.map((o) => o.mongoId!).filter(Boolean);
   }
@@ -93,7 +93,7 @@ async function getScopedOrderMongoIds(params: {
       where: { managerName: { in: mediatorCodes }, deletedAt: null },
       select: { mongoId: true },
       orderBy: { createdAt: 'desc' },
-      take: 1000,
+      take: 500,
     });
     return orders.map((o) => o.mongoId!).filter(Boolean);
   }
