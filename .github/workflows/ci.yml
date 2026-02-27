@@ -489,35 +489,64 @@ jobs:
           echo "Migrating with search_path=${DB_SCHEMA}"
           cd backend
 
+          # Log file for all output
+          LOGFILE="/tmp/deploy-migrations.log"
+          > "$LOGFILE"
+
           # Method 1: Try prisma migrate deploy
-          echo "=== Method 1: prisma migrate deploy ==="
+          echo "=== Method 1: prisma migrate deploy ===" | tee -a "$LOGFILE"
           set +e
-          npx prisma migrate deploy 2>&1
-          MIGRATE_EXIT=$?
+          npx prisma migrate deploy 2>&1 | tee -a "$LOGFILE"
+          MIGRATE_EXIT=${PIPESTATUS[0]}
           set -e
 
           if [ $MIGRATE_EXIT -eq 0 ]; then
-            echo "✅ prisma migrate deploy succeeded"
+            echo "✅ prisma migrate deploy succeeded" | tee -a "$LOGFILE"
             exit 0
           fi
-          echo "⚠️ prisma migrate deploy failed (exit $MIGRATE_EXIT)"
+          echo "⚠️ prisma migrate deploy failed (exit $MIGRATE_EXIT)" | tee -a "$LOGFILE"
 
           # Method 2: Try prisma db push
-          echo "=== Method 2: prisma db push ==="
+          echo "=== Method 2: prisma db push ===" | tee -a "$LOGFILE"
           set +e
-          npx prisma db push --skip-generate 2>&1
-          PUSH_EXIT=$?
+          npx prisma db push --skip-generate 2>&1 | tee -a "$LOGFILE"
+          PUSH_EXIT=${PIPESTATUS[0]}
           set -e
 
           if [ $PUSH_EXIT -eq 0 ]; then
-            echo "✅ prisma db push succeeded"
+            echo "✅ prisma db push succeeded" | tee -a "$LOGFILE"
             exit 0
           fi
-          echo "⚠️ prisma db push also failed (exit $PUSH_EXIT)"
+          echo "⚠️ prisma db push also failed (exit $PUSH_EXIT)" | tee -a "$LOGFILE"
 
           # Method 3: Direct SQL via standalone script (bypasses Prisma CLI)
-          echo "=== Method 3: Direct SQL via deploy-migrate.js ==="
-          node scripts/deploy-migrate.js
+          echo "=== Method 3: Direct SQL via deploy-migrate.js ===" | tee -a "$LOGFILE"
+          set +e
+          node scripts/deploy-migrate.js 2>&1 | tee -a "$LOGFILE"
+          DIRECT_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          # Write all output to step summary (publicly visible)
+          echo "## Deploy Migration Log" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat "$LOGFILE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $DIRECT_EXIT -eq 0 ]; then
+            echo "✅ Direct SQL migration succeeded"
+            exit 0
+          fi
+
+          echo "::error::All 3 migration methods failed. See step summary for details."
+          exit 1
+
+      - name: Upload deploy log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-migration-log
+          path: /tmp/deploy-migrations.log
+          retention-days: 7
 
       - name: Verify production migration state
         env:
