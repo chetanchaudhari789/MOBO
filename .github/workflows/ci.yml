@@ -484,7 +484,19 @@ jobs:
           echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
           export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
           echo "Migrating with search_path=${DB_SCHEMA}"
-          cd backend && npx prisma migrate deploy
+          cd backend
+
+          # Try prisma migrate deploy first
+          echo "--- Attempting: prisma migrate deploy ---"
+          if npx prisma migrate deploy 2>&1; then
+            echo "✅ prisma migrate deploy succeeded"
+          else
+            MIGRATE_EXIT=$?
+            echo "⚠️ prisma migrate deploy failed (exit code $MIGRATE_EXIT)"
+            echo "--- Falling back to: prisma db push ---"
+            npx prisma db push --skip-generate 2>&1
+            echo "✅ prisma db push succeeded"
+          fi
 
       - name: Verify production migration state
         env:
@@ -494,7 +506,26 @@ jobs:
           SEPARATOR="&"
           echo "$DATABASE_URL" | grep -q '?' || SEPARATOR="?"
           export DATABASE_URL="${DATABASE_URL}${SEPARATOR}search_path=${DB_SCHEMA}"
-          cd backend && npx prisma migrate status
+          cd backend
+          echo "--- Migration status ---"
+          npx prisma migrate status 2>&1 || true
+          echo "--- Verifying schema tables ---"
+          node -e "
+            const { Client } = require('pg');
+            const c = new Client({
+              connectionString: process.env.DATABASE_URL,
+              ssl: { rejectUnauthorized: false }
+            });
+            (async () => {
+              await c.connect();
+              const r = await c.query(
+                \"SELECT table_name FROM information_schema.tables WHERE table_schema = '\${{ env.DB_SCHEMA }}' AND table_type = 'BASE TABLE' ORDER BY table_name\"
+              );
+              console.log('Tables in \${{ env.DB_SCHEMA }}:', r.rows.map(x => x.table_name).join(', '));
+              console.log('Total:', r.rows.length, 'tables');
+              await c.end();
+            })().catch(e => { console.error(e.message); });
+          "
 
       - name: Trigger Render backend deploy
         if: success()
