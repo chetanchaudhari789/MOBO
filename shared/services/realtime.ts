@@ -15,8 +15,8 @@ function normalizeApiRoot(raw: string | undefined): string | undefined {
   const v = String(raw).trim();
   if (!v) return undefined;
 
-  // Allow passing either the service root (e.g. https://x.onrender.com)
-  // or the API root (e.g. https://x.onrender.com/api).
+  // Allow passing either the service root (e.g. https://api.example.com)
+  // or the API root (e.g. https://api.example.com/api).
   const withProto = v.startsWith('http://') || v.startsWith('https://') ? v : `https://${v}`;
   const noTrailing = withProto.endsWith('/') ? withProto.slice(0, -1) : withProto;
   return noTrailing.endsWith('/api') ? noTrailing : `${noTrailing}/api`;

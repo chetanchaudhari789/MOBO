@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
 import { httpLog, logEvent } from './config/logger.js';
-import { logSecurityIncident } from './config/appLogs.js';
+import { logSecurityIncident, logAccessEvent, logPerformance } from './config/appLogs.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
@@ -120,12 +120,13 @@ export function createApp(env: Env) {
     next();
   });
 
-  // Most deployments (Render/Vercel/NGINX) run behind a reverse proxy.
+  // Most deployments run behind a reverse proxy (NGINX, load balancer).
   // This ensures `req.ip` and rate-limits behave correctly.
   app.set('trust proxy', 1);
 
   // Structured request logging via Winston with correlation ID propagation.
   // Silent in tests (Winston logger is configured to be silent in test mode).
+  // GOD-LEVEL: Includes user journey context (userId, role) from auth middleware.
   const SLOW_REQUEST_THRESHOLD_MS = 3000;
   app.use((req, res, next) => {
     const start = Date.now();
@@ -139,6 +140,10 @@ export function createApp(env: Env) {
       const status = res.statusCode;
       const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
 
+      // Auth context is available here because handlers have already executed.
+      const userId = req.auth?.userId;
+      const role = req.auth?.roles?.join(',');
+
       logEvent(level, `${req.method} ${req.originalUrl} -> ${status}`, {
         domain: 'http',
         eventName: 'REQUEST_COMPLETED',
@@ -149,19 +154,46 @@ export function createApp(env: Env) {
         statusCode: status,
         duration: ms,
         ip: req.ip,
+        userId,
+        role,
         metadata: {
           userAgent: req.get('user-agent'),
           contentLength: res.get('content-length'),
         },
       });
 
-      // Slow request detection
+      // Structured access event for every authenticated request
+      if (userId) {
+        const accessType = status === 403 ? 'RESOURCE_DENIED' as const
+          : status >= 400 ? 'RESOURCE_ACCESS' as const
+          : 'RESOURCE_ACCESS' as const;
+        logAccessEvent(accessType, {
+          userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: req.originalUrl,
+          requestId,
+          statusCode: status,
+          duration: ms,
+          userAgent: req.get('user-agent'),
+        });
+      }
+
+      // Performance tracking for slow requests
       if (ms > SLOW_REQUEST_THRESHOLD_MS) {
         httpLog.warn(`Slow request detected: ${req.method} ${req.originalUrl} took ${ms}ms`, {
           requestId,
           correlationId,
           durationMs: ms,
           threshold: SLOW_REQUEST_THRESHOLD_MS,
+        });
+        logPerformance({
+          operation: `${req.method} ${req.originalUrl}`,
+          durationMs: ms,
+          slowThresholdMs: SLOW_REQUEST_THRESHOLD_MS,
+          metadata: { userId, role, statusCode: status, ip: req.ip },
         });
       }
     });

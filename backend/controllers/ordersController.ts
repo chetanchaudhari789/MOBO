@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog } from '../config/logger.js';
+import { logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
@@ -652,6 +653,21 @@ export function makeOrdersController(env: Env) {
           },
         }).catch(() => { });
 
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'Order',
+          entityId: orderMongoId,
+          action: 'CREATE',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: {
+            campaignId: String(campaign.mongoId ?? campaign.id),
+            itemCount: body.items.length,
+            externalOrderId: resolvedExternalOrderId,
+          },
+        });
+
         res
           .status(201)
           .json(toUiOrder(pgOrder(finalOrder)));
@@ -1026,6 +1042,17 @@ export function makeOrdersController(env: Env) {
           entityId: order.mongoId!,
           metadata: { proofType: body.type },
         }).catch(() => { });
+
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'Order',
+          entityId: order.mongoId!,
+          action: 'STATUS_CHANGE',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { proofType: body.type, action: 'PROOF_SUBMITTED' },
+        });
         return;
       } catch (err) {
         next(err);

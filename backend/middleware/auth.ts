@@ -5,6 +5,7 @@ import { AppError } from './errors.js';
 import { prisma } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 import { authCacheGet, authCacheSet } from '../utils/authCache.js';
+import { logAuthEvent, logSecurityIncident, logAccessEvent } from '../config/appLogs.js';
 
 export type Role = 'shopper' | 'mediator' | 'agency' | 'brand' | 'admin' | 'ops';
 
@@ -74,10 +75,18 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
   });
 
   if (!user || user.deletedAt) {
+    logAuthEvent('SESSION_EXPIRED', {
+      userId,
+      reason: 'User not found or deleted',
+    });
     throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
   }
 
   if (user.status !== 'active') {
+    logAuthEvent('SESSION_EXPIRED', {
+      userId,
+      reason: `User status: ${user.status}`,
+    });
     throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
   }
 
@@ -99,6 +108,12 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
         select: { status: true },
       });
       if (!agency || agency.status !== 'active') {
+        logAccessEvent('RESOURCE_DENIED', {
+          userId,
+          roles: roles as string[],
+          resource: 'upstream-agency',
+          metadata: { reason: 'Upstream agency suspended', parentCode },
+        });
         throw new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream agency is not active');
       }
     }
@@ -115,6 +130,12 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
         select: { status: true, parentCode: true },
       });
       if (!mediator || mediator.status !== 'active') {
+        logAccessEvent('RESOURCE_DENIED', {
+          userId,
+          roles: roles as string[],
+          resource: 'upstream-mediator',
+          metadata: { reason: 'Upstream mediator suspended', parentCode },
+        });
         throw new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream mediator is not active');
       }
 
@@ -129,6 +150,12 @@ async function resolveAuthFromToken(token: string, env: Env): Promise<AuthContex
           select: { status: true },
         });
         if (!agency || agency.status !== 'active') {
+          logAccessEvent('RESOURCE_DENIED', {
+            userId,
+            roles: roles as string[],
+            resource: 'upstream-agency-of-mediator',
+            metadata: { reason: 'Upstream agency suspended (via mediator)', parentCode, agencyCode },
+          });
           throw new AppError(403, 'UPSTREAM_SUSPENDED', 'Upstream agency is not active');
         }
       }
@@ -166,6 +193,16 @@ export function requireAuth(env: Env) {
       req.auth = await resolveAuthFromToken(token, env);
       next();
     } catch (err) {
+      if (!(err instanceof AppError)) {
+        logSecurityIncident('INVALID_TOKEN', {
+          severity: 'low',
+          ip: req.ip,
+          route: req.originalUrl,
+          method: req.method,
+          requestId: String((_res as any).locals?.requestId || ''),
+          userAgent: req.get('user-agent'),
+        });
+      }
       next(err instanceof AppError ? err : new AppError(401, 'UNAUTHENTICATED', 'Invalid or expired token'));
     }
   };
@@ -221,6 +258,16 @@ export function requireRoles(...required: Role[]) {
     const roles = req.auth?.roles || [];
     const ok = required.some((r) => roles.includes(r));
     if (!ok) {
+      logAccessEvent('RESOURCE_DENIED', {
+        userId: req.auth?.userId,
+        roles: roles as string[],
+        ip: req.ip,
+        method: req.method,
+        route: req.originalUrl,
+        resource: req.originalUrl,
+        requestId: String((_res as any).locals?.requestId || ''),
+        metadata: { requiredRoles: required, actualRoles: roles },
+      });
       return next(new AppError(403, 'FORBIDDEN', 'Insufficient role'));
     }
     next();

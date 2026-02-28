@@ -7,6 +7,7 @@ import { getRequester } from '../services/authz.js';
 import { prisma } from '../database/prisma.js';
 import { getVapidPublicKey } from '../services/pushNotifications.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logChangeEvent } from '../config/appLogs.js';
 
 const subscriptionSchema = z.object({
   endpoint: z.string().url(),
@@ -80,6 +81,17 @@ export function makePushNotificationsController(env: Env) {
           metadata: { app: body.app },
         });
 
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'PushSubscription',
+          entityId: body.subscription.endpoint,
+          action: 'CREATE',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { app: body.app },
+        });
+
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -104,6 +116,16 @@ export function makePushNotificationsController(env: Env) {
           entityType: 'PushSubscription',
           entityId: body.endpoint,
           metadata: {},
+        });
+
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'PushSubscription',
+          entityId: body.endpoint,
+          action: 'DELETE',
+          requestId: String((res as any).locals?.requestId || ''),
         });
 
         res.status(204).send();

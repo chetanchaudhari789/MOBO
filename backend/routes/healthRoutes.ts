@@ -5,7 +5,7 @@ import { prisma, isPrismaAvailable, pingPg } from '../database/prisma.js';
 import { isReady } from '../config/lifecycle.js';
 
 // Build-time metadata — injected via env or fallback to runtime values.
-const BUILD_SHA = process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || 'unknown';
+const BUILD_SHA = process.env.GIT_SHA || 'unknown';
 const BUILD_TIME = process.env.BUILD_TIME || new Date().toISOString();
 
 async function isHttpOk(url: string, timeoutMs = 1500): Promise<boolean> {

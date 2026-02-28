@@ -96,57 +96,71 @@ export function mediaRoutes(_env: Env): Router {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
-      const response = await fetch(target.toString(), {
-        signal: controller.signal,
-        redirect: 'manual',  // Prevent SSRF via open-redirect chains
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; BUZZMA/1.0)',
-          Accept: 'image/*,*/*;q=0.8',
-        },
-      });
+      // Follow redirects safely: validate each hop against SSRF blocklist.
+      // Amazon/Flipkart/Myntra images use 301/302 redirects heavily —
+      // blocking redirects breaks every product image.
+      const MAX_REDIRECTS = 5;
+      let currentUrl = target.toString();
 
-      // If the upstream redirects, validate the redirect target before following.
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('location');
-        if (location) {
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        const response = await fetch(currentUrl, {
+          signal: controller.signal,
+          redirect: 'manual',   // validate each hop
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            Referer: new URL(currentUrl).origin + '/',
+          },
+        });
+
+        // Follow redirect: validate the target is safe
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (!location) { res.status(404).end(); return; }
           try {
-            const redirectTarget = new URL(location, target.toString());
+            const redirectTarget = new URL(location, currentUrl);
             if (!ALLOWED_PROTOCOLS.has(redirectTarget.protocol) || isPrivateHost(redirectTarget.hostname)) {
               res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'unsafe redirect target' } });
               return;
             }
+            currentUrl = redirectTarget.toString();
+            continue; // follow the redirect
           } catch {
-            // Invalid redirect URL
+            res.status(404).end();
+            return;
           }
         }
-        res.status(404).end();
+
+        if (!response.ok || !response.body) {
+          res.status(404).end();
+          return;
+        }
+
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        const contentLength = Number(response.headers.get('content-length') || 0);
+        if (contentLength && contentLength > MAX_IMAGE_BYTES) {
+          res.status(413).end();
+          return;
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) {
+          res.status(413).end();
+          return;
+        }
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        res.setHeader('Vary', 'Accept');
+        res.send(Buffer.from(arrayBuffer));
         return;
       }
 
-      if (!response.ok || !response.body) {
-        res.status(404).end();
-        return;
-      }
-
-      const contentType = response.headers.get('content-type') || 'image/jpeg';
-      const contentLength = Number(response.headers.get('content-length') || 0);
-      if (contentLength && contentLength > MAX_IMAGE_BYTES) {
-        res.status(413).end();
-        return;
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) {
-        res.status(413).end();
-        return;
-      }
-
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.send(Buffer.from(arrayBuffer));
+      // Exceeded maximum redirects
+      res.status(502).json({ error: { code: 'TOO_MANY_REDIRECTS', message: 'redirect chain too long' } });
     } catch {
       res.status(404).end();
     } finally {
