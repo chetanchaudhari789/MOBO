@@ -2063,6 +2063,7 @@ export function makeOpsController(env: Env) {
         });
 
         await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
+        logChangeEvent({ actorUserId: req.auth?.userId, actorRoles: req.auth?.roles, actorIp: req.ip, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CAMPAIGN_CREATED', requestId: String((res as any).locals?.requestId || ''), metadata: { title: body.title, platform: body.platform, allowedAgencyCodes: normalizedAllowed } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_CREATED', campaignId: campaign.mongoId ?? campaign.id, title: body.title } });
         const ts = new Date().toISOString();
         publishRealtime({

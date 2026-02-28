@@ -37,6 +37,11 @@ export function makePushNotificationsController(env: Env) {
           res.json({ publicKey: null, error: 'Push notifications not configured' });
           return;
         }
+        logAccessEvent('RESOURCE_ACCESS', {
+          ip: _req.ip,
+          resource: 'PushSubscription',
+          metadata: { action: 'VAPID_PUBLIC_KEY' },
+        });
         res.json({ publicKey });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'SYSTEM', severity: 'low', metadata: { handler: 'push/publicKey' } });

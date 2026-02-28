@@ -163,7 +163,7 @@ export function makeOrdersController(env: Env) {
           ip: req.ip,
           resource: 'OrderProof',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { orderId, proofType },
+          metadata: { action: 'ORDER_PROOF_VIEWED', orderId, proofType },
         });
 
         sendProofResponse(res, proofValue);
@@ -737,7 +737,7 @@ export function makeOrdersController(env: Env) {
           ip: req.ip,
           resource: 'Order',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { action: 'CREATE', orderId: orderMongoId, externalOrderId: resolvedExternalOrderId },
+          metadata: { action: 'ORDER_CREATED', orderId: orderMongoId, externalOrderId: resolvedExternalOrderId },
         });
 
         res

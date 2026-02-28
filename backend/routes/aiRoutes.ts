@@ -258,6 +258,16 @@ export function aiRoutes(env: Env): Router {
       }
 
       let effectiveProducts: any[] = Array.isArray(payload.products) ? payload.products : [];
+
+      // Log AI chat access for ALL code paths (intent-based + AI-generated)
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: req.auth?.userId,
+        roles: req.auth?.roles,
+        ip: req.ip,
+        resource: 'AI',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AI_CHAT', messageLength: String(payload.message || '').length },
+      });
       if (!Array.isArray(effectiveProducts) || effectiveProducts.length === 0) {
         const requester = req.auth?.user;
         const roles = req.auth?.roles ?? [];
@@ -531,6 +541,11 @@ export function aiRoutes(env: Env): Router {
 
   // Lightweight config status (does not validate the key).
   router.get('/status', (_req, res) => {
+    logAccessEvent('RESOURCE_ACCESS', {
+      ip: _req.ip,
+      resource: 'AI',
+      metadata: { action: 'AI_STATUS' },
+    });
     res.json({ configured: isGeminiConfigured(env) });
   });
 

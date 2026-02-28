@@ -304,6 +304,50 @@ function formatAccessMessage(type: AccessEventType, p: AccessEventPayload): stri
       return `Admin ${who} verified rating via AI`;
     case 'AI_STATUS':
       return `User ${who} checked AI service status`;
+    case 'AI_CHAT':
+      return `User ${who} sent message to AI assistant`;
+    case 'AI_KEY_CHECK':
+      return `Admin ${who} validated Gemini API key (${p.metadata?.ok ? 'valid' : 'invalid'})`;
+    case 'VAPID_PUBLIC_KEY':
+      return `User ${who} retrieved VAPID public key for push notifications`;
+    case 'GOOGLE_STATUS_CHECK':
+      return `User ${who} checked Google account connection status (${p.metadata?.connected ? 'connected' : 'not connected'})`;
+    // ── Tickets (controller audit actions) ──
+    case 'TICKET_RESOLVED':
+      return `${role} ${who} resolved ticket #${(p.metadata?.ticketId as string)?.slice(0, 8) || ''}`;
+    case 'TICKET_REJECTED':
+      return `${role} ${who} rejected ticket #${(p.metadata?.ticketId as string)?.slice(0, 8) || ''}`;
+    case 'TICKET_REOPENED':
+      return `${role} ${who} reopened ticket #${(p.metadata?.ticketId as string)?.slice(0, 8) || ''}`;
+    // ── Brand connections ──
+    case 'CONNECTION_APPROVED':
+      return `Brand ${who} approved agency connection for ${p.metadata?.agencyCode || 'agency'}`;
+    case 'CONNECTION_REJECTED':
+      return `Brand ${who} rejected agency connection for ${p.metadata?.agencyCode || 'agency'}`;
+    // ── Brand payout ──
+    case 'BRAND_AGENCY_PAYOUT':
+      return `Brand ${who} processed agency payout (${p.metadata?.amountPaise || 0} paise) to ${p.metadata?.agencyCode || 'agency'}`;
+    // ── Push notification aliases ──
+    case 'PUSH_SUBSCRIBED':
+      return `User ${who} subscribed to push notifications`;
+    case 'PUSH_UNSUBSCRIBED':
+      return `User ${who} unsubscribed from push notifications`;
+    // ── Google OAuth ──
+    case 'GOOGLE_OAUTH_INITIATED':
+      return `User ${who} initiated Google OAuth flow`;
+    case 'GOOGLE_OAUTH_CONNECTED':
+      return `User ${who} connected Google account (${p.metadata?.googleEmail || ''})`.trim();
+    case 'GOOGLE_OAUTH_DISCONNECTED':
+      return `User ${who} disconnected Google account`;
+    // ── Sheets ──
+    case 'SHEET_EXPORTED':
+      return `${role} ${who} exported "${p.metadata?.title || 'data'}" to Google Sheets (${p.metadata?.rowCount || 0} rows)`;
+    // ── Order proof ──
+    case 'ORDER_PROOF_VIEWED':
+      return `${role} ${who} viewed ${p.metadata?.proofType || 'proof'} for order #${(p.metadata?.orderId as string)?.slice(0, 8) || ''}`;
+    // ── Deal redirect ──
+    case 'DEAL_REDIRECT':
+      return `Buyer ${who} redirected to marketplace for deal #${(p.metadata?.dealId as string)?.slice(0, 8) || ''}`;
     default:
       break;
   }
@@ -352,6 +396,12 @@ function formatAccessMessage(type: AccessEventType, p: AccessEventPayload): stri
       return `User ${who} initiated Google OAuth`;
     case 'AI':
       return `User ${who} used AI service`;
+    case 'OrderProof':
+      return `${role} ${who} viewed proof for order #${(p.metadata?.orderId as string)?.slice(0, 8) || ''}`;
+    case 'DealRedirect':
+      return `Buyer ${who} redirected to marketplace for deal #${(p.metadata?.dealId as string)?.slice(0, 8) || ''}`;
+    case 'GoogleSheet':
+      return `${role} ${who} exported data to Google Sheets`;
     default:
       return `${role} ${who} accessed ${resource}`;
   }
@@ -370,6 +420,12 @@ function formatAdminAccessMessage(action: string, who: string, p: AccessEventPay
       return `Admin ${who} adjusted wallet for user #${(p.metadata?.targetUserId as string)?.slice(0, 8) || ''} by ${p.metadata?.adjustmentPaise || 0} paise`;
     case 'ORDER_STATUS_OVERRIDDEN':
       return `Admin ${who} overrode order status: ${p.metadata?.oldStatus || '?'} → ${p.metadata?.newStatus || '?'}`;
+    case 'CONFIG_UPDATED':
+      return `Admin ${who} updated system configuration (${(p.metadata?.updatedFields as string[])?.join(', ') || (p.metadata?.updatedKeys as string[])?.join(', ') || 'keys'})`;
+    case 'USER_DELETED':
+      return `Admin ${who} deleted user #${(p.metadata?.targetUserId as string)?.slice(0, 8) || (p.resource || '').replace(/^User#/, '').slice(0, 8) || ''}`;
+    case 'WALLET_DELETED':
+      return `Admin ${who} deleted wallet for user #${(p.metadata?.ownerUserId as string)?.slice(0, 8) || (p.resource || '').replace(/^Wallet#/, '').slice(0, 8) || ''}`;
     default:
       break;
   }
@@ -387,6 +443,20 @@ function formatAdminAccessMessage(action: string, who: string, p: AccessEventPay
       return `Admin ${who} viewed ${p.metadata?.resultCount ?? ''} orders`.trim();
     case 'AuditLog':
       return `Admin ${who} viewed ${p.metadata?.resultCount ?? ''} audit logs`.trim();
+    case 'AuditLogs':
+      return `Admin ${who} viewed ${p.metadata?.resultCount ?? ''} audit logs`.trim();
+    case 'Users':
+      return `Admin ${who} viewed ${p.metadata?.resultCount ?? ''} users`.trim();
+    case 'Financials':
+      return `Admin ${who} viewed financial overview`;
+    case 'Stats':
+      return `Admin ${who} viewed platform statistics`;
+    case 'Growth':
+      return `Admin ${who} viewed growth metrics`;
+    case 'Products':
+      return `Admin ${who} viewed ${p.metadata?.resultCount ?? ''} products`.trim();
+    case 'Invite':
+      return `Admin ${who} viewed ${p.metadata?.resultCount ?? ''} invites`.trim();
     default:
       return `Admin ${who} performed action on ${resource}`;
   }

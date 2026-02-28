@@ -3,7 +3,7 @@ import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
 import { exportToGoogleSheet, refreshUserGoogleToken, type SheetExportRequest } from '../services/sheetsService.js';
 import { writeAuditLog } from '../services/audit.js';
-import { logAccessEvent, logErrorEvent } from '../config/appLogs.js';
+import { logAccessEvent, logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 
@@ -95,6 +95,17 @@ export function sheetsRoutes(env: Env): Router {
           title: result.sheetTitle,
           rowCount: rows.length,
         },
+      });
+
+      logChangeEvent({
+        actorUserId: (req as any).auth?.userId,
+        actorRoles: (req as any).auth?.roles,
+        actorIp: req.ip,
+        entityType: 'Export',
+        entityId: result.spreadsheetId,
+        action: 'CREATE',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { title: result.sheetTitle, rowCount: rows.length },
       });
 
       logAccessEvent('RESOURCE_ACCESS', {

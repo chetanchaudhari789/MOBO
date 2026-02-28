@@ -223,6 +223,24 @@ export function googleRoutes(env: Env): Router {
         metadata: { provider: 'google', hasRefreshToken: !!tokenData.refresh_token },
       });
 
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: pending.userId,
+        ip: req.ip,
+        resource: 'GoogleOAuth',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'GOOGLE_OAUTH_CONNECTED', googleEmail },
+      });
+
+      logChangeEvent({
+        actorUserId: pending.userId,
+        entityType: 'User',
+        entityId: pending.userId,
+        action: 'UPDATE',
+        changedFields: Object.keys(update),
+        before: { googleConnected: false },
+        after: { googleConnected: true, googleEmail },
+      });
+
       return res.send(makeCallbackHtml(true, 'Google account connected successfully!'));
     } catch (err: any) {
       logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'high', requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/callback' } });
@@ -253,6 +271,13 @@ export function googleRoutes(env: Env): Router {
           googleEmail = pgUser.googleEmail || null;
         }
       }
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: String(userId),
+        ip: req.ip,
+        resource: 'GoogleOAuth',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'GOOGLE_STATUS_CHECK', connected, googleEmail },
+      });
       return res.json({ connected, googleEmail });
     } catch (err) {
       logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'low', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/status' } });
@@ -296,6 +321,14 @@ export function googleRoutes(env: Env): Router {
         changedFields: ['googleRefreshToken', 'googleEmail'],
         before: { googleConnected: true },
         after: { googleConnected: false },
+      });
+
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: String(userId),
+        ip: req.ip,
+        resource: 'GoogleOAuth',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'GOOGLE_OAUTH_DISCONNECTED' },
       });
 
       return res.json({ ok: true });

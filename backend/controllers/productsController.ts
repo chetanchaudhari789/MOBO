@@ -178,7 +178,7 @@ export function makeProductsController() {
           ip: req.ip,
           resource: 'DealRedirect',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { dealId, campaignId: deal.campaignId, mediatorCode, preOrderId: mongoId },
+          metadata: { action: 'DEAL_REDIRECT', dealId, campaignId: deal.campaignId, mediatorCode, preOrderId: mongoId },
         });
       } catch (err) {
         logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'medium', message: 'Deal redirect tracking failed', operation: 'trackRedirect', error: err, metadata: { dealId: String(req.params.dealId || ''), userId: req.auth?.userId } });
