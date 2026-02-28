@@ -18,7 +18,7 @@ async function tryTestcontainers(): Promise<boolean> {
       .withTmpFs({ '/var/lib/postgresql/data': 'rw' })
       .start();
     process.env.DATABASE_URL = pgContainer.getConnectionUri();
-    execSync('tsx scripts/flyway.ts migrate', { stdio: 'inherit' });
+    execSync('npx prisma migrate deploy', { stdio: 'inherit' });
     return true;
   } catch {
     return false;

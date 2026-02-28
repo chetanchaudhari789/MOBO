@@ -618,6 +618,25 @@ export function makeAuthController(env: Env) {
           metadata: { role: user.role, mobile: user.mobile, pendingApproval },
         }).catch(() => {});
 
+        logAuthEvent('REGISTRATION', {
+          userId: user.id,
+          roles: user.roles as string[],
+          identifier: user.mobile,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+          metadata: { registrationType: 'ops', role: user.role, pendingApproval },
+        });
+        logChangeEvent({
+          actorUserId: user.id,
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'CREATE',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { role: user.role, mobile: user.mobile, pendingApproval },
+        });
+
         // If mediator joined via agency code, the account is pending and must be approved by agency.
         if (pendingApproval) {
           const agencyCode = String(user.parentCode || '').trim();
@@ -732,6 +751,25 @@ export function makeAuthController(env: Env) {
           metadata: { role: 'brand', mobile: user.mobile },
         }).catch(() => {});
 
+        logAuthEvent('REGISTRATION', {
+          userId: user.id,
+          roles: user.roles as string[],
+          identifier: user.mobile,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+          metadata: { registrationType: 'brand' },
+        });
+        logChangeEvent({
+          actorUserId: user.id,
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'CREATE',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { role: 'brand', mobile: user.mobile },
+        });
+
         publishRealtime({
           type: 'invites.changed',
           ts: new Date().toISOString(),
@@ -825,6 +863,29 @@ export function makeAuthController(env: Env) {
             updatedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
             updatedBy: isSelf ? 'self' : 'admin',
           },
+        });
+
+        logAuthEvent('PROFILE_UPDATE', {
+          userId: user.id,
+          roles: user.roles as string[],
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+          metadata: {
+            updatedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
+            updatedBy: isSelf ? 'self' : 'admin',
+          },
+        });
+        logChangeEvent({
+          actorUserId: requesterId,
+          actorRoles: requester.roles as string[],
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'UPDATE',
+          changedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
+          requestId: String(res.locals.requestId || ''),
+          metadata: { updatedBy: isSelf ? 'self' : 'admin' },
         });
 
         publishRealtime({

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../config/env.js';
 import { aiLog } from '../config/logger.js';
+import { logPerformance, logErrorEvent } from '../config/appLogs.js';
 
 // ── Tesseract Worker Pool ──
 // Reuse workers across OCR calls instead of creating/terminating per request.
@@ -952,6 +953,7 @@ async function verifyProofWithOcr(
 }
 
 export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promise<ProofVerificationResult> {
+  const _aiStart = Date.now();
   const geminiAvailable = isGeminiConfigured(env);
 
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
@@ -1058,6 +1060,11 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
         aiLog.info('Gemini proof usage estimate', { model, estimatedTokens });
 
         recordGeminiSuccess();
+        logPerformance({
+          operation: 'AI_VERIFY_PROOF',
+          durationMs: Date.now() - _aiStart,
+          metadata: { method: 'gemini', model, confidenceScore: parsed.confidenceScore },
+        });
         return { ...parsed, verificationMethod: 'gemini' as const };
       } catch (innerError) {
         aiLog.warn('[Proof] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError });
@@ -1069,9 +1076,21 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini proof verification failed');
   } catch (error) {
+    logErrorEvent({
+      category: 'EXTERNAL_SERVICE',
+      errorCode: 'AI_PROOF_VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+      severity: 'medium',
+      metadata: { expectedOrderId: payload.expectedOrderId, method: 'gemini' },
+    });
     aiLog.error('Gemini proof verification error', { error });
     // Fall back to OCR when Gemini fails at runtime.
     const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    logPerformance({
+      operation: 'AI_VERIFY_PROOF',
+      durationMs: Date.now() - _aiStart,
+      metadata: { method: 'ocr_fallback', confidenceScore: ocrResult.confidenceScore },
+    });
     return { ...ocrResult, verificationMethod: 'ocr' as const };
   }
 }
@@ -1266,6 +1285,7 @@ export async function verifyRatingScreenshotWithAi(
   env: Env,
   payload: RatingVerificationPayload,
 ): Promise<RatingVerificationResult> {
+  const _aiStart = Date.now();
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
     return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
       discrepancyNote: 'Image too large for auto verification.' };
@@ -1326,12 +1346,24 @@ export async function verifyRatingScreenshotWithAi(
         if (!parsed) throw new Error('Failed to parse AI rating verification response');
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
+        logPerformance({
+          operation: 'AI_VERIFY_RATING',
+          durationMs: Date.now() - _aiStart,
+          metadata: { method: 'gemini', confidenceScore: parsed.confidenceScore },
+        });
         return parsed;
       } catch (innerError) { aiLog.warn('[Rating] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError }); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini rating verification failed');
   } catch (error) {
+    logErrorEvent({
+      category: 'EXTERNAL_SERVICE',
+      errorCode: 'AI_RATING_VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+      severity: 'medium',
+      metadata: { expectedBuyerName: payload.expectedBuyerName, method: 'gemini' },
+    });
     aiLog.error('Gemini rating verification error', { error });
     return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
@@ -1534,6 +1566,7 @@ export async function verifyReturnWindowWithAi(
   env: Env,
   payload: ReturnWindowVerificationPayload,
 ): Promise<ReturnWindowVerificationResult> {
+  const _aiStart = Date.now();
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
     return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
       returnWindowClosed: false, confidenceScore: 0,
@@ -1599,12 +1632,24 @@ export async function verifyReturnWindowWithAi(
         if (!parsed) throw new Error('Failed to parse AI return window verification response');
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
+        logPerformance({
+          operation: 'AI_VERIFY_RETURN_WINDOW',
+          durationMs: Date.now() - _aiStart,
+          metadata: { method: 'gemini', confidenceScore: parsed.confidenceScore },
+        });
         return parsed;
       } catch (innerError) { aiLog.warn('[ReturnWindow] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError }); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini return window verification failed');
   } catch (error) {
+    logErrorEvent({
+      category: 'EXTERNAL_SERVICE',
+      errorCode: 'AI_RETURN_WINDOW_VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+      severity: 'medium',
+      metadata: { method: 'gemini' },
+    });
     aiLog.error('Gemini return window verification error', { error });
     return verifyReturnWindowWithOcr(payload.imageBase64, payload);
   }

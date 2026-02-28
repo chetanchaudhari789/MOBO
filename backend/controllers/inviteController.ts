@@ -8,7 +8,7 @@ import { AppError } from '../middleware/errors.js';
 import { writeAuditLog } from '../services/audit.js';
 import { revokeInvite } from '../services/invites.js';
 import { businessLog } from '../config/logger.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgInvite } from '../utils/pgMappers.js';
@@ -123,6 +123,15 @@ export function makeInviteController() {
           db().invite.count(),
         ]);
         res.json(paginatedResponse(invites.map(pgInvite), total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Invite',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'adminListInvites', resultCount: invites.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -146,6 +155,12 @@ export function makeInviteController() {
           throw new AppError(409, 'INVITE_ALREADY_USED', 'Cannot delete an invite that has been used');
         }
 
+        // Soft-delete: revoke + mark deleted (avoids needing DELETE permission on the table)
+        await db().invite.update({
+          where: { id: invite.id },
+          data: { status: 'revoked' as any, revokedAt: new Date(), revokedBy: (req.auth as any)?.pgUserId || undefined },
+        });
+
         await writeAuditLog({
           req,
           action: 'INVITE_DELETED',
@@ -153,10 +168,8 @@ export function makeInviteController() {
           entityId: invite.mongoId!,
           metadata: { code: invite.code, role: invite.role, parentCode: invite.parentCode, parentUserId: invite.parentUserId },
         });
-        businessLog.info('Invite deleted', { inviteId: invite.mongoId, code: invite.code, role: invite.role });
-        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Invite', entityId: invite.mongoId!, action: 'INVITE_DELETED', changedFields: ['deletedAt'], before: { status: 'active' }, after: { deleted: true } });
-
-        await db().invite.delete({ where: { id: invite.id } });
+        businessLog.info('Invite deleted (soft)', { inviteId: invite.mongoId, code: invite.code, role: invite.role });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Invite', entityId: invite.mongoId!, action: 'INVITE_DELETED', changedFields: ['status'], before: { status: 'active' }, after: { status: 'revoked' } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });

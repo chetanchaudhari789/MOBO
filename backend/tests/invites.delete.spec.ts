@@ -41,6 +41,8 @@ describe('admin invites delete', () => {
 
     expect(listRes.status).toBe(200);
     expect(Array.isArray(listRes.body)).toBe(true);
-    expect(listRes.body.some((i: any) => i.code === code)).toBe(false);
+    // After soft-delete the invite is revoked, not physically removed
+    const deleted = listRes.body.find((i: any) => i.code === code);
+    expect(!deleted || deleted.status === 'revoked').toBe(true);
   });
 });

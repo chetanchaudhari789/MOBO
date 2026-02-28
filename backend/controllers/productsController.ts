@@ -11,7 +11,7 @@ import { publishRealtime } from '../services/realtimeHub.js';
 import { pgDeal } from '../utils/pgMappers.js';
 import { idWhere } from '../utils/idWhere.js';
 import { orderLog } from '../config/logger.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
 
 function db() { return prisma(); }
 
@@ -50,6 +50,15 @@ export function makeProductsController() {
         ]);
 
         res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Deal',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'listProducts', mediatorCode, resultCount: deals.length },
+        });
       } catch (err) {
         next(err);
       }

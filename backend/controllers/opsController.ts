@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog, pushLog, businessLog, walletLog } from '../config/logger.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
 import { pgUser, pgOrder, pgCampaign, pgDeal, pgWallet } from '../utils/pgMappers.js';
 import {
   approveByIdSchema,
@@ -261,6 +261,15 @@ export function makeOpsController(env: Env) {
           const wallet = m.wallets?.[0];
           return toUiUser(pgUser(m), wallet ? pgWallet(wallet) : undefined);
         }));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Mediator',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getMediators', resultCount: mediators.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -356,6 +365,15 @@ export function makeOpsController(env: Env) {
           return mapped;
         });
         res.json(ui);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Campaign',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getCampaigns', resultCount: ui.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -403,6 +421,15 @@ export function makeOpsController(env: Env) {
         });
 
         res.json(deals.map((d: any) => toUiDeal(pgDeal(d))));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Deal',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getDeals', resultCount: deals.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -454,6 +481,15 @@ export function makeOpsController(env: Env) {
           catch (e) { orderLog.error(`[getOrders] toUiOrderSummary failed for order ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(mapped);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getOrders', resultCount: mapped.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -536,6 +572,15 @@ export function makeOpsController(env: Env) {
           const wallet = u.wallets?.[0];
           return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
         }));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'User',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getVerifiedUsers', resultCount: users.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -601,6 +646,15 @@ export function makeOpsController(env: Env) {
           };
         });
         res.json(paginatedResponse(mapped, payoutTotal, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Payout',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getLedger', resultCount: mapped.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -2675,6 +2729,15 @@ export function makeOpsController(env: Env) {
           db().transaction.count({ where }),
         ]);
         res.json(paginatedResponse(transactions, txTotal, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Transaction',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getTransactions', resultCount: transactions.length },
+        });
       } catch (err) {
         next(err);
       }

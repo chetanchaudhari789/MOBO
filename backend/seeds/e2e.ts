@@ -268,30 +268,48 @@ export async function seedE2E(): Promise<SeededE2E> {
   }
 
   // Deal: find existing or create — never duplicate, never delete
+  // Search broadly by mediatorCode + title so we always find and fix stale deals
   const existingDeal = await db.deal.findFirst({
-    where: { campaignId: campaign.id, mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode, deletedAt: null },
+    where: { mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode, title: 'E2E Deal', deletedAt: null },
   });
+  const dealDefaults = {
+    title: 'E2E Deal',
+    description: 'Exclusive',
+    image: 'https://placehold.co/600x400',
+    productUrl: 'https://example.com/product',
+    platform: 'Amazon',
+    brandName: E2E_ACCOUNTS.brand.name,
+    dealType: 'Discount' as any,
+    originalPricePaise: 1200_00,
+    pricePaise: 999_00,
+    commissionPaise: 50_00,
+    payoutPaise: 100_00,
+    rating: 5,
+    category: 'General',
+    active: true,
+    createdBy: admin.id,
+  };
   if (!existingDeal) {
     await db.deal.create({
       data: {
         mongoId: randomUUID(),
         campaignId: campaign.id,
         mediatorCode: E2E_ACCOUNTS.mediator.mediatorCode,
-        title: 'E2E Deal',
-        description: 'Exclusive',
-        image: 'https://placehold.co/600x400',
-        productUrl: 'https://example.com/product',
-        platform: 'Amazon',
-        brandName: E2E_ACCOUNTS.brand.name,
-        dealType: 'Discount' as any,
-        originalPricePaise: 1200_00,
-        pricePaise: 999_00,
-        commissionPaise: 50_00,
-        payoutPaise: 100_00,
-        rating: 5,
-        category: 'General',
+        ...dealDefaults,
+      },
+    });
+  } else {
+    // Always reconcile critical fields so stale seed data never breaks tests
+    await db.deal.update({
+      where: { id: existingDeal.id },
+      data: {
+        campaignId: campaign.id,
+        title: dealDefaults.title,
+        payoutPaise: dealDefaults.payoutPaise,
+        commissionPaise: dealDefaults.commissionPaise,
+        originalPricePaise: dealDefaults.originalPricePaise,
+        pricePaise: dealDefaults.pricePaise,
         active: true,
-        createdBy: admin.id,
       },
     });
   }

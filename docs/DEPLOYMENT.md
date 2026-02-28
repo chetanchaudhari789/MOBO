@@ -15,15 +15,15 @@ Before deploying, verify locally from repo root:
 
 ## Branch Strategy
 
-| Branch    | Purpose            | Backend (Render)                             | Database (Atlas) | Frontends (Vercel)            |
-| --------- | ------------------ | -------------------------------------------- | ---------------- | ----------------------------- |
-| `main`    | **Production**     | https://mobo-agig.onrender.com               | `mobo`           | Production deployments        |
-| `develop` | **Staging / Test** | _(create a second Render Web Service below)_ | `mobo_staging`   | Preview / staging deployments |
+| Branch    | Purpose            | Backend           | Database   | Frontends (Vercel)            |
+| --------- | ------------------ | ----------------- | ---------- | ----------------------------- |
+| `main`    | **Production**     | Production server | PostgreSQL | Production deployments        |
+| `develop` | **Staging / Test** | Staging server    | PostgreSQL | Preview / staging deployments |
 
 **Workflow:**
 
 1. All new features / changes go into `develop` first
-2. Test on staging (separate Render service + separate database `mobo_staging`)
+2. Test on staging (separate backend service + staging database schema `buzzma_test`)
 3. When confirmed stable, merge `develop` → `main` via Pull Request
 4. Production auto-deploys from `main`
 
@@ -39,14 +39,14 @@ Before deploying, verify locally from repo root:
 
 ### Production
 
-| Service  | URL                            | Branch |
-| -------- | ------------------------------ | ------ |
-| Backend  | https://mobo-agig.onrender.com | `main` |
-| Buyer    | https://www.buzzma.in          | `main` |
-| Mediator | https://www.mediatorbuzzma.in  | `main` |
-| Agency   | https://www.agencybuzzma.in    | `main` |
-| Brand    | https://www.brandbuzzma.in     | `main` |
-| Admin    | https://moboadmin.vercel.app   | `main` |
+| Service  | URL                           | Branch |
+| -------- | ----------------------------- | ------ |
+| Backend  | _(your server URL)_           | `main` |
+| Buyer    | https://www.buzzma.in         | `main` |
+| Mediator | https://www.mediatorbuzzma.in | `main` |
+| Agency   | https://www.agencybuzzma.in   | `main` |
+| Brand    | https://www.brandbuzzma.in    | `main` |
+| Admin    | https://moboadmin.vercel.app  | `main` |
 
 ### Database Naming
 
@@ -81,7 +81,7 @@ Health check:
 
 ### Staging Backend
 
-Create a second backend service for the `develop` branch:
+Create a second backend service (or environment) for the `develop` branch:
 
 1. Same build/start commands as production
 2. Environment variables — same as production **except**:
@@ -93,7 +93,7 @@ Create a second backend service for the `develop` branch:
 
 Admin/ops login is **username/password** (not mobile).
 
-To ensure the admin exists in production, set these env vars on Render:
+To ensure the admin exists in production, set these env vars on your server:
 
 - `ADMIN_SEED_USERNAME`
 - `ADMIN_SEED_PASSWORD`
@@ -119,7 +119,7 @@ Deploy each portal as its own Vercel project with Root Directory set to:
 
 Each portal must set:
 
-- `NEXT_PUBLIC_API_PROXY_TARGET=https://mobo-agig.onrender.com`
+- `NEXT_PUBLIC_API_PROXY_TARGET=https://<your-backend-url>`
 
 Current production portal URLs:
 

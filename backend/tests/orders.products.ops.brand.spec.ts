@@ -50,16 +50,14 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
     expect(Array.isArray(productsRes.body)).toBe(true);
     expect(productsRes.body.length).toBeGreaterThan(0);
 
-    // Find the E2E Deal specifically (other tests may have created deals with payoutPaise=0)
-    const e2eDeal = productsRes.body.find((p: any) => {
-      const title = String(p.title || '');
-      return title === 'E2E Deal';
-    }) || productsRes.body[0];
-    const dealId = String(e2eDeal.id || e2eDeal._id || '');
-    expect(dealId).toBeTruthy();
-
-    const deal = await db.deal.findFirst({ where: { id: dealId, deletedAt: null }, include: { campaign: true } });
+    // Find the E2E Deal: query DB directly because stale deals from prior runs
+    // may push it off the first page of the paginated products API.
+    const deal = await db.deal.findFirst({
+      where: { title: 'E2E Deal', active: true, deletedAt: null },
+      include: { campaign: true },
+    });
     expect(deal).toBeTruthy();
+    const dealId = String(deal!.id);
     const payoutPaise = Number(deal?.payoutPaise ?? 0);
     expect(payoutPaise).toBeGreaterThan(0);
 
@@ -108,7 +106,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
           `order-commission-${mid}`,
           `order-margin-${mid}`,
         ]);
-        await db.transaction.deleteMany({ where: { idempotencyKey: { in: staleKeys } } });
+        try { await db.transaction.deleteMany({ where: { idempotencyKey: { in: staleKeys } } }); } catch { /* DB user may lack DELETE rights */ }
       }
     }
 
@@ -124,7 +122,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
         `order-commission-${mid}`,
         `order-margin-${mid}`,
       ]);
-      await db.transaction.deleteMany({ where: { idempotencyKey: { in: allStaleKeys } } });
+      try { await db.transaction.deleteMany({ where: { idempotencyKey: { in: allStaleKeys } } }); } catch { /* DB user may lack DELETE rights */ }
     }
 
     // Redirect tracking creates a pre-order
@@ -153,7 +151,7 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
             image: 'https://placehold.co/600x400',
             priceAtPurchase: 999,
             commission: 50,
-            campaignId: String(e2eDeal.campaignId || e2eDeal.campaign?.id || e2eDeal.campaign || ''),
+            campaignId: String(deal!.campaignId || deal!.campaign?.id || ''),
             dealType: 'Discount',
             quantity: 1,
             platform: 'Amazon',

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog } from '../config/logger.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logPerformance } from '../config/appLogs.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
@@ -156,6 +156,16 @@ export function makeOrdersController(env: Env) {
         }
 
         const proofValue = resolveProofValue(order, proofType);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'OrderProof',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { orderId, proofType },
+        });
+
         sendProofResponse(res, proofValue);
       } catch (err) {
         next(err);
@@ -181,6 +191,16 @@ export function makeOrdersController(env: Env) {
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         const proofValue = resolveProofValue(order, proofType);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'OrderProof',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { orderId, proofType, public: true },
+        });
+
         sendProofResponse(res, proofValue);
       } catch (err) {
         next(err);
@@ -223,6 +243,16 @@ export function makeOrdersController(env: Env) {
           try { return toUiOrderSummary(pgOrder(o)); }
           catch (e) { orderLog.error(`[orders/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { targetUserId: userId, resultCount: mapped.length, total, page, limit },
+        });
+
         res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
       } catch (err) {
         next(err);
@@ -337,10 +367,16 @@ export function makeOrdersController(env: Env) {
           if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
             throw new AppError(400, 'INVALID_ORDER_AMOUNT', 'Could not compute a valid order amount for verification.');
           }
+          const aiStart = Date.now();
           const verification = await verifyProofWithAi(env, {
             imageBase64: body.screenshots.order,
             expectedOrderId: resolvedExternalOrderId || body.externalOrderId || '',
             expectedAmount,
+          });
+          logPerformance({
+            operation: 'AI_ORDER_PROOF_VERIFICATION',
+            durationMs: Date.now() - aiStart,
+            metadata: { orderId: resolvedExternalOrderId, confidenceScore: verification?.confidenceScore },
           });
 
           const confidenceThreshold = env.AI_PROOF_CONFIDENCE_THRESHOLD ?? 75;
@@ -797,11 +833,17 @@ export function makeOrdersController(env: Env) {
             const productName = String((order.items?.[0] as any)?.title || order.extractedProductName || '').trim();
             const reviewerName = String(order.reviewerName || '').trim();
             if (buyerName && productName) {
+              const aiStart = Date.now();
               ratingAiResult = await verifyRatingScreenshotWithAi(env, {
                 imageBase64: body.data,
                 expectedBuyerName: buyerName,
                 expectedProductName: productName,
                 ...(reviewerName ? { expectedReviewerName: reviewerName } : {}),
+              });
+              logPerformance({
+                operation: 'AI_RATING_VERIFICATION',
+                durationMs: Date.now() - aiStart,
+                metadata: { orderId: order.mongoId, confidenceScore: ratingAiResult?.confidenceScore },
               });
               // Block submission if both name AND product mismatch with high confidence (≥70 for anti-fraud strength)
               if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
@@ -858,12 +900,18 @@ export function makeOrdersController(env: Env) {
             ) / 100;
             const expectedSoldBy = String(order.soldBy || '').trim();
             if (expectedOrderId) {
+              const aiStart = Date.now();
               returnWindowResult = await verifyReturnWindowWithAi(env, {
                 imageBase64: body.data,
                 expectedOrderId,
                 expectedProductName,
                 expectedAmount,
                 expectedSoldBy: expectedSoldBy || undefined,
+              });
+              logPerformance({
+                operation: 'AI_RETURN_WINDOW_VERIFICATION',
+                durationMs: Date.now() - aiStart,
+                metadata: { orderId: order.mongoId, confidenceScore: returnWindowResult?.confidenceScore },
               });
             }
           }
@@ -905,10 +953,16 @@ export function makeOrdersController(env: Env) {
             if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
               orderLog.warn(`[ordersController] Skipping AI re-upload verification: invalid expectedAmount=${expectedAmount} for order=${order.mongoId}`);
             } else {
+              const aiStart = Date.now();
               aiOrderVerification = await verifyProofWithAi(env, {
                 imageBase64: body.data,
                 expectedOrderId,
                 expectedAmount,
+              });
+              logPerformance({
+                operation: 'AI_ORDER_REUPLOAD_VERIFICATION',
+                durationMs: Date.now() - aiStart,
+                metadata: { orderId: order.mongoId, confidenceScore: aiOrderVerification?.confidenceScore },
               });
             }
           }

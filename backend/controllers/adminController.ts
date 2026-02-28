@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import { prisma } from '../database/prisma.js';
 import { orderLog, businessLog, securityLog } from '../config/logger.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logSecurityIncident } from '../config/appLogs.js';
 import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, adminAuditLogsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrderSummary, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { orderListSelect } from '../utils/querySelect.js';
@@ -64,6 +64,16 @@ export function makeAdminController() {
         });
         securityLog.info('System config updated', { updatedFields: Object.keys(update), actorUserId: req.auth?.userId });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'SystemConfig', entityId: 'system', action: 'CONFIG_UPDATED', changedFields: Object.keys(update), before: {}, after: update });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: 'SystemConfig',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'CONFIG_UPDATED', updatedFields: Object.keys(update) },
+        });
 
         res.json({ adminContactEmail: doc?.adminContactEmail ?? body.adminContactEmail ?? 'admin@buzzma.world' });
       } catch (err) {
@@ -266,6 +276,16 @@ export function makeAdminController() {
         });
         businessLog.info('Deal deleted by admin', { dealId: deal.mongoId, mediatorCode: deal.mediatorCode, title: deal.title });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Deal', entityId: deal.mongoId!, action: 'DEAL_DELETED', changedFields: ['deletedAt', 'active'], before: { active: true }, after: { active: false, deletedAt: new Date().toISOString() } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `Deal#${deal.mongoId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'DEAL_DELETED', mediatorCode: deal.mediatorCode },
+        });
 
         const mediatorCode = String(deal.mediatorCode || '').trim();
         publishRealtime({
@@ -355,6 +375,25 @@ export function makeAdminController() {
         });
         securityLog.info('User deleted by admin', { userId: user.mongoId, roles: roles.join(','), mediatorCode });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: user.mongoId!, action: 'USER_DELETED', changedFields: ['deletedAt'], before: { status: user.status }, after: { deletedAt: new Date().toISOString() } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `User#${user.mongoId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'USER_DELETED', targetRoles: roles, mediatorCode },
+        });
+        logSecurityIncident('PRIVILEGE_ESCALATION_ATTEMPT', {
+          severity: 'medium',
+          ip: req.ip,
+          userId: req.auth?.userId,
+          route: req.originalUrl,
+          method: req.method,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'USER_DELETED', targetUserId: user.mongoId, note: 'Admin user deletion — audit trail' },
+        });
 
         publishRealtime({
           type: 'users.changed',
@@ -416,6 +455,16 @@ export function makeAdminController() {
         });
         businessLog.info('Wallet deleted by admin', { walletId: wallet.mongoId || wallet.id, ownerUserId: userId });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Wallet', entityId: wallet.mongoId || wallet.id, action: 'WALLET_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: new Date().toISOString() } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `Wallet#${wallet.mongoId || wallet.id}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'WALLET_DELETED', ownerUserId: userId },
+        });
 
         publishRealtime({
           type: 'wallets.changed',
@@ -546,6 +595,16 @@ export function makeAdminController() {
         });
         securityLog.info('User status updated by admin', { userId: user.mongoId, from: before.status, to: user.status, reason: body.reason });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: user.mongoId!, action: 'STATUS_UPDATED', changedFields: ['status'], before: { status: before.status }, after: { status: user.status, reason: body.reason } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `User#${user.mongoId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'STATUS_UPDATED', from: before.status, to: user.status, reason: body.reason },
+        });
 
         if (statusChanged) {
           publishRealtime({
@@ -581,6 +640,16 @@ export function makeAdminController() {
         });
         orderLog.info('Order reactivated by admin', { orderId: (order as any).mongoId || body.orderId, reason: body.reason });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: (order as any).mongoId || body.orderId, action: 'ORDER_REACTIVATED', changedFields: ['frozen', 'workflowStatus'], before: { frozen: true }, after: { frozen: false, reason: body.reason } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `Order#${(order as any).mongoId || body.orderId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'ORDER_REACTIVATED', reason: body.reason },
+        });
 
         res.json({ ok: true });
       } catch (err) {

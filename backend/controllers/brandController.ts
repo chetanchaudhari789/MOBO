@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
 import { orderLog, businessLog, walletLog } from '../config/logger.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrderSummary, toUiOrderSummaryForBrand, toUiUser } from '../utils/uiMappers.js';
@@ -110,6 +110,15 @@ export function makeBrandController() {
           db().user.count({ where }),
         ]);
         res.json(paginatedResponse(agencies.map((a: any) => toUiUser(pgUser(a), null)), total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Agency',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'getAgencies', resultCount: agencies.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -141,6 +150,15 @@ export function makeBrandController() {
           db().campaign.count({ where: { brandUserId: brandPgId, deletedAt: null } }),
         ]);
         res.json(paginatedResponse(campaigns.map((c: any) => toUiCampaign(pgCampaign(c))), total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Campaign',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'brand/getCampaigns', resultCount: campaigns.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -175,6 +193,15 @@ export function makeBrandController() {
         ]);
         if (!isPrivileged(roles) && roles.includes('brand')) {
           res.json(paginatedResponse(orders.map((o: any) => { try { return toUiOrderSummaryForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummaryForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
+
+          logAccessEvent('RESOURCE_ACCESS', {
+            userId: req.auth?.userId,
+            roles: req.auth?.roles,
+            ip: req.ip,
+            resource: 'Order',
+            requestId: String((res as any).locals?.requestId || ''),
+            metadata: { endpoint: 'brand/getOrders', resultCount: orders.length },
+          });
           return;
         }
         const mapped = orders.map((o: any) => {
@@ -182,6 +209,15 @@ export function makeBrandController() {
           catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'brand/getOrders', resultCount: mapped.length },
+        });
       } catch (err) {
         next(err);
       }
@@ -240,6 +276,15 @@ export function makeBrandController() {
             };
         });
         res.json(paginatedResponse(txMapped, txTotal, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: _req.auth?.userId,
+          roles: _req.auth?.roles,
+          ip: _req.ip,
+          resource: 'Transaction',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'brand/getTransactions', resultCount: txMapped.length },
+        });
       } catch (err) {
         next(err);
       }

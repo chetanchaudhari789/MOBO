@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
-import logger, { securityLog, logEvent } from '../config/logger.js';
+import logger, { securityLog } from '../config/logger.js';
 import { logErrorEvent, logSecurityIncident } from '../config/appLogs.js';
 
 export class AppError extends Error {
@@ -52,6 +52,23 @@ export function errorHandler(
   }
 
   if (err instanceof AppError) {
+    // Operational errors deserve structured logging at appropriate severity
+    const severity = err.statusCode >= 500 ? 'high' : err.statusCode === 403 ? 'medium' : 'low';
+    logErrorEvent({
+      category: err.statusCode === 401 || err.statusCode === 403 ? 'AUTHORIZATION' : 'BUSINESS_LOGIC',
+      severity,
+      error: err,
+      message: `AppError ${err.statusCode}: ${err.code} — ${err.message}`,
+      errorCode: err.code,
+      operation: `${req.method} ${req.originalUrl}`,
+      requestId,
+      userId: (req as any).user?.id,
+      ip: req.ip,
+      method: req.method,
+      route: req.originalUrl,
+      userFacing: true,
+      retryable: err.statusCode === 503 || err.statusCode === 429,
+    });
     res.status(err.statusCode).json({
       error: {
         code: err.code,
@@ -65,12 +82,26 @@ export function errorHandler(
 
   // Validation errors should never be 500s.
   if (err instanceof z.ZodError) {
+    logErrorEvent({
+      category: 'VALIDATION',
+      severity: 'low',
+      error: err,
+      message: `Validation failed: ${err.issues.map(i => i.path.join('.')).join(', ')}`,
+      errorCode: 'ZOD_VALIDATION',
+      operation: `${req.method} ${req.originalUrl}`,
+      requestId,
+      userId: (req as any).user?.id,
+      ip: req.ip,
+      method: req.method,
+      route: req.originalUrl,
+      userFacing: true,
+      retryable: false,
+    });
     const isProd = process.env.NODE_ENV === 'production';
     res.status(400).json({
       error: {
         code: 'BAD_REQUEST',
         message: 'Please check your input and try again.',
-        // In production, only expose user-facing field paths and messages (no internal schema details).
         details: isProd
           ? err.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
           : err.issues,
@@ -87,6 +118,20 @@ export function errorHandler(
     (anyErr.type === 'entity.parse.failed' ||
       (anyErr instanceof SyntaxError && Number((anyErr as any).status) === 400))
   ) {
+    logErrorEvent({
+      category: 'VALIDATION',
+      severity: 'low',
+      error: err,
+      message: 'Malformed JSON in request body',
+      errorCode: 'BAD_JSON',
+      operation: `${req.method} ${req.originalUrl}`,
+      requestId,
+      ip: req.ip,
+      method: req.method,
+      route: req.originalUrl,
+      userFacing: true,
+      retryable: false,
+    });
     res.status(400).json({
       error: {
         code: 'BAD_JSON',
@@ -98,6 +143,20 @@ export function errorHandler(
 
   // Request body exceeds the configured limit (express.json's `limit` option).
   if (anyErr && anyErr.type === 'entity.too.large') {
+    logErrorEvent({
+      category: 'VALIDATION',
+      severity: 'medium',
+      error: err,
+      message: `Payload too large: ${req.method} ${req.originalUrl}`,
+      errorCode: 'PAYLOAD_TOO_LARGE',
+      operation: `${req.method} ${req.originalUrl}`,
+      requestId,
+      ip: req.ip,
+      method: req.method,
+      route: req.originalUrl,
+      userFacing: true,
+      retryable: false,
+    });
     res.status(413).json({
       error: {
         code: 'PAYLOAD_TOO_LARGE',
@@ -112,6 +171,21 @@ export function errorHandler(
     const prismaCode = String(anyErr.code || '');
     switch (prismaCode) {
       case 'P2002': // Unique constraint violation
+        logErrorEvent({
+          category: 'DATABASE',
+          severity: 'low',
+          error: anyErr,
+          message: `Duplicate entry: ${anyErr.meta?.target || 'unknown field'}`,
+          errorCode: 'P2002',
+          operation: `${req.method} ${req.originalUrl}`,
+          requestId,
+          userId: (req as any).user?.id,
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          userFacing: true,
+          retryable: false,
+        });
         res.status(409).json({
           error: {
             code: 'DUPLICATE_ENTRY',
@@ -120,6 +194,21 @@ export function errorHandler(
         });
         return;
       case 'P2025': // Record not found
+        logErrorEvent({
+          category: 'DATABASE',
+          severity: 'low',
+          error: anyErr,
+          message: `Record not found: ${req.method} ${req.originalUrl}`,
+          errorCode: 'P2025',
+          operation: `${req.method} ${req.originalUrl}`,
+          requestId,
+          userId: (req as any).user?.id,
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          userFacing: true,
+          retryable: false,
+        });
         res.status(404).json({
           error: {
             code: 'NOT_FOUND',
@@ -128,6 +217,21 @@ export function errorHandler(
         });
         return;
       case 'P2003': // Foreign key constraint failure
+        logErrorEvent({
+          category: 'DATABASE',
+          severity: 'low',
+          error: anyErr,
+          message: `Foreign key constraint failed: ${anyErr.meta?.field_name || 'unknown'}`,
+          errorCode: 'P2003',
+          operation: `${req.method} ${req.originalUrl}`,
+          requestId,
+          userId: (req as any).user?.id,
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          userFacing: true,
+          retryable: false,
+        });
         res.status(400).json({
           error: {
             code: 'INVALID_REFERENCE',
@@ -160,7 +264,20 @@ export function errorHandler(
       case 'P2010': // Raw query failed
       case 'P2022': // Column does not exist
       case 'P2023': // Inconsistent column data
-        logger.error(`Database schema error ${prismaCode}`, { requestId, error: anyErr });
+        logErrorEvent({
+          category: 'DATABASE',
+          severity: 'critical',
+          error: anyErr,
+          message: `Database schema error ${prismaCode}`,
+          errorCode: prismaCode,
+          operation: `${req.method} ${req.originalUrl}`,
+          requestId,
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          userFacing: true,
+          retryable: false,
+        });
         res.status(500).json({
           error: {
             code: 'INTERNAL_SERVER_ERROR',
@@ -170,14 +287,41 @@ export function errorHandler(
         return;
       default:
         // Log unknown Prisma errors but fall through to generic handler
-        logger.error(`Prisma error ${prismaCode}`, { requestId, error: anyErr });
+        logErrorEvent({
+          category: 'DATABASE',
+          severity: 'high',
+          error: anyErr,
+          message: `Prisma error ${prismaCode}`,
+          errorCode: prismaCode,
+          operation: `${req.method} ${req.originalUrl}`,
+          requestId,
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          userFacing: false,
+          retryable: false,
+        });
         break;
     }
   }
 
   // Prisma validation errors (P2000-series client validation)
   if (anyErr?.constructor?.name === 'PrismaClientValidationError') {
-    logger.error('Prisma validation error', { requestId, error: anyErr });
+    logErrorEvent({
+      category: 'DATABASE',
+      severity: 'medium',
+      error: anyErr,
+      message: 'Prisma client validation error',
+      errorCode: 'PRISMA_VALIDATION',
+      operation: `${req.method} ${req.originalUrl}`,
+      requestId,
+      userId: (req as any).user?.id,
+      ip: req.ip,
+      method: req.method,
+      route: req.originalUrl,
+      userFacing: true,
+      retryable: false,
+    });
     res.status(400).json({
       error: {
         code: 'BAD_REQUEST',
@@ -189,6 +333,20 @@ export function errorHandler(
 
   // JWT-specific errors for better client-side handling
   if (anyErr?.name === 'TokenExpiredError') {
+    logErrorEvent({
+      category: 'AUTHENTICATION',
+      severity: 'low',
+      error: anyErr,
+      message: 'JWT token expired',
+      errorCode: 'TOKEN_EXPIRED',
+      operation: `${req.method} ${req.originalUrl}`,
+      requestId,
+      ip: req.ip,
+      method: req.method,
+      route: req.originalUrl,
+      userFacing: true,
+      retryable: false,
+    });
     res.status(401).json({
       error: {
         code: 'TOKEN_EXPIRED',
@@ -241,18 +399,21 @@ export function errorHandler(
     return;
   }
 
-  logEvent('error', `Unhandled error on ${req.method} ${req.originalUrl}`, {
-    domain: 'http',
-    eventName: 'UNHANDLED_REQUEST_ERROR',
-    requestId: requestId || undefined,
+  // Catch-all: unhandled / unexpected errors — always log at critical severity
+  logErrorEvent({
+    category: 'SYSTEM',
+    severity: 'critical',
+    error: err instanceof Error ? err : new Error(String(err)),
+    message: `Unhandled error: ${err instanceof Error ? err.message : String(err)}`,
+    errorCode: (err as any)?.code || 'UNHANDLED',
+    operation: `${req.method} ${req.originalUrl}`,
+    requestId,
+    userId: (req as any).user?.id,
+    ip: req.ip,
     method: req.method,
     route: req.originalUrl,
-    ip: req.ip,
-    stack: err instanceof Error ? err.stack : undefined,
-    metadata: {
-      errorName: err instanceof Error ? err.name : typeof err,
-      errorMessage: err instanceof Error ? err.message : String(err),
-    },
+    userFacing: true,
+    retryable: false,
   });
 
   const isProd = process.env.NODE_ENV === 'production';

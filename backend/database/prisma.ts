@@ -13,6 +13,7 @@
 import { PrismaClient } from '../generated/prisma/client.js';
 import type { TlsOptions } from 'node:tls';
 import { dbLog, logEvent } from '../config/logger.js';
+import { logDatabaseEvent } from '../config/appLogs.js';
 
 let _prisma: PrismaClient | null = null;
 let _connecting: Promise<void> | null = null;
@@ -159,6 +160,10 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
                 duration,
                 params: event.params ? String(event.params).slice(0, 100) : undefined,
               });
+              logDatabaseEvent('SLOW_QUERY', {
+                durationMs: duration,
+                metadata: { query: String(event.query).slice(0, 200) },
+              });
             }
           });
         }
@@ -169,6 +174,16 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         // Run a lightweight query to verify connectivity upfront.
         await client.$queryRawUnsafe('SELECT 1');
         _prisma = client;
+        logDatabaseEvent('CONNECTED', {
+          durationMs: 0,
+          metadata: {
+            poolMax: poolConfig.max,
+            poolMin: poolConfig.min,
+            schema: pgSchema ?? 'public',
+            ssl: sslLabel,
+            attempt,
+          },
+        });
         logEvent('info', 'Connected to PostgreSQL successfully', {
           domain: 'db',
           eventName: 'PG_CONNECTED',
@@ -185,6 +200,10 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         const isLastAttempt = attempt === maxRetries;
         const msg = `PostgreSQL connection attempt ${attempt}/${maxRetries} failed`;
         if (isLastAttempt) {
+          logDatabaseEvent('DISCONNECTED', {
+            error: err instanceof Error ? err : new Error(String(err)),
+            metadata: { attempt, maxRetries, errorCode: (err as any).code },
+          });
           logEvent('error', msg, {
             domain: 'db',
             eventName: 'PG_CONNECTION_FAILED',

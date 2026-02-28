@@ -507,7 +507,10 @@ jobs:
                 console.log("Found", r.rows.length, "tables:", r.rows.map(x => x.table_name).join(", "));
 
                 // Resolve all known migrations as applied (direct SQL, no Prisma CLI)
-                const migrations = ["0_baseline", "20260226235614_add_order_ai_verification", "20260227021440_add_missing_indexes", "20260228000000_add_ops_dashboard_composite_index", "20260228010000_add_deal_mediator_composite_index"];
+                // Dynamically discover all migrations from prisma/migrations/ directory
+                const migrations = fs.readdirSync("prisma/migrations")
+                  .filter(d => fs.existsSync(path.join("prisma/migrations", d, "migration.sql")))
+                  .sort();
                 for (const m of migrations) {
                   const sqlFile = path.join("prisma/migrations", m, "migration.sql");
                   if (!fs.existsSync(sqlFile)) { console.log("  Skip", m, "(no file)"); continue; }
@@ -571,7 +574,7 @@ jobs:
 
       - name: Upload deploy log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: deploy-migration-log
           path: /tmp/deploy-migrations.log

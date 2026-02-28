@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
 import { orderLog, businessLog } from '../config/logger.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { createTicketSchema, updateTicketSchema } from '../validations/tickets.js';
 import { toUiTicket, toUiTicketForBrand } from '../utils/uiMappers.js';
@@ -142,6 +142,17 @@ export function makeTicketsController() {
         const { roles, pgUserId, user } = getRequester(req);
         const db = prisma();
 
+        const logTicketAccess = (count: number) => {
+          logAccessEvent('RESOURCE_ACCESS', {
+            userId: req.auth?.userId,
+            roles: req.auth?.roles,
+            ip: req.ip,
+            resource: 'Ticket',
+            requestId: String((res as any).locals?.requestId || ''),
+            metadata: { endpoint: 'listTickets', resultCount: count },
+          });
+        };
+
         if (isPrivileged(roles)) {
           const ticketWhere = { deletedAt: null };
           const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
@@ -150,6 +161,7 @@ export function makeTicketsController() {
             db.ticket.count({ where: ticketWhere }),
           ]);
           res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
+          logTicketAccess(tickets.length);
           return;
         }
 
@@ -161,6 +173,7 @@ export function makeTicketsController() {
             db.ticket.count({ where: shopperWhere }),
           ]);
           res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
+          logTicketAccess(tickets.length);
           return;
         }
 
@@ -182,9 +195,11 @@ export function makeTicketsController() {
 
         if (roles.includes('brand')) {
           res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicketForBrand(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicketForBrand failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
+          logTicketAccess(tickets.length);
           return;
         }
         res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
+        logTicketAccess(tickets.length);
       } catch (err) {
         next(err);
       }

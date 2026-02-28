@@ -5,6 +5,7 @@ import { paiseToRupees } from '../utils/money.js';
 import { getRequester } from '../services/authz.js';
 import { safeIso } from '../utils/uiMappers.js';
 import { businessLog } from '../config/logger.js';
+import { logAccessEvent } from '../config/appLogs.js';
 import { orderNotificationSelect } from '../utils/querySelect.js';
 
 function db() { return prisma(); }
@@ -225,6 +226,16 @@ export function makeNotificationsController() {
 
         // Sort newest-first and cap.
         notifications.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Notification',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { endpoint: 'notifications/list', resultCount: Math.min(notifications.length, 50), role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other' },
+        });
+
         businessLog.info('Notifications listed', { userId, role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other', count: Math.min(notifications.length, 50) });
         res.json(notifications.slice(0, 50));
       } catch (err) {
