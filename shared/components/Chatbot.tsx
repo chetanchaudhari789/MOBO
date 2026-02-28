@@ -18,13 +18,7 @@ import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
 import { Ticket, Order, Product, AiNavigateTo } from '../types';
 import { ProductCard } from './ProductCard';
-import { ProxiedImage, proxyImageUrl as _proxyUrl, placeholderImage } from './ProxiedImage';
-
-/** Return a proxied image URL for external marketplace images. */
-function proxyImageUrl(rawUrl: string | undefined): string | undefined {
-  if (!rawUrl) return undefined;
-  return _proxyUrl(rawUrl);
-}
+import { ProxiedImage } from './ProxiedImage';
 
 interface ChatbotProps {
   isVisible?: boolean;
