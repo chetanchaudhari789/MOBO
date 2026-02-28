@@ -21,6 +21,7 @@ export class AppError extends Error {
 export function notFoundHandler(req: Request, res: Response): void {
   // Don't leak internal route paths in production — only expose the HTTP method.
   const isProd = process.env.NODE_ENV === 'production';
+  logSecurityIncident('SUSPICIOUS_PATTERN', { severity: 'low', userId: (req as any).auth?.userId, ip: req.ip, route: req.path, method: req.method, pattern: 'ROUTE_NOT_FOUND', userAgent: req.get('user-agent'), metadata: { query: req.query } });
   res.status(404).json({
     error: {
       code: 'NOT_FOUND',

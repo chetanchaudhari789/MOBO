@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog } from '../config/logger.js';
-import { logChangeEvent, logAccessEvent, logPerformance } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logPerformance, logErrorEvent } from '../config/appLogs.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
@@ -168,6 +168,15 @@ export function makeOrdersController(env: Env) {
 
         sendProofResponse(res, proofValue);
       } catch (err) {
+        logErrorEvent({
+          message: 'getOrderProof failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -203,6 +212,15 @@ export function makeOrdersController(env: Env) {
 
         sendProofResponse(res, proofValue);
       } catch (err) {
+        logErrorEvent({
+          message: 'getOrderProofPublic failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -255,6 +273,15 @@ export function makeOrdersController(env: Env) {
 
         res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({
+          message: 'getUserOrders failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -704,6 +731,15 @@ export function makeOrdersController(env: Env) {
           },
         });
 
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'CREATE', orderId: orderMongoId, externalOrderId: resolvedExternalOrderId },
+        });
+
         res
           .status(201)
           .json(toUiOrder(pgOrder(finalOrder)));
@@ -726,6 +762,15 @@ export function makeOrdersController(env: Env) {
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
       } catch (err) {
+        logErrorEvent({
+          message: 'createOrder failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'high',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -1097,6 +1142,15 @@ export function makeOrdersController(env: Env) {
           metadata: { proofType: body.type },
         }).catch(() => { });
 
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'PROOF_SUBMITTED', orderId: order.mongoId, proofType: body.type },
+        });
+
         logChangeEvent({
           actorUserId: req.auth?.userId,
           actorRoles: req.auth?.roles,
@@ -1109,6 +1163,15 @@ export function makeOrdersController(env: Env) {
         });
         return;
       } catch (err) {
+        logErrorEvent({
+          message: 'submitClaim failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'high',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },

@@ -8,7 +8,7 @@ import { AppError } from '../middleware/errors.js';
 import { writeAuditLog } from '../services/audit.js';
 import { revokeInvite } from '../services/invites.js';
 import { businessLog } from '../config/logger.js';
-import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgInvite } from '../utils/pgMappers.js';
@@ -67,6 +67,7 @@ export function makeInviteController() {
         });
         businessLog.info('Invite created (admin)', { inviteId: invite.mongoId, code: invite.code, role: invite.role, parentCode: invite.parentCode });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Invite', entityId: invite.mongoId!, action: 'INVITE_CREATED', changedFields: ['code', 'role', 'status'], before: {}, after: { code: invite.code, role: invite.role, status: 'active' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Invite', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'INVITE_CREATED', inviteId: invite.mongoId, code: invite.code, role: invite.role } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
@@ -78,6 +79,7 @@ export function makeInviteController() {
           expiresAt: invite.expiresAt,
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'adminCreateInvite' } });
         next(err);
       }
     },
@@ -106,11 +108,13 @@ export function makeInviteController() {
         });
         businessLog.info('Invite revoked', { inviteId: String(invite._id), code: invite.code, reason: body.reason });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Invite', entityId: String(invite._id), action: 'INVITE_REVOKED', changedFields: ['status'], before: { status: 'active' }, after: { status: 'revoked', reason: body.reason } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Invite', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'INVITE_REVOKED', inviteId: String(invite._id), code: invite.code, reason: body.reason } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'adminRevokeInvite' } });
         next(err);
       }
     },
@@ -170,11 +174,13 @@ export function makeInviteController() {
         });
         businessLog.info('Invite deleted (soft)', { inviteId: invite.mongoId, code: invite.code, role: invite.role });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Invite', entityId: invite.mongoId!, action: 'INVITE_DELETED', changedFields: ['status'], before: { status: 'active' }, after: { status: 'revoked' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Invite', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'INVITE_DELETED', inviteId: invite.mongoId, code: invite.code } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'adminDeleteInvite' } });
         next(err);
       }
     },
@@ -242,11 +248,13 @@ export function makeInviteController() {
         });
         businessLog.info('Mediator invite generated', { inviteId: invite.mongoId, code: invite.code, agencyCode: agency.mediatorCode });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Invite', entityId: invite.mongoId!, action: 'MEDIATOR_INVITE_CREATED', changedFields: ['code', 'role'], before: {}, after: { code: invite.code, role: 'mediator', parentCode: agency.mediatorCode } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Invite', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'MEDIATOR_INVITE_CREATED', inviteId: invite.mongoId, code: invite.code, agencyCode: agency.mediatorCode } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.status(201).json({ code: invite.code });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'opsGenerateMediatorInvite' } });
         next(err);
       }
     },
@@ -309,11 +317,13 @@ export function makeInviteController() {
         });
         businessLog.info('Buyer invite generated', { inviteId: invite.mongoId, code: invite.code, mediatorCode: mediator.mediatorCode });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Invite', entityId: invite.mongoId!, action: 'BUYER_INVITE_CREATED', changedFields: ['code', 'role'], before: {}, after: { code: invite.code, role: 'shopper', parentCode: mediator.mediatorCode } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Invite', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'BUYER_INVITE_CREATED', inviteId: invite.mongoId, code: invite.code, mediatorCode: mediator.mediatorCode } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         publishRealtime({ type: 'invites.changed', ts: new Date().toISOString(), audience: { roles: privilegedRoles } });
         res.status(201).json({ code: invite.code });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'opsGenerateBuyerInvite' } });
         next(err);
       }
     },

@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
 import { orderLog, businessLog, walletLog } from '../config/logger.js';
-import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrderSummary, toUiOrderSummaryForBrand, toUiUser } from '../utils/uiMappers.js';
@@ -120,6 +120,7 @@ export function makeBrandController() {
           metadata: { endpoint: 'getAgencies', resultCount: agencies.length },
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getAgencies' } });
         next(err);
       }
     },
@@ -160,6 +161,7 @@ export function makeBrandController() {
           metadata: { endpoint: 'brand/getCampaigns', resultCount: campaigns.length },
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getCampaigns' } });
         next(err);
       }
     },
@@ -219,14 +221,15 @@ export function makeBrandController() {
           metadata: { endpoint: 'brand/getOrders', resultCount: mapped.length },
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getOrders' } });
         next(err);
       }
     },
 
-    getTransactions: async (_req: Request, res: Response, next: NextFunction) => {
+    getTransactions: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const q = brandTransactionsQuerySchema.parse(_req.query);
-        const { roles, userId: _userId } = getRequester(_req);
+        const q = brandTransactionsQuerySchema.parse(req.query);
+        const { roles, userId: _userId } = getRequester(req);
         const requested = typeof q.brandId === 'string' ? String(q.brandId) : '';
 
         let brandPgId: string;
@@ -235,7 +238,7 @@ export function makeBrandController() {
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
         } else {
-          brandPgId = (_req.auth as any)?.pgUserId;
+          brandPgId = (req.auth as any)?.pgUserId;
         }
 
         // Brand ledger = outbound agency payouts from this brand.
@@ -278,14 +281,15 @@ export function makeBrandController() {
         res.json(paginatedResponse(txMapped, txTotal, page, limit, isPaginated));
 
         logAccessEvent('RESOURCE_ACCESS', {
-          userId: _req.auth?.userId,
-          roles: _req.auth?.roles,
-          ip: _req.ip,
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
           resource: 'Transaction',
           requestId: String((res as any).locals?.requestId || ''),
           metadata: { endpoint: 'brand/getTransactions', resultCount: txMapped.length },
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getTransactions' } });
         next(err);
       }
     },
@@ -415,6 +419,7 @@ export function makeBrandController() {
         });
         walletLog.info('Brand→agency payout recorded', { brandId: brandMongoId, agencyId: agencyMongoId, agencyCode, amountPaise, ref, mode: payoutMode });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Wallet', entityId: brandMongoId, action: 'AGENCY_PAYOUT', changedFields: ['balance'], before: {}, after: { amountPaise, agencyCode, ref, mode: payoutMode } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Payout', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'BRAND_AGENCY_PAYOUT', agencyCode, amountPaise, ref, mode: payoutMode } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         const audience = {
@@ -425,6 +430,7 @@ export function makeBrandController() {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true, mode: payoutMode });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'payoutAgency' } });
         next(err);
       }
     },
@@ -489,6 +495,7 @@ export function makeBrandController() {
         });
         businessLog.info(`Brand connection ${body.action}d`, { brandId: brand.mongoId || brand.id, agencyCode, action: body.action });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: brand.mongoId || brand.id, action: body.action === 'approve' ? 'CONNECTION_APPROVED' : 'CONNECTION_REJECTED', changedFields: ['connectedAgencies'], before: {}, after: { agencyCode, action: body.action } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'BrandConnection', requestId: String((res as any).locals?.requestId || ''), metadata: { action: body.action === 'approve' ? 'CONNECTION_APPROVED' : 'CONNECTION_REJECTED', agencyCode, brandId: brand.mongoId || brand.id } });
 
         const ts = new Date().toISOString();
         publishRealtime({
@@ -513,6 +520,7 @@ export function makeBrandController() {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'resolveRequest' } });
         next(err);
       }
     },
@@ -548,6 +556,7 @@ export function makeBrandController() {
         });
         businessLog.info('Brand agency removed', { brandId: brand.mongoId || brand.id, agencyCode: body.agencyCode });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: brand.mongoId || brand.id, action: 'AGENCY_REMOVED', changedFields: ['connectedAgencies'], before: { connectedAgencies: connected }, after: { connectedAgencies: filtered } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'BrandConnection', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'AGENCY_REMOVED', agencyCode: body.agencyCode, brandId: brand.mongoId || brand.id } });
 
         // Cascade: remove the agency from allowedAgencyCodes on all this brand's campaigns.
         const agencyCode = String(body.agencyCode || '').trim();
@@ -592,6 +601,7 @@ export function makeBrandController() {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'removeAgency' } });
         next(err);
       }
     },
@@ -698,9 +708,11 @@ export function makeBrandController() {
         });
         businessLog.info('Brand campaign created', { campaignId, title: body.title, platform: body.platform, totalSlots: body.totalSlots, allowedAgencies: normalizedAllowed });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignId, action: 'CAMPAIGN_CREATED', changedFields: ['id', 'title', 'status'], before: {}, after: { title: body.title, status: 'active', platform: body.platform, totalSlots: body.totalSlots } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_CREATED', campaignId, title: body.title, platform: body.platform } });
 
         res.status(201).json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/createCampaign' } });
         next(err);
       }
     },
@@ -864,9 +876,11 @@ export function makeBrandController() {
         });
         businessLog.info('Brand campaign updated', { campaignId: campaignMongoId, updatedFields: Object.keys(update) });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignMongoId, action: 'CAMPAIGN_UPDATED', changedFields: Object.keys(update), before: { status: existing.status }, after: update });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_UPDATED', campaignId: campaignMongoId, updatedFields: Object.keys(update) } });
 
         res.json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/updateCampaign' } });
         next(err);
       }
     },
@@ -923,6 +937,7 @@ export function makeBrandController() {
         });
         businessLog.info('Brand campaign copied', { newCampaignId: newId, sourceCampaignId: id, title: campaign.title });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: newId, action: 'CAMPAIGN_COPIED', changedFields: ['id'], before: { sourceCampaignId: id }, after: { newCampaignId: newId, status: 'draft' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_COPIED', newCampaignId: newId, sourceCampaignId: id } });
 
         const ts = new Date().toISOString();
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
@@ -941,6 +956,7 @@ export function makeBrandController() {
 
         res.json({ ok: true, id: newId });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/copyCampaign' } });
         next(err);
       }
     },
@@ -990,6 +1006,7 @@ export function makeBrandController() {
         });
         businessLog.info('Brand campaign deleted', { campaignId: campaignMongoId, title: campaign.title });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignMongoId, action: 'CAMPAIGN_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: now.toISOString() } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_DELETED', campaignId: campaignMongoId, title: campaign.title } });
 
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
           ? (campaign.allowedAgencyCodes as string[]).filter(Boolean)
@@ -1025,6 +1042,7 @@ export function makeBrandController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/deleteCampaign' } });
         next(err);
       }
     },

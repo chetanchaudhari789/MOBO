@@ -1,7 +1,7 @@
 import React from 'react';
 import { ExternalLink, Star } from 'lucide-react';
 import { Product } from '../types';
-import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
+import { ProxiedImage, placeholderImage } from './ProxiedImage';
 
 interface ProductCardProps {
   product: Product;
@@ -12,24 +12,9 @@ type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
 const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
 
-const placeholderImage =
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">' +
-      '<rect width="160" height="160" rx="24" fill="#F3F4F6"/>' +
-      '<circle cx="80" cy="64" r="24" fill="#E5E7EB"/>' +
-      '<rect x="32" y="104" width="96" height="16" rx="8" fill="#E5E7EB"/>' +
-    '</svg>'
-  );
-
 export const ProductCard = React.memo<ProductCardComponentProps>(({ product }) => {
-  const getApiBase = getApiBaseAbsolute;
   const rawImage = sanitizeLabel(product.image);
-  const proxiedImage =
-    rawImage && /^https?:\/\//i.test(rawImage)
-      ? `${getApiBase()}/media/image?url=${encodeURIComponent(rawImage)}`
-      : rawImage;
-  const imageSrc = proxiedImage || placeholderImage;
+  const imageSrc = rawImage || placeholderImage;
   const platformLabel = sanitizeLabel(product.platform) || 'DEAL';
   const brandLabel = sanitizeLabel(product.brandName) || 'PARTNER';
   const mediatorLabel = sanitizeLabel(product.mediatorCode) || 'PARTNER';
@@ -67,14 +52,10 @@ export const ProductCard = React.memo<ProductCardComponentProps>(({ product }) =
       {/* Top Section: Image & Key Info */}
       <div className="flex gap-4 mb-4">
         <div className="w-24 h-24 rounded-2xl bg-gray-50 border border-gray-100 p-2 flex-shrink-0 flex items-center justify-center relative">
-            <img loading="lazy"
+            <ProxiedImage
               src={imageSrc}
               alt={product.title}
               className="w-full h-full object-contain mix-blend-multiply"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (target.src !== placeholderImage) target.src = placeholderImage;
-              }}
             />
         </div>
         <div className="flex-1 min-w-0 flex flex-col justify-center py-1">

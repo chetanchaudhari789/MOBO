@@ -18,7 +18,7 @@ import { useNotification } from '../context/NotificationContext';
 import { api } from '../services/api';
 import { Ticket, Order, Product, AiNavigateTo } from '../types';
 import { ProductCard } from './ProductCard';
-import { ProxiedImage, proxyImageUrl as _proxyUrl } from './ProxiedImage';
+import { ProxiedImage, proxyImageUrl as _proxyUrl, placeholderImage } from './ProxiedImage';
 
 /** Return a proxied image URL for external marketplace images. */
 function proxyImageUrl(rawUrl: string | undefined): string | undefined {
@@ -769,8 +769,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
                       ></div>
                       <div className="flex gap-4">
                         <div className="w-14 h-14 bg-slate-50 rounded-xl p-1.5 border border-slate-100 flex-shrink-0">
-                          <img loading="lazy"
-                            src={proxyImageUrl(order.items?.[0]?.image) || ''}
+                          <ProxiedImage loading="lazy"
+                            src={order.items?.[0]?.image || ''}
                             className="w-full h-full object-contain mix-blend-multiply"
                             alt=""
                           />

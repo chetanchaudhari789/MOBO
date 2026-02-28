@@ -3,6 +3,7 @@ import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
 import { exportToGoogleSheet, refreshUserGoogleToken, type SheetExportRequest } from '../services/sheetsService.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 
@@ -96,8 +97,18 @@ export function sheetsRoutes(env: Env): Router {
         },
       });
 
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: (req as any).auth?.userId,
+        roles: (req as any).auth?.roles,
+        ip: req.ip,
+        resource: 'GoogleSheet',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'SHEET_EXPORTED', spreadsheetId: result.spreadsheetId, title: result.sheetTitle, rowCount: rows.length },
+      });
+
       return res.json(result);
     } catch (err: any) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'medium', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'sheets/export' } });
       // Surface a clear error when Service Account auth is not configured
       if (err?.message?.includes('GOOGLE_SHEETS_AUTH_MISSING')) {
         return res.status(503).json({

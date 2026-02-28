@@ -5,6 +5,7 @@ import { requireAuth, requireAuthOrToken } from '../middleware/auth.js';
 import { makeOrdersController } from '../controllers/ordersController.js';
 import { prisma } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
+import { logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 
 export function ordersRoutes(env: Env): Router {
   const router = Router();
@@ -128,7 +129,17 @@ export function ordersRoutes(env: Env): Router {
       const events = Array.isArray((orderDoc as any)?.events) ? (orderDoc as any).events : [];
 
       res.json({ logs, events, page, limit });
+
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId,
+        roles,
+        ip: req.ip,
+        resource: 'OrderAudit',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AUDIT_TRAIL_VIEWED', orderId: String(req.params.orderId), logCount: logs.length, eventCount: events.length },
+      });
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'orders/audit' } });
       next(err);
     }
   });

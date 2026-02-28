@@ -18,6 +18,7 @@ import * as crypto from 'crypto';
 import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logAccessEvent, logAuthEvent, logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 import { authLog } from '../config/logger.js';
@@ -81,6 +82,14 @@ export function googleRoutes(env: Env): Router {
       return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
     }
     pendingStates.set(state, { userId: String(userId), createdAt: Date.now() });
+
+    logAccessEvent('RESOURCE_ACCESS', {
+      userId: String(userId),
+      ip: req.ip,
+      resource: 'GoogleOAuth',
+      requestId: String((res as any).locals?.requestId || ''),
+      metadata: { action: 'GOOGLE_OAUTH_INITIATED' },
+    });
 
     // Use 'consent' prompt to ensure we get a refresh_token.
     // Google only returns refresh_token on the very first consent or when prompt=consent.
@@ -207,8 +216,16 @@ export function googleRoutes(env: Env): Router {
         metadata: { googleEmail, hasRefreshToken: !!tokenData.refresh_token },
       });
 
+      logAuthEvent('LOGIN_SUCCESS', {
+        userId: pending.userId,
+        ip: req.ip,
+        identifier: googleEmail || pending.userId,
+        metadata: { provider: 'google', hasRefreshToken: !!tokenData.refresh_token },
+      });
+
       return res.send(makeCallbackHtml(true, 'Google account connected successfully!'));
     } catch (err: any) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'high', requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/callback' } });
       authLog.error('Google OAuth callback error', { error: err });
       return res.send(makeCallbackHtml(false, 'An unexpected error occurred. Please try again.'));
     }
@@ -238,6 +255,7 @@ export function googleRoutes(env: Env): Router {
       }
       return res.json({ connected, googleEmail });
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'low', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/status' } });
       next(err);
     }
   });
@@ -270,8 +288,19 @@ export function googleRoutes(env: Env): Router {
         entityId: String(userId),
       });
 
+      logChangeEvent({
+        actorUserId: String(userId),
+        entityType: 'User',
+        entityId: String(userId),
+        action: 'UPDATE',
+        changedFields: ['googleRefreshToken', 'googleEmail'],
+        before: { googleConnected: true },
+        after: { googleConnected: false },
+      });
+
       return res.json({ ok: true });
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/disconnect' } });
       next(err);
     }
   });

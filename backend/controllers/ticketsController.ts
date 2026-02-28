@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
 import { orderLog, businessLog } from '../config/logger.js';
-import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { createTicketSchema, updateTicketSchema } from '../validations/tickets.js';
 import { toUiTicket, toUiTicketForBrand } from '../utils/uiMappers.js';
@@ -201,6 +201,7 @@ export function makeTicketsController() {
         res.json(paginatedResponse(tickets.map((t) => { try { return toUiTicket(pgTicket(t)); } catch (e) { orderLog.error(`[tickets] toUiTicket failed for ${t.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
         logTicketAccess(tickets.length);
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'tickets/listTickets' } });
         next(err);
       }
     },
@@ -240,9 +241,11 @@ export function makeTicketsController() {
         await writeAuditLog({ req, action: 'TICKET_CREATED', entityType: 'Ticket', entityId: String(mapped._id), metadata: { issueType: body.issueType, orderId: body.orderId, actorRole: role } });
         businessLog.info('Ticket created', { ticketId: String(mapped._id), issueType: body.issueType, orderId: body.orderId, role });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: String(mapped._id), action: 'TICKET_CREATED', changedFields: ['status', 'issueType'], before: {}, after: { status: 'Open', issueType: body.issueType } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Ticket', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'TICKET_CREATED', ticketId: String(mapped._id), issueType: body.issueType, orderId: body.orderId, role } });
 
         res.status(201).json(toUiTicket(mapped));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'createTicket' } });
         next(err);
       }
     },
@@ -289,9 +292,11 @@ export function makeTicketsController() {
         await writeAuditLog({ req, action: auditAction, entityType: 'Ticket', entityId: id, metadata: { previousStatus, newStatus: body.status, actorRole: String(user?.role || roles[0] || '') } });
         businessLog.info(`Ticket ${auditAction.toLowerCase().replace('ticket_', '')}`, { ticketId: id, previousStatus, newStatus: body.status });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'TICKET_STATUS_CHANGE', changedFields: ['status'], before: { status: previousStatus }, after: { status: body.status } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Ticket', requestId: String((res as any).locals?.requestId || ''), metadata: { action: auditAction, ticketId: id, previousStatus, newStatus: body.status } });
 
         res.json(toUiTicket(mapped));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'updateTicket' } });
         next(err);
       }
     },
@@ -329,9 +334,11 @@ export function makeTicketsController() {
         await writeAuditLog({ req, action: 'TICKET_DELETED', entityType: 'Ticket', entityId: id, metadata: { status: String(existing.status) } });
         businessLog.info('Ticket deleted', { ticketId: id, status: String(existing.status) });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'DELETE', changedFields: ['deletedAt'], before: { status: String(existing.status) }, after: { deleted: true } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Ticket', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'TICKET_DELETED', ticketId: id, status: String(existing.status) } });
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'deleteTicket' } });
         next(err);
       }
     },

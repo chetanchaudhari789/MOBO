@@ -17,7 +17,7 @@ import {
 } from '../validations/auth.js';
 import { generateHumanCode } from '../services/codes.js';
 import { writeAuditLog } from '../services/audit.js';
-import { logAuthEvent, logChangeEvent, logSecurityIncident } from '../config/appLogs.js';
+import { logAuthEvent, logChangeEvent, logSecurityIncident, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import { consumeInvite } from '../services/invites.js';
 import { ensureWallet } from '../services/walletService.js';
 import { toUiUser } from '../utils/uiMappers.js';
@@ -47,8 +47,24 @@ export function makeAuthController(env: Env) {
         }
 
         const wallet = await ensureWallet(user.id);
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: user.id,
+          roles: user.roles as string[],
+          ip: req.ip,
+          resource: 'Session',
+          requestId: String(res.locals.requestId || ''),
+        });
         res.json({ user: toUiUser(pgUser(user), pgWallet(wallet)) });
       } catch (err) {
+        logErrorEvent({
+          message: 'me endpoint failed',
+          category: 'AUTHENTICATION',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -216,6 +232,14 @@ export function makeAuthController(env: Env) {
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
+        logErrorEvent({
+          message: 'Buyer registration failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -404,6 +428,14 @@ export function makeAuthController(env: Env) {
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
+        logErrorEvent({
+          message: 'Login failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -459,6 +491,7 @@ export function makeAuthController(env: Env) {
             requestId: String(res.locals.requestId || ''),
           });
         }
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'AUTHENTICATION', severity: 'medium', userId: req.auth?.userId, requestId: String(res.locals.requestId || ''), metadata: { handler: 'auth/refresh' } });
         next(err);
       }
     },
@@ -668,6 +701,14 @@ export function makeAuthController(env: Env) {
         const wallet = await ensureWallet(user.id);
         res.status(201).json({ user: toUiUser(pgUser(user), pgWallet(wallet)), tokens: { accessToken, refreshToken } });
       } catch (err) {
+        logErrorEvent({
+          message: 'Ops/mediator/agency registration failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -785,6 +826,14 @@ export function makeAuthController(env: Env) {
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
+        logErrorEvent({
+          message: 'Brand registration failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -897,6 +946,15 @@ export function makeAuthController(env: Env) {
         const wallet = await ensureWallet(user.id);
         res.json({ user: toUiUser(pgUser(user), pgWallet(wallet)) });
       } catch (err) {
+        logErrorEvent({
+          message: 'Profile update failed',
+          category: 'AUTHENTICATION',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },

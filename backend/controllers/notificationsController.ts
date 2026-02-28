@@ -5,7 +5,7 @@ import { paiseToRupees } from '../utils/money.js';
 import { getRequester } from '../services/authz.js';
 import { safeIso } from '../utils/uiMappers.js';
 import { businessLog } from '../config/logger.js';
-import { logAccessEvent } from '../config/appLogs.js';
+import { logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import { orderNotificationSelect } from '../utils/querySelect.js';
 
 function db() { return prisma(); }
@@ -239,6 +239,7 @@ export function makeNotificationsController() {
         businessLog.info('Notifications listed', { userId, role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other', count: Math.min(notifications.length, 50) });
         res.json(notifications.slice(0, 50));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'notifications/list' } });
         next(err);
       }
     },

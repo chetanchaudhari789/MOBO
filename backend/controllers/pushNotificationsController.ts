@@ -7,7 +7,7 @@ import { getRequester } from '../services/authz.js';
 import { prisma } from '../database/prisma.js';
 import { getVapidPublicKey } from '../services/pushNotifications.js';
 import { writeAuditLog } from '../services/audit.js';
-import { logChangeEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 
 const subscriptionSchema = z.object({
   endpoint: z.string().url(),
@@ -39,6 +39,7 @@ export function makePushNotificationsController(env: Env) {
         }
         res.json({ publicKey });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'SYSTEM', severity: 'low', metadata: { handler: 'push/publicKey' } });
         next(err);
       }
     },
@@ -91,9 +92,11 @@ export function makePushNotificationsController(env: Env) {
           requestId: String((res as any).locals?.requestId || ''),
           metadata: { app: body.app },
         });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PushSubscription', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PUSH_SUBSCRIBED', app: body.app } });
 
         res.status(204).send();
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'low', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'push/subscribe' } });
         next(err);
       }
     },
@@ -127,9 +130,11 @@ export function makePushNotificationsController(env: Env) {
           action: 'DELETE',
           requestId: String((res as any).locals?.requestId || ''),
         });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PushSubscription', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PUSH_UNSUBSCRIBED' } });
 
         res.status(204).send();
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'low', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'push/unsubscribe' } });
         next(err);
       }
     },

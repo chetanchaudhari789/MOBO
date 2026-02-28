@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import { prisma } from '../database/prisma.js';
 import { orderLog, businessLog, securityLog } from '../config/logger.js';
-import { logChangeEvent, logAccessEvent, logSecurityIncident } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent, logSecurityIncident } from '../config/appLogs.js';
 import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, adminAuditLogsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrderSummary, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
 import { orderListSelect } from '../utils/querySelect.js';
@@ -32,13 +32,21 @@ function roleToDb(role: string): string | null {
 
 export function makeAdminController() {
   return {
-    getSystemConfig: async (_req: Request, res: Response, next: NextFunction) => {
+    getSystemConfig: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const doc = await db().systemConfig.findFirst({ where: { key: 'system' } });
         res.json({
           adminContactEmail: doc?.adminContactEmail ?? 'admin@buzzma.world',
         });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'SystemConfig',
+          requestId: String((res as any).locals?.requestId || ''),
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getSystemConfig' } });
         next(err);
       }
     },
@@ -77,6 +85,7 @@ export function makeAdminController() {
 
         res.json({ adminContactEmail: doc?.adminContactEmail ?? body.adminContactEmail ?? 'admin@buzzma.world' });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/updateSystemConfig' } });
         next(err);
       }
     },
@@ -117,8 +126,17 @@ export function makeAdminController() {
           const wallet = (u as any).wallets?.[0];
           return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
         });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Users',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: mapped.length, total, page, limit, roleFilter: queryParams.role },
+        });
         res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getUsers' } });
         next(err);
       }
     },
@@ -146,13 +164,22 @@ export function makeAdminController() {
           try { return toUiOrderSummary(pgOrder(o)); }
           catch (e) { orderLog.error(`[admin/getFinancials] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Financials',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: mapped.length, total, page, limit },
+        });
         res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getFinancials' } });
         next(err);
       }
     },
 
-    getStats: async (_req: Request, res: Response, next: NextFunction) => {
+    getStats: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const [roleCounts, orderStats] = await Promise.all([
           db().$queryRaw<Array<{ role: string; count: number }>>`
@@ -186,12 +213,20 @@ export function makeAdminController() {
           riskOrders: Number(os.risk_orders),
           counts,
         });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Stats',
+          requestId: String((res as any).locals?.requestId || ''),
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getStats' } });
         next(err);
       }
     },
 
-    getGrowth: async (_req: Request, res: Response, next: NextFunction) => {
+    getGrowth: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const since = new Date();
         since.setDate(since.getDate() - 6);
@@ -215,7 +250,15 @@ export function makeAdminController() {
         }
 
         res.json(data);
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Growth',
+          requestId: String((res as any).locals?.requestId || ''),
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getGrowth' } });
         next(err);
       }
     },
@@ -240,8 +283,17 @@ export function makeAdminController() {
           db().deal.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
           db().deal.count({ where }),
         ]);
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Products',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: deals.length, total, page, limit },
+        });
         res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getProducts' } });
         next(err);
       }
     },
@@ -300,6 +352,7 @@ export function makeAdminController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/deleteDeal' } });
         next(err);
       }
     },
@@ -409,6 +462,7 @@ export function makeAdminController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/deleteUser' } });
         next(err);
       }
     },
@@ -474,6 +528,7 @@ export function makeAdminController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/deleteWallet' } });
         next(err);
       }
     },
@@ -619,6 +674,7 @@ export function makeAdminController() {
         }
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/updateUserStatus' } });
         next(err);
       }
     },
@@ -653,6 +709,7 @@ export function makeAdminController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/reactivateOrder' } });
         next(err);
       }
     },
@@ -714,7 +771,16 @@ export function makeAdminController() {
           page,
           pages: Math.ceil(total / limit),
         });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'AuditLogs',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: logs.length, total, page, limit },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getAuditLogs' } });
         next(err);
       }
     },

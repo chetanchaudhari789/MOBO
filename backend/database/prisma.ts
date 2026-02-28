@@ -140,10 +140,16 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
   _connecting = (async () => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const logConfig: ('warn' | 'error' | 'query')[] =
-          process.env.NODE_ENV === 'development'
-            ? ['warn', 'error', 'query']
-            : ['error'];
+        // In dev, route 'query' events ONLY to our slow-query listener
+        // (emit: 'event') so they never flood stdout. In prod, only errors.
+        const isDev = process.env.NODE_ENV === 'development';
+        const logConfig = isDev
+          ? [
+              { emit: 'event' as const, level: 'query' as const },
+              { emit: 'stdout' as const, level: 'warn' as const },
+              { emit: 'stdout' as const, level: 'error' as const },
+            ]
+          : [{ emit: 'stdout' as const, level: 'error' as const }];
 
         // Standard PostgreSQL with connection pooling + SSL
         const { PrismaPg } = await import('@prisma/adapter-pg');
@@ -152,7 +158,7 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         const client = new PrismaClient({ adapter, log: logConfig });
 
         // Log slow queries (>200ms) in development for performance debugging
-        if (process.env.NODE_ENV === 'development') {
+        if (isDev) {
           client.$on('query' as never, (event: any) => {
             const duration = event.duration;
             if (duration > 200) {
