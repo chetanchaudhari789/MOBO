@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import type { Env } from '../config/env.js';
-import { requireAuth, requireAuthOrToken } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import { makeOrdersController } from '../controllers/ordersController.js';
 import { prisma } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
@@ -36,7 +36,7 @@ export function ordersRoutes(env: Env): Router {
   router.get('/orders/user/:userId', requireAuth(env), ownerOrPrivileged, orders.getUserOrders);
   router.post('/orders', requireAuth(env), orderWriteLimiter, orders.createOrder);
   router.post('/orders/claim', requireAuth(env), orderWriteLimiter, orders.submitClaim);
-  router.get('/orders/:orderId/proof/:type', requireAuthOrToken(env), orders.getOrderProof);
+  router.get('/orders/:orderId/proof/:type', requireAuth(env), orders.getOrderProof);
   // Public proof endpoint removed — use authenticated endpoint above.
   // Old: router.get('/public/orders/:orderId/proof/:type', publicProofLimiter, orders.getOrderProofPublic);
 

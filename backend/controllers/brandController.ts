@@ -8,7 +8,7 @@ import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrderSummary, toUiOrderSummaryForBrand, toUiUser } from '../utils/uiMappers.js';
-import { orderListSelect } from '../utils/querySelect.js';
+import { orderListSelectLite, getProofFlags } from '../utils/querySelect.js';
 import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pgUser, pgOrder, pgCampaign } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
@@ -186,15 +186,35 @@ export function makeBrandController() {
         const [orders, total] = await Promise.all([
           db().order.findMany({
             where,
-            select: orderListSelect,
+            select: orderListSelectLite,
             orderBy: { createdAt: 'desc' },
             skip,
             take: limit,
           }),
           db().order.count({ where }),
         ]);
+
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
+
         if (!isPrivileged(roles) && roles.includes('brand')) {
-          res.json(paginatedResponse(orders.map((o: any) => { try { return toUiOrderSummaryForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummaryForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean) as any[], total, page, limit, isPaginated));
+          const brandMapped = orders.map((o: any) => {
+            try {
+              const flags = proofFlags.get(o.id);
+              const pg = pgOrder(o);
+              if (flags) {
+                pg.screenshots = {
+                  order: flags.hasOrderProof ? 'exists' : null,
+                  payment: null,
+                  review: flags.hasReviewProof ? 'exists' : null,
+                  rating: flags.hasRatingProof ? 'exists' : null,
+                  returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+                };
+              }
+              return toUiOrderSummaryForBrand(pg);
+            } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummaryForBrand failed for ${o.id}`, { error: e }); return null; }
+          }).filter(Boolean);
+          res.json(paginatedResponse(brandMapped as any[], total, page, limit, isPaginated));
 
           logAccessEvent('RESOURCE_ACCESS', {
             userId: req.auth?.userId,
@@ -202,12 +222,25 @@ export function makeBrandController() {
             ip: req.ip,
             resource: 'Order',
             requestId: String((res as any).locals?.requestId || ''),
-            metadata: { endpoint: 'brand/getOrders', resultCount: orders.length },
+            metadata: { endpoint: 'brand/getOrders', resultCount: brandMapped.length },
           });
           return;
         }
         const mapped = orders.map((o: any) => {
-          try { return toUiOrderSummary(pgOrder(o)); }
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
           catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));

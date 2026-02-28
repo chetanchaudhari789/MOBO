@@ -76,6 +76,11 @@ export function googleRoutes(env: Env): Router {
 
     cleanupStaleStates();
 
+    // Prevent unbounded memory growth under high traffic
+    if (pendingStates.size >= 10_000) {
+      return res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many pending OAuth requests. Try again later.' } });
+    }
+
     const state = crypto.randomBytes(24).toString('hex');
     const userId = (req as any).auth?.userId || (req as any).auth?.user?._id;
     if (!userId) {

@@ -9,7 +9,7 @@ import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiOrder, toUiOrderSummary } from '../utils/uiMappers.js';
-import { orderListSelect } from '../utils/querySelect.js';
+import { orderListSelectLite, getProofFlags } from '../utils/querySelect.js';
 import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pushOrderEvent, isTerminalAffiliateStatus } from '../services/orderEvents.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
@@ -249,7 +249,7 @@ export function makeOrdersController(env: Env) {
         const [orders, total] = await Promise.all([
           db().order.findMany({
             where,
-            select: orderListSelect,
+            select: orderListSelectLite,
             orderBy: { createdAt: 'desc' },
             skip,
             take: limit,
@@ -257,8 +257,23 @@ export function makeOrdersController(env: Env) {
           db().order.count({ where }),
         ]);
 
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
         const mapped = orders.map((o: any) => {
-          try { return toUiOrderSummary(pgOrder(o)); }
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
           catch (e) { orderLog.error(`[orders/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
 

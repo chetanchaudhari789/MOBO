@@ -30,7 +30,7 @@ import {
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiOrderSummary, toUiUser, safeIso } from '../utils/uiMappers.js';
-import { orderListSelect } from '../utils/querySelect.js';
+import { orderListSelectLite, getProofFlags } from '../utils/querySelect.js';
 import { idWhere } from '../utils/idWhere.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
@@ -470,22 +470,38 @@ export function makeOpsController(env: Env) {
 
         const oPage = queryParams.page ?? 1;
         const oLimit = queryParams.limit ?? 200;
-        const orders = await db().order.findMany({
-          where: {
-            managerName: { in: managerCodes },
-            deletedAt: null,
-          },
-          select: orderListSelect,
-          orderBy: { createdAt: 'desc' },
-          skip: (oPage - 1) * oLimit,
-          take: oLimit,
-        });
+        const oWhere = { managerName: { in: managerCodes }, deletedAt: null };
+        const [orders, oTotal] = await Promise.all([
+          db().order.findMany({
+            where: oWhere,
+            select: orderListSelectLite,
+            orderBy: { createdAt: 'desc' },
+            skip: (oPage - 1) * oLimit,
+            take: oLimit,
+          }),
+          db().order.count({ where: oWhere }),
+        ]);
 
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
         const mapped = orders.map((o: any) => {
-          try { return toUiOrderSummary(pgOrder(o)); }
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
           catch (e) { orderLog.error(`[getOrders] toUiOrderSummary failed for order ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json(mapped);
+        res.json({ data: mapped, total: oTotal, page: oPage, limit: oLimit });
 
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
@@ -493,7 +509,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'Order',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getOrders', resultCount: mapped.length },
+          metadata: { endpoint: 'getOrders', resultCount: mapped.length, total: oTotal },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getOrders' } });
