@@ -183,6 +183,7 @@ export function toUiOrderSummary(o: any) {
     userId: String(o.userId),
     items: (o.items ?? []).map((it: any) => ({
       title: it.title,
+      image: it.image,
       dealType: it.dealType,
       quantity: it.quantity,
       platform: it.platform,
@@ -247,6 +248,7 @@ export function toUiOrderSummaryForBrand(o: any) {
     id: String(o._id ?? o.id),
     items: (o.items ?? []).map((it: any) => ({
       title: it.title,
+      image: it.image,
       dealType: it.dealType,
       quantity: it.quantity,
       platform: it.platform,

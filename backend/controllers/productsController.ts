@@ -11,7 +11,7 @@ import { publishRealtime } from '../services/realtimeHub.js';
 import { pgDeal } from '../utils/pgMappers.js';
 import { idWhere } from '../utils/idWhere.js';
 import { orderLog } from '../config/logger.js';
-import { logChangeEvent, logAccessEvent } from '../config/appLogs.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 
 function db() { return prisma(); }
 
@@ -170,7 +170,17 @@ export function makeProductsController() {
           preOrderId: mongoId,
           url: String(deal.productUrl),
         });
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: requesterId,
+          roles: requesterRoles,
+          ip: req.ip,
+          resource: 'DealRedirect',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { dealId, campaignId: deal.campaignId, mediatorCode, preOrderId: mongoId },
+        });
       } catch (err) {
+        logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'medium', message: 'Deal redirect tracking failed', operation: 'trackRedirect', error: err, metadata: { dealId: String(req.params.dealId || ''), userId: req.auth?.userId } });
         next(err);
       }
     },

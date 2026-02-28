@@ -1,6 +1,7 @@
 import type { Request } from 'express';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import logger from '../config/logger.js';
+import { logErrorEvent } from '../config/appLogs.js';
 
 export type AuditParams = {
   req?: Request;
@@ -36,5 +37,6 @@ export async function writeAuditLog(params: AuditParams): Promise<void> {
     // Audit logs must never break business flows, but we log failures
     // so security-relevant events are not silently lost.
     logger.error('[audit] Failed to write audit log', { action: params.action, entityType: params.entityType, entityId: params.entityId, error: err });
+    logErrorEvent({ category: 'DATABASE', severity: 'high', message: 'Audit log write failed', operation: 'writeAuditLog', error: err, metadata: { action: params.action, entityType: params.entityType, entityId: params.entityId } });
   }
 }

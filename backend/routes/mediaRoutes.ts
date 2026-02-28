@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import type { Env } from '../config/env.js';
+import { logSecurityIncident, logErrorEvent, logPerformance } from '../config/appLogs.js';
+import logger from '../config/logger.js';
 
+const mediaLog = logger.child({ service: 'media-proxy' });
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4MB
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
@@ -65,8 +68,14 @@ export function mediaRoutes(_env: Env): Router {
   // Public endpoint — <img src="..."> tags cannot send Authorization headers.
   // SSRF protection (isPrivateHost) + per-IP rate limiting keep this safe.
   router.get('/media/image', async (req, res) => {
+    const start = Date.now();
     const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
     if (isRateLimited(clientIp)) {
+      logSecurityIncident('RATE_LIMIT_HIT', {
+        severity: 'medium',
+        ip: clientIp,
+        metadata: { endpoint: '/media/image', window: RATE_WINDOW_MS, limit: RATE_MAX_REQUESTS },
+      });
       res.set('Retry-After', String(Math.ceil(RATE_WINDOW_MS / 1000)));
       res.status(429).json({ error: { code: 'TOO_MANY_REQUESTS', message: 'rate limit exceeded' } });
       return;
@@ -86,11 +95,21 @@ export function mediaRoutes(_env: Env): Router {
     }
 
     if (!ALLOWED_PROTOCOLS.has(target.protocol)) {
+      logSecurityIncident('SUSPICIOUS_PATTERN', {
+        severity: 'high',
+        ip: clientIp,
+        metadata: { endpoint: '/media/image', reason: 'invalid_protocol', protocol: target.protocol, url: rawUrl },
+      });
       res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'invalid protocol' } });
       return;
     }
 
     if (isPrivateHost(target.hostname)) {
+      logSecurityIncident('SUSPICIOUS_PATTERN', {
+        severity: 'critical',
+        ip: clientIp,
+        metadata: { endpoint: '/media/image', reason: 'ssrf_blocked', hostname: target.hostname, url: rawUrl },
+      });
       res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'private addresses not allowed' } });
       return;
     }
@@ -123,6 +142,11 @@ export function mediaRoutes(_env: Env): Router {
           try {
             const redirectTarget = new URL(location, currentUrl);
             if (!ALLOWED_PROTOCOLS.has(redirectTarget.protocol) || isPrivateHost(redirectTarget.hostname)) {
+              logSecurityIncident('SUSPICIOUS_PATTERN', {
+                severity: 'critical',
+                ip: clientIp,
+                metadata: { endpoint: '/media/image', reason: 'unsafe_redirect', from: currentUrl, to: location },
+              });
               res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'unsafe redirect target' } });
               return;
             }
@@ -156,12 +180,20 @@ export function mediaRoutes(_env: Env): Router {
         res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
         res.setHeader('Vary', 'Accept');
         res.send(Buffer.from(arrayBuffer));
+
+        logPerformance({
+          operation: 'image-proxy',
+          durationMs: Date.now() - start,
+          metadata: { host: target.hostname, bytes: arrayBuffer.byteLength, contentType, hops: hop },
+        });
         return;
       }
 
       // Exceeded maximum redirects
+      logErrorEvent({ category: 'EXTERNAL_SERVICE', severity: 'medium', message: 'Image proxy exceeded max redirects', operation: 'image-proxy', error: 'too_many_redirects', metadata: { url: rawUrl, hops: MAX_REDIRECTS } });
       res.status(502).json({ error: { code: 'TOO_MANY_REDIRECTS', message: 'redirect chain too long' } });
-    } catch {
+    } catch (err) {
+      mediaLog.debug('[media/image] proxy fetch failed', { url: rawUrl, error: String(err) });
       res.status(404).end();
     } finally {
       clearTimeout(timeout);

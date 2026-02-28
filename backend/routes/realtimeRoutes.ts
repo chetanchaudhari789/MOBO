@@ -4,6 +4,7 @@ import type { Role } from '../middleware/auth.js';
 import { requireAuth } from '../middleware/auth.js';
 import { subscribeRealtime, type RealtimeEvent } from '../services/realtimeHub.js';
 import { realtimeLog } from '../config/logger.js';
+import { logAccessEvent, logPerformance } from '../config/appLogs.js';
 
 function writeSse(res: any, evt: { event: string; data?: any }): boolean {
   // Never throw from a realtime emitter callback.
@@ -97,11 +98,21 @@ export function realtimeRoutes(env: Env) {
 
     realtimeLog.info('SSE stream opened', { requestId, userId, roles });
 
+    logAccessEvent('RESOURCE_ACCESS', {
+      userId,
+      roles,
+      ip: req.ip,
+      resource: 'SSE_STREAM',
+      requestId,
+      metadata: { action: 'connect', mediatorCode, brandCode },
+    });
+
     let cleaned = false;
     let ping: ReturnType<typeof setInterval> | null = null;
     let maxLifetimeTimer: ReturnType<typeof setTimeout> | null = null;
     let unsubscribe: (() => void) | null = null;
     let eventsDelivered = 0;
+    const streamStart = Date.now();
 
     // Maximum stream lifetime: 4 hours. Forces client to reconnect,
     // preventing indefinite connections from exhausting server resources.
@@ -131,6 +142,12 @@ export function realtimeRoutes(env: Env) {
         // ignore
       }
       realtimeLog.info('SSE stream closed', { requestId, userId, eventsDelivered });
+
+      logPerformance({
+        operation: 'sse-stream',
+        durationMs: Date.now() - streamStart,
+        metadata: { userId, eventsDelivered, requestId },
+      });
     };
 
     // Initial handshake.
