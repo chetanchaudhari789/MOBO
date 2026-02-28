@@ -306,7 +306,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     if (!user || user.role !== 'admin') return;
     if (view !== 'audit-logs') return;
     setAuditLoading(true);
-    const params: any = { limit: 200 };
+    const params: any = { limit: 1000 };
     if (auditActionFilter) params.action = auditActionFilter;
     if (auditDateFrom) params.from = new Date(auditDateFrom).toISOString();
     if (auditDateTo) params.to = new Date(auditDateTo + 'T23:59:59').toISOString();
@@ -1726,7 +1726,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                     onClick={async () => {
                       setAuditLoading(true);
                       try {
-                        const params: any = { limit: 200 };
+                        const params: any = { limit: 1000 };
                         if (auditActionFilter) params.action = auditActionFilter;
                         if (auditDateFrom) params.from = new Date(auditDateFrom).toISOString();
                         if (auditDateTo) params.to = new Date(auditDateTo + 'T23:59:59').toISOString();

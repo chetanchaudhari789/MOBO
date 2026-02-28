@@ -121,7 +121,7 @@ export function makeInviteController() {
 
     adminListInvites: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { page, limit, skip, isPaginated } = parsePagination(req.query);
+        const { page, limit, skip, isPaginated } = parsePagination(req.query, { limit: 10000, maxLimit: 10000 });
         const [invites, total] = await Promise.all([
           db().invite.findMany({ orderBy: { createdAt: 'desc' }, take: limit, skip }),
           db().invite.count(),

@@ -155,7 +155,7 @@ export function makeTicketsController() {
 
         if (isPrivileged(roles)) {
           const ticketWhere = { deletedAt: null };
-          const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+          const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 10000, maxLimit: 10000 });
           const [tickets, total] = await Promise.all([
             db.ticket.findMany({ where: ticketWhere, orderBy: { createdAt: 'desc' }, skip, take: limit }),
             db.ticket.count({ where: ticketWhere }),

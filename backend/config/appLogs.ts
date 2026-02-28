@@ -212,7 +212,7 @@ function formatAccessMessage(type: AccessEventType, p: AccessEventPayload): stri
     case 'PROOF_UPLOADED':
       return `Buyer ${who} uploaded ${p.metadata?.proofType || 'proof'} for order #${(p.metadata?.orderId as string)?.slice(0, 8) || ''}`;
     case 'DEAL_REDIRECT':
-      return `User ${who} redirected to deal on ${p.metadata?.platform || 'marketplace'}`;
+      return `User ${who} redirected to deal${(p.metadata?.dealId as string) ? ` #${(p.metadata?.dealId as string).slice(0, 8)}` : ''} on ${p.metadata?.platform || 'marketplace'}`;
     case 'SETTLE_ORDER':
       return `${role} ${who} settled order #${(p.metadata?.orderId as string)?.slice(0, 8) || ''} via ${p.metadata?.settlementMode || 'standard'}`;
     case 'UNSETTLE_ORDER':
@@ -345,9 +345,6 @@ function formatAccessMessage(type: AccessEventType, p: AccessEventPayload): stri
     // ── Order proof ──
     case 'ORDER_PROOF_VIEWED':
       return `${role} ${who} viewed ${p.metadata?.proofType || 'proof'} for order #${(p.metadata?.orderId as string)?.slice(0, 8) || ''}`;
-    // ── Deal redirect ──
-    case 'DEAL_REDIRECT':
-      return `Buyer ${who} redirected to marketplace for deal #${(p.metadata?.dealId as string)?.slice(0, 8) || ''}`;
     default:
       break;
   }
