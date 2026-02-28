@@ -98,12 +98,10 @@ async function verifyAdminLoginBestEffort() {
   const useSeedE2E = String(process.env.SEED_E2E || '').toLowerCase() === 'true';
   const nodeEnv = String(process.env.NODE_ENV || '').toLowerCase();
   const isNonProd = nodeEnv !== 'production';
-  const mongoRaw = String(process.env.MONGODB_URI || '').trim();
-  const mongoPlaceholder = !mongoRaw || mongoRaw.includes('REPLACE_ME') || (mongoRaw.startsWith('<') && mongoRaw.endsWith('>'));
   let username = String(process.env.ADMIN_SEED_USERNAME || '').trim();
   let password = String(process.env.ADMIN_SEED_PASSWORD || '').trim();
 
-  if ((!username || !password) && (useSeedE2E || (isNonProd && mongoPlaceholder))) {
+  if ((!username || !password) && (useSeedE2E || isNonProd)) {
     username = 'root';
     password = 'ChangeMe_123!';
   }

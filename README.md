@@ -4,7 +4,7 @@
 
 BUZZMA is a monorepo for a multi-portal commerce + operations system:
 
-- Backend API: Express + TypeScript + MongoDB
+- Backend API: Express + TypeScript + PostgreSQL (Prisma)
 - Portals (Next.js): Buyer, Mediator, Agency, Brand, Admin
 - Tests: Vitest (backend) + Playwright (E2E)
 
@@ -13,7 +13,7 @@ BUZZMA is a monorepo for a multi-portal commerce + operations system:
 All portals follow one contract:
 
 - The UI calls `/api/*`
-- Each Next app rewrites `/api/*` `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*`
+- Each Next app rewrites `/api/*` → `${NEXT_PUBLIC_API_PROXY_TARGET}/api/*`
 
 ```mermaid
 graph TD
@@ -26,7 +26,7 @@ graph TD
   end
 
   API[Backend API :8080]
-  DB[(MongoDB)]
+  DB[(PostgreSQL)]
   AI[Gemini API]
 
   B -->|/api/*| API
@@ -54,7 +54,7 @@ erDiagram
 
 ## Repo layout
 
-- `backend/` Express API, Mongo models, services, seeds, tests
+- `backend/` Express API, Prisma schema, services, seeds, tests
 - `apps/buyer-app/` Buyer portal (dev port 3001)
 - `apps/mediator-app/` Mediator portal (dev port 3002)
 - `apps/agency-web/` Agency portal (dev port 3003)
@@ -85,9 +85,8 @@ npm install
 
 2. Configure backend env
 
-- Copy `backend/.env.example` `backend/.env`
-
-For local dev, `MONGODB_URI=<REPLACE_ME>` (the example) uses an in-memory MongoDB.
+- Copy `backend/.env.example` → `backend/.env`
+- Set `DATABASE_URL` to your PostgreSQL connection string.
 
 3. Start everything
 
@@ -106,7 +105,7 @@ Ports:
 
 ## Reset DB (admin only)
 
-This drops the entire MongoDB database (collections + indexes) and then seeds only a single admin user.
+This truncates all tables and seeds only a single admin user.
 
 1. Set admin seed values in `backend/.env` (recommended) or as environment variables:
 
@@ -120,17 +119,13 @@ This drops the entire MongoDB database (collections + indexes) and then seeds on
 - `WIPE_DB=true`
 - `WIPE_DB_CONFIRM=WIPE`
 
-If your `MONGODB_URI` is not local, the script will refuse unless you also set:
-
-- `WIPE_DB_ALLOW_REMOTE=true`
-
 3. Run:
 
 ```bash
 npm run db:reset-admin
 ```
 
-Windows PowerShell one-liner example (your requested credentials):
+Windows PowerShell one-liner example:
 
 ```powershell
 $env:ADMIN_SEED_USERNAME='chetan'; $env:ADMIN_SEED_PASSWORD='chetan789'; $env:ADMIN_SEED_MOBILE='9000000000'; $env:ADMIN_SEED_NAME='Chetan Admin'; $env:WIPE_DB='true'; $env:WIPE_DB_CONFIRM='WIPE'; npm run db:reset-admin
@@ -141,7 +136,7 @@ $env:ADMIN_SEED_USERNAME='chetan'; $env:ADMIN_SEED_PASSWORD='chetan789'; $env:AD
 Backend (`backend/.env`):
 
 - `NODE_ENV`, `PORT`
-- `MONGODB_URI`
+- `DATABASE_URL` (PostgreSQL connection string)
 - `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` (in production: real secrets, >= 20 chars)
 - `CORS_ORIGINS`
 - `GEMINI_API_KEY` (optional)
@@ -172,7 +167,7 @@ npm run test:backend
 Notes:
 
 - Playwright starts a safe E2E backend + all portals automatically.
-- E2E uses deterministic seeding and does not require a real MongoDB.
+- E2E uses deterministic seeding via Prisma (PG-only).
 
 ## Cleanup
 
@@ -186,8 +181,8 @@ Details and safe deletion criteria: `docs/CLEANUP.md`.
 
 ## Deployment
 
-- Backend: Render (or any Node host)
-- Portals: Vercel (or any Next host)
+- Backend: Any Node.js host (e.g., Railway, Fly.io, a VPS)
+- Portals: Vercel (or any Next.js host)
 
 Start here:
 

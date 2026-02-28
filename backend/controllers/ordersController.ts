@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog } from '../config/logger.js';
-import { logChangeEvent, logErrorEvent } from '../config/appLogs.js';
+import { logChangeEvent } from '../config/appLogs.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';

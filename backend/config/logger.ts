@@ -69,7 +69,7 @@ const SENSITIVE_KEYS = new Set([
   'ssn', 'cvv', 'cardnumber', 'card_number',
   'otp', 'pin', 'mpin', 'vapidprivatekey',
   'googleclientsecret', 'googleserviceaccountkey',
-  'geminiapikey', 'databaseurl', 'mongodburi',
+  'geminiapikey', 'databaseurl',
 ]);
 
 function isSensitiveKey(key: string): boolean {

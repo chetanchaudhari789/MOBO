@@ -5,12 +5,10 @@ This document maps the _current_ money primitives and flows in the backend. It i
 ## Primitives
 
 - Wallet ([backend/models/Wallet.ts](../backend/models/Wallet.ts))
-
   - Fields: `availablePaise`, `pendingPaise`, `lockedPaise` (today only `availablePaise` is mutated in code paths found).
   - Uniqueness: one wallet per user (soft-delete aware unique index).
 
 - Transaction ([backend/models/Transaction.ts](../backend/models/Transaction.ts))
-
   - Immutable ledger entry for wallet mutations.
   - Strong idempotency: `idempotencyKey` is unique (soft-delete aware).
   - Types (enum): `brand_deposit`, `agency_payout`, `agency_receipt`, `commission_settle`, `payout_complete`, ... (many are defined but currently unused).
@@ -18,7 +16,7 @@ This document maps the _current_ money primitives and flows in the backend. It i
 - Wallet mutation service ([backend/services/walletService.ts](../backend/services/walletService.ts))
   - `applyWalletCredit(...)`: increments `availablePaise` and inserts a `Transaction`.
   - `applyWalletDebit(...)`: decrements `availablePaise` (requires sufficient balance) and inserts a `Transaction`.
-  - Both are wrapped in a Mongo session transaction and are idempotent via `Transaction.idempotencyKey`.
+  - Both are wrapped in a database transaction and are idempotent via `Transaction.idempotencyKey`.
 
 ## Flows found in code
 
@@ -33,7 +31,6 @@ This document maps the _current_ money primitives and flows in the backend. It i
 Endpoint: `POST /api/brand/payout`
 
 - Preconditions:
-
   - Brand must be active.
   - Agency must be active.
   - For non-privileged callers: agency must be connected to the brand.
@@ -53,7 +50,6 @@ Notes:
 Endpoint: `POST /api/ops/orders/settle` (admin/ops only)
 
 - Preconditions:
-
   - Order must be `workflowStatus == 'APPROVED'` and not frozen.
   - Must have no open dispute ticket.
   - Upstream mediator/agency must be active.

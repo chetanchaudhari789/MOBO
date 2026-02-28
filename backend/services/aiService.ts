@@ -1724,7 +1724,7 @@ export async function extractOrderDetailsWithAi(
       if (upper.startsWith('E2E-') || upper.startsWith('SYS') || upper.includes('MOBO') || upper.includes('BUZZMA')) {
         return null;
       }
-      if (/^[a-f0-9]{24}$/i.test(raw)) return null; // Mongo ObjectId
+      if (/^[a-f0-9]{24}$/i.test(raw)) return null; // legacy hex ID
       if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) return null; // UUID
       if (raw.length < 4 || raw.length > 64) return null;
       // Must contain at least one digit to be a valid order ID

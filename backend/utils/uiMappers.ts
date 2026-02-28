@@ -1,4 +1,4 @@
-// Mongoose types removed — all mappers accept `any` (PG rows or legacy shapes).
+// All mappers accept `any` (PG rows or legacy shapes).
 import { paiseToRupees } from './money.js';
 
 /** Safely convert a value to ISO string, returning undefined for invalid dates. */

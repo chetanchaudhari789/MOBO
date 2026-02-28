@@ -33,10 +33,10 @@ export function adminRoutes(env: Env): Router {
 
   // ID parameter validation middleware for destructive delete endpoints
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const MONGO_ID_RE = /^[0-9a-fA-F]{24}$/;
+  const LEGACY_ID_RE = /^[0-9a-fA-F]{24}$/;
   const validateIdParam = (paramName: string) => (req: any, res: any, next: any) => {
     const val = req.params[paramName];
-    if (!UUID_RE.test(val) && !MONGO_ID_RE.test(val)) {
+    if (!UUID_RE.test(val) && !LEGACY_ID_RE.test(val)) {
       return res.status(400).json({ error: { code: 'INVALID_ID', message: `Invalid ${paramName} format` } });
     }
     next();

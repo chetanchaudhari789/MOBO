@@ -2,27 +2,18 @@ import { loadDotenv } from '../config/dotenvLoader.js';
 
 loadDotenv();
 
-import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
+import { connectPrisma, disconnectPrisma } from '../database/prisma.js';
+import { seedAdminOnly } from '../seeds/admin.js';
 
-async function runSeedAdmin() {
-  const mod = await import('../seeds/admin.js');
-  if (typeof (mod as any).seedAdminOnly !== 'function') {
-    throw new Error('Missing export seedAdminOnly in ../seeds/admin.js');
-  }
+async function main() {
+  await connectPrisma();
 
   const mobile = process.env.ADMIN_SEED_MOBILE;
   const username = process.env.ADMIN_SEED_USERNAME;
   const password = process.env.ADMIN_SEED_PASSWORD;
   const name = process.env.ADMIN_SEED_NAME;
 
-  await (mod as any).seedAdminOnly({ mobile, username, password, name, forcePassword: true, forceUsername: true });
-}
-
-async function main() {
-  const env = loadEnv();
-  await connectMongo(env);
-  await runSeedAdmin();
+  await seedAdminOnly({ mobile, username, password, name, forcePassword: true, forceUsername: true });
 
   // eslint-disable-next-line no-console
   console.log('✅ Admin seed complete');
@@ -41,5 +32,5 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await disconnectMongo();
+    await disconnectPrisma();
   });

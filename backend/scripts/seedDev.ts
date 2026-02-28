@@ -2,13 +2,11 @@ import { loadDotenv } from '../config/dotenvLoader.js';
 
 loadDotenv();
 
-import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
+import { connectPrisma, disconnectPrisma } from '../database/prisma.js';
 import { seedDev, DEV_ACCOUNTS } from '../seeds/dev.js';
 
 async function main() {
-  const env = loadEnv();
-  await connectMongo(env);
+  await connectPrisma();
 
   const seeded = await seedDev();
 
@@ -21,8 +19,8 @@ async function main() {
     mediator: { mobile: DEV_ACCOUNTS.mediator.mobile, mediatorCode: DEV_ACCOUNTS.mediator.mediatorCode },
     brand: { mobile: DEV_ACCOUNTS.brand.mobile, brandCode: DEV_ACCOUNTS.brand.brandCode },
     shopper: { mobile: DEV_ACCOUNTS.shopper.mobile },
-    campaignId: String((seeded.campaign as any)._id),
-    dealId: String((seeded.deal as any)._id),
+    campaignId: String((seeded.campaign as any).id),
+    dealId: String((seeded.deal as any).id),
   });
 }
 
@@ -33,9 +31,5 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    try {
-      await disconnectMongo();
-    } catch {
-      // ignore
-    }
+    await disconnectPrisma();
   });

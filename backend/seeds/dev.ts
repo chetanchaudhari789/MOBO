@@ -1,4 +1,4 @@
-// MongoDB removed — dev seeding is PG-only via Prisma.
+// Dev seeding — PG-only via Prisma.
 import { randomUUID } from 'node:crypto';
 
 import { hashPassword } from '../services/passwords.js';

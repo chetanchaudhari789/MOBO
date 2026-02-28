@@ -85,7 +85,7 @@ export function makeInviteController() {
     adminRevokeInvite: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const body = revokeInviteSchema.parse(req.body);
-        // Resolve PG UUID for revokedBy (req.auth.userId is MongoDB ObjectId)
+        // Resolve PG UUID for revokedBy (req.auth.userId may be a legacy ID)
         let revokedByUuid: string | undefined;
         if (req.auth?.pgUserId) {
           revokedByUuid = req.auth.pgUserId;

@@ -1,4 +1,4 @@
-// mongoose Types removed — no longer needed after PG migration
+// All queries use Prisma (PG-only).
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 

@@ -3,7 +3,7 @@
 This repo is an npm-workspaces monorepo with:
 
 - 5 Next.js portals under `apps/*`
-- An Express + TypeScript + MongoDB backend under `backend/`
+- An Express + TypeScript + PostgreSQL (Prisma) backend under `backend/`
 - A shared package under `shared/`
 
 ## High-level system
@@ -19,7 +19,7 @@ graph TD
   end
 
   API[Backend API (Express, 8080)]
-  DB[(MongoDB)]
+  DB[(PostgreSQL)]
   AI[Gemini API]
 
   B -->|/api/* via Next rewrites| API
@@ -35,19 +35,19 @@ graph TD
 ## Auth + roles
 
 - JWT bearer auth for most routes.
-- Roles are stored in Mongo and reloaded on every request (zero-trust tokens).
+- Roles are stored in PostgreSQL and validated on every request (zero-trust tokens).
 - Upstream suspension enforcement:
   - Buyer access can be blocked if their mediator/agency is not active.
   - Mediator access can be blocked if their agency is not active.
 
-Roles (DB): `shopper`, `mediator`, `agency`, `brand`, `admin`, `ops`.
+Roles: `shopper`, `mediator`, `agency`, `brand`, `admin`, `ops`.
 
 ## Soft-delete rule
 
-Most collections implement soft delete:
+All tables implement soft delete:
 
-- Active document means `deletedAt: null`.
-- Uniqueness indexes are partial on `{ deletedAt: null }`.
+- Active row means `deletedAt IS NULL`.
+- Uniqueness indexes are partial on `deletedAt IS NULL`.
 
 ## Core data model (conceptual)
 
@@ -129,7 +129,7 @@ erDiagram
 
 ## Money safety (wallet/ledger)
 
-- Wallet updates are done via idempotent transactions (`Transaction.idempotencyKey` is unique for non-deleted docs).
+- Wallet updates are done via idempotent transactions (`Transaction.idempotencyKey` has a unique index for non-deleted rows).
 - Brand→Agency payouts debit the brand wallet and credit the agency wallet with replay-safe idempotency keys.
 
 ## Order workflow

@@ -14,7 +14,7 @@ import { safeIso } from './uiMappers.js';
 
 // ────────────── generic ──────────────
 
-/** Add `_id = id` for backward compat with code that expects Mongoose docs. */
+/** Add `_id = id` for backward compat with legacy API shapes. */
 export function withId<T extends { mongoId?: string | null; id: string }>(raw: T): T & { _id: string } {
   return { ...raw, _id: raw.id };
 }
@@ -94,7 +94,7 @@ export function pgCampaign(raw: any): any {
     ...raw,
     _id: raw.id,
     // assignments: JSONB – comes as-is
-    // allowedAgencyCodes: string[] – same as Mongoose
+    // allowedAgencyCodes: string[] – stored as text[]
   };
 }
 

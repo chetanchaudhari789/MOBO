@@ -43,7 +43,7 @@ Most non-2xx responses are JSON:
 
 ## Health
 
-- `GET /api/health` 200 only if Mongo is connected, else 503.
+- `GET /api/health` 200 only if PostgreSQL is connected, else 503.
 
 ## Realtime (`/api/realtime`)
 

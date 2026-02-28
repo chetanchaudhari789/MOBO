@@ -53,7 +53,7 @@ export async function ensureWallet(ownerUserId: string) {
       },
     });
   } catch (err: any) {
-    // Handle P2002 (unique constraint violation) same as MongoDB E11000
+    // Handle P2002 (unique constraint violation)
     if (err?.code === 'P2002') {
       const existing = await db.wallet.findUnique({ where: { ownerUserId } });
       if (existing) return existing;

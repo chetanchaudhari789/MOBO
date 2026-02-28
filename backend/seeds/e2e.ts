@@ -1,4 +1,4 @@
-﻿// MongoDB removed — all seeding is PG-only via Prisma.
+﻿// E2E seeding — PG-only via Prisma.
 // NO deleteMany, NO truncate, NO wipe — safe upserts only.
 import { randomUUID } from 'node:crypto';
 
