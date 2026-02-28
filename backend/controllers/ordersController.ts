@@ -1119,11 +1119,13 @@ export function makeOrdersController(env: Env) {
           : null;
         const upstreamAgencyCode = String(mediatorUser?.parentCode || '').trim();
 
-        // Resolve mongoIds for realtime audience
-        const orderUser = await db().user.findUnique({ where: { id: order.userId }, select: { mongoId: true } });
-        const brandUser = order.brandUserId
-          ? await db().user.findUnique({ where: { id: order.brandUserId }, select: { mongoId: true } })
-          : null;
+        // Resolve mongoIds for realtime audience — parallel lookups
+        const [orderUser, brandUser] = await Promise.all([
+          db().user.findUnique({ where: { id: order.userId }, select: { mongoId: true } }),
+          order.brandUserId
+            ? db().user.findUnique({ where: { id: order.brandUserId }, select: { mongoId: true } })
+            : null,
+        ]);
 
         const audience = {
           roles: privilegedRoles,

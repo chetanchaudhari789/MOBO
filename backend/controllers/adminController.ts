@@ -7,7 +7,7 @@ import { orderLog, businessLog, securityLog } from '../config/logger.js';
 import { logChangeEvent, logAccessEvent, logErrorEvent, logSecurityIncident } from '../config/appLogs.js';
 import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, adminAuditLogsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
 import { toUiOrderSummary, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
-import { orderListSelect } from '../utils/querySelect.js';
+import { orderListSelectLite, getProofFlags, userAdminListSelect } from '../utils/querySelect.js';
 import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { writeAuditLog } from '../services/audit.js';
 import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../services/orderWorkflow.js';
@@ -118,7 +118,7 @@ export function makeAdminController() {
             orderBy: { createdAt: 'desc' },
             skip,
             take: limit,
-            include: { wallets: { where: { deletedAt: null }, take: 1 } },
+            select: { ...userAdminListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
           }),
           db().user.count({ where }),
         ]);
@@ -153,15 +153,31 @@ export function makeAdminController() {
         const [orders, total] = await Promise.all([
           db().order.findMany({
             where,
-            select: orderListSelect,
+            select: orderListSelectLite,
             orderBy: { createdAt: 'desc' },
             skip,
             take: limit,
           }),
           db().order.count({ where }),
         ]);
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
         const mapped = orders.map(o => {
-          try { return toUiOrderSummary(pgOrder(o)); }
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            // Inject proof flags from raw SQL instead of base64 columns
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
           catch (e) { orderLog.error(`[admin/getFinancials] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
         logAccessEvent('ADMIN_ACTION', {

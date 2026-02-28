@@ -41,6 +41,41 @@ export const userBrandSelect = {
 } as const;
 
 /**
+ * Prisma `select` for admin User list queries.
+ * Excludes sensitive fields: passwordHash, googleRefreshToken, fcmTokens, etc.
+ * Includes all fields needed by toUiUser() + pgUser().
+ */
+export const userAdminListSelect = {
+  id: true,
+  mongoId: true,
+  name: true,
+  mobile: true,
+  email: true,
+  roles: true,
+  status: true,
+  mediatorCode: true,
+  parentCode: true,
+  generatedCodes: true,
+  brandCode: true,
+  connectedAgencies: true,
+  pendingConnections: true,
+  kycStatus: true,
+  kycPanCard: true,
+  kycAadhaar: true,
+  kycGst: true,
+  isVerifiedByMediator: true,
+  upiId: true,
+  qrCode: true,
+  bankAccountNumber: true,
+  bankIfsc: true,
+  bankName: true,
+  bankHolderName: true,
+  avatar: true,
+  createdAt: true,
+  // EXCLUDED: passwordHash, googleRefreshToken, fcmTokens, deletedAt
+} as const;
+
+/**
  * Prisma `select` for Order existence checks.
  */
 export const orderExistsSelect = {
@@ -130,3 +165,85 @@ export const orderListSelect = {
   // - returnWindowAiVerification (JSONB)
   // - missingProofRequests (JSONB array)
 } as const;
+
+/**
+ * Lightweight Prisma `select` for admin/bulk Order list queries.
+ * EXCLUDES screenshot base64 blobs (can be 100KB-5MB each).
+ * Proof boolean flags are derived from a separate lightweight query.
+ */
+export const orderListSelectLite = {
+  id: true,
+  userId: true,
+  brandUserId: true,
+  totalPaise: true,
+  workflowStatus: true,
+  frozen: true,
+  frozenAt: true,
+  frozenReason: true,
+  status: true,
+  paymentStatus: true,
+  affiliateStatus: true,
+  externalOrderId: true,
+  orderDate: true,
+  soldBy: true,
+  extractedProductName: true,
+  settlementRef: true,
+  settlementMode: true,
+  // Screenshot columns EXCLUDED — use getProofFlags() helper instead
+  reviewLink: true,
+  returnWindowDays: true,
+  // Rejection flat fields
+  rejectionType: true,
+  rejectionReason: true,
+  rejectionAt: true,
+  rejectionBy: true,
+  // Verification JSONB (small, needed for verified-status flags)
+  verification: true,
+  // Display names
+  managerName: true,
+  agencyName: true,
+  buyerName: true,
+  buyerMobile: true,
+  reviewerName: true,
+  brandName: true,
+  // Timestamps
+  expectedSettlementDate: true,
+  createdAt: true,
+  updatedAt: true,
+  // Relations — items only need deal type / platform info for list view
+  items: { select: { dealType: true, platform: true, brandName: true, title: true, image: true, quantity: true } },
+} as const;
+
+/**
+ * Fetch lightweight boolean proof flags for a batch of order IDs.
+ * Uses raw SQL to avoid transferring base64 screenshot blobs.
+ * Returns a Map<orderId, proofFlags> for O(1) merging.
+ */
+export async function getProofFlags(
+  prisma: any,
+  orderIds: string[],
+): Promise<Map<string, { hasOrderProof: boolean; hasReviewProof: boolean; hasRatingProof: boolean; hasReturnWindowProof: boolean }>> {
+  if (orderIds.length === 0) return new Map();
+
+  const rows: Array<{ id: string; hop: boolean; hrp: boolean; hrap: boolean; hrwp: boolean }> =
+    await prisma.$queryRawUnsafe(
+      `SELECT id,
+        (screenshot_order IS NOT NULL OR screenshot_payment IS NOT NULL) AS hop,
+        (review_link IS NOT NULL OR screenshot_review IS NOT NULL) AS hrp,
+        (screenshot_rating IS NOT NULL) AS hrap,
+        (screenshot_return_window IS NOT NULL) AS hrwp
+       FROM orders WHERE id = ANY($1::uuid[])`,
+      orderIds,
+    );
+
+  const map = new Map<string, { hasOrderProof: boolean; hasReviewProof: boolean; hasRatingProof: boolean; hasReturnWindowProof: boolean }>();
+  for (const r of rows) {
+    map.set(r.id, {
+      hasOrderProof: !!r.hop,
+      hasReviewProof: !!r.hrp,
+      hasRatingProof: !!r.hrap,
+      hasReturnWindowProof: !!r.hrwp,
+    });
+  }
+  return map;
+}
