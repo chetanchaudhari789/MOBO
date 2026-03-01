@@ -38,6 +38,7 @@ export function makeAdminController() {
         res.json({
           adminContactEmail: doc?.adminContactEmail ?? 'admin@buzzma.world',
         });
+        businessLog.info('System config viewed', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -126,6 +127,7 @@ export function makeAdminController() {
           const wallet = (u as any).wallets?.[0];
           return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
         });
+        businessLog.info('Users listed', { userId: req.auth?.userId, resultCount: mapped.length, total, page, limit, roleFilter: queryParams.role, ip: req.ip });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -180,6 +182,7 @@ export function makeAdminController() {
           }
           catch (e) { orderLog.error(`[admin/getFinancials] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
+        businessLog.info('Financials listed', { userId: req.auth?.userId, resultCount: mapped.length, total, page, limit, ip: req.ip });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -229,6 +232,7 @@ export function makeAdminController() {
           riskOrders: Number(os.risk_orders),
           counts,
         });
+        businessLog.info('Platform stats viewed', { userId: req.auth?.userId, totalOrders: Number(os.total_orders), riskOrders: Number(os.risk_orders), ip: req.ip });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -266,6 +270,7 @@ export function makeAdminController() {
         }
 
         res.json(data);
+        businessLog.info('Growth data viewed', { userId: req.auth?.userId, days: 7, ip: req.ip });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -299,6 +304,7 @@ export function makeAdminController() {
           db().deal.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
           db().deal.count({ where }),
         ]);
+        businessLog.info('Products listed', { userId: req.auth?.userId, resultCount: deals.length, total, page, limit, ip: req.ip });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -787,6 +793,7 @@ export function makeAdminController() {
           page,
           pages: Math.ceil(total / limit),
         });
+        businessLog.info('Audit logs viewed', { userId: req.auth?.userId, resultCount: logs.length, total, page, limit, ip: req.ip });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,

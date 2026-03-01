@@ -10,7 +10,7 @@ import { writeAuditLog } from '../services/audit.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgDeal } from '../utils/pgMappers.js';
 import { idWhere } from '../utils/idWhere.js';
-import { orderLog } from '../config/logger.js';
+import { orderLog, businessLog } from '../config/logger.js';
 import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 
 function db() { return prisma(); }
@@ -51,6 +51,7 @@ export function makeProductsController() {
 
         res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
 
+        businessLog.info('Products listed', { userId: req.auth?.userId, mediatorCode, resultCount: deals.length, total, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,

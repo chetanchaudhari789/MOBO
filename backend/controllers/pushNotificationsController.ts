@@ -8,6 +8,7 @@ import { prisma } from '../database/prisma.js';
 import { getVapidPublicKey } from '../services/pushNotifications.js';
 import { writeAuditLog } from '../services/audit.js';
 import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
+import { businessLog } from '../config/logger.js';
 
 const subscriptionSchema = z.object({
   endpoint: z.string().url(),
@@ -99,6 +100,7 @@ export function makePushNotificationsController(env: Env) {
         });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PushSubscription', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PUSH_SUBSCRIBED', app: body.app } });
 
+        businessLog.info('Push notification subscribed', { userId: req.auth?.userId, app: body.app, ip: req.ip });
         res.status(204).send();
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'low', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'push/subscribe' } });
@@ -137,6 +139,7 @@ export function makePushNotificationsController(env: Env) {
         });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PushSubscription', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PUSH_UNSUBSCRIBED' } });
 
+        businessLog.info('Push notification unsubscribed', { userId: req.auth?.userId, ip: req.ip });
         res.status(204).send();
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'low', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'push/unsubscribe' } });

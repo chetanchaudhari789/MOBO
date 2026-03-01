@@ -18,6 +18,7 @@ import {
 import { generateHumanCode } from '../services/codes.js';
 import { writeAuditLog } from '../services/audit.js';
 import { logAuthEvent, logChangeEvent, logSecurityIncident, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
+import { businessLog } from '../config/logger.js';
 import { consumeInvite } from '../services/invites.js';
 import { ensureWallet } from '../services/walletService.js';
 import { toUiUser } from '../utils/uiMappers.js';
@@ -47,6 +48,7 @@ export function makeAuthController(env: Env) {
         }
 
         const wallet = await ensureWallet(user.id);
+        businessLog.info('Session viewed', { userId: user.id, role: user.role, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: user.id,
           roles: user.roles as string[],
@@ -185,6 +187,7 @@ export function makeAuthController(env: Env) {
           metadata: { role: 'shopper', mobile: user.mobile, parentCode: String(user.parentCode || '') },
         }).catch(() => {});
 
+        businessLog.info('Buyer registered', { userId: user.id, mobile: user.mobile, parentCode: String(user.parentCode || ''), inviteUsed: !!consumed, ip: req.ip });
         logAuthEvent('REGISTRATION', {
           userId: user.id,
           roles: user.roles as string[],
@@ -273,6 +276,7 @@ export function makeAuthController(env: Env) {
           : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null }, select: authSelect });
 
         if (!authUser) {
+          businessLog.warn('Login failed — user not found', { identifier: mobile || username, ip: req.ip });
           logAuthEvent('LOGIN_FAILURE', {
             identifier: mobile || username,
             ip: req.ip,
@@ -319,6 +323,7 @@ export function makeAuthController(env: Env) {
         const lockoutUntil = authUser.lockoutUntil ? new Date(authUser.lockoutUntil) : null;
         if (lockoutUntil && lockoutUntil.getTime() > Date.now()) {
           const minutesLeft = Math.ceil((lockoutUntil.getTime() - Date.now()) / 60_000);
+          businessLog.warn('Login failed — account locked', { userId: authUser.id, identifier: mobile || username, ip: req.ip, minutesLeft });
           logAuthEvent('LOGIN_FAILURE', {
             userId: authUser.id,
             identifier: mobile || username,
@@ -357,6 +362,7 @@ export function makeAuthController(env: Env) {
                 : {}),
             },
           });
+          businessLog.warn('Login failed — invalid password', { userId: authUser.id, identifier: mobile || username, ip: req.ip, failedAttempts: newAttempts, lockedOut: newAttempts >= MAX_FAILED_ATTEMPTS });
           logAuthEvent('LOGIN_FAILURE', {
             userId: authUser.id,
             identifier: mobile || username,
@@ -414,6 +420,7 @@ export function makeAuthController(env: Env) {
           }).catch(() => {}),
         ]);
 
+        businessLog.info('Login successful', { userId: authUser.id, role: authUser.role, identifier: mobile || username, ip: req.ip });
         // Structured auth event for access/auth log file
         logAuthEvent('LOGIN_SUCCESS', {
           userId: authUser.id,
@@ -473,6 +480,7 @@ export function makeAuthController(env: Env) {
         const newRefreshToken = signRefreshToken(env, user.id, user.roles as any);
         const wallet = await ensureWallet(user.id);
 
+        businessLog.info('Token refreshed', { userId: user.id, role: user.role, ip: req.ip });
         logAuthEvent('TOKEN_REFRESH', {
           userId: user.id,
           roles: user.roles as string[],
@@ -652,6 +660,7 @@ export function makeAuthController(env: Env) {
           metadata: { role: user.role, mobile: user.mobile, pendingApproval },
         }).catch(() => {});
 
+        businessLog.info(`${String(user.role).charAt(0).toUpperCase() + String(user.role).slice(1)} registered`, { userId: user.id, role: user.role, mobile: user.mobile, mediatorCode: user.mediatorCode, parentCode: String(user.parentCode || ''), pendingApproval, inviteUsed: !!consumed, ip: req.ip });
         logAuthEvent('REGISTRATION', {
           userId: user.id,
           roles: user.roles as string[],
@@ -793,6 +802,7 @@ export function makeAuthController(env: Env) {
           metadata: { role: 'brand', mobile: user.mobile },
         }).catch(() => {});
 
+        businessLog.info('Brand registered', { userId: user.id, mobile: user.mobile, brandCode: user.brandCode, inviteUsed: true, ip: req.ip });
         logAuthEvent('REGISTRATION', {
           userId: user.id,
           roles: user.roles as string[],
@@ -915,6 +925,7 @@ export function makeAuthController(env: Env) {
           },
         });
 
+        businessLog.info('Profile updated', { userId: user.id, role: user.role, updatedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'), updatedBy: isSelf ? 'self' : `admin:${requesterId}`, ip: req.ip });
         logAuthEvent('PROFILE_UPDATE', {
           userId: user.id,
           roles: user.roles as string[],
