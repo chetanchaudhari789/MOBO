@@ -213,7 +213,7 @@ const AgencyProfile = ({ user }: any) => {
             <div className="w-32 h-32 rounded-[2rem] bg-white p-2 shadow-lg border border-slate-100 flex-shrink-0">
               <div className="w-full h-full bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-4xl font-black text-white overflow-hidden relative group-hover:scale-[1.02] transition-transform duration-500">
                 {avatar ? (
-                  <img loading="lazy"
+                  <ProxiedImage
                     src={avatar}
                     alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -2673,7 +2673,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       <div className="col-span-4 flex items-center gap-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
                           {m.avatar ? (
-                            <img loading="lazy" src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                            <ProxiedImage src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
                             (m.name || '?').charAt(0)
                           )}
@@ -3021,7 +3021,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center font-black text-slate-500 shadow-inner overflow-hidden">
                           {m.avatar ? (
-                            <img loading="lazy" src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                            <ProxiedImage src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
                             (m.name || '?').charAt(0)
                           )}
@@ -3106,7 +3106,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               <div className="flex gap-4 items-center">
                 <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center font-black text-2xl overflow-hidden">
                   {selectedMediator.avatar ? (
-                    <img loading="lazy"
+                    <ProxiedImage
                       src={selectedMediator.avatar}
                       alt={selectedMediator.name ? `${selectedMediator.name} avatar` : 'Avatar'}
                       className="w-full h-full object-cover"
@@ -3258,7 +3258,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         </p>
                         {selectedMediator.qrCode ? (
                           <div className="bg-white border border-slate-200 rounded-xl p-3 w-fit">
-                            <img loading="lazy"
+                            <ProxiedImage
                               src={selectedMediator.qrCode}
                               alt="UPI QR"
                               className="w-36 h-36 object-contain"
@@ -3864,7 +3864,7 @@ export const AgencyDashboard: React.FC = () => {
             >
               <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm overflow-hidden">
                 {user?.avatar ? (
-                  <img loading="lazy" src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                  <ProxiedImage src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                 ) : (
                   (user?.name || '?').charAt(0)
                 )}

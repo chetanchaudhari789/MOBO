@@ -471,6 +471,8 @@ model Campaign {
   @@index([brandUserId])
   @@index([deletedAt, createdAt(sort: Desc)])
   @@index([status])
+  @@index([allowedAgencyCodes], type: Gin)
+  @@index([assignments], type: Gin)
   @@map("campaigns")
 }
 
@@ -741,6 +743,7 @@ model Payout {
   @@index([status, requestedAt(sort: Desc)])
   @@index([beneficiaryUserId, requestedAt(sort: Desc)])
   @@index([walletId])
+  @@index([deletedAt, requestedAt(sort: Desc)])
   @@map("payouts")
 }
 

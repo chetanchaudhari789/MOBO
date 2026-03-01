@@ -3,6 +3,7 @@ import { Router } from 'express';
 import type { Env } from '../config/env.js';
 import { prisma, isPrismaAvailable, pingPg } from '../database/prisma.js';
 import { isReady } from '../config/lifecycle.js';
+import { logAvailabilityEvent } from '../config/appLogs.js';
 
 // Build-time metadata — injected via env or fallback to runtime values.
 const BUILD_SHA = process.env.GIT_SHA || 'unknown';
@@ -54,6 +55,13 @@ export function healthRoutes(env: Env): Router {
   // K8s: readinessProbe → if this fails, pod is removed from service endpoints.
   router.get('/health/ready', async (_req, res) => {
     const pgOk = isReady && await pingPg();
+    if (!pgOk) {
+      logAvailabilityEvent('HEALTH_CHECK_FAIL', {
+        component: 'readiness-probe',
+        status: 'degraded',
+        metadata: { server: isReady ? 'up' : 'starting', database: pgOk ? 'connected' : 'disconnected' },
+      });
+    }
     res.setHeader('Cache-Control', 'public, max-age=5');
     res.status(pgOk ? 200 : 503).json({
       status: pgOk ? 'ready' : 'not_ready',
@@ -139,6 +147,11 @@ export function healthRoutes(env: Env): Router {
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
+      logAvailabilityEvent('HEALTH_CHECK_FAIL', {
+        component: 'e2e-readiness',
+        status: 'down',
+        metadata: { error: String(err) },
+      });
       res.status(503).json({ status: 'error', message: String(err) });
     }
   });

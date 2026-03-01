@@ -223,7 +223,7 @@ const BrandProfileView = () => {
             <div className="w-36 h-36 rounded-[2rem] bg-white p-2 shadow-2xl border border-zinc-100 rotate-3 transition-transform group-hover:rotate-0">
               <div className="w-full h-full bg-zinc-100 rounded-[1.5rem] flex items-center justify-center text-5xl font-black text-zinc-300 overflow-hidden relative">
                 {avatar ? (
-                  <img loading="lazy"
+                  <ProxiedImage
                     src={avatar}
                     alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -2368,7 +2368,7 @@ export const BrandDashboard: React.FC = () => {
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold shadow-md text-sm shrink-0 overflow-hidden">
                   {user?.avatar ? (
-                    <img loading="lazy" src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                    <ProxiedImage src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                   ) : (
                     user?.name?.charAt(0) || 'B'
                   )}
@@ -2440,7 +2440,7 @@ export const BrandDashboard: React.FC = () => {
                   >
                     <div className="w-20 h-20 bg-zinc-50 rounded-[1.5rem] flex items-center justify-center font-bold text-2xl text-zinc-400 shadow-inner overflow-hidden">
                       {ag.avatar ? (
-                        <img loading="lazy"
+                        <ProxiedImage
                           src={ag.avatar}
                           alt={ag.name ? `${ag.name} avatar` : 'Avatar'}
                           className="w-full h-full object-cover"
@@ -2694,7 +2694,7 @@ export const BrandDashboard: React.FC = () => {
             <div className="flex items-center gap-4 mb-8">
               <div className="w-16 h-16 bg-zinc-900 text-white rounded-2xl flex items-center justify-center font-bold text-2xl shadow-lg overflow-hidden">
                 {selectedAgency.avatar ? (
-                  <img loading="lazy"
+                  <ProxiedImage
                     src={selectedAgency.avatar}
                     alt={selectedAgency.name ? `${selectedAgency.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"

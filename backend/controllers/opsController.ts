@@ -158,6 +158,7 @@ export function makeOpsController(env: Env) {
 
         const brand = await db().user.findFirst({
           where: { brandCode: body.brandCode, roles: { has: 'brand' as any }, deletedAt: null },
+          select: { id: true, mongoId: true, status: true, connectedAgencies: true },
         });
         if (!brand) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
         if (brand.status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
@@ -648,6 +649,7 @@ export function makeOpsController(env: Env) {
             orderBy: { requestedAt: 'desc' },
             take: limit,
             skip,
+            select: { id: true, mongoId: true, beneficiaryUserId: true, amountPaise: true, requestedAt: true, createdAt: true, status: true },
           }),
           db().payout.count({ where: payoutWhere }),
         ]);
@@ -691,7 +693,7 @@ export function makeOpsController(env: Env) {
         const { roles, user: requester } = getRequester(req);
         const body = approveByIdSchema.parse(req.body);
 
-        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
+        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null }, select: { id: true, mongoId: true, parentCode: true, mediatorCode: true, kycStatus: true, status: true } });
         if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
@@ -746,7 +748,7 @@ export function makeOpsController(env: Env) {
         const { roles, user: requester } = getRequester(req);
         const body = rejectByIdSchema.parse(req.body);
 
-        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
+        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null }, select: { id: true, mongoId: true, parentCode: true, mediatorCode: true, status: true } });
         if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
@@ -802,7 +804,7 @@ export function makeOpsController(env: Env) {
         const body = approveByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const buyerBefore = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
+        const buyerBefore = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null }, select: { id: true, mongoId: true, parentCode: true, status: true } });
         if (!buyerBefore) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         const upstreamMediatorCode = String(buyerBefore.parentCode || '').trim();
 
@@ -867,7 +869,7 @@ export function makeOpsController(env: Env) {
         const body = rejectByIdSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const buyerBefore = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null } });
+        const buyerBefore = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null }, select: { id: true, mongoId: true, parentCode: true, status: true } });
         if (!buyerBefore) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         const upstreamMediatorCode = String(buyerBefore.parentCode || '').trim();
 
@@ -992,9 +994,7 @@ export function makeOpsController(env: Env) {
           actorUserId: req.auth?.userId,
           metadata: { step: 'order', missingProofs },
         });
-        await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any } });
-
-        const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any }, include: { items: true } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
 
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
@@ -1111,9 +1111,7 @@ export function makeOpsController(env: Env) {
           actorUserId: req.auth?.userId,
           metadata: { step: body.type },
         });
-        await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any } });
-
-        const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any }, include: { items: true } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
         orderLog.info('Order requirement verified', { orderId: order.mongoId, step: body.type, approved: (finalize as any).approved });
@@ -1231,9 +1229,7 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        await db().order.update({ where: { id: order.id }, data: { verification: v, events: evts as any } });
-
-        const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: evts as any }, include: { items: true } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
         orderLog.info('All order steps verified', { orderId: order.mongoId, stepsVerified: required, approved: (finalize as any).approved });
@@ -2614,7 +2610,7 @@ export function makeOpsController(env: Env) {
             throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is not active; payouts are blocked');
           }
         }
-        const user = await db().user.findFirst({ where: { ...idWhere(body.mediatorId), deletedAt: null } });
+        const user = await db().user.findFirst({ where: { ...idWhere(body.mediatorId), deletedAt: null }, select: { id: true, mongoId: true, roles: true, parentCode: true, status: true, mediatorCode: true } });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
         if (canAgency) {
