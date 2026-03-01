@@ -66,14 +66,14 @@ export const userAdminListSelect = {
   kycGst: true,
   isVerifiedByMediator: true,
   upiId: true,
-  // qrCode and avatar are base64 blobs — excluded from list queries for
-  // performance.  Fetch them on-demand in the user detail endpoint.
+  // qrCode excluded from list queries (50-500KB blobs, only needed in detail/pay views)
   qrCode: false,
   bankAccountNumber: true,
   bankIfsc: true,
   bankName: true,
   bankHolderName: true,
-  avatar: false,
+  // avatar included — typically 5-20KB compressed JPEG; needed for profile photos in lists
+  avatar: true,
   createdAt: true,
   // EXCLUDED: passwordHash, googleRefreshToken, fcmTokens, deletedAt
 } as const;
@@ -104,7 +104,9 @@ export const userListSelect = {
   kycGst: true,
   isVerifiedByMediator: true,
   upiId: true,
-  // avatar + qrCode are base64 blobs — load on demand, not in list queries
+  // qrCode excluded from list queries (50-500KB blobs, only needed in pay/detail views)
+  // avatar included — typically 5-20KB compressed JPEG; needed for profile photos in lists
+  avatar: true,
   bankAccountNumber: true,
   bankIfsc: true,
   bankName: true,

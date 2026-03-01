@@ -292,7 +292,7 @@ const devFormat = printf(({ level, message, timestamp: ts, module: mod, requestI
   return `${dim}${ts}${reset} ${color}${bold}${level.toUpperCase().padEnd(5)}${reset} ${dom}${tag}${reqId}${message}${evt}${dur}${extra}`;
 });
 
-// ─── Production JSON Format ──────────────────────────────────────────────────
+// ─── Production JSON Format (for file rotation logs — structured, machine-readable) ──
 const prodJsonFormat = combine(
   timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.SSSZ' }),
   errors({ stack: true }),
@@ -301,6 +301,45 @@ const prodJsonFormat = combine(
   redactFormat(),
   throttleFormat(),
   json()
+);
+
+// ─── Production Console Format (human-readable single-line for Render / Docker) ──
+// Output: `2026-03-01T09:50:00Z INFO [auth] User abc123 logged in | userId=abc ip=1.2.3.4`
+const prodConsoleFormat = combine(
+  timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.SSSZ' }),
+  errors({ stack: true }),
+  metadata({ fillExcept: ['message', 'level', 'timestamp', 'module', 'requestId', 'durationMs', 'domain', 'eventName', 'correlationId'] }),
+  structuredEnrich(),
+  redactFormat(),
+  throttleFormat(),
+  printf(({ level, message, timestamp: ts, module: mod, requestId, durationMs, domain, eventName, correlationId: _cid, stack, ...rest }: any) => {
+    const lvl = level.toUpperCase().padEnd(5);
+    const tag = mod ? `[${mod}]` : domain ? `[${domain}]` : '';
+    const reqId = requestId ? `(${String(requestId).slice(0, 8)})` : '';
+    const dur = typeof durationMs === 'number' ? `${durationMs}ms` : '';
+    const evt = eventName ? `«${eventName}»` : '';
+
+    // Build compact key=value pairs from metadata
+    const meta = rest.metadata && typeof rest.metadata === 'object' ? { ...rest.metadata } : {};
+    // Remove keys already shown in the prefix
+    for (const k of ['module', 'requestId', 'durationMs', 'domain', 'eventName', 'correlationId', 'traceId', 'service', 'serviceName', 'environment', 'version', 'hostname', 'pid']) {
+      delete meta[k];
+    }
+    const kvPairs = Object.entries(meta)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => {
+        if (typeof v === 'object') return `${k}=${JSON.stringify(v)}`;
+        return `${k}=${v}`;
+      })
+      .join(' ');
+
+    // Assemble: timestamp LEVEL [module] message «EVENT» 45ms | key=val key=val
+    const parts = [ts, lvl, tag, reqId, message, evt, dur].filter(Boolean);
+    let line = parts.join(' ');
+    if (kvPairs) line += ` | ${kvPairs}`;
+    if (stack) line += `\n${stack}`;
+    return line;
+  })
 );
 
 // ─── Dev Console Format ──────────────────────────────────────────────────────
@@ -314,8 +353,9 @@ const devConsoleFormat = combine(
 
 // ─── Transports ──────────────────────────────────────────────────────────────
 const transports: winston.transport[] = [
+  // Console: human-readable in prod (for Render/Docker), colorful in dev
   new winston.transports.Console({
-    format: isProd ? prodJsonFormat : devConsoleFormat,
+    format: isProd ? prodConsoleFormat : devConsoleFormat,
   }),
 ];
 
