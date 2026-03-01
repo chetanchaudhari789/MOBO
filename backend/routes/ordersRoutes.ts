@@ -131,7 +131,7 @@ export function ordersRoutes(env: Env): Router {
 
       res.json({ logs, events, page, limit });
 
-      businessLog.info('Order audit trail viewed', { userId, orderId: String(req.params.orderId), logCount: logs.length, eventCount: events.length, ip: req.ip });
+      businessLog.info(`[${String(roles?.[0] || 'User').charAt(0).toUpperCase() + String(roles?.[0] || 'User').slice(1)}] User ${userId} viewed audit trail — order ${String(req.params.orderId)}, ${logs.length} logs, ${events.length} events`, { actorUserId: userId, orderId: String(req.params.orderId), logCount: logs.length, eventCount: events.length, ip: req.ip });
       logAccessEvent('RESOURCE_ACCESS', {
         userId,
         roles,

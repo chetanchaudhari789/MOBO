@@ -236,7 +236,7 @@ export function makeNotificationsController() {
           metadata: { action: 'NOTIFICATIONS_LISTED', endpoint: 'notifications/list', resultCount: Math.min(notifications.length, 50), role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other' },
         });
 
-        businessLog.info('Notifications listed', { userId, role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other', count: Math.min(notifications.length, 50) });
+        businessLog.info(`[${isShopper ? 'Buyer' : isMediator ? 'Mediator' : 'User'}] User ${userId} listed notifications — ${Math.min(notifications.length, 50)} results`, { actorUserId: userId, role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other', count: Math.min(notifications.length, 50), ip: req.ip });
         res.json(notifications.slice(0, 50));
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'notifications/list' } });

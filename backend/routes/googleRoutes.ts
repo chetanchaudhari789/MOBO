@@ -88,7 +88,7 @@ export function googleRoutes(env: Env): Router {
     }
     pendingStates.set(state, { userId: String(userId), createdAt: Date.now() });
 
-    businessLog.info('Google OAuth initiated', { userId: String(userId), ip: req.ip });
+    businessLog.info(`[Auth] User ${String(userId)} initiated Google OAuth`, { actorUserId: String(userId), ip: req.ip });
     logAccessEvent('RESOURCE_ACCESS', {
       userId: String(userId),
       ip: req.ip,
@@ -222,8 +222,7 @@ export function googleRoutes(env: Env): Router {
         metadata: { googleEmail, hasRefreshToken: !!tokenData.refresh_token },
       });
 
-      businessLog.info('Google account connected', { userId: pending.userId, googleEmail, hasRefreshToken: !!tokenData.refresh_token, ip: req.ip });
-
+      businessLog.info(`[Auth] User ${pending.userId} connected Google account — email: ${googleEmail || 'unknown'}, hasRefreshToken: ${!!tokenData.refresh_token}`, { actorUserId: pending.userId, googleEmail, hasRefreshToken: !!tokenData.refresh_token, ip: req.ip });
       logAuthEvent('LOGIN_SUCCESS', {
         userId: pending.userId,
         ip: req.ip,
@@ -279,7 +278,7 @@ export function googleRoutes(env: Env): Router {
           googleEmail = pgUser.googleEmail || null;
         }
       }
-      businessLog.info('Google OAuth status checked', { userId: String(userId), connected, ip: req.ip });
+      businessLog.info(`[Auth] User ${String(userId)} checked Google OAuth status — connected: ${connected}`, { actorUserId: String(userId), connected, googleEmail, ip: req.ip });
       logAccessEvent('RESOURCE_ACCESS', {
         userId: String(userId),
         ip: req.ip,
@@ -315,8 +314,7 @@ export function googleRoutes(env: Env): Router {
         }
       }
 
-      businessLog.info('Google account disconnected', { userId: String(userId), ip: req.ip });
-
+      businessLog.info(`[Auth] User ${String(userId)} disconnected Google account`, { actorUserId: String(userId), ip: req.ip });
       writeAuditLog({
         req,
         action: 'GOOGLE_OAUTH_DISCONNECTED',
