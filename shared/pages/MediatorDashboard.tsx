@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
-import { api } from '../services/api';
+import { api, asArray } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { normalizeMobileTo10Digits } from '../utils/mobiles';
@@ -1635,18 +1635,25 @@ export const MediatorDashboard: React.FC = () => {
         api.ops.getVerifiedUsers(user.mediatorCode || ''),
         api.tickets.getAll(),
       ]);
-      setOrders(ords);
-      setCampaigns(camps);
-      setDeals(publishedDeals);
-      setPendingUsers(pend);
-      setVerifiedUsers(ver);
-      setTickets(tix);
+      const safeOrds = asArray<Order>(ords);
+      const safeCamps = asArray<Campaign>(camps);
+      const safeDeals = asArray(publishedDeals);
+      const safePend = asArray<User>(pend);
+      const safeVer = asArray<User>(ver);
+      const safeTix = asArray<Ticket>(tix);
+
+      setOrders(safeOrds);
+      setCampaigns(safeCamps);
+      setDeals(safeDeals);
+      setPendingUsers(safePend);
+      setVerifiedUsers(safeVer);
+      setTickets(safeTix);
 
       // Keep the open proof-verification modal in sync with realtime order updates
       // (e.g., buyer uploaded a new proof while the modal is open).
       setProofModal((prev) => {
         if (!prev) return prev;
-        const updated = ords.find((o: Order) => o.id === prev.id);
+        const updated = safeOrds.find((o: Order) => o.id === prev.id);
         return updated || null;
       });
 
@@ -1654,7 +1661,7 @@ export const MediatorDashboard: React.FC = () => {
       // (e.g., UPI/QR updates emitted via `users.changed`).
       setSelectedBuyer((prev) => {
         if (!prev) return prev;
-        const updated = [...pend, ...ver].find((u: any) => u?.id === (prev as any).id);
+        const updated = [...safePend, ...safeVer].find((u: any) => u?.id === (prev as any).id);
         if (!updated) return prev;
         const changed =
           updated.name !== (prev as any).name ||

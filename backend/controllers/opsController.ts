@@ -469,15 +469,14 @@ export function makeOpsController(env: Env) {
           return;
         }
 
-        const oPage = queryParams.page ?? 1;
-        const oLimit = queryParams.limit ?? 200;
+        const { page: oPage, limit: oLimit, skip: oSkip, isPaginated: oIsPaginated } = parsePagination(req.query, { limit: 200 });
         const oWhere = { managerName: { in: managerCodes }, deletedAt: null };
         const [orders, oTotal] = await Promise.all([
           db().order.findMany({
             where: oWhere,
             select: orderListSelectLite,
             orderBy: { createdAt: 'desc' },
-            skip: (oPage - 1) * oLimit,
+            skip: oSkip,
             take: oLimit,
           }),
           db().order.count({ where: oWhere }),
@@ -502,7 +501,7 @@ export function makeOpsController(env: Env) {
           }
           catch (e) { orderLog.error(`[getOrders] toUiOrderSummary failed for order ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json({ data: mapped, total: oTotal, page: oPage, limit: oLimit });
+        res.json(paginatedResponse(mapped, oTotal, oPage, oLimit, oIsPaginated));
 
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,

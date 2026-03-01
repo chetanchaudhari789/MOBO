@@ -51,7 +51,7 @@ import {
   FileSpreadsheet,
   Sparkles,
 } from 'lucide-react';
-import { api } from '../services/api';
+import { api, asArray } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
@@ -624,11 +624,12 @@ const OrdersView = ({ user }: any) => {
     setIsLoading(true);
     try {
       const data = await api.brand.getBrandOrders(user.name);
-      setOrders(data);
+      const safeData = asArray<Order>(data);
+      setOrders(safeData);
       // Keep proof modal in sync with refreshed data
       setViewProofOrder((prev) => {
         if (!prev) return prev;
-        const updated = (data as Order[]).find((o: Order) => o.id === prev.id);
+        const updated = safeData.find((o: Order) => o.id === prev.id);
         return updated || null;
       });
     } catch (err) {
@@ -2117,10 +2118,10 @@ export const BrandDashboard: React.FC = () => {
         api.brand.getBrandOrders(user.name),
         api.brand.getTransactions(user.id),
       ]);
-      setCampaigns(camps);
-      setAgencies(ags);
-      setOrders(ords);
-      setTransactions(txns);
+      setCampaigns(asArray(camps));
+      setAgencies(asArray(ags));
+      setOrders(asArray(ords));
+      setTransactions(asArray(txns));
     } catch (e) {
       console.error('Dashboard data fetch failed', e);
       toast.error('Failed to load dashboard data');
