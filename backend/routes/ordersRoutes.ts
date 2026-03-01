@@ -6,6 +6,7 @@ import { makeOrdersController } from '../controllers/ordersController.js';
 import { prisma } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 import { logAccessEvent, logErrorEvent } from '../config/appLogs.js';
+import { businessLog } from '../config/logger.js';
 
 export function ordersRoutes(env: Env): Router {
   const router = Router();
@@ -130,6 +131,7 @@ export function ordersRoutes(env: Env): Router {
 
       res.json({ logs, events, page, limit });
 
+      businessLog.info('Order audit trail viewed', { userId, orderId: String(req.params.orderId), logCount: logs.length, eventCount: events.length, ip: req.ip });
       logAccessEvent('RESOURCE_ACCESS', {
         userId,
         roles,

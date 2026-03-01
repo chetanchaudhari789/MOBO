@@ -155,6 +155,7 @@ export function makeProductsController() {
           metadata: { dealId, campaignId: deal.campaignId, mediatorCode },
         });
         orderLog.info('Order redirect tracked', { orderId: mongoId, dealId, campaignId: deal.campaignId, mediatorCode, userId: requesterId });
+        businessLog.info('Buyer redirected to deal', { orderId: mongoId, dealId, campaignId: deal.campaignId, mediatorCode, userId: requesterId, platform: String(deal.platform ?? ''), ip: req.ip });
         logChangeEvent({ actorUserId: requesterId, entityType: 'Order', entityId: mongoId, action: 'STATUS_CHANGE', changedFields: ['workflowStatus'], before: {}, after: { workflowStatus: 'REDIRECTED' } });
 
         const ts = new Date().toISOString();
