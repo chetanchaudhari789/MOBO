@@ -40,7 +40,8 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().optional(),
 
   // AI safety + cost controls
-  AI_ENABLED: z.coerce.boolean().default(true),
+  // z.coerce.boolean() treats 'false' as truthy — use a manual transform
+  AI_ENABLED: z.string().default('true').transform(v => v !== 'false' && v !== '0' && v !== ''),
   AI_CHAT_RPM_AUTH: z.coerce.number().int().positive().default(30),
   AI_CHAT_RPM_ANON: z.coerce.number().int().positive().default(6),
   AI_PROOF_RPM_AUTH: z.coerce.number().int().positive().default(10),
@@ -58,7 +59,7 @@ const envSchema = z.object({
   AI_MAX_HISTORY_MESSAGES: z.coerce.number().int().positive().default(6),
   AI_HISTORY_SUMMARY_CHARS: z.coerce.number().int().positive().default(400),
   AI_MIN_SECONDS_BETWEEN_CALLS: z.coerce.number().int().nonnegative().default(3),
-  AI_DEBUG_OCR: z.coerce.boolean().default(false),
+  AI_DEBUG_OCR: z.string().default('false').transform(v => v !== 'false' && v !== '0' && v !== ''),
   AI_OCR_POOL_SIZE: z.coerce.number().int().min(1).max(8).default(2),
   AI_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().min(1).default(3),
   AI_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().min(1000).default(300_000),

@@ -27,6 +27,45 @@ import { securityAuditMiddleware, responseTimingMiddleware } from './middleware/
 import { mediaRoutes } from './routes/mediaRoutes.js';
 import { initAiServiceConfig } from './services/aiService.js';
 
+// Pre-compiled CORS wildcard matchers — built once at startup, not per-request.
+type CorsMatcher = (origin: string, host: string) => boolean;
+const corsMatcherCache = new Map<string, CorsMatcher[]>();
+
+function buildCorsMatchers(allowed: string[]): CorsMatcher[] {
+  const key = allowed.join(',');
+  if (corsMatcherCache.has(key)) return corsMatcherCache.get(key)!;
+
+  const matchers: CorsMatcher[] = allowed.map((entryRaw) => {
+    const entry = String(entryRaw || '').trim();
+    if (!entry) return () => false;
+
+    // Exact match (full origin string).
+    if (!entry.includes('*') && (entry.startsWith('http://') || entry.startsWith('https://'))) {
+      return (origin: string) => entry === origin;
+    }
+
+    // Wildcard — pre-compile regex once.
+    if (entry.includes('*')) {
+      const escaped = entry
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*');
+      const re = new RegExp(`^${escaped}$`);
+      return (origin: string, host: string) => re.test(origin) || re.test(host);
+    }
+
+    // Hostname suffix match.
+    if (entry.startsWith('.')) {
+      return (_origin: string, host: string) => host.endsWith(entry);
+    }
+
+    // Hostname exact match.
+    return (_origin: string, host: string) => host === entry;
+  });
+
+  corsMatcherCache.set(key, matchers);
+  return matchers;
+}
+
 function isOriginAllowed(origin: string, allowed: string[]): boolean {
   if (!origin) return true;
   if (!allowed.length) return true;
@@ -36,41 +75,12 @@ function isOriginAllowed(origin: string, allowed: string[]): boolean {
   try {
     originUrl = new URL(origin);
   } catch {
-    // If Origin is not a valid URL, fail closed.
     return false;
   }
 
   const originHost = originUrl.hostname;
-
-  return allowed.some((entryRaw) => {
-    const entry = String(entryRaw || '').trim();
-    if (!entry) return false;
-
-    // Exact match (full origin string).
-    if (!entry.includes('*') && (entry.startsWith('http://') || entry.startsWith('https://'))) {
-      return entry === origin;
-    }
-
-    // Wildcard support.
-    // Examples:
-    // - https://*.vercel.app
-    // - *.vercel.app
-    // - https://mobobuyer.vercel.app
-    if (entry.includes('*')) {
-      const escaped = entry
-        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*');
-      const re = new RegExp(`^${escaped}$`);
-      return re.test(origin) || re.test(originHost);
-    }
-
-    // Hostname-only entry support.
-    // Examples:
-    // - mobobuyer.vercel.app
-    // - .vercel.app (suffix)
-    if (entry.startsWith('.')) return originHost.endsWith(entry);
-    return originHost === entry;
-  });
+  const matchers = buildCorsMatchers(allowed);
+  return matchers.some((m) => m(origin, originHost));
 }
 
 // ── In-flight request tracking (for graceful shutdown drain) ─────
