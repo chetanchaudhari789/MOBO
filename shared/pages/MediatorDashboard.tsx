@@ -54,7 +54,6 @@ import {
 } from 'lucide-react';
 
 import { EmptyState, Spinner } from '../components/ui';
-import { ZoomableImage } from '../components/ZoomableImage';
 import { ProofImage } from '../components/ProofImage';
 import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { MobileTabBar } from '../components/MobileTabBar';
@@ -642,7 +641,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
     return deals.filter((d: Product) => matchesSearch(marketSearch, d.title, d.platform));
   }, [deals, marketSearch]);
 
-  const [mode, setMode] = useState<'published' | 'unpublished'>('published');
+  const [mode, setMode] = useState<'published' | 'unpublished'>('unpublished');
 
   return (
     <div className="space-y-5 animate-enter">
@@ -1638,6 +1637,7 @@ export const MediatorDashboard: React.FC = () => {
   const [auditLoading, setAuditLoading] = useState(false);
   const [commission, setCommission] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState<User | null>(null);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   // Check if dealBuilder's campaign already has a published deal (edit mode)
   const isEditingPublishedDeal = useMemo(() => {
@@ -1822,6 +1822,14 @@ export const MediatorDashboard: React.FC = () => {
         </div>
 
         <div className="relative flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Raise a ticket"
+            onClick={() => setTicketOpen(true)}
+            className="w-10 h-10 rounded-[0.8rem] bg-white border border-orange-200 flex items-center justify-center text-orange-500 hover:bg-orange-50 transition-all active:scale-95 shadow-md"
+          >
+            <AlertTriangle size={18} strokeWidth={2.5} />
+          </button>
           <button
             type="button"
             aria-label="Open notifications"
@@ -2760,6 +2768,7 @@ export const MediatorDashboard: React.FC = () => {
           onRefresh={loadData}
         />
       )}
+      <RaiseTicketModal open={ticketOpen} onClose={() => setTicketOpen(false)} />
     </div>
   );
 };

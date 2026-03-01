@@ -4,14 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatErrorMessage } from '../utils/errors';
 import { subscribeRealtime } from '../services/realtime';
-import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
+
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
-import { ZoomableImage } from '../components/ZoomableImage';
 import { ProofImage } from '../components/ProofImage';
 import { ProxiedImage } from '../components/ProxiedImage';
 import { ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
@@ -25,11 +24,9 @@ import {
   Check,
   Loader2,
   CalendarClock,
-  HelpCircle,
   AlertTriangle,
   Package,
   Zap,
-  History,
   ChevronDown,
   ChevronUp,
   FileSpreadsheet,
@@ -214,11 +211,7 @@ export const Orders: React.FC = () => {
   const [ticketIssue, setTicketIssue] = useState('Cashback Delay');
   const [ticketDesc, setTicketDesc] = useState('');
   const [sheetsExporting, setSheetsExporting] = useState(false);
-  // Audit trail state: tracks which order's audit log is expanded
-  const [auditOrderId, setAuditOrderId] = useState<string | null>(null);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [_auditEvents, setAuditEvents] = useState<any[]>([]);
-  const [auditLoading, setAuditLoading] = useState(false);
+
 
   // Rating screenshot pre-validation state
   const [ratingPreview, setRatingPreview] = useState<string | null>(null);
@@ -1300,76 +1293,9 @@ export const Orders: React.FC = () => {
                         {rejectionType === 'returnWindow' ? 'Reupload Return Window' : 'Upload Return Window'}
                       </button>
                     )}
-                    <button
-                      onClick={() => { setTicketIssue('Cashback Delay'); setTicketDesc(''); setTicketModal(order); }}
-                      className="w-7 h-7 bg-red-50 text-red-500 rounded-full flex items-center justify-center hover:bg-red-100 ml-2"
-                      title="Report Issue"
-                    >
-                      <HelpCircle size={14} />
-                    </button>
                   </div>
                 </div>
 
-                {/* AUDIT TRAIL / ACTIVITY LOG */}
-                <div className="mt-3 border-t border-slate-50 pt-2">
-                  <button
-                    onClick={async () => {
-                      if (auditOrderId === order.id) {
-                        setAuditOrderId(null);
-                        return;
-                      }
-                      setAuditOrderId(order.id);
-                      setAuditLoading(true);
-                      try {
-                        const resp = await api.orders.getOrderAudit(order.id);
-                        setAuditLogs(resp?.logs ?? []);
-                        setAuditEvents(resp?.events ?? []);
-                      } catch (err) {
-                        console.error('Failed to load activity log:', err);
-                        toast.error('Failed to load activity log');
-                        setAuditLogs([]);
-                        setAuditEvents([]);
-                      } finally {
-                        setAuditLoading(false);
-                      }
-                    }}
-                    className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors"
-                  >
-                    <History size={12} />
-                    Activity Log
-                    {auditOrderId === order.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                  </button>
-                  {auditOrderId === order.id && (
-                    <>
-                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1.5 scrollbar-hide">
-                      {auditLoading ? (
-                        <div className="flex justify-center py-2">
-                          <Loader2 size={14} className="animate-spin text-slate-300" />
-                        </div>
-                      ) : auditLogs.length === 0 ? (
-                        <p className="text-[10px] text-slate-300 italic">No activity recorded yet.</p>
-                      ) : (
-                        filterAuditLogs(auditLogs).map((log: any, i: number) => (
-                          <div key={log._id || i} className="flex items-start gap-2 text-[10px]">
-                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0" />
-                            <div className="min-w-0">
-                              <span className="font-bold text-slate-600">
-                                {auditActionLabel(log.action)}
-                              </span>
-                              <span className="text-slate-400 ml-1.5">
-                                {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}
-                              </span>
-                              {log.metadata?.proofType && (
-                                <span className="ml-1 text-slate-400">({log.metadata.proofType})</span>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    </>
-                  )}
-                </div>
               </div>
             );
           })
@@ -1777,7 +1703,7 @@ export const Orders: React.FC = () => {
                   Issue Type
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {['Cashback Delay', 'Wrong Amount', 'Fake Deal', 'Other'].map((type) => (
+                  {['Cashback Delay', 'Wrong Amount', 'Other'].map((type) => (
                     <button
                       key={type}
                       onClick={() => setTicketIssue(type)}
@@ -1922,30 +1848,7 @@ export const Orders: React.FC = () => {
                 )}
               </div>
 
-              {/* Order Timeline / Audit Trail */}
-              {proofToView.events && proofToView.events.length > 0 && (
-                <div className="space-y-2 mt-2 border-t border-slate-100 pt-3">
-                  <div className="text-[10px] font-bold uppercase text-slate-400">Order Timeline</div>
-                  <div className="space-y-1.5">
-                    {proofToView.events.map((evt, idx) => {
-                      const label = (evt.type || '').replace(/_/g, ' ');
-                      return (
-                        <div key={`${evt.type}-${idx}`} className="flex items-start gap-2 text-[10px]">
-                          <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1 flex-shrink-0" />
-                          <div>
-                            <span className="font-bold text-slate-600 uppercase">{label}</span>
-                            {evt.at && (
-                              <span className="text-slate-400 ml-2">
-                                {new Date(evt.at).toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+
             </div>
           </div>
         </div>

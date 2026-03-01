@@ -2,9 +2,6 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   X,
   ArrowRight,
-  Mic,
-  MicOff,
-  Paperclip,
   CalendarClock,
   CheckCircle2,
   Bell,
@@ -74,14 +71,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
   const { notifications, removeNotification, unreadCount, markAllRead } = useNotification();
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [_isListening, setIsListening] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
-  const [attachment, setAttachment] = useState<File | null>(null);
+  const [_attachment, setAttachment] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const _fileInputRef = useRef<HTMLInputElement>(null);
 
   const placeholders = useMemo(() => [
     'Find me deals...',
@@ -255,8 +252,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     };
   }, [onNavigate, addMessage]);
 
-  const toggleListening = () => {
-    if (isListening) {
+  const _toggleListening = () => {
+    if (_isListening) {
       recognitionRef.current?.stop();
       setIsListening(false);
     } else {
@@ -271,7 +268,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
   const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const _handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > MAX_ATTACHMENT_BYTES) {
@@ -282,7 +279,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           isError: true,
           timestamp: Date.now(),
         });
-        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (_fileInputRef.current) _fileInputRef.current.value = '';
         return;
       }
       // Revoke previous object URL to prevent memory leaks.
@@ -292,28 +289,28 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     }
   };
 
-  const clearAttachment = () => {
+  const _clearAttachment = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setAttachment(null);
     setPreviewUrl(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (_fileInputRef.current) _fileInputRef.current.value = '';
   };
 
   const handleSendMessage = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
     if (isTyping) return;
     const textToSend = overrideText || inputText;
-    if (!textToSend.trim() && !attachment) return;
+    if (!textToSend.trim() && !_attachment) return;
     const safeText = textToSend.trim().slice(0, 400);
 
     let base64Image: string | undefined = undefined;
-    if (attachment) {
+    if (_attachment) {
       const rawBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = () => reject(new Error('Failed to read file'));
         reader.onabort = () => reject(new Error('File read aborted'));
-        reader.readAsDataURL(attachment);
+        reader.readAsDataURL(_attachment);
       }).catch((readErr) => {
         console.warn('FileReader error:', readErr);
         addMessage({
@@ -342,7 +339,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
     });
 
     setInputText('');
-    clearAttachment();
+    _clearAttachment();
     setIsTyping(true);
     setLastFailedText(null);
 
@@ -839,7 +836,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
           <div className="bg-white p-3 rounded-[1.5rem] shadow-xl border border-slate-100 mb-2 w-fit relative animate-slide-up">
             <img loading="lazy" src={previewUrl} className="h-20 w-auto rounded-xl object-cover" alt="Preview" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             <button
-              onClick={clearAttachment}
+              onClick={_clearAttachment}
               aria-label="Remove attachment"
               className="absolute -top-2 -right-2 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center hover:bg-red-500 shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             >
@@ -849,28 +846,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
         )}
 
         <div className="bg-white p-2 rounded-[2rem] shadow-xl border border-slate-100 flex items-center gap-2 relative">
-          <button
-            onClick={toggleListening}
-            aria-label={isListening ? 'Stop listening' : 'Start listening'}
-            aria-pressed={isListening}
-            className={`w-11 h-11 rounded-full flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${isListening ? 'bg-red-100 text-red-600 animate-pulse motion-reduce:animate-none' : 'text-slate-400 hover:bg-slate-50'}`}
-          >
-            {isListening ? <MicOff size={20} /> : <Mic size={20} />}
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            aria-label="Attach an image"
-            className="w-11 h-11 rounded-full flex items-center justify-center text-slate-400 hover:text-lime-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-          >
-            <Paperclip size={20} />
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            accept="image/*"
-            onChange={handleFileSelect}
-          />
           <form onSubmit={(e) => handleSendMessage(e)} className="flex-1 min-w-0">
             <input
               ref={inputRef}
@@ -879,15 +854,15 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
               onChange={(e) => setInputText(e.target.value)}
               onFocus={() => setIsInputFocused(true)}
               onBlur={() => setIsInputFocused(false)}
-              placeholder={isListening ? 'Listening...' : placeholders[placeholderIndex]}
+              placeholder={placeholders[placeholderIndex]}
               className="w-full bg-transparent border-none outline-none text-sm font-semibold text-slate-900 h-11 placeholder:text-slate-400"
             />
           </form>
           <button
             onClick={(e) => handleSendMessage(e)}
-            disabled={!inputText.trim() && !attachment}
+            disabled={!inputText.trim() && !_attachment}
             aria-label="Send message"
-            className={`w-11 h-11 rounded-full flex items-center justify-center shadow-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${!inputText.trim() && !attachment ? 'bg-slate-100 text-slate-300 shadow-none cursor-not-allowed' : 'bg-black text-white hover:bg-lime-300 hover:text-black'}`}
+            className={`w-11 h-11 rounded-full flex items-center justify-center shadow-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${!inputText.trim() && !_attachment ? 'bg-slate-100 text-slate-300 shadow-none cursor-not-allowed' : 'bg-black text-white hover:bg-lime-300 hover:text-black'}`}
           >
             <ArrowRight size={20} strokeWidth={3} />
           </button>

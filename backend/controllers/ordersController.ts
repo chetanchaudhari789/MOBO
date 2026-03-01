@@ -17,7 +17,7 @@ import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { isGeminiConfigured, verifyProofWithAi, verifyRatingScreenshotWithAi, verifyReturnWindowWithAi } from '../services/aiService.js';
-import { finalizeApprovalIfReady, getRequiredStepsForOrder, hasProofForRequirement, isRequirementVerified } from './opsController.js';
+import { finalizeApprovalIfReady } from './opsController.js';
 
 // UUID v4 regex — 8-4-4-4-12 hex with dashes.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

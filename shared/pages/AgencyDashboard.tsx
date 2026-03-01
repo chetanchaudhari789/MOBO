@@ -12,7 +12,6 @@ import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
-import { ZoomableImage } from '../components/ZoomableImage';
 import { ProofImage } from '../components/ProofImage';
 import { DesktopShell } from '../components/DesktopShell';
 import { formatCurrency } from '../utils/formatCurrency';

@@ -5,7 +5,8 @@ import { useToast } from '../context/ToastContext';
 import { Product } from '../types';
 import { ProductCard } from '../components/ProductCard';
 import { QuickOrderModal } from '../components/QuickOrderModal';
-import { Search, Filter } from 'lucide-react';
+import { RaiseTicketModal } from '../components/RaiseTicketModal';
+import { Search, Filter, AlertTriangle } from 'lucide-react';
 import { EmptyState, Input, Spinner } from '../components/ui';
 
 export const Explore: React.FC = () => {
@@ -18,6 +19,7 @@ export const Explore: React.FC = () => {
   const [fetchError, setFetchError] = useState(false);
   const silentSyncRef = useRef(false);
   const [orderProduct, setOrderProduct] = useState<Product | null>(null);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   const dealTypes = useMemo(() => {
     const seen = new Set<string>();
@@ -136,6 +138,13 @@ export const Explore: React.FC = () => {
       <div className="px-6 pt-16 pb-4 bg-white shadow-sm z-10 border-b border-gray-100 sticky top-0">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-extrabold text-slate-900">Explore Deals</h1>
+          <button
+            onClick={() => setTicketOpen(true)}
+            className="w-9 h-9 rounded-full bg-red-50 border border-red-200 flex items-center justify-center text-red-500 hover:bg-red-100 transition-all active:scale-95"
+            aria-label="Raise a ticket"
+          >
+            <AlertTriangle size={16} />
+          </button>
         </div>
 
         {/* Search Bar */}
@@ -231,6 +240,7 @@ export const Explore: React.FC = () => {
         product={orderProduct}
         onClose={() => setOrderProduct(null)}
       />
+      <RaiseTicketModal open={ticketOpen} onClose={() => setTicketOpen(false)} />
     </div>
   );
 };
