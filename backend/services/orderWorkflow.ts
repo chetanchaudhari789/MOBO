@@ -98,7 +98,7 @@ export async function transitionOrderWorkflow(params: {
   }
 
   // Re-read full order to return
-  const order = await client.order.findUnique({ where: { id: current.id }, include: { items: true } });
+  const order = await client.order.findUnique({ where: { id: current.id }, include: { items: { where: { deletedAt: null } } } });
 
   orderLog.info(`Order workflow: ${params.from} → ${params.to}`, { orderId: current.id, mongoId: current.mongoId, from: params.from, to: params.to, actorUserId: params.actorUserId });
   logChangeEvent({ actorUserId: params.actorUserId, entityType: 'Order', entityId: current.id, action: 'STATUS_CHANGE', changedFields: ['workflowStatus'], before: { workflowStatus: params.from }, after: { workflowStatus: params.to }, metadata: { orderId: params.orderId, mongoId: current.mongoId } });

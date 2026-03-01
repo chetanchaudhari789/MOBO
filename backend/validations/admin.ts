@@ -56,5 +56,5 @@ export const adminAuditLogsQuerySchema = z.object({
   from: z.string().max(30).optional(),
   to: z.string().max(30).optional(),
   page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(10000).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
 });

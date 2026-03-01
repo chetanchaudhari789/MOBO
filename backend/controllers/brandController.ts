@@ -507,12 +507,14 @@ export function makeBrandController() {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can approve requests');
         }
 
-        // Remove the pending connection
-        await db().pendingConnection.deleteMany({
+        // Soft-delete the pending connection
+        await db().pendingConnection.updateMany({
           where: {
             userId: brand.id,
+            deletedAt: null,
             OR: [{ agencyCode }, { agencyId: agencyMongoId }],
           },
+          data: { deletedAt: new Date() },
         });
 
         if (body.action === 'approve') {
@@ -580,9 +582,10 @@ export function makeBrandController() {
         const filtered = connected.filter((c: string) => c !== body.agencyCode);
         await db().user.update({ where: { id: brand.id }, data: { connectedAgencies: filtered } });
 
-        // Remove pending connections for this agency
-        await db().pendingConnection.deleteMany({
-          where: { userId: brand.id, agencyCode: body.agencyCode },
+        // Soft-delete pending connections for this agency
+        await db().pendingConnection.updateMany({
+          where: { userId: brand.id, agencyCode: body.agencyCode, deletedAt: null },
+          data: { deletedAt: new Date() },
         });
 
         await writeAuditLog({

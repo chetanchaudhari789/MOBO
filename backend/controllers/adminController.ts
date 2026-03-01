@@ -113,7 +113,7 @@ export function makeAdminController() {
           ];
         }
 
-        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 10000, maxLimit: 10000 });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 200, maxLimit: 500 });
         const [users, total] = await Promise.all([
           db().user.findMany({
             where,
@@ -152,7 +152,7 @@ export function makeAdminController() {
           where.affiliateStatus = queryParams.status;
         }
 
-        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 10000, maxLimit: 10000 });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 200, maxLimit: 500 });
         const [orders, total] = await Promise.all([
           db().order.findMany({
             where,
@@ -300,7 +300,7 @@ export function makeAdminController() {
           ];
         }
 
-        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 10000, maxLimit: 10000 });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 200, maxLimit: 500 });
         const [deals, total] = await Promise.all([
           db().deal.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
           db().deal.count({ where }),
@@ -754,7 +754,7 @@ export function makeAdminController() {
         } = adminAuditLogsQuerySchema.parse(req.query);
 
         const page = Math.max(1, parsedPage ?? 1);
-        const limit = Math.min(10000, Math.max(1, parsedLimit ?? 200));
+        const limit = Math.min(500, Math.max(1, parsedLimit ?? 200));
         const skip = (page - 1) * limit;
 
         const where: any = {};

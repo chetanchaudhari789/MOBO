@@ -49,7 +49,7 @@ export function getVapidPublicKey(env: Env): string {
 async function removeInvalidSubscription(endpoint: string) {
   try {
     if (isPrismaAvailable()) {
-      await prisma().pushSubscription.deleteMany({ where: { endpoint } }).catch(() => {});
+      await prisma().pushSubscription.updateMany({ where: { endpoint, deletedAt: null }, data: { deletedAt: new Date() } }).catch(() => {});
     }
   } catch {
     // ignore cleanup errors
@@ -77,7 +77,7 @@ export async function sendPushToUser(params: {
     });
     if (pgUser) {
       subscriptions = await db.pushSubscription.findMany({
-        where: { userId: pgUser.id, app: params.app },
+        where: { userId: pgUser.id, app: params.app, deletedAt: null },
         select: { endpoint: true, keysP256dh: true, keysAuth: true, expirationTime: true },
       });
     }

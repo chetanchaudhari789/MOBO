@@ -163,7 +163,7 @@ export function makeOpsController(env: Env) {
         if (!brand) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
         if (brand.status !== 'active') throw new AppError(409, 'BRAND_SUSPENDED', 'Brand is not active');
 
-        const pendingCount = await db().pendingConnection.count({ where: { userId: brand.id } });
+        const pendingCount = await db().pendingConnection.count({ where: { userId: brand.id, deletedAt: null } });
         if (pendingCount >= 100) {
           throw new AppError(409, 'TOO_MANY_PENDING', 'Brand has too many pending connection requests');
         }
@@ -175,7 +175,7 @@ export function makeOpsController(env: Env) {
           throw new AppError(409, 'ALREADY_REQUESTED', 'Connection already exists or is already pending');
         }
         const existingPending = await db().pendingConnection.findFirst({
-          where: { userId: brand.id, agencyCode },
+          where: { userId: brand.id, agencyCode, deletedAt: null },
         });
         if (existingPending) {
           throw new AppError(409, 'ALREADY_REQUESTED', 'Connection already exists or is already pending');
@@ -981,12 +981,11 @@ export function makeOpsController(env: Env) {
         const v = (order.verification && typeof order.verification === 'object') ? { ...(order.verification as any) } : {} as any;
 
         if (v.order?.verifiedAt) {
-          const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
           return res.json({
             ok: true,
             approved: false,
             reason: 'ALREADY_VERIFIED',
-            order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
+            order: toUiOrder(pgMapped),
           });
         }
 
@@ -1030,12 +1029,15 @@ export function makeOpsController(env: Env) {
           }).catch((err: unknown) => { pushLog.warn('Push failed for verifyOrder', { err, buyerId }); });
         }
 
-        const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        // Only re-fetch if finalize modified the order; otherwise use the update result
+        const finalOrder = (finalize as any).approved
+          ? await db().order.findFirst({ where: { id: order.id }, include: { items: true } })
+          : updatedOrder;
         res.json({
           ok: true,
           approved: (finalize as any).approved,
           ...(finalize as any),
-          order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
+          order: finalOrder ? toUiOrder(pgOrder(finalOrder)) : undefined,
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/verifyOrderClaim' } });
@@ -1101,12 +1103,11 @@ export function makeOpsController(env: Env) {
         }
 
         if (isRequirementVerified(pgMapped, body.type)) {
-          const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
           return res.json({
             ok: true,
             approved: false,
             reason: 'ALREADY_VERIFIED',
-            order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
+            order: toUiOrder(pgMapped),
           });
         }
 
@@ -1145,12 +1146,15 @@ export function makeOpsController(env: Env) {
           }).catch((err: unknown) => { pushLog.warn('Push failed for verifyRequirement', { err, buyerId }); });
         }
 
-        const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        // Only re-fetch if finalize modified the order; otherwise use the update result
+        const finalOrder = (finalize as any).approved
+          ? await db().order.findFirst({ where: { id: order.id }, include: { items: true } })
+          : updatedOrder;
         res.json({
           ok: true,
           approved: (finalize as any).approved,
           ...(finalize as any),
-          order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
+          order: finalOrder ? toUiOrder(pgOrder(finalOrder)) : undefined,
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/verifyOrderRequirement' } });
@@ -1259,12 +1263,15 @@ export function makeOpsController(env: Env) {
           }).catch((err: unknown) => { pushLog.warn('Push failed for verifyAllOrder', { err, userId: buyerId }); });
         }
 
-        const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
+        // Only re-fetch if finalize modified the order; otherwise use the update result
+        const finalOrder = (finalize as any).approved
+          ? await db().order.findFirst({ where: { id: order.id }, include: { items: true } })
+          : updatedOrder;
         res.json({
           ok: true,
           approved: (finalize as any).approved,
           ...(finalize as any),
-          order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
+          order: finalOrder ? toUiOrder(pgOrder(finalOrder)) : undefined,
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/verifyAllSteps' } });

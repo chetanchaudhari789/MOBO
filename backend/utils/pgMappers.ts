@@ -64,6 +64,8 @@ export function pgOrder(raw: any): any {
     ...raw,
     _id: raw.id,
     userId: raw.userId,
+    // Filter out soft-deleted items when loaded via include: { items: true }
+    items: Array.isArray(raw.items) ? raw.items.filter((i: any) => !i.deletedAt) : raw.items,
     screenshots: {
       order: raw.screenshotOrder ?? null,
       payment: raw.screenshotPayment ?? null,

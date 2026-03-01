@@ -327,12 +327,13 @@ model User {
 
 /// Pending brand-agency connection requests (embedded array in Mongo -> join table in PG)
 model PendingConnection {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  agencyId   String?  @map("agency_id")
-  agencyName String?  @map("agency_name")
-  agencyCode String?  @map("agency_code")
-  timestamp  DateTime @default(now())
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  agencyId   String?   @map("agency_id")
+  agencyName String?   @map("agency_name")
+  agencyCode String?   @map("agency_code")
+  timestamp  DateTime  @default(now())
+  deletedAt  DateTime? @map("deleted_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -624,18 +625,19 @@ model Order {
 
 /// Order item (embedded array in Mongo -> join table in PG)
 model OrderItem {
-  id                   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId              String  @map("order_id") @db.Uuid
-  productId            String  @map("product_id")
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId              String    @map("order_id") @db.Uuid
+  productId            String    @map("product_id")
   title                String
   image                String
-  priceAtPurchasePaise Int     @map("price_at_purchase_paise")
-  commissionPaise      Int     @map("commission_paise")
-  campaignId           String  @map("campaign_id") @db.Uuid
-  dealType             String? @map("deal_type")
-  quantity             Int     @default(1)
+  priceAtPurchasePaise Int       @map("price_at_purchase_paise")
+  commissionPaise      Int       @map("commission_paise")
+  campaignId           String    @map("campaign_id") @db.Uuid
+  dealType             String?   @map("deal_type")
+  quantity             Int       @default(1)
   platform             String?
-  brandName            String? @map("brand_name")
+  brandName            String?   @map("brand_name")
+  deletedAt            DateTime? @map("deleted_at")
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
@@ -821,15 +823,16 @@ model Ticket {
 
 /// Push notification subscription (mirrors PushSubscription.ts)
 model PushSubscription {
-  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mongoId        String? @unique @map("mongo_id")
-  userId         String  @map("user_id") @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mongoId        String?   @unique @map("mongo_id")
+  userId         String    @map("user_id") @db.Uuid
   app            PushApp
-  endpoint       String  @unique
-  expirationTime Int?    @map("expiration_time")
-  keysP256dh     String  @map("keys_p256dh")
-  keysAuth       String  @map("keys_auth")
-  userAgent      String? @map("user_agent")
+  endpoint       String    @unique
+  expirationTime Int?      @map("expiration_time")
+  keysP256dh     String    @map("keys_p256dh")
+  keysAuth       String    @map("keys_auth")
+  userAgent      String?   @map("user_agent")
+  deletedAt      DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

@@ -272,7 +272,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     }
   }, [user]);
 
-  // Realtime: refresh admin views when core entities change.
+  // Realtime: refresh only the data relevant to the current view.
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     let timer: any = null;
@@ -280,7 +280,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        fetchAllData();
+        refreshCurrentView();
       }, 800);
     };
     const unsub = subscribeRealtime((msg) => {
@@ -300,14 +300,14 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
       unsub();
       if (timer) clearTimeout(timer);
     };
-  }, [user]);
+  }, [user, view]);
 
   // Auto-fetch audit logs when switching to audit-logs view or when filters change
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     if (view !== 'audit-logs') return;
     setAuditLoading(true);
-    const params: any = { limit: 10000 };
+    const params: any = { limit: 200 };
     if (auditActionFilter) params.action = auditActionFilter;
     if (auditDateFrom) params.from = new Date(auditDateFrom).toISOString();
     if (auditDateTo) params.to = new Date(auditDateTo + 'T23:59:59').toISOString();
@@ -341,6 +341,48 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
     if (view !== 'settings') return;
     fetchSystemConfig();
   }, [user, view]);
+
+  /** Refresh only the data needed for the active tab/view (instead of ALL endpoints). */
+  const refreshCurrentView = async () => {
+    try {
+      switch (view) {
+        case 'dashboard':
+          Promise.allSettled([api.admin.getStats(), api.admin.getGrowthAnalytics()]).then(([s, g]) => {
+            if (s.status === 'fulfilled') setStats(s.value);
+            if (g.status === 'fulfilled') setChartData(asArray(g.value));
+          });
+          break;
+        case 'users':
+          api.admin.getUsers('all').then((u) => setUsers(u)).catch(() => {});
+          break;
+        case 'orders':
+        case 'finance':
+          api.admin.getFinancials().then((o) => {
+            const safeOrders = asArray<Order>(o);
+            setOrders(safeOrders);
+            setProofModal((prev) => {
+              if (!prev) return prev;
+              const updated = safeOrders.find((ord: Order) => ord.id === prev.id);
+              return updated || null;
+            });
+          }).catch(() => {});
+          break;
+        case 'inventory':
+          api.admin.getProducts().then((p) => setProducts(asArray(p))).catch(() => {});
+          break;
+        case 'support':
+          api.tickets.getAll().then((t) => setTickets(asArray(t))).catch(() => {});
+          break;
+        case 'invites':
+          api.admin.getInvites().then((i) => setInvites(asArray(i))).catch(() => {});
+          break;
+        default:
+          break;
+      }
+    } catch (e) {
+      console.error('Admin Realtime Refresh Error:', e);
+    }
+  };
 
   const fetchAllData = async () => {
     setIsLoading(true);
