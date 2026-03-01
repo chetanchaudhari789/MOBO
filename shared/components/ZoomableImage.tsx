@@ -121,12 +121,21 @@ export const ZoomableImage: React.FC<{
           className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in"
           onClick={() => setZoomed(false)}
         >
-          <img
+          <img loading="lazy"
             src={src}
             alt={alt}
             decoding="async"
             className="max-w-full max-h-full object-contain"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.parentElement?.querySelector('.zoom-fallback') as HTMLElement;
+              if (fallback) fallback.style.display = 'flex';
+            }}
           />
+          <div className="zoom-fallback hidden flex-col items-center justify-center gap-3 text-white/60">
+            <ImageIcon size={48} />
+            <span className="text-sm">Image unavailable</span>
+          </div>
           <button
             onClick={() => setZoomed(false)}
             className="absolute top-4 right-4 p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"

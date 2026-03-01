@@ -17,8 +17,8 @@ import { Router } from 'express';
 import * as crypto from 'crypto';
 import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
-import { UserModel } from '../models/User.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logAccessEvent, logAuthEvent, logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 import { authLog } from '../config/logger.js';
@@ -76,12 +76,25 @@ export function googleRoutes(env: Env): Router {
 
     cleanupStaleStates();
 
+    // Prevent unbounded memory growth under high traffic
+    if (pendingStates.size >= 10_000) {
+      return res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many pending OAuth requests. Try again later.' } });
+    }
+
     const state = crypto.randomBytes(24).toString('hex');
     const userId = (req as any).auth?.userId || (req as any).auth?.user?._id;
     if (!userId) {
       return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
     }
     pendingStates.set(state, { userId: String(userId), createdAt: Date.now() });
+
+    logAccessEvent('RESOURCE_ACCESS', {
+      userId: String(userId),
+      ip: req.ip,
+      resource: 'GoogleOAuth',
+      requestId: String((res as any).locals?.requestId || ''),
+      metadata: { action: 'GOOGLE_OAUTH_INITIATED' },
+    });
 
     // Use 'consent' prompt to ensure we get a refresh_token.
     // Google only returns refresh_token on the very first consent or when prompt=consent.
@@ -190,7 +203,6 @@ export function googleRoutes(env: Env): Router {
       }
 
       if (Object.keys(update).length > 0) {
-        // Dual-write: update both PG (primary) and MongoDB
         if (isPrismaAvailable()) {
           const db = prisma();
           const pgUser = await db.user.findFirst({ where: idWhere(pending.userId), select: { id: true } });
@@ -198,7 +210,6 @@ export function googleRoutes(env: Env): Router {
             await db.user.update({ where: { id: pgUser.id }, data: update });
           }
         }
-        await UserModel.findByIdAndUpdate(pending.userId, { $set: update });
       }
 
       // Audit log
@@ -210,8 +221,34 @@ export function googleRoutes(env: Env): Router {
         metadata: { googleEmail, hasRefreshToken: !!tokenData.refresh_token },
       });
 
+      logAuthEvent('LOGIN_SUCCESS', {
+        userId: pending.userId,
+        ip: req.ip,
+        identifier: googleEmail || pending.userId,
+        metadata: { provider: 'google', hasRefreshToken: !!tokenData.refresh_token },
+      });
+
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: pending.userId,
+        ip: req.ip,
+        resource: 'GoogleOAuth',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'GOOGLE_OAUTH_CONNECTED', googleEmail },
+      });
+
+      logChangeEvent({
+        actorUserId: pending.userId,
+        entityType: 'User',
+        entityId: pending.userId,
+        action: 'UPDATE',
+        changedFields: Object.keys(update),
+        before: { googleConnected: false },
+        after: { googleConnected: true, googleEmail },
+      });
+
       return res.send(makeCallbackHtml(true, 'Google account connected successfully!'));
     } catch (err: any) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'high', requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/callback' } });
       authLog.error('Google OAuth callback error', { error: err });
       return res.send(makeCallbackHtml(false, 'An unexpected error occurred. Please try again.'));
     }
@@ -226,7 +263,6 @@ export function googleRoutes(env: Env): Router {
       const userId = (req as any).auth?.userId;
       if (!userId) return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
 
-      // Read from PG (primary), fall back to MongoDB
       let connected = false;
       let googleEmail: string | null = null;
       if (isPrismaAvailable()) {
@@ -240,14 +276,16 @@ export function googleRoutes(env: Env): Router {
           googleEmail = pgUser.googleEmail || null;
         }
       }
-      if (!connected) {
-        // Fallback to MongoDB
-        const user = await UserModel.findById(userId).select('+googleRefreshToken googleEmail').lean();
-        connected = !!(user as any)?.googleRefreshToken;
-        googleEmail = (user as any)?.googleEmail || null;
-      }
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: String(userId),
+        ip: req.ip,
+        resource: 'GoogleOAuth',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'GOOGLE_STATUS_CHECK', connected, googleEmail },
+      });
       return res.json({ connected, googleEmail });
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'low', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/status' } });
       next(err);
     }
   });
@@ -261,7 +299,7 @@ export function googleRoutes(env: Env): Router {
       const userId = (req as any).auth?.userId;
       if (!userId) return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Could not determine user identity.' } });
 
-      // Dual-write: clear tokens from both PG (primary) and MongoDB
+      // Clear Google tokens
       if (isPrismaAvailable()) {
         const db = prisma();
         const pgUser = await db.user.findFirst({ where: idWhere(userId), select: { id: true } });
@@ -272,9 +310,6 @@ export function googleRoutes(env: Env): Router {
           });
         }
       }
-      await UserModel.findByIdAndUpdate(userId, {
-        $unset: { googleRefreshToken: 1, googleEmail: 1 },
-      });
 
       writeAuditLog({
         req,
@@ -283,8 +318,27 @@ export function googleRoutes(env: Env): Router {
         entityId: String(userId),
       });
 
+      logChangeEvent({
+        actorUserId: String(userId),
+        entityType: 'User',
+        entityId: String(userId),
+        action: 'UPDATE',
+        changedFields: ['googleRefreshToken', 'googleEmail'],
+        before: { googleConnected: true },
+        after: { googleConnected: false },
+      });
+
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: String(userId),
+        ip: req.ip,
+        resource: 'GoogleOAuth',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'GOOGLE_OAUTH_DISCONNECTED' },
+      });
+
       return res.json({ ok: true });
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'google/disconnect' } });
       next(err);
     }
   });

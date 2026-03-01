@@ -10,26 +10,13 @@ const envSchema = z.object({
   // 20mb accommodates base64-encoded proof images (~15MB raw) with headroom.
   REQUEST_BODY_LIMIT: z.string().trim().min(1).default('20mb'),
 
-  // When true, seed + E2E flows may bypass external integrations.
-  SEED_E2E: z.coerce.boolean().default(false),
-
-  // When true, seed baseline demo data for all portals (development/test only).
-  // This seed is designed to be idempotent and non-destructive.
-  SEED_DEV: z.coerce.boolean().default(false),
-
-  // When true, seed ONLY the admin account on startup (development/test only).
-  SEED_ADMIN: z.coerce.boolean().default(false),
-  MONGODB_URI: z.string().min(1),
-  MONGODB_DBNAME: z.string().trim().min(1).optional(),
-
-  // PostgreSQL — used by Prisma for the dual-write migration.
-  // Supports any PostgreSQL server with optional SSL (sslmode=require).
-  // Optional: when not set, Prisma writes are silently skipped.
+  // PostgreSQL — primary and only database via Prisma.
+  // Required in production. Optional in dev/test where mocks or env files supply it.
   DATABASE_URL: z.string().min(1).optional(),
 
-  // Feature flag: when true, every Mongo write is also shadow-written to PG.
-  // Set to false to disable PG writes without removing the Prisma config.
-  DUAL_WRITE_ENABLED: z.coerce.boolean().default(false),
+  // Server tuning
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(5000).default(30_000),
+  REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5000).default(30_000),
 
   JWT_ACCESS_SECRET: z.string().optional(),
   JWT_REFRESH_SECRET: z.string().optional(),
@@ -83,12 +70,6 @@ const envSchema = z.object({
 
   // Wallet safety limits
   WALLET_MAX_BALANCE_PAISE: z.coerce.number().int().positive().default(1_00_00_000), // ₹1,00,000
-
-  // Admin seed credentials (used during SEED_ADMIN)
-  ADMIN_SEED_MOBILE: z.string().optional(),
-  ADMIN_SEED_USERNAME: z.string().optional(),
-  ADMIN_SEED_PASSWORD: z.string().optional(),
-  ADMIN_SEED_NAME: z.string().optional(),
 
   // Web push (VAPID)
   VAPID_PUBLIC_KEY: z.string().optional(),
@@ -144,15 +125,15 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
   env.JWT_ACCESS_SECRET = ensureSecret('JWT_ACCESS_SECRET', processEnv.JWT_ACCESS_SECRET);
   env.JWT_REFRESH_SECRET = ensureSecret('JWT_REFRESH_SECRET', processEnv.JWT_REFRESH_SECRET);
 
-  if (env.NODE_ENV === 'production' && looksPlaceholder(env.MONGODB_URI)) {
-    throw new Error(
-      'Invalid environment configuration:\nMONGODB_URI: must be set to a real MongoDB connection string in production'
-    );
-  }
-
   // Production safety: do not default to "allow all origins".
   // The API is consumed by multiple portals, so an explicit allowlist should always be configured.
   if (env.NODE_ENV === 'production') {
+    if (!env.DATABASE_URL) {
+      throw new Error(
+        'Invalid environment configuration:\nDATABASE_URL: must be set in production — the application cannot start without a database'
+      );
+    }
+
     const cors = parseCorsOrigins(env.CORS_ORIGINS);
     if (!cors.length) {
       throw new Error(

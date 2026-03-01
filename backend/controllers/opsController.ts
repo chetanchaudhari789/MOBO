@@ -3,8 +3,9 @@ import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import type { Role } from '../middleware/auth.js';
 import { prisma as db } from '../database/prisma.js';
-import { orderLog } from '../config/logger.js';
-import { pgUser, pgOrder, pgCampaign, pgDeal } from '../utils/pgMappers.js';
+import { orderLog, pushLog, businessLog, walletLog } from '../config/logger.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
+import { pgUser, pgOrder, pgCampaign, pgDeal, pgWallet } from '../utils/pgMappers.js';
 import {
   approveByIdSchema,
   assignSlotsSchema,
@@ -24,13 +25,16 @@ import {
   opsCodeQuerySchema,
   opsCampaignsQuerySchema,
   opsDealsQuerySchema,
+  copyCampaignSchema,
+  declineOfferSchema,
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
-import { toUiCampaign, toUiDeal, toUiOrder, toUiUser, safeIso } from '../utils/uiMappers.js';
+import { toUiCampaign, toUiDeal, toUiOrder, toUiOrderSummary, toUiUser, safeIso } from '../utils/uiMappers.js';
+import { orderListSelectLite, getProofFlags, userListSelect } from '../utils/querySelect.js';
 import { idWhere } from '../utils/idWhere.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
-import { listMediatorCodesForAgency, getAgencyCodeForMediatorCode, isAgencyActive, isMediatorActive } from '../services/lineage.js';
+import { listMediatorCodesForAgency, getAgencyCodeForMediatorCode, getAgencyCodesForMediatorCodes, isAgencyActive, isMediatorActive } from '../services/lineage.js';
 import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
 import { requestBrandConnectionSchema } from '../validations/connections.js';
@@ -38,6 +42,7 @@ import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { sendPushToUser } from '../services/pushNotifications.js';
 import { normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 
 async function buildOrderAudience(order: any, agencyCode?: string) {
   const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -59,12 +64,6 @@ async function buildOrderAudience(order: any, agencyCode?: string) {
     agencyCodes: normalizedAgencyCode ? [normalizedAgencyCode] : undefined,
     buyerMongoId,
   };
-}
-
-function mapUsersWithWallets(users: any[], wallets: any[]) {
-  const byUserId = new Map<string, any>();
-  for (const w of wallets) byUserId.set(String(w.ownerUserId), w);
-  return users.map((u) => toUiUser(pgUser(u), byUserId.get(String(u.id))));
 }
 
 function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'returnWindow'> {
@@ -199,6 +198,9 @@ export function makeOpsController(env: Env) {
           entityId: brand.mongoId!,
           metadata: { agencyCode, brandCode: body.brandCode },
         });
+        businessLog.info('Brand connection requested', { brandCode: body.brandCode, agencyCode, brandId: brand.mongoId, requestedBy: req.auth?.userId });
+        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'PendingConnection', entityId: brand.mongoId!, action: 'BRAND_CONNECTION_REQUESTED', metadata: { agencyCode, brandCode: body.brandCode, agencyName } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PendingConnection', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'BRAND_CONNECTION_REQUESTED', brandCode: body.brandCode } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         const brandMongoId = brand.mongoId ?? '';
@@ -217,6 +219,7 @@ export function makeOpsController(env: Env) {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/requestBrandConnection' } });
         next(err);
       }
     },
@@ -253,13 +256,24 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
+          select: { ...userListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
         });
 
-        const wallets = await db().wallet.findMany({
-          where: { ownerUserId: { in: mediators.map((m: any) => m.id) } },
+        res.json(mediators.map((m: any) => {
+          const wallet = m.wallets?.[0];
+          return toUiUser(pgUser(m), wallet ? pgWallet(wallet) : undefined);
+        }));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Mediator',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'MEDIATORS_LISTED', endpoint: 'getMediators', resultCount: mediators.length },
         });
-        res.json(mapUsersWithWallets(mediators, wallets));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getMediators' } });
         next(err);
       }
     },
@@ -354,7 +368,17 @@ export function makeOpsController(env: Env) {
           return mapped;
         });
         res.json(ui);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Campaign',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'CAMPAIGNS_LISTED', endpoint: 'getCampaigns', resultCount: ui.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getCampaigns' } });
         next(err);
       }
     },
@@ -401,7 +425,17 @@ export function makeOpsController(env: Env) {
         });
 
         res.json(deals.map((d: any) => toUiDeal(pgDeal(d))));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Deal',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'DEALS_LISTED', endpoint: 'getDeals', resultCount: deals.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getDeals' } });
         next(err);
       }
     },
@@ -436,23 +470,49 @@ export function makeOpsController(env: Env) {
 
         const oPage = queryParams.page ?? 1;
         const oLimit = queryParams.limit ?? 200;
-        const orders = await db().order.findMany({
-          where: {
-            managerName: { in: managerCodes },
-            deletedAt: null,
-          },
-          include: { items: true },
-          orderBy: { createdAt: 'desc' },
-          skip: (oPage - 1) * oLimit,
-          take: oLimit,
-        });
+        const oWhere = { managerName: { in: managerCodes }, deletedAt: null };
+        const [orders, oTotal] = await Promise.all([
+          db().order.findMany({
+            where: oWhere,
+            select: orderListSelectLite,
+            orderBy: { createdAt: 'desc' },
+            skip: (oPage - 1) * oLimit,
+            take: oLimit,
+          }),
+          db().order.count({ where: oWhere }),
+        ]);
 
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
         const mapped = orders.map((o: any) => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[getOrders] toUiOrder failed for order ${o.id}`, { error: e }); return null; }
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
+          catch (e) { orderLog.error(`[getOrders] toUiOrderSummary failed for order ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json(mapped);
+        res.json({ data: mapped, total: oTotal, page: oPage, limit: oLimit });
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'ORDERS_LISTED', endpoint: 'getOrders', resultCount: mapped.length, total: oTotal },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getOrders' } });
         next(err);
       }
     },
@@ -486,11 +546,16 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip: (puPage - 1) * puLimit,
           take: puLimit,
+          select: { ...userListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
         });
 
-        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map((u: any) => u.id) } } });
-        res.json(mapUsersWithWallets(users, wallets));
+        res.json(users.map((u: any) => {
+          const wallet = u.wallets?.[0];
+          return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
+        }));
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PendingUsers', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PENDING_USERS_LISTED', resultCount: users.length } });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getPendingUsers' } });
         next(err);
       }
     },
@@ -524,11 +589,24 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip: (vuPage - 1) * vuLimit,
           take: vuLimit,
+          select: { ...userListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
         });
 
-        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map((u: any) => u.id) } } });
-        res.json(mapUsersWithWallets(users, wallets));
+        res.json(users.map((u: any) => {
+          const wallet = u.wallets?.[0];
+          return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
+        }));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'User',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'VERIFIED_USERS_LISTED', endpoint: 'getVerifiedUsers', resultCount: users.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getVerifiedUsers' } });
         next(err);
       }
     },
@@ -563,11 +641,16 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const payouts = await db().payout.findMany({
-          where: payoutWhere,
-          orderBy: { requestedAt: 'desc' },
-          take: 2000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query, { limit: 100 });
+        const [payouts, payoutTotal] = await Promise.all([
+          db().payout.findMany({
+            where: payoutWhere,
+            orderBy: { requestedAt: 'desc' },
+            take: limit,
+            skip,
+          }),
+          db().payout.count({ where: payoutWhere }),
+        ]);
 
         const beneficiaryIds = payouts.map((p: any) => p.beneficiaryUserId).filter(Boolean);
         const users = await db().user.findMany({
@@ -576,20 +659,29 @@ export function makeOpsController(env: Env) {
         });
         const byId = new Map(users.map((u: any) => [String(u.id), u]));
 
-        res.json(
-          payouts.map((p: any) => {
-            const u = byId.get(String(p.beneficiaryUserId));
-            return {
-              id: p.mongoId ?? p.id,
-              mediatorName: u?.name ?? 'Mediator',
-              mediatorCode: u?.mediatorCode,
-              amount: Math.round((p.amountPaise ?? 0) / 100),
-              date: safeIso(p.requestedAt ?? p.createdAt) ?? new Date().toISOString(),
-              status: p.status === 'paid' ? 'Success' : String(p.status),
-            };
-          })
-        );
+        const mapped = payouts.map((p: any) => {
+          const u = byId.get(String(p.beneficiaryUserId));
+          return {
+            id: p.mongoId ?? p.id,
+            mediatorName: u?.name ?? 'Mediator',
+            mediatorCode: u?.mediatorCode,
+            amount: Math.round((p.amountPaise ?? 0) / 100),
+            date: safeIso(p.requestedAt ?? p.createdAt) ?? new Date().toISOString(),
+            status: p.status === 'paid' ? 'Success' : String(p.status),
+          };
+        });
+        res.json(paginatedResponse(mapped, payoutTotal, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Payout',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'LEDGER_LISTED', endpoint: 'getLedger', resultCount: mapped.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getLedger' } });
         next(err);
       }
     },
@@ -617,6 +709,9 @@ export function makeOpsController(env: Env) {
         });
 
         await writeAuditLog({ req, action: 'MEDIATOR_APPROVED', entityType: 'User', entityId: mediator.mongoId! });
+        businessLog.info('Mediator approved', { mediatorId: mediator.mongoId, mediatorCode: mediator.mediatorCode, agencyCode: String(mediator.parentCode || ''), approvedBy: req.auth?.userId });
+        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'User', entityId: mediator.mongoId!, action: 'STATUS_CHANGE', changedFields: ['kycStatus', 'status'], before: { kycStatus: mediator.kycStatus, status: mediator.status }, after: { kycStatus: 'verified', status: 'active' }, metadata: { role: 'mediator' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'User', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'MEDIATOR_APPROVED', mediatorId: mediator.mongoId } });
 
         const agencyCode = String(mediator.parentCode || '').trim();
         const mediatorMongoId = mediator.mongoId ?? '';
@@ -641,6 +736,7 @@ export function makeOpsController(env: Env) {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/approveMediator' } });
         next(err);
       }
     },
@@ -668,6 +764,9 @@ export function makeOpsController(env: Env) {
         });
 
         await writeAuditLog({ req, action: 'MEDIATOR_REJECTED', entityType: 'User', entityId: mediator.mongoId! });
+        businessLog.info('Mediator rejected', { mediatorId: mediator.mongoId, kycStatus: 'rejected', status: 'suspended' });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: mediator.mongoId!, action: 'MEDIATOR_REJECTED', changedFields: ['kycStatus', 'status'], before: { kycStatus: mediator.kycStatus, status: mediator.status }, after: { kycStatus: 'rejected', status: 'suspended' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'User', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'MEDIATOR_REJECTED', mediatorId: mediator.mongoId } });
 
         const agencyCode = String(mediator.parentCode || '').trim();
         const mediatorMongoId = mediator.mongoId ?? '';
@@ -693,6 +792,7 @@ export function makeOpsController(env: Env) {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/rejectMediator' } });
         next(err);
       }
     },
@@ -728,6 +828,9 @@ export function makeOpsController(env: Env) {
 
         const userMongoId = user.mongoId ?? '';
         await writeAuditLog({ req, action: 'BUYER_APPROVED', entityType: 'User', entityId: userMongoId });
+        businessLog.info('Buyer approved', { userId: userMongoId, mediatorCode: upstreamMediatorCode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: userMongoId, action: 'BUYER_APPROVED', changedFields: ['isVerifiedByMediator'], before: { isVerifiedByMediator: false }, after: { isVerifiedByMediator: true } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'User', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'BUYER_APPROVED', buyerId: userMongoId } });
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
@@ -754,6 +857,7 @@ export function makeOpsController(env: Env) {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/approveUser' } });
         next(err);
       }
     },
@@ -789,6 +893,9 @@ export function makeOpsController(env: Env) {
 
         const userMongoId = user.mongoId ?? '';
         await writeAuditLog({ req, action: 'USER_REJECTED', entityType: 'User', entityId: userMongoId });
+        businessLog.info('User rejected', { userId: userMongoId, mediatorCode: upstreamMediatorCode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: userMongoId, action: 'USER_REJECTED', changedFields: ['status'], before: { status: buyerBefore.status }, after: { status: 'suspended' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'User', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'USER_REJECTED', buyerId: userMongoId } });
 
         const agencyCode = upstreamMediatorCode ? (await getAgencyCodeForMediatorCode(upstreamMediatorCode)) || '' : '';
         const ts = new Date().toISOString();
@@ -815,6 +922,7 @@ export function makeOpsController(env: Env) {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/rejectUser' } });
         next(err);
       }
     },
@@ -890,6 +998,9 @@ export function makeOpsController(env: Env) {
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
 
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
+        orderLog.info('Order claim verified', { orderId: order.mongoId, step: 'order', approved: (finalize as any).approved, workflowStatus: wf });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ORDER_CLAIM_VERIFIED', changedFields: ['verification', 'workflowStatus'], before: { workflowStatus: wf }, after: { workflowStatus: (finalize as any).approved ? 'APPROVED' : wf } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'VERIFY_ORDER_CLAIM', orderId: order.mongoId } });
 
         const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -907,7 +1018,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for verifyOrder', { err, buyerId }); });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -918,6 +1029,7 @@ export function makeOpsController(env: Env) {
           order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/verifyOrderClaim' } });
         next(err);
       }
     },
@@ -1004,6 +1116,9 @@ export function makeOpsController(env: Env) {
         const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
+        orderLog.info('Order requirement verified', { orderId: order.mongoId, step: body.type, approved: (finalize as any).approved });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'REQUIREMENT_VERIFIED', changedFields: ['verification', body.type], before: { verified: false }, after: { verified: true, step: body.type } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'REQUIREMENT_VERIFIED', orderId: order.mongoId, step: body.type, approved: (finalize as any).approved } });
 
         const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -1019,7 +1134,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Proof Verified', body: pushBody, url: '/orders' },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for verifyRequirement', { err, buyerId }); });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1030,6 +1145,7 @@ export function makeOpsController(env: Env) {
           order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/verifyOrderRequirement' } });
         next(err);
       }
     },
@@ -1120,6 +1236,9 @@ export function makeOpsController(env: Env) {
         const updatedOrder = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
+        orderLog.info('All order steps verified', { orderId: order.mongoId, stepsVerified: required, approved: (finalize as any).approved });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ALL_STEPS_VERIFIED', changedFields: ['verification', 'workflowStatus'], before: { workflowStatus: wf }, after: { workflowStatus: (finalize as any).approved ? 'APPROVED' : wf, stepsVerified: required } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'VERIFY_ALL_STEPS', orderId: order.mongoId } });
 
         const audience = await buildOrderAudience(updatedOrder!, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
@@ -1130,7 +1249,7 @@ export function makeOpsController(env: Env) {
           await sendPushToUser({
             env, userId: buyerId, app: 'buyer',
             payload: { title: 'Deal Verified!', body: 'All proofs verified! Your cashback is now in the cooling period.', url: '/orders' },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for verifyAllOrder', { err, userId: buyerId }); });
         }
 
         const refreshed = await db().order.findFirst({ where: { id: order.id }, include: { items: true } });
@@ -1141,6 +1260,7 @@ export function makeOpsController(env: Env) {
           order: refreshed ? toUiOrder(pgOrder(refreshed)) : undefined,
         });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/verifyAllSteps' } });
         next(err);
       }
     },
@@ -1257,6 +1377,9 @@ export function makeOpsController(env: Env) {
           entityId: order.mongoId!,
           metadata: { proofType: body.type, reason: body.reason },
         });
+        orderLog.info('Order proof rejected', { orderId: order.mongoId, proofType: body.type, reason: body.reason });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'PROOF_REJECTED', changedFields: ['affiliateStatus', 'rejectionType', 'rejectionReason'], before: { affiliateStatus: order.affiliateStatus }, after: { affiliateStatus: 'Rejected', rejectionType: body.type, rejectionReason: body.reason } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'REJECT_ORDER_PROOF', orderId: order.mongoId, proofType: body.type } });
 
         if (body.type === 'order') {
           const campaignId = order.items?.[0]?.campaignId;
@@ -1266,7 +1389,7 @@ export function makeOpsController(env: Env) {
               action: 'CAMPAIGN_SLOT_RELEASED',
               entityType: 'Campaign',
               entityId: String(campaignId),
-              metadata: { orderId: order.mongoId!, reason: 'proof_rejected' },
+              metadata: { orderId: order.mongoId ?? order.id, reason: 'proof_rejected' },
             }).catch(() => { });
           }
         }
@@ -1286,11 +1409,12 @@ export function makeOpsController(env: Env) {
               body: body.reason || 'Please re-upload the required proof.',
               url: '/orders',
             },
-          }).catch(() => { });
+          }).catch((err: unknown) => { pushLog.warn('Push failed for rejectProof', { err, buyerId }); });
         }
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/rejectOrderProof' } });
         next(err);
       }
     },
@@ -1378,6 +1502,9 @@ export function makeOpsController(env: Env) {
           entityId: order.mongoId!,
           metadata: { proofType: body.type, note: body.note },
         });
+        orderLog.info('Missing proof requested', { orderId: order.mongoId, proofType: body.type, note: body.note });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'MISSING_PROOF_REQUESTED', changedFields: ['missingProofRequests'], before: {}, after: { requestedType: body.type, note: body.note } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'MISSING_PROOF_REQUESTED', orderId: order.mongoId, proofType: body.type } });
 
         const buyerId = audience.buyerMongoId;
         if (buyerId) {
@@ -1394,6 +1521,7 @@ export function makeOpsController(env: Env) {
         }
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/requestMissingProof' } });
         next(err);
       }
     },
@@ -1448,13 +1576,14 @@ export function makeOpsController(env: Env) {
         }
 
         // Buyer must also be active — order.userId is PG UUID
-        const buyer = await db().user.findUnique({ where: { id: order.userId } });
+        const buyer = await db().user.findUnique({ where: { id: order.userId }, select: { id: true, status: true, deletedAt: true } });
         if (!buyer || buyer.deletedAt || buyer.status !== 'active') {
           throw new AppError(409, 'FROZEN_SUSPENSION', 'Buyer is not active; settlement is blocked');
         }
 
+        const orderDisplayId = order.mongoId ?? order.id;
         const hasOpenDispute = await db().ticket.findFirst({
-          where: { orderId: order.mongoId!, status: 'Open', deletedAt: null },
+          where: { orderId: orderDisplayId, status: 'Open', deletedAt: null },
           select: { id: true },
         });
         if (hasOpenDispute) {
@@ -1472,7 +1601,7 @@ export function makeOpsController(env: Env) {
             req,
             action: 'ORDER_FROZEN_DISPUTED',
             entityType: 'Order',
-            entityId: order.mongoId!,
+            entityId: orderDisplayId,
             metadata: { reason: 'open_ticket' },
           });
           throw new AppError(409, 'FROZEN_DISPUTE', 'This transaction is frozen due to an open ticket.');
@@ -1553,7 +1682,7 @@ export function makeOpsController(env: Env) {
           const mediatorMarginPaise = payoutPaise - buyerCommissionPaise;
           let mediatorUserId: string | null = null;
           if (mediatorMarginPaise > 0 && mediatorCode) {
-            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null } });
+            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null }, select: { id: true } });
             if (mediator) {
               mediatorUserId = mediator.id;
               await ensureWallet(mediatorUserId);
@@ -1646,6 +1775,10 @@ export function makeOpsController(env: Env) {
 
         await writeAuditLog({ req, action: 'ORDER_SETTLED', entityType: 'Order', entityId: order.mongoId!, metadata: { affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled' } });
 
+        businessLog.info('Order settlement completed', { orderId: orderDisplayId, settlementMode, isOverLimit, affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled', actorUserId: req.auth?.userId, mediatorCode, campaignId: campaignId ? String(campaignId) : undefined });
+        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'Order', entityId: orderDisplayId, action: 'STATUS_CHANGE', changedFields: ['paymentStatus', 'affiliateStatus', 'settlementMode'], after: { paymentStatus: isOverLimit ? 'Failed' : 'Paid', affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled', settlementMode }, metadata: { source: 'settleOrderPayment' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'SETTLE_ORDER', orderId: orderDisplayId, settlementMode } });
+
         const audience = await buildOrderAudience(order, agencyCode);
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
@@ -1654,6 +1787,7 @@ export function makeOpsController(env: Env) {
         }
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/settleOrderPayment' } });
         next(err);
       }
     },
@@ -1763,7 +1897,7 @@ export function makeOpsController(env: Env) {
 
           let unsettleMediatorUserId: string | null = null;
           if (mediatorMarginPaise > 0 && mediatorCode) {
-            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null } });
+            const mediator = await db().user.findFirst({ where: { mediatorCode, deletedAt: null }, select: { id: true } });
             if (mediator) {
               unsettleMediatorUserId = mediator.id;
             }
@@ -1828,6 +1962,9 @@ export function makeOpsController(env: Env) {
           entityId: order.mongoId!,
           metadata: { previousWorkflow: wf, previousAffiliateStatus: prevAffiliateStatus },
         });
+        businessLog.info('Order unsettled', { orderId: order.mongoId, previousWorkflow: wf, previousAffiliateStatus: prevAffiliateStatus, settlementMode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ORDER_UNSETTLED', changedFields: ['workflowStatus', 'paymentStatus', 'affiliateStatus'], before: { workflowStatus: wf, paymentStatus: 'Paid', affiliateStatus: prevAffiliateStatus }, after: { workflowStatus: 'APPROVED', paymentStatus: 'Pending', affiliateStatus: 'Pending_Cooling' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'UNSETTLE_ORDER', orderId: order.mongoId } });
 
         const managerCode = String(order.managerName || '').trim();
         const agencyCode = managerCode ? ((await getAgencyCodeForMediatorCode(managerCode)) || '') : '';
@@ -1839,6 +1976,7 @@ export function makeOpsController(env: Env) {
         }
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/unsettleOrderPayment' } });
         next(err);
       }
     },
@@ -1887,6 +2025,9 @@ export function makeOpsController(env: Env) {
           });
 
           await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
+          businessLog.info('Campaign created (privileged)', { campaignId: campaign.mongoId ?? campaign.id, title: body.title, platform: body.platform, brandUserId: brand.id, totalSlots: body.totalSlots, payoutRupees: body.payout, dealType: body.dealType, createdBy: pgUserId });
+          logChangeEvent({ actorUserId: pgUserId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CAMPAIGN_CREATED', metadata: { title: body.title, platform: body.platform, brandName: brand.name, totalSlots: body.totalSlots, payout: body.payout, dealType: body.dealType, allowedAgencies: allowed } });
+          logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_CREATED', campaignId: campaign.mongoId ?? campaign.id, title: body.title, brandUserId: brand.id } });
           const ts = new Date().toISOString();
           publishRealtime({
             type: 'deals.changed',
@@ -1938,6 +2079,8 @@ export function makeOpsController(env: Env) {
         });
 
         await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
+        logChangeEvent({ actorUserId: req.auth?.userId, actorRoles: req.auth?.roles, actorIp: req.ip, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CAMPAIGN_CREATED', requestId: String((res as any).locals?.requestId || ''), metadata: { title: body.title, platform: body.platform, allowedAgencyCodes: normalizedAllowed } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_CREATED', campaignId: campaign.mongoId ?? campaign.id, title: body.title } });
         const ts = new Date().toISOString();
         publishRealtime({
           type: 'deals.changed',
@@ -1951,6 +2094,7 @@ export function makeOpsController(env: Env) {
         });
         res.status(201).json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/createCampaign' } });
         next(err);
       }
     },
@@ -2035,9 +2179,13 @@ export function makeOpsController(env: Env) {
           entityId: campaign.mongoId ?? campaign.id,
           metadata: { previousStatus, newStatus: nextStatus },
         });
+        businessLog.info('Campaign status changed', { campaignId: campaign.mongoId ?? campaign.id, previousStatus, newStatus: nextStatus });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'STATUS_CHANGE', changedFields: ['status'], before: { status: previousStatus }, after: { status: nextStatus } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_STATUS_CHANGED', campaignId: campaign.mongoId ?? campaign.id, previousStatus, newStatus: nextStatus } });
 
         res.json(toUiCampaign(pgCampaign(updated)));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/updateCampaignStatus' } });
         next(err);
       }
     },
@@ -2087,6 +2235,9 @@ export function makeOpsController(env: Env) {
           entityType: 'Campaign',
           entityId: campaign.mongoId ?? campaign.id,
         });
+        businessLog.info('Campaign deleted', { campaignId: campaign.mongoId ?? campaign.id, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CAMPAIGN_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: now.toISOString() } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_DELETED', campaignId: campaign.mongoId ?? campaign.id, title: campaign.title } });
 
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
           ? campaign.allowedAgencyCodes.map((c: any) => String(c).trim()).filter(Boolean)
@@ -2126,6 +2277,7 @@ export function makeOpsController(env: Env) {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/deleteCampaign' } });
         next(err);
       }
     },
@@ -2252,13 +2404,18 @@ export function makeOpsController(env: Env) {
           updateData.lockedReason = 'SLOT_ASSIGNMENT';
         }
 
-        // Optimistic concurrency via updatedAt check
+        // Optimistic concurrency via updatedAt check — prevents slot overwrites
+        // when two requests try to assign simultaneously.
         try {
-          await db().campaign.update({
-            where: { id: campaign.id },
+          const updated = await db().campaign.updateMany({
+            where: { id: campaign.id, updatedAt: campaign.updatedAt },
             data: updateData,
           });
+          if (updated.count === 0) {
+            throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Campaign was modified concurrently, please retry');
+          }
         } catch (saveErr: any) {
+          if (saveErr instanceof AppError) throw saveErr;
           if (saveErr?.code === 'P2025') {
             throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Campaign was modified concurrently, please retry');
           }
@@ -2266,11 +2423,13 @@ export function makeOpsController(env: Env) {
         }
 
         await writeAuditLog({ req, action: 'CAMPAIGN_SLOTS_ASSIGNED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
+        businessLog.info('Campaign slots assigned', { campaignId: campaign.mongoId ?? campaign.id, totalAssigned, mediators: positiveEntries.map(([c]) => c) });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'SLOTS_ASSIGNED', changedFields: ['assignments', 'locked'], before: { locked: campaign.locked }, after: { locked: true, totalAssigned, assignedMediators: positiveEntries.map(([c]) => c) } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'SLOTS_ASSIGNED', campaignId: campaign.mongoId ?? campaign.id, totalAssigned, mediatorCount: positiveEntries.length } });
 
         const assignmentCodes = positiveEntries.map(([c]) => String(c).trim()).filter(Boolean);
-        const inferredAgencyCodes = (
-          await Promise.all(assignmentCodes.map((c) => getAgencyCodeForMediatorCode(c)))
-        ).filter((c): c is string => typeof c === 'string' && !!c);
+        const agencyCodeMap = await getAgencyCodesForMediatorCodes(assignmentCodes);
+        const inferredAgencyCodes = [...agencyCodeMap.values()].filter((c): c is string => typeof c === 'string' && !!c);
 
         const agencyCodes = Array.from(
           new Set([
@@ -2298,6 +2457,7 @@ export function makeOpsController(env: Env) {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/assignSlots' } });
         next(err);
       }
     },
@@ -2414,6 +2574,9 @@ export function makeOpsController(env: Env) {
           entityId: `${campaignDisplayId}:${requestedCode}`,
           metadata: { campaignId: campaignDisplayId, mediatorCode: requestedCode },
         });
+        businessLog.info('Deal published', { campaignId: campaignDisplayId, mediatorCode: requestedCode, isUpdate: !!existingDeal, commissionPaise, payoutPaise, pricePaise });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Deal', entityId: `${campaignDisplayId}:${requestedCode}`, action: 'DEAL_PUBLISHED', changedFields: ['active', 'commissionPaise', 'pricePaise', 'payoutPaise'], before: { existed: !!existingDeal }, after: { active: true, commissionPaise, pricePaise, payoutPaise, mediatorCode: requestedCode } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Deal', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'DEAL_PUBLISHED', campaignId: campaignDisplayId, mediatorCode: requestedCode } });
 
         const agencyCode = (await getAgencyCodeForMediatorCode(requestedCode)) || '';
         publishRealtime({
@@ -2429,6 +2592,7 @@ export function makeOpsController(env: Env) {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/publishDeal' } });
         next(err);
       }
     },
@@ -2516,10 +2680,17 @@ export function makeOpsController(env: Env) {
           const payoutDisplayId = payoutDoc.mongoId ?? payoutDoc.id;
           const userDisplayId = user.mongoId ?? user.id;
           await writeAuditLog({ req, action: 'PAYOUT_PROCESSED', entityType: 'Payout', entityId: payoutDisplayId, metadata: { beneficiaryUserId: userDisplayId, amountPaise, recordOnly: canAgency } });
+          businessLog.info('Payout processed', { payoutId: payoutDisplayId, beneficiaryId: userDisplayId, amountPaise, mode: canAny ? 'paid' : 'recorded', mediatorCode: user.mediatorCode });
+          logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Payout', entityId: payoutDisplayId, action: 'PAYOUT_PROCESSED', changedFields: ['status', 'amountPaise'], before: {}, after: { status: canAny ? 'paid' : 'recorded', amountPaise, beneficiaryUserId: userDisplayId } });
+          logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Payout', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PAYOUT_PROCESSED', payoutId: payoutDisplayId, amountPaise } });
+          if (canAny) {
+            walletLog.info('Payout debit applied', { payoutId: payoutDisplayId, beneficiaryId: userDisplayId, amountPaise });
+          }
         });
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/payoutMediator' } });
         next(err);
       }
     },
@@ -2538,7 +2709,7 @@ export function makeOpsController(env: Env) {
         const payout = await db().payout.findFirst({ where: { ...idWhere(payoutId), deletedAt: null } });
         if (!payout) throw new AppError(404, 'PAYOUT_NOT_FOUND', 'Payout not found');
 
-        const beneficiary = await db().user.findUnique({ where: { id: payout.beneficiaryUserId } });
+        const beneficiary = await db().user.findUnique({ where: { id: payout.beneficiaryUserId }, select: { id: true, mongoId: true, deletedAt: true, parentCode: true } });
         if (!beneficiary || beneficiary.deletedAt) throw new AppError(404, 'BENEFICIARY_NOT_FOUND', 'Beneficiary not found');
 
         if (!isPriv) {
@@ -2573,6 +2744,9 @@ export function makeOpsController(env: Env) {
           entityId: payoutDisplayId,
           metadata: { beneficiaryUserId: beneficiaryDisplayId },
         });
+        businessLog.info('Payout deleted', { payoutId: payoutDisplayId, beneficiaryId: beneficiaryDisplayId, amountPaise: payout.amountPaise });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Payout', entityId: payoutDisplayId, action: 'PAYOUT_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: now.toISOString() } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Payout', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PAYOUT_DELETED', payoutId: payoutDisplayId, beneficiaryId: beneficiaryDisplayId, amountPaise: payout.amountPaise } });
 
         const agencyCode = String(beneficiary.parentCode || '').trim();
         const ts = new Date().toISOString();
@@ -2589,6 +2763,7 @@ export function makeOpsController(env: Env) {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/deletePayout' } });
         next(err);
       }
     },
@@ -2607,23 +2782,35 @@ export function makeOpsController(env: Env) {
           ];
         }
 
-        const transactions = await db().transaction.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          take: 500,
+        const { page, limit, skip, isPaginated } = parsePagination(req.query, { limit: 100 });
+        const [transactions, txTotal] = await Promise.all([
+          db().transaction.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip,
+          }),
+          db().transaction.count({ where }),
+        ]);
+        res.json(paginatedResponse(transactions, txTotal, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Transaction',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'TRANSACTIONS_LISTED', endpoint: 'getTransactions', resultCount: transactions.length },
         });
-        res.json(transactions);
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getTransactions' } });
         next(err);
       }
     },
 
     copyCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { id } = req.body;
-        if (!id || typeof id !== 'string') {
-          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
-        }
+        const { id } = copyCampaignSchema.parse(req.body);
         const { roles, pgUserId, user: requester } = getRequester(req);
         const campaign = await db().campaign.findFirst({ where: { ...idWhere(id), deletedAt: null } });
         if (!campaign) {
@@ -2673,19 +2860,20 @@ export function makeOpsController(env: Env) {
           entityId: newDisplayId,
           metadata: { sourceCampaignId: id },
         });
+        businessLog.info('Campaign copied', { newCampaignId: newDisplayId, sourceCampaignId: id, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: newDisplayId, action: 'CAMPAIGN_COPIED', changedFields: ['id'], before: { sourceCampaignId: id }, after: { newCampaignId: newDisplayId, status: 'draft', usedSlots: 0 } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_COPIED', newCampaignId: newDisplayId, sourceCampaignId: id } });
 
         res.json({ ok: true, id: newDisplayId });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/copyCampaign' } });
         next(err);
       }
     },
 
     declineOffer: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { id } = req.body;
-        if (!id || typeof id !== 'string') {
-          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
-        }
+        const { id } = declineOfferSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
         requireAnyRole(roles, 'agency');
 
@@ -2723,6 +2911,9 @@ export function makeOpsController(env: Env) {
           entityId: campaignDisplayId,
           metadata: { agencyCode },
         });
+        businessLog.info('Offer declined', { campaignId: campaignDisplayId, agencyCode, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignDisplayId, action: 'OFFER_DECLINED', changedFields: ['allowedAgencyCodes'], before: { allowedAgencyCodes: allowed }, after: { allowedAgencyCodes: newCodes } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'OFFER_DECLINED', campaignId: campaignDisplayId, agencyCode } });
 
         // Resolve brandUserId (PG UUID) to mongoId for realtime audience
         let brandMongoId = '';
@@ -2745,6 +2936,7 @@ export function makeOpsController(env: Env) {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/declineOffer' } });
         next(err);
       }
     },

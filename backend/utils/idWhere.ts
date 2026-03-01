@@ -1,13 +1,12 @@
 /**
  * ID-format-aware Prisma where-clause helper.
  *
- * During the MongoDB → PostgreSQL migration, entities may be referenced by
- * either their original MongoDB ObjectId (stored in `mongoId`) or by their
- * native PG UUID primary key (`id`).
+ * Entities may be referenced by either their legacy 24-char hex ID
+ * (stored in the `mongoId` column) or by their native PG UUID (`id`).
  *
  * This utility inspects the incoming string:
  *  - UUID pattern  → `{ id: value }`   (native PG lookup)
- *  - Anything else → `{ mongoId: value }` (legacy Mongo key)
+ *  - Anything else → `{ mongoId: value }` (legacy ID lookup)
  *
  * Usage:
  *   db().campaign.findFirst({ where: { ...idWhere(someId), deletedAt: null } })

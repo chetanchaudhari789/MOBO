@@ -1,12 +1,13 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import type { Env } from '../config/env.js';
 import { AppError } from '../middleware/errors.js';
 import { getRequester } from '../services/authz.js';
 import { prisma } from '../database/prisma.js';
 import { getVapidPublicKey } from '../services/pushNotifications.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 
 const subscriptionSchema = z.object({
   endpoint: z.string().url(),
@@ -36,8 +37,14 @@ export function makePushNotificationsController(env: Env) {
           res.json({ publicKey: null, error: 'Push notifications not configured' });
           return;
         }
+        logAccessEvent('RESOURCE_ACCESS', {
+          ip: _req.ip,
+          resource: 'PushSubscription',
+          metadata: { action: 'VAPID_PUBLIC_KEY' },
+        });
         res.json({ publicKey });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'SYSTEM', severity: 'low', metadata: { handler: 'push/publicKey' } });
         next(err);
       }
     },
@@ -53,7 +60,7 @@ export function makePushNotificationsController(env: Env) {
         await db.pushSubscription.upsert({
           where: { endpoint: body.subscription.endpoint },
           create: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             userId: pgUserId,
             app: body.app as any,
             endpoint: body.subscription.endpoint,
@@ -80,8 +87,21 @@ export function makePushNotificationsController(env: Env) {
           metadata: { app: body.app },
         });
 
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'PushSubscription',
+          entityId: body.subscription.endpoint,
+          action: 'PUSH_SUBSCRIBED',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { app: body.app },
+        });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PushSubscription', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PUSH_SUBSCRIBED', app: body.app } });
+
         res.status(204).send();
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'low', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'push/subscribe' } });
         next(err);
       }
     },
@@ -106,8 +126,20 @@ export function makePushNotificationsController(env: Env) {
           metadata: {},
         });
 
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'PushSubscription',
+          entityId: body.endpoint,
+          action: 'PUSH_UNSUBSCRIBED',
+          requestId: String((res as any).locals?.requestId || ''),
+        });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PushSubscription', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PUSH_UNSUBSCRIBED' } });
+
         res.status(204).send();
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'low', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'push/unsubscribe' } });
         next(err);
       }
     },

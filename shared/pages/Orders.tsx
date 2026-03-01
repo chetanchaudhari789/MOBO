@@ -12,6 +12,7 @@ import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import {
   Clock,
@@ -114,7 +115,7 @@ const SampleScreenshotGuide: React.FC<{
           )}
           <ul className="space-y-1.5 mt-2">
             {g.bullets.map((b, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-600">
+              <li key={`bullet-${i}`} className="flex items-start gap-1.5 text-[10px] text-slate-600">
                 <span className="w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 mt-0.5">{i + 1}</span>
                 {b}
               </li>
@@ -958,10 +959,10 @@ export const Orders: React.FC = () => {
 
                 <div className="flex gap-4 mb-4">
                   <div className="w-20 h-20 bg-gray-50 rounded-2xl p-2 border border-gray-100 flex-shrink-0">
-                    <img
+                    <ProxiedImage
                       src={firstItem.image}
                       className="w-full h-full object-contain mix-blend-multiply"
-                      alt="prod"
+                      alt={firstItem.title || 'Product'}
                     />
                   </div>
                   <div className="flex-1 min-w-0 py-1">
@@ -1034,7 +1035,7 @@ export const Orders: React.FC = () => {
                         Action Required
                       </span>
                       {(order.missingProofRequests ?? []).map((r, i) => (
-                        <span key={i}>
+                        <span key={r.type || `req-${i}`}>
                           Please upload your <strong>{r.type}</strong> proof.{r.note ? ` ${r.note}` : ''}
                           {i < (order.missingProofRequests ?? []).length - 1 ? ' ' : ''}
                         </span>
@@ -1419,10 +1420,10 @@ export const Orders: React.FC = () => {
                         }}
                         className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl hover:bg-gray-50 cursor-pointer active:scale-95 transition-transform"
                       >
-                        <img
+                        <ProxiedImage
                           src={p.image}
                           className="w-12 h-12 object-contain mix-blend-multiply"
-                          alt=""
+                          alt={p.title || 'Product'}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-slate-900 truncate">{p.title}</p>
@@ -1440,10 +1441,10 @@ export const Orders: React.FC = () => {
               ) : (
                 <div className="space-y-5">
                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center gap-4 relative">
-                    <img
+                    <ProxiedImage
                       src={selectedProduct.image}
                       className="w-16 h-16 object-contain mix-blend-multiply"
-                      alt=""
+                      alt={selectedProduct.title || 'Product'}
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-900 line-clamp-2">
@@ -1474,7 +1475,7 @@ export const Orders: React.FC = () => {
                       className={`w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${formScreenshot ? 'border-lime-200' : 'border-gray-200'}`}
                     >
                       {formScreenshot ? (
-                        <img
+                        <img loading="lazy"
                           src={formScreenshot}
                           className="w-full h-full object-cover opacity-80"
                           alt="preview"
@@ -1878,7 +1879,7 @@ export const Orders: React.FC = () => {
                     {proofToView.events.map((evt, idx) => {
                       const label = (evt.type || '').replace(/_/g, ' ');
                       return (
-                        <div key={idx} className="flex items-start gap-2 text-[10px]">
+                        <div key={`${evt.type}-${idx}`} className="flex items-start gap-2 text-[10px]">
                           <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1 flex-shrink-0" />
                           <div>
                             <span className="font-bold text-slate-600 uppercase">{label}</span>
@@ -1962,7 +1963,7 @@ export const Orders: React.FC = () => {
                   className={`w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${ratingPreview ? 'border-lime-200' : 'border-gray-200'}`}
                 >
                   {ratingPreview ? (
-                    <img src={ratingPreview} className="w-full h-full object-cover opacity-80" alt="Rating preview" />
+                    <img loading="lazy" src={ratingPreview} className="w-full h-full object-cover opacity-80" alt="Rating preview" />
                   ) : (
                     <>
                       <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">

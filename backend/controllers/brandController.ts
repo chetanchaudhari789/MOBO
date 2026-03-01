@@ -1,17 +1,21 @@
 import type { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import type { Role } from '../middleware/auth.js';
-import { orderLog } from '../config/logger.js';
+import { orderLog, businessLog, walletLog } from '../config/logger.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
-import { toUiCampaign, toUiOrder, toUiOrderForBrand, toUiUser } from '../utils/uiMappers.js';
+import { toUiCampaign, toUiOrderSummary, toUiOrderSummaryForBrand, toUiUser } from '../utils/uiMappers.js';
+import { orderListSelectLite, getProofFlags, userListSelect } from '../utils/querySelect.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pgUser, pgOrder, pgCampaign } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { writeAuditLog } from '../services/audit.js';
 import { removeBrandConnectionSchema, resolveBrandConnectionSchema } from '../validations/connections.js';
-import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchema } from '../validations/brand.js';
+import { payoutAgencySchema, createBrandCampaignSchema, updateBrandCampaignSchema, brandCampaignsQuerySchema, brandOrdersQuerySchema, brandTransactionsQuerySchema } from '../validations/brand.js';
+import { copyCampaignSchema } from '../validations/ops.js';
 import { ensureWallet, applyWalletCredit, applyWalletDebit } from '../services/walletService.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 
@@ -37,7 +41,7 @@ async function recordManualPayoutLedger(args: {
     where: { idempotencyKey: args.idempotencyKey },
     update: {},
     create: {
-      mongoId: new Types.ObjectId().toString(),
+      mongoId: randomUUID(),
       idempotencyKey: args.idempotencyKey,
       type: 'agency_payout' as any,
       status: 'completed' as any,
@@ -62,7 +66,7 @@ async function recordManualPayoutLedger(args: {
     where: { idempotencyKey: creditKey },
     update: {},
     create: {
-      mongoId: new Types.ObjectId().toString(),
+      mongoId: randomUUID(),
       idempotencyKey: creditKey,
       type: 'agency_receipt' as any,
       status: 'completed' as any,
@@ -93,24 +97,39 @@ export function makeBrandController() {
         const where: any = { roles: { has: 'agency' as any }, deletedAt: null };
         if (!isPrivileged(roles)) {
           // Re-fetch brand user from DB to get connectedAgencies (not in auth user)
-          const brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+          const brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null }, select: { connectedAgencies: true } });
           const connected = Array.isArray((brandUser as any)?.connectedAgencies)
             ? (brandUser as any).connectedAgencies as string[]
             : [];
           where.mediatorCode = { in: connected };
         }
 
-        const agencies = await db().user.findMany({ where, orderBy: { createdAt: 'desc' } });
-        res.json(agencies.map((a: any) => toUiUser(pgUser(a), null)));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
+        const [agencies, total] = await Promise.all([
+          db().user.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit, select: userListSelect }),
+          db().user.count({ where }),
+        ]);
+        res.json(paginatedResponse(agencies.map((a: any) => toUiUser(pgUser(a), null)), total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Agency',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'AGENCIES_LISTED', endpoint: 'getAgencies', resultCount: agencies.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getAgencies' } });
         next(err);
       }
     },
 
     getCampaigns: async (req: Request, res: Response, next: NextFunction) => {
       try {
+        const q = brandCampaignsQuerySchema.parse(req.query);
         const { roles, userId: _userId } = getRequester(req);
-        const requested = typeof req.query.brandId === 'string' ? req.query.brandId : '';
+        const requested = typeof q.brandId === 'string' ? q.brandId : '';
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
@@ -121,24 +140,41 @@ export function makeBrandController() {
           brandPgId = (req.auth as any)?.pgUserId;
         }
 
-        const campaigns = await db().campaign.findMany({
-          where: { brandUserId: brandPgId, deletedAt: null },
-          orderBy: { createdAt: 'desc' },
+        const { page, limit, skip, isPaginated } = parsePagination(q);
+        const [campaigns, total] = await Promise.all([
+          db().campaign.findMany({
+            where: { brandUserId: brandPgId, deletedAt: null },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().campaign.count({ where: { brandUserId: brandPgId, deletedAt: null } }),
+        ]);
+        res.json(paginatedResponse(campaigns.map((c: any) => toUiCampaign(pgCampaign(c))), total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Campaign',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'CAMPAIGNS_LISTED', endpoint: 'brand/getCampaigns', resultCount: campaigns.length },
         });
-        res.json(campaigns.map((c: any) => toUiCampaign(pgCampaign(c))));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getCampaigns' } });
         next(err);
       }
     },
 
     getOrders: async (req: Request, res: Response, next: NextFunction) => {
       try {
+        const q = brandOrdersQuerySchema.parse(req.query);
         const { roles, userId: _userId, user } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
         const where: any = { deletedAt: null };
         if (isPrivileged(roles)) {
-          const brandName = typeof req.query.brandName === 'string' ? req.query.brandName : '';
+          const brandName = typeof q.brandName === 'string' ? q.brandName : '';
           if (brandName) where.brandName = brandName;
         } else {
           where.OR = [
@@ -146,30 +182,88 @@ export function makeBrandController() {
             { brandUserId: null, brandName: (user as any)?.name },
           ];
         }
-        const orders = await db().order.findMany({
-          where,
-          include: { items: true },
-          orderBy: { createdAt: 'desc' },
-          take: 5000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(q);
+        const [orders, total] = await Promise.all([
+          db().order.findMany({
+            where,
+            select: orderListSelectLite,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().order.count({ where }),
+        ]);
+
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
+
         if (!isPrivileged(roles) && roles.includes('brand')) {
-          res.json(orders.map((o: any) => { try { return toUiOrderForBrand(pgOrder(o)); } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderForBrand failed for ${o.id}`, { error: e }); return null; } }).filter(Boolean));
+          const brandMapped = orders.map((o: any) => {
+            try {
+              const flags = proofFlags.get(o.id);
+              const pg = pgOrder(o);
+              if (flags) {
+                pg.screenshots = {
+                  order: flags.hasOrderProof ? 'exists' : null,
+                  payment: null,
+                  review: flags.hasReviewProof ? 'exists' : null,
+                  rating: flags.hasRatingProof ? 'exists' : null,
+                  returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+                };
+              }
+              return toUiOrderSummaryForBrand(pg);
+            } catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummaryForBrand failed for ${o.id}`, { error: e }); return null; }
+          }).filter(Boolean);
+          res.json(paginatedResponse(brandMapped as any[], total, page, limit, isPaginated));
+
+          logAccessEvent('RESOURCE_ACCESS', {
+            userId: req.auth?.userId,
+            roles: req.auth?.roles,
+            ip: req.ip,
+            resource: 'Order',
+            requestId: String((res as any).locals?.requestId || ''),
+            metadata: { action: 'ORDERS_LISTED', endpoint: 'brand/getOrders', resultCount: brandMapped.length },
+          });
           return;
         }
         const mapped = orders.map((o: any) => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[brand/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
+          catch (e) { orderLog.error(`[brand/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json(mapped);
+        res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'ORDERS_LISTED', endpoint: 'brand/getOrders', resultCount: mapped.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getOrders' } });
         next(err);
       }
     },
 
-    getTransactions: async (_req: Request, res: Response, next: NextFunction) => {
+    getTransactions: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { roles, userId: _userId } = getRequester(_req);
-        const requested = typeof (_req.query as any).brandId === 'string' ? String((_req.query as any).brandId) : '';
+        const q = brandTransactionsQuerySchema.parse(req.query);
+        const { roles, userId: _userId } = getRequester(req);
+        const requested = typeof q.brandId === 'string' ? String(q.brandId) : '';
 
         let brandPgId: string;
         if (isPrivileged(roles) && requested) {
@@ -177,15 +271,21 @@ export function makeBrandController() {
           if (!brandUser) throw new AppError(404, 'BRAND_NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
         } else {
-          brandPgId = (_req.auth as any)?.pgUserId;
+          brandPgId = (req.auth as any)?.pgUserId;
         }
 
         // Brand ledger = outbound agency payouts from this brand.
-        const txns = await db().transaction.findMany({
-          where: { deletedAt: null, fromUserId: brandPgId, type: 'agency_payout' as any },
-          orderBy: { createdAt: 'desc' },
-          take: 5000,
-        });
+        const txWhere = { deletedAt: null, fromUserId: brandPgId, type: 'agency_payout' as any };
+        const { page, limit, skip, isPaginated } = parsePagination(q);
+        const [txns, txTotal] = await Promise.all([
+          db().transaction.findMany({
+            where: txWhere,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().transaction.count({ where: txWhere }),
+        ]);
 
         const agencyPgIds = Array.from(
           new Set(txns.map((t: any) => String(t.toUserId || '')).filter(Boolean))
@@ -199,8 +299,7 @@ export function makeBrandController() {
           : [];
         const byId = new Map(agencies.map((a: any) => [a.id, a]));
 
-        res.json(
-          txns.map((t: any) => {
+        const txMapped = txns.map((t: any) => {
             const agency = t.toUserId ? byId.get(t.toUserId) : undefined;
             const meta = (t.metadata && typeof t.metadata === 'object') ? (t.metadata as any) : {};
             return {
@@ -211,9 +310,19 @@ export function makeBrandController() {
               ref: String(meta.ref || ''),
               status: t.status === 'completed' ? 'Success' : String(t.status),
             };
-          })
-        );
+        });
+        res.json(paginatedResponse(txMapped, txTotal, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Transaction',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'TRANSACTIONS_LISTED', endpoint: 'brand/getTransactions', resultCount: txMapped.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getTransactions' } });
         next(err);
       }
     },
@@ -232,13 +341,13 @@ export function makeBrandController() {
           const brandWhere = UUID_RE.test(body.brandId)
             ? { OR: [{ id: body.brandId }, { mongoId: body.brandId }], deletedAt: null }
             : { mongoId: String(body.brandId), deletedAt: null };
-          brandUser = await db().user.findFirst({ where: brandWhere as any });
+          brandUser = await db().user.findFirst({ where: brandWhere as any, select: { id: true, mongoId: true, roles: true, status: true, connectedAgencies: true } });
           if (!brandUser) throw new AppError(404, 'NOT_FOUND', 'Brand not found');
           brandPgId = brandUser.id;
           brandMongoId = brandUser.mongoId || brandUser.id;
         } else {
           // Re-fetch full brand user from DB (auth middleware doesn't include connectedAgencies)
-          brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+          brandUser = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null }, select: { id: true, mongoId: true, roles: true, status: true, connectedAgencies: true } });
           if (!brandUser) throw new AppError(404, 'NOT_FOUND', 'Brand user not found');
           brandPgId = brandUser.id;
           brandMongoId = brandUser.mongoId || brandUser.id;
@@ -341,6 +450,9 @@ export function makeBrandController() {
           entityId: brandMongoId,
           metadata: { agencyId: agencyMongoId, agencyCode, amountPaise, ref, mode: payoutMode },
         });
+        walletLog.info('Brand→agency payout recorded', { brandId: brandMongoId, agencyId: agencyMongoId, agencyCode, amountPaise, ref, mode: payoutMode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Wallet', entityId: brandMongoId, action: 'AGENCY_PAYOUT', changedFields: ['balance'], before: {}, after: { amountPaise, agencyCode, ref, mode: payoutMode } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Payout', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'BRAND_AGENCY_PAYOUT', agencyCode, amountPaise, ref, mode: payoutMode } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         const audience = {
@@ -351,6 +463,7 @@ export function makeBrandController() {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
         res.json({ ok: true, mode: payoutMode });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'payoutAgency' } });
         next(err);
       }
     },
@@ -382,6 +495,7 @@ export function makeBrandController() {
 
         const brand = await db().user.findFirst({
           where: { id: pgUserId, deletedAt: null },
+          select: { id: true, mongoId: true, roles: true, connectedAgencies: true },
         });
         if (!brand) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         if (!isPrivileged(roles) && !(brand.roles as string[])?.includes('brand')) {
@@ -412,6 +526,9 @@ export function makeBrandController() {
           entityId: brand.mongoId || brand.id,
           metadata: { agencyCode },
         });
+        businessLog.info(`Brand connection ${body.action}d`, { brandId: brand.mongoId || brand.id, agencyCode, action: body.action });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: brand.mongoId || brand.id, action: body.action === 'approve' ? 'CONNECTION_APPROVED' : 'CONNECTION_REJECTED', changedFields: ['connectedAgencies'], before: {}, after: { agencyCode, action: body.action } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'BrandConnection', requestId: String((res as any).locals?.requestId || ''), metadata: { action: body.action === 'approve' ? 'CONNECTION_APPROVED' : 'CONNECTION_REJECTED', agencyCode, brandId: brand.mongoId || brand.id } });
 
         const ts = new Date().toISOString();
         publishRealtime({
@@ -436,6 +553,7 @@ export function makeBrandController() {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'resolveRequest' } });
         next(err);
       }
     },
@@ -446,7 +564,7 @@ export function makeBrandController() {
         const { roles } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
-        const brand = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null } });
+        const brand = await db().user.findFirst({ where: { id: pgUserId, deletedAt: null }, select: { id: true, mongoId: true, roles: true, connectedAgencies: true } });
         if (!brand) throw new AppError(401, 'UNAUTHENTICATED', 'User not found');
         if (!isPrivileged(roles) && !(brand.roles as string[])?.includes('brand')) {
           throw new AppError(403, 'FORBIDDEN', 'Only brands can remove agencies');
@@ -469,6 +587,9 @@ export function makeBrandController() {
           entityId: brand.mongoId || brand.id,
           metadata: { agencyCode: body.agencyCode },
         });
+        businessLog.info('Brand agency removed', { brandId: brand.mongoId || brand.id, agencyCode: body.agencyCode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: brand.mongoId || brand.id, action: 'AGENCY_REMOVED', changedFields: ['connectedAgencies'], before: { connectedAgencies: connected }, after: { connectedAgencies: filtered } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'BrandConnection', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'AGENCY_REMOVED', agencyCode: body.agencyCode, brandId: brand.mongoId || brand.id } });
 
         // Cascade: remove the agency from allowedAgencyCodes on all this brand's campaigns.
         const agencyCode = String(body.agencyCode || '').trim();
@@ -513,6 +634,7 @@ export function makeBrandController() {
         });
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'removeAgency' } });
         next(err);
       }
     },
@@ -568,7 +690,7 @@ export function makeBrandController() {
 
         const campaign = await db().campaign.create({
           data: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             title: body.title,
             brandUserId: brandPgId,
             brandName: isPrivileged(roles) ? (body.brand ?? 'Brand') : String((user as any)?.name || 'Brand'),
@@ -617,9 +739,13 @@ export function makeBrandController() {
           entityId: campaignId,
           metadata: { title: body.title, platform: body.platform, totalSlots: body.totalSlots, allowedAgencies: normalizedAllowed },
         });
+        businessLog.info('Brand campaign created', { campaignId, title: body.title, platform: body.platform, totalSlots: body.totalSlots, allowedAgencies: normalizedAllowed });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignId, action: 'CAMPAIGN_CREATED', changedFields: ['id', 'title', 'status'], before: {}, after: { title: body.title, status: 'active', platform: body.platform, totalSlots: body.totalSlots } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_CREATED', campaignId, title: body.title, platform: body.platform } });
 
         res.status(201).json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/createCampaign' } });
         next(err);
       }
     },
@@ -781,19 +907,20 @@ export function makeBrandController() {
           entityId: campaignMongoId,
           metadata: { updatedFields: Object.keys(update) },
         });
+        businessLog.info('Brand campaign updated', { campaignId: campaignMongoId, updatedFields: Object.keys(update) });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignMongoId, action: 'CAMPAIGN_UPDATED', changedFields: Object.keys(update), before: { status: existing.status }, after: update });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_UPDATED', campaignId: campaignMongoId, updatedFields: Object.keys(update) } });
 
         res.json(toUiCampaign(pgCampaign(campaign)));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/updateCampaign' } });
         next(err);
       }
     },
 
     copyCampaign: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { id } = req.body;
-        if (!id || typeof id !== 'string') {
-          throw new AppError(400, 'INVALID_INPUT', 'Valid campaign ID is required');
-        }
+        const { id } = copyCampaignSchema.parse(req.body);
         const { roles, userId } = getRequester(req);
         const pgUserId = (req.auth as any)?.pgUserId as string;
 
@@ -811,7 +938,7 @@ export function makeBrandController() {
 
         const newCampaign = await db().campaign.create({
           data: {
-            mongoId: new Types.ObjectId().toString(),
+            mongoId: randomUUID(),
             title: `${campaign.title} (Copy)`,
             brandUserId: campaign.brandUserId,
             brandName: campaign.brandName,
@@ -841,6 +968,9 @@ export function makeBrandController() {
           entityId: newId,
           metadata: { sourceCampaignId: id },
         });
+        businessLog.info('Brand campaign copied', { newCampaignId: newId, sourceCampaignId: id, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: newId, action: 'CAMPAIGN_COPIED', changedFields: ['id'], before: { sourceCampaignId: id }, after: { newCampaignId: newId, status: 'draft' } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_COPIED', newCampaignId: newId, sourceCampaignId: id } });
 
         const ts = new Date().toISOString();
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
@@ -859,6 +989,7 @@ export function makeBrandController() {
 
         res.json({ ok: true, id: newId });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/copyCampaign' } });
         next(err);
       }
     },
@@ -906,6 +1037,9 @@ export function makeBrandController() {
           entityType: 'Campaign',
           entityId: campaignMongoId,
         });
+        businessLog.info('Brand campaign deleted', { campaignId: campaignMongoId, title: campaign.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Campaign', entityId: campaignMongoId, action: 'CAMPAIGN_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: now.toISOString() } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_DELETED', campaignId: campaignMongoId, title: campaign.title } });
 
         const allowed = Array.isArray(campaign.allowedAgencyCodes)
           ? (campaign.allowedAgencyCodes as string[]).filter(Boolean)
@@ -941,6 +1075,7 @@ export function makeBrandController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/deleteCampaign' } });
         next(err);
       }
     },

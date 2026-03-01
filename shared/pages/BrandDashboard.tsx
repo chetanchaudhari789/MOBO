@@ -1,7 +1,8 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
@@ -49,7 +50,6 @@ import {
   Package,
   FileSpreadsheet,
   Sparkles,
-  Loader2,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
@@ -73,7 +73,8 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-} from 'recharts';
+  ChartSuspense,
+} from '../components/LazyCharts';
 
 // --- TYPES ---
 type Tab = 'dashboard' | 'agencies' | 'campaigns' | 'requests' | 'orders' | 'profile';
@@ -222,7 +223,7 @@ const BrandProfileView = () => {
             <div className="w-36 h-36 rounded-[2rem] bg-white p-2 shadow-2xl border border-zinc-100 rotate-3 transition-transform group-hover:rotate-0">
               <div className="w-full h-full bg-zinc-100 rounded-[1.5rem] flex items-center justify-center text-5xl font-black text-zinc-300 overflow-hidden relative">
                 {avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={avatar}
                     alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -466,6 +467,7 @@ const DashboardView = ({
             </div>
           </div>
           <div className="absolute inset-x-0 bottom-0 top-20 px-4 pb-4">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={revenueData}>
                 <defs>
@@ -488,7 +490,7 @@ const DashboardView = ({
                   tickLine={false}
                   fontSize={12}
                   tick={{ fill: '#a1a1aa' }}
-                  tickFormatter={(v) => formatRupees(Number(v))}
+                  tickFormatter={(v: number) => formatRupees(Number(v))}
                 />
                 <Tooltip
                   cursor={{ stroke: '#d4d4d8', strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -511,6 +513,7 @@ const DashboardView = ({
                 />
               </AreaChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
 
@@ -528,6 +531,7 @@ const DashboardView = ({
             </div>
           </div>
           <div className="flex-1 min-h-0">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={campaignPerformance}
@@ -546,7 +550,7 @@ const DashboardView = ({
                 />
                 <Tooltip
                   cursor={{ fill: 'transparent' }}
-                  content={({ active, payload }) => {
+                  content={({ active, payload }: { active?: boolean; payload?: any[] }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       return (
@@ -565,6 +569,7 @@ const DashboardView = ({
                 <Bar dataKey="remaining" stackId="a" fill="#f4f4f5" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
       </div>
@@ -576,9 +581,6 @@ const OrdersView = ({ user }: any) => {
   const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [viewProofOrder, setViewProofOrder] = useState<Order | null>(null);
-  // AI purchase proof analysis
-  const [brandAiAnalysis, setBrandAiAnalysis] = useState<any>(null);
-  const [brandIsAnalyzing, setBrandIsAnalyzing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [dealTypeFilter, setDealTypeFilter] = useState<string>('All');
@@ -641,27 +643,7 @@ const OrdersView = ({ user }: any) => {
     fetchOrders();
   }, [user]);
 
-  // AI Purchase Proof Analysis (Brand)
-  const brandRunAnalysis = async () => {
-    if (!viewProofOrder || !viewProofOrder.screenshots?.order) return;
-    setBrandIsAnalyzing(true);
-    setBrandAiAnalysis(null);
-    try {
-      const imageBase64 = viewProofOrder.screenshots.order;
-      const result = await api.ops.analyzeProof(
-        viewProofOrder.id,
-        imageBase64,
-        viewProofOrder.externalOrderId || '',
-        viewProofOrder.total,
-      );
-      setBrandAiAnalysis(result);
-    } catch (e) {
-      console.error('Brand AI analysis error:', e);
-      toast.error('AI analysis failed. Please try again.');
-    } finally {
-      setBrandIsAnalyzing(false);
-    }
-  };
+
 
   // Real-time: refresh orders when any order/deal changes.
   useEffect(() => {
@@ -693,7 +675,7 @@ const OrdersView = ({ user }: any) => {
       if (st !== statusFilter.toLowerCase()) return false;
     }
     if (dealTypeFilter !== 'All') {
-      const dt = (o as any).dealType || o.items?.[0]?.dealType || 'Discount';
+      const dt = o.dealType || o.items?.[0]?.dealType || 'Discount';
       if (dt !== dealTypeFilter) return false;
     }
     return textMatch;
@@ -763,7 +745,7 @@ const OrdersView = ({ user }: any) => {
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         csvSafe(o.status || ''),
         csvSafe(o.paymentStatus || ''),
         csvSafe(o.affiliateStatus || ''),
@@ -777,7 +759,7 @@ const OrdersView = ({ user }: any) => {
         (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
           : 'No',
-        (o.screenshots as any)?.returnWindow
+        o.screenshots?.returnWindow
           ? hyperlinkYes(buildProofUrl(o.id, 'returnWindow'))
           : 'No',
       ];
@@ -809,7 +791,7 @@ const OrdersView = ({ user }: any) => {
         o.managerName || '',
         o.buyerName || '',
         o.buyerMobile || '',
-        (o as any).reviewerName || '',
+        o.reviewerName || '',
         o.status,
         o.paymentStatus,
         o.affiliateStatus || '',
@@ -966,8 +948,9 @@ const OrdersView = ({ user }: any) => {
                       <td className="p-6">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-white rounded-lg border border-zinc-100 p-1 flex-shrink-0">
-                            <img
+                            <ProxiedImage
                               src={o.items?.[0]?.image}
+                              alt={o.items?.[0]?.title || 'Order item'}
                               className="w-full h-full object-contain mix-blend-multiply"
                             />
                           </div>
@@ -1048,14 +1031,14 @@ const OrdersView = ({ user }: any) => {
                           <div className="text-[9px] text-zinc-400">Qty: {o.items?.[0]?.quantity || 1}</div>
                         </td>
                         <td className="p-6 text-right font-bold text-zinc-900">{formatCurrency(o.total)}</td>
-                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency((o as any).commission || 0)}</td>
+                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency(o.commission || 0)}</td>
                         <td className="p-6 text-right">
                           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                            (o as any).dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
-                            (o as any).dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                            o.dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                            o.dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
                             'bg-lime-50 text-lime-600'
                           }`}>
-                            {(o as any).dealType === 'Discount' ? 'Order' : (o as any).dealType || 'Order'}
+                            {o.dealType === 'Discount' ? 'Order' : o.dealType || 'Order'}
                           </span>
                         </td>
                       </tr>
@@ -1103,14 +1086,14 @@ const OrdersView = ({ user }: any) => {
                           <span className="text-xs font-bold text-zinc-600">{o.items?.[0]?.quantity || 1}</span>
                         </td>
                         <td className="p-6 text-right font-bold text-zinc-900">{formatCurrency(o.total)}</td>
-                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency((o as any).commission || 0)}</td>
+                        <td className="p-6 text-right font-mono font-bold text-green-600">{formatCurrency(o.commission || 0)}</td>
                         <td className="p-6 text-right">
                           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                            (o as any).dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
-                            (o as any).dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
+                            o.dealType === 'Rating' ? 'bg-orange-50 text-orange-600' :
+                            o.dealType === 'Review' ? 'bg-purple-50 text-purple-600' :
                             'bg-lime-50 text-lime-600'
                           }`}>
-                            {(o as any).dealType === 'Discount' ? 'Order' : (o as any).dealType || 'Order'}
+                            {o.dealType === 'Discount' ? 'Order' : o.dealType || 'Order'}
                           </span>
                         </td>
                       </tr>
@@ -1121,7 +1104,7 @@ const OrdersView = ({ user }: any) => {
                     <tr className="bg-zinc-50 border-t-2 border-zinc-200">
                       <td colSpan={5} className="p-6 text-xs font-extrabold text-zinc-700 uppercase">Total Payable</td>
                       <td className="p-6 text-right font-mono font-extrabold text-zinc-900">{formatCurrency(filtered.reduce((s, o) => s + (o.total || 0), 0))}</td>
-                      <td className="p-6 text-right font-mono font-extrabold text-lg text-green-600">{formatCurrency(filtered.reduce((s, o) => s + ((o as any).commission || 0), 0))}</td>
+                      <td className="p-6 text-right font-mono font-extrabold text-lg text-green-600">{formatCurrency(filtered.reduce((s, o) => s + (o.commission || 0), 0))}</td>
                       <td className="p-6"></td>
                     </tr>
                   </tfoot>
@@ -1135,7 +1118,7 @@ const OrdersView = ({ user }: any) => {
       {viewProofOrder && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-enter"
-          onClick={() => { setViewProofOrder(null); setBrandAiAnalysis(null); }}
+          onClick={() => { setViewProofOrder(null); }}
         >
           <div
             className="bg-white w-full max-w-lg rounded-[2rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh] animate-enter"
@@ -1143,7 +1126,7 @@ const OrdersView = ({ user }: any) => {
           >
             <button
               aria-label="Close proof modal"
-              onClick={() => { setViewProofOrder(null); setBrandAiAnalysis(null); }}
+              onClick={() => { setViewProofOrder(null); }}
               className="absolute top-4 right-4 p-2 bg-zinc-50 rounded-full hover:bg-zinc-100 transition-colors"
             >
               <X size={18} />
@@ -1173,9 +1156,9 @@ const OrdersView = ({ user }: any) => {
             <div className="flex-1 overflow-y-auto scrollbar-hide space-y-6 pr-2">
               {/* Product Summary */}
               <div className="flex gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                <img
+                <ProxiedImage
                   src={viewProofOrder.items?.[0]?.image}
-                  alt={viewProofOrder.items?.[0]?.title}
+                  alt={viewProofOrder.items?.[0]?.title || 'Product'}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-zinc-100 p-1"
                 />
                 <div>
@@ -1217,66 +1200,55 @@ const OrdersView = ({ user }: any) => {
                         className="w-full h-auto block"
                       />
                     </div>
-                    {/* AI Analysis Section */}
+                    {/* AI Verification — stored from buyer's proof submission */}
+                    {viewProofOrder.orderAiVerification && (
                     <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-200 mt-2">
                       <div className="flex justify-between items-center mb-2">
                         <h5 className="font-bold text-indigo-600 flex items-center gap-1.5 text-[10px] uppercase tracking-widest">
-                          <Sparkles size={12} className="text-indigo-500" /> AI Analysis
+                          <Sparkles size={12} className="text-indigo-500" /> AI Verification
                         </h5>
-                        {!brandAiAnalysis && !brandIsAnalyzing && (
-                          <button type="button" onClick={brandRunAnalysis} className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm">
-                            Analyze
-                          </button>
-                        )}
                       </div>
-                      {brandIsAnalyzing && (
-                        <div className="flex items-center justify-center py-3">
-                          <Loader2 className="animate-spin text-indigo-500 mr-2" size={18} />
-                          <span className="text-xs font-bold text-indigo-500">Analyzing...</span>
-                        </div>
-                      )}
-                      {brandAiAnalysis && (
                         <div className="space-y-2">
-                          <div className="flex gap-2">
-                            <div className={`flex-1 p-2 rounded-lg border text-center ${brandAiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <p className="text-[9px] font-bold text-zinc-400 uppercase">Order ID</p>
-                              <p className={`text-xs font-bold ${brandAiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
-                                {brandAiAnalysis.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
-                              </p>
-                              {brandAiAnalysis.detectedOrderId && <p className="text-[9px] text-zinc-500 font-mono mt-0.5">Detected: {brandAiAnalysis.detectedOrderId}</p>}
-                            </div>
-                            <div className={`flex-1 p-2 rounded-lg border text-center ${brandAiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <p className="text-[9px] font-bold text-zinc-400 uppercase">Amount</p>
-                              <p className={`text-xs font-bold ${brandAiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
-                                {brandAiAnalysis.amountMatch ? '✓ Match' : '✗ Mismatch'}
-                              </p>
-                              {brandAiAnalysis.detectedAmount != null && <p className="text-[9px] text-zinc-500 font-mono mt-0.5">Detected: ₹{brandAiAnalysis.detectedAmount}</p>}
-                            </div>
-                          </div>
-                          {brandAiAnalysis.discrepancyNote && (
-                            <p className="text-[10px] text-zinc-500 bg-white rounded-lg p-2 border border-zinc-100">{brandAiAnalysis.discrepancyNote}</p>
-                          )}
                           {(() => {
-                            const n = Number(brandAiAnalysis.confidenceScore);
+                            const aiData = viewProofOrder.orderAiVerification;
+                            const n = Number(aiData?.confidenceScore);
                             const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
                             return (
-                              <div className="flex justify-between items-center pt-1">
-                                <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence</span>
-                                <div className="flex items-center gap-2">
-                                  <div className="w-20 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
+                              <>
+                                <div className="flex gap-2">
+                                  <div className={`flex-1 p-2 rounded-lg border text-center ${aiData?.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className="text-[9px] font-bold text-zinc-400 uppercase">Order ID</p>
+                                    <p className={`text-xs font-bold ${aiData?.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                      {aiData?.orderIdMatch ? '✓ Match' : '✗ Mismatch'}
+                                    </p>
+                                    {aiData?.detectedOrderId && <p className="text-[9px] text-zinc-500 font-mono mt-0.5">Detected: {aiData.detectedOrderId}</p>}
                                   </div>
-                                  <span className="text-xs font-bold text-zinc-700">{score}%</span>
+                                  <div className={`flex-1 p-2 rounded-lg border text-center ${aiData?.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className="text-[9px] font-bold text-zinc-400 uppercase">Amount</p>
+                                    <p className={`text-xs font-bold ${aiData?.amountMatch ? 'text-green-600' : 'text-red-600'}`}>
+                                      {aiData?.amountMatch ? '✓ Match' : '✗ Mismatch'}
+                                    </p>
+                                    {aiData?.detectedAmount != null && <p className="text-[9px] text-zinc-500 font-mono mt-0.5">Detected: {formatCurrency(aiData.detectedAmount)}</p>}
+                                  </div>
                                 </div>
-                              </div>
+                                {aiData?.discrepancyNote && (
+                                  <p className="text-[10px] text-zinc-500 bg-white rounded-lg p-2 border border-zinc-100">{aiData.discrepancyNote}</p>
+                                )}
+                                <div className="flex justify-between items-center pt-1">
+                                  <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence</span>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-20 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${score > 80 ? 'bg-green-500' : score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
+                                    </div>
+                                    <span className="text-xs font-bold text-zinc-700">{score}%</span>
+                                  </div>
+                                </div>
+                              </>
                             );
                           })()}
                         </div>
-                      )}
-                      {!brandAiAnalysis && !brandIsAnalyzing && (
-                        <p className="text-[10px] text-zinc-400 text-center">Click Analyze to verify purchase proof with AI</p>
-                      )}
                     </div>
+                    )}
                   </>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
@@ -1347,14 +1319,14 @@ const OrdersView = ({ user }: any) => {
               )}
 
               {/* 4. Return Window Proof */}
-              {(viewProofOrder.screenshots as any)?.returnWindow && (
+              {viewProofOrder.screenshots?.returnWindow && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-widest">
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
                     <ZoomableImage
-                      src={(viewProofOrder.screenshots as any).returnWindow}
+                      src={viewProofOrder.screenshots.returnWindow}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
                     />
@@ -1425,7 +1397,7 @@ const OrdersView = ({ user }: any) => {
                   ) : (
                     <>
                     {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
-                      <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
+                      <div key={log.id || `audit-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
                         <span className="font-bold text-zinc-600 shrink-0">{auditActionLabel(log.action)}</span>
                         <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
@@ -1829,8 +1801,9 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
               <div className="flex gap-4 mb-4">
                 <div className="w-24 h-24 rounded-2xl bg-zinc-50 p-2 flex-shrink-0 flex items-center justify-center border border-zinc-100">
                   {form.image ? (
-                    <img
+                    <ProxiedImage
                       src={form.image}
+                      alt={form.title || 'Campaign preview'}
                       className="w-full h-full object-contain mix-blend-multiply"
                     />
                   ) : (
@@ -1983,7 +1956,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
             >
               <div className="flex gap-4 mb-4">
                 <div className="w-20 h-20 bg-zinc-50 rounded-2xl p-2 flex-shrink-0 border border-zinc-100 flex items-center justify-center">
-                  <img src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  <ProxiedImage src={c.image} alt={c.title || 'Campaign'} className="w-full h-full object-contain mix-blend-multiply" />
                 </div>
                 <div className="flex-1 min-w-0 py-1">
                   <div className="flex justify-between items-start mb-1">
@@ -2395,7 +2368,7 @@ export const BrandDashboard: React.FC = () => {
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold shadow-md text-sm shrink-0 overflow-hidden">
                   {user?.avatar ? (
-                    <img src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                    <img loading="lazy" src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                   ) : (
                     user?.name?.charAt(0) || 'B'
                   )}
@@ -2467,7 +2440,7 @@ export const BrandDashboard: React.FC = () => {
                   >
                     <div className="w-20 h-20 bg-zinc-50 rounded-[1.5rem] flex items-center justify-center font-bold text-2xl text-zinc-400 shadow-inner overflow-hidden">
                       {ag.avatar ? (
-                        <img
+                        <img loading="lazy"
                           src={ag.avatar}
                           alt={ag.name ? `${ag.name} avatar` : 'Avatar'}
                           className="w-full h-full object-cover"
@@ -2721,7 +2694,7 @@ export const BrandDashboard: React.FC = () => {
             <div className="flex items-center gap-4 mb-8">
               <div className="w-16 h-16 bg-zinc-900 text-white rounded-2xl flex items-center justify-center font-bold text-2xl shadow-lg overflow-hidden">
                 {selectedAgency.avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={selectedAgency.avatar}
                     alt={selectedAgency.name ? `${selectedAgency.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"

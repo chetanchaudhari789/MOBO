@@ -8,7 +8,7 @@
  * - Security event logging for audit trail
  */
 import type { NextFunction, Request, Response } from 'express';
-import { securityLog } from '../config/logger.js';
+import { logSecurityIncident } from '../config/appLogs.js';
 
 // ─── Suspicious Pattern Detection ───────────────────────────────────────────
 // Patterns that should never appear in normal request parameters.
@@ -41,13 +41,15 @@ function checkObjectForSuspiciousPatterns(
     // Check the key itself
     const keyMatch = containsSuspiciousPattern(key);
     if (keyMatch) {
-      securityLog.warn('Suspicious pattern in request key', {
+      logSecurityIncident('INJECTION_ATTEMPT', {
+        severity: 'high',
+        ip: req.ip,
+        route: req.originalUrl,
+        method: req.method,
         requestId: String(res.locals.requestId || ''),
         pattern: keyMatch,
         location: `${location}.${key}`,
-        ip: req.ip,
-        method: req.method,
-        url: req.originalUrl,
+        userAgent: req.get('user-agent'),
       });
     }
 
@@ -55,13 +57,15 @@ function checkObjectForSuspiciousPatterns(
     if (typeof value === 'string') {
       const valMatch = containsSuspiciousPattern(value);
       if (valMatch) {
-        securityLog.warn('Suspicious pattern in request value', {
+        logSecurityIncident('INJECTION_ATTEMPT', {
+          severity: 'high',
+          ip: req.ip,
+          route: req.originalUrl,
+          method: req.method,
           requestId: String(res.locals.requestId || ''),
           pattern: valMatch,
           location: `${location}.${key}`,
-          ip: req.ip,
-          method: req.method,
-          url: req.originalUrl,
+          userAgent: req.get('user-agent'),
         });
       }
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -113,13 +117,15 @@ export function securityAuditMiddleware() {
     for (const source of sources) {
       const blockMatch = checkObjectForBlockable(source.data);
       if (blockMatch) {
-        securityLog.warn('Blocked malicious request pattern', {
+        logSecurityIncident('MALICIOUS_PAYLOAD', {
+          severity: 'critical',
+          ip: req.ip,
+          route: req.originalUrl,
+          method: req.method,
           requestId: String(res.locals.requestId || ''),
           pattern: blockMatch,
           location: source.label,
-          ip: req.ip,
-          method: req.method,
-          url: req.originalUrl,
+          userAgent: req.get('user-agent'),
         });
         res.status(400).json({
           error: {

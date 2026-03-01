@@ -3,7 +3,7 @@ import type { Env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
 import { exportToGoogleSheet, refreshUserGoogleToken, type SheetExportRequest } from '../services/sheetsService.js';
 import { writeAuditLog } from '../services/audit.js';
-import { UserModel } from '../models/User.js';
+import { logAccessEvent, logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 
@@ -57,41 +57,24 @@ export function sheetsRoutes(env: Env): Router {
       let sharingEmail: string | null = null;
       try {
         const userId = (req as any).auth?.userId;
-        if (userId) {
-          // Read from PG (primary), fall back to MongoDB
-          let refreshToken: string | null = null;
-          let pgUserId: string | null = null;
-          if (isPrismaAvailable()) {
-            const db = prisma();
-            const pgUser = await db.user.findFirst({
-              where: idWhere(userId),
-              select: { id: true, googleRefreshToken: true, googleEmail: true, email: true },
-            });
-            if (pgUser) {
-              refreshToken = pgUser.googleRefreshToken || null;
-              sharingEmail = pgUser.googleEmail || pgUser.email || null;
-              pgUserId = pgUser.id;
-            }
-          }
-          if (!refreshToken) {
-            // Fallback to MongoDB
-            const userDoc = await UserModel.findById(userId).select('+googleRefreshToken googleEmail email').lean();
-            refreshToken = (userDoc as any)?.googleRefreshToken || null;
-            sharingEmail = sharingEmail || (userDoc as any)?.googleEmail || (userDoc as any)?.email || null;
-          }
-          if (refreshToken) {
-            userAccessToken = await refreshUserGoogleToken(refreshToken, env);
-            if (!userAccessToken) {
-              // Token refresh failed — clear invalid tokens in both PG and MongoDB
-              if (isPrismaAvailable() && pgUserId) {
-                await prisma().user.update({
-                  where: { id: pgUserId },
+        if (userId && isPrismaAvailable()) {
+          const db = prisma();
+          const pgUser = await db.user.findFirst({
+            where: idWhere(userId),
+            select: { id: true, googleRefreshToken: true, googleEmail: true, email: true },
+          });
+          if (pgUser) {
+            const refreshToken = pgUser.googleRefreshToken || null;
+            sharingEmail = pgUser.googleEmail || pgUser.email || null;
+            if (refreshToken) {
+              userAccessToken = await refreshUserGoogleToken(refreshToken, env);
+              if (!userAccessToken) {
+                // Token refresh failed — clear invalid token
+                await db.user.update({
+                  where: { id: pgUser.id },
                   data: { googleRefreshToken: null },
                 }).catch(() => {});
               }
-              await UserModel.findByIdAndUpdate(userId, {
-                $unset: { googleRefreshToken: 1 },
-              });
             }
           }
         }
@@ -114,8 +97,29 @@ export function sheetsRoutes(env: Env): Router {
         },
       });
 
+      logChangeEvent({
+        actorUserId: (req as any).auth?.userId,
+        actorRoles: (req as any).auth?.roles,
+        actorIp: req.ip,
+        entityType: 'Export',
+        entityId: result.spreadsheetId,
+        action: 'CREATE',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { title: result.sheetTitle, rowCount: rows.length },
+      });
+
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: (req as any).auth?.userId,
+        roles: (req as any).auth?.roles,
+        ip: req.ip,
+        resource: 'GoogleSheet',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'SHEET_EXPORTED', spreadsheetId: result.spreadsheetId, title: result.sheetTitle, rowCount: rows.length },
+      });
+
       return res.json(result);
     } catch (err: any) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'medium', userId: (req as any).auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'sheets/export' } });
       // Surface a clear error when Service Account auth is not configured
       if (err?.message?.includes('GOOGLE_SHEETS_AUTH_MISSING')) {
         return res.status(503).json({

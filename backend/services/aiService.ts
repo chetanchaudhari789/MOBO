@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../config/env.js';
 import { aiLog } from '../config/logger.js';
+import { logPerformance, logErrorEvent } from '../config/appLogs.js';
 
 // ── Tesseract Worker Pool ──
 // Reuse workers across OCR calls instead of creating/terminating per request.
@@ -32,25 +33,41 @@ let _geminiLastFailTimestamp = 0;
 let _circuitBreakerThreshold = 3;      // overridden by env
 let _circuitBreakerCooldownMs = 300_000; // 5 min, overridden by env
 
+/** Circuit state for proper half-open handling. */
+let _circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
+
 function isGeminiCircuitOpen(): boolean {
-  if (_geminiConsecutiveFails < _circuitBreakerThreshold) return false;
+  if (_circuitState === 'CLOSED') return false;
+  if (_circuitState === 'HALF_OPEN') return false; // allow one probe request
+
+  // Circuit is OPEN — check if cooldown has expired
   const elapsed = Date.now() - _geminiLastFailTimestamp;
   if (elapsed >= _circuitBreakerCooldownMs) {
-    // Cooldown expired — half-open: allow retry
-    _geminiConsecutiveFails = 0;
+    // Transition to HALF_OPEN: allow exactly one probe request
+    _circuitState = 'HALF_OPEN';
+    aiLog.info(`[Circuit Breaker] HALF_OPEN — allowing probe request after ${Math.round(elapsed / 1000)}s cooldown`);
     return false;
   }
   return true; // circuit is OPEN → skip Gemini
 }
 
 function recordGeminiSuccess(): void {
+  if (_circuitState === 'HALF_OPEN') {
+    aiLog.info('[Circuit Breaker] CLOSED — probe request succeeded');
+  }
   _geminiConsecutiveFails = 0;
+  _circuitState = 'CLOSED';
 }
 
 function recordGeminiFailure(): void {
   _geminiConsecutiveFails++;
   _geminiLastFailTimestamp = Date.now();
-  if (_geminiConsecutiveFails >= _circuitBreakerThreshold) {
+  if (_circuitState === 'HALF_OPEN') {
+    // Probe failed — immediately re-open the circuit
+    _circuitState = 'OPEN';
+    aiLog.warn(`[Circuit Breaker] OPEN (probe failed) — re-opening for ${_circuitBreakerCooldownMs / 1000}s.`);
+  } else if (_geminiConsecutiveFails >= _circuitBreakerThreshold) {
+    _circuitState = 'OPEN';
     aiLog.warn(`[Circuit Breaker] OPEN — ${_geminiConsecutiveFails} consecutive Gemini failures. Skipping Gemini for ${_circuitBreakerCooldownMs / 1000}s.`);
   }
 }
@@ -106,14 +123,34 @@ async function _initOcrPool(): Promise<void> {
   }
 }
 
-/** Get a worker from the pool or create a fresh one on demand. */
+/** Maximum total OCR workers (pool + temporary) to prevent OOM under burst load. */
+const MAX_TOTAL_OCR_WORKERS = Math.max(OCR_POOL_SIZE + 4, 8);
+let _activeOcrWorkerCount = 0;
+
+/** Get a worker from the pool or create a fresh one on demand (bounded). */
 async function acquireOcrWorker(): Promise<Awaited<ReturnType<typeof createWorker>>> {
   // Lazy-init pool on first call
   if (!_ocrPoolReady) _ocrPoolReady = _initOcrPool();
   await _ocrPoolReady;
 
   const w = _ocrPool.pop();
-  if (w) return w;
+  if (w) {
+    _activeOcrWorkerCount++;
+    return w;
+  }
+
+  // Cap total workers to prevent memory exhaustion
+  if (_activeOcrWorkerCount >= MAX_TOTAL_OCR_WORKERS) {
+    aiLog.warn(`[OCR] Worker limit reached (${_activeOcrWorkerCount}/${MAX_TOTAL_OCR_WORKERS}). Waiting for release...`);
+    // Wait briefly for a worker to be returned to the pool
+    await new Promise((r) => setTimeout(r, 500));
+    const retryW = _ocrPool.pop();
+    if (retryW) { _activeOcrWorkerCount++; return retryW; }
+    // If still none available, create one anyway but log a warning
+    aiLog.warn('[OCR] Creating overflow worker beyond limit — request will proceed but memory pressure is high');
+  }
+
+  _activeOcrWorkerCount++;
   // Pool exhausted — create a temporary worker
   return createWorker('eng', undefined, { langPath: LOCAL_LANG_PATH });
 }
@@ -121,6 +158,7 @@ async function acquireOcrWorker(): Promise<Awaited<ReturnType<typeof createWorke
 /** Return a worker to the pool (or terminate if pool is full). */
 async function releaseOcrWorker(worker: Awaited<ReturnType<typeof createWorker>> | null, hadError = false): Promise<void> {
   if (!worker) return;
+  _activeOcrWorkerCount = Math.max(0, _activeOcrWorkerCount - 1);
   // If the worker errored, it may be in a broken state. Terminate and create a fresh one.
   if (hadError) {
     try { await worker.terminate(); } catch { /* ignore */ }
@@ -309,6 +347,10 @@ function sanitizeUserMessage(env: Env, message: string): string {
 
   // Reject prompt injection attempts before further processing.
   if (containsPromptInjection(message)) {
+    aiLog.warn('[Security] Prompt injection attempt detected and blocked', {
+      inputLength: message.length,
+      preview: message.slice(0, 80),
+    });
     return 'How can I help you today?';
   }
 
@@ -911,6 +953,7 @@ async function verifyProofWithOcr(
 }
 
 export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promise<ProofVerificationResult> {
+  const _aiStart = Date.now();
   const geminiAvailable = isGeminiConfigured(env);
 
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
@@ -1017,6 +1060,11 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
         aiLog.info('Gemini proof usage estimate', { model, estimatedTokens });
 
         recordGeminiSuccess();
+        logPerformance({
+          operation: 'AI_VERIFY_PROOF',
+          durationMs: Date.now() - _aiStart,
+          metadata: { method: 'gemini', model, confidenceScore: parsed.confidenceScore },
+        });
         return { ...parsed, verificationMethod: 'gemini' as const };
       } catch (innerError) {
         aiLog.warn('[Proof] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError });
@@ -1028,9 +1076,21 @@ export async function verifyProofWithAi(env: Env, payload: ProofPayload): Promis
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini proof verification failed');
   } catch (error) {
+    logErrorEvent({
+      category: 'EXTERNAL_SERVICE',
+      errorCode: 'AI_PROOF_VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+      severity: 'medium',
+      metadata: { expectedOrderId: payload.expectedOrderId, method: 'gemini' },
+    });
     aiLog.error('Gemini proof verification error', { error });
     // Fall back to OCR when Gemini fails at runtime.
     const ocrResult = await verifyProofWithOcr(payload.imageBase64, payload.expectedOrderId, payload.expectedAmount);
+    logPerformance({
+      operation: 'AI_VERIFY_PROOF',
+      durationMs: Date.now() - _aiStart,
+      metadata: { method: 'ocr_fallback', confidenceScore: ocrResult.confidenceScore },
+    });
     return { ...ocrResult, verificationMethod: 'ocr' as const };
   }
 }
@@ -1225,6 +1285,7 @@ export async function verifyRatingScreenshotWithAi(
   env: Env,
   payload: RatingVerificationPayload,
 ): Promise<RatingVerificationResult> {
+  const _aiStart = Date.now();
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
     return { accountNameMatch: false, productNameMatch: false, confidenceScore: 0,
       discrepancyNote: 'Image too large for auto verification.' };
@@ -1285,12 +1346,24 @@ export async function verifyRatingScreenshotWithAi(
         if (!parsed) throw new Error('Failed to parse AI rating verification response');
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
+        logPerformance({
+          operation: 'AI_VERIFY_RATING',
+          durationMs: Date.now() - _aiStart,
+          metadata: { method: 'gemini', confidenceScore: parsed.confidenceScore },
+        });
         return parsed;
       } catch (innerError) { aiLog.warn('[Rating] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError }); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini rating verification failed');
   } catch (error) {
+    logErrorEvent({
+      category: 'EXTERNAL_SERVICE',
+      errorCode: 'AI_RATING_VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+      severity: 'medium',
+      metadata: { expectedBuyerName: payload.expectedBuyerName, method: 'gemini' },
+    });
     aiLog.error('Gemini rating verification error', { error });
     return verifyRatingWithOcr(payload.imageBase64, payload.expectedBuyerName, payload.expectedProductName, payload.expectedReviewerName);
   }
@@ -1493,6 +1566,7 @@ export async function verifyReturnWindowWithAi(
   env: Env,
   payload: ReturnWindowVerificationPayload,
 ): Promise<ReturnWindowVerificationResult> {
+  const _aiStart = Date.now();
   if (payload.imageBase64.length > env.AI_MAX_IMAGE_CHARS) {
     return { orderIdMatch: false, productNameMatch: false, amountMatch: false, soldByMatch: false,
       returnWindowClosed: false, confidenceScore: 0,
@@ -1558,12 +1632,24 @@ export async function verifyReturnWindowWithAi(
         if (!parsed) throw new Error('Failed to parse AI return window verification response');
         parsed.confidenceScore = Math.max(0, Math.min(100, parsed.confidenceScore ?? 0));
         recordGeminiSuccess();
+        logPerformance({
+          operation: 'AI_VERIFY_RETURN_WINDOW',
+          durationMs: Date.now() - _aiStart,
+          metadata: { method: 'gemini', confidenceScore: parsed.confidenceScore },
+        });
         return parsed;
       } catch (innerError) { aiLog.warn('[ReturnWindow] Model fallback error', { error: innerError instanceof Error ? innerError.message : innerError }); lastError = innerError; continue; }
     }
     recordGeminiFailure();
     throw lastError ?? new Error('Gemini return window verification failed');
   } catch (error) {
+    logErrorEvent({
+      category: 'EXTERNAL_SERVICE',
+      errorCode: 'AI_RETURN_WINDOW_VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+      severity: 'medium',
+      metadata: { method: 'gemini' },
+    });
     aiLog.error('Gemini return window verification error', { error });
     return verifyReturnWindowWithOcr(payload.imageBase64, payload);
   }
@@ -1683,7 +1769,7 @@ export async function extractOrderDetailsWithAi(
       if (upper.startsWith('E2E-') || upper.startsWith('SYS') || upper.includes('MOBO') || upper.includes('BUZZMA')) {
         return null;
       }
-      if (/^[a-f0-9]{24}$/i.test(raw)) return null; // Mongo ObjectId
+      if (/^[a-f0-9]{24}$/i.test(raw)) return null; // legacy hex ID
       if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) return null; // UUID
       if (raw.length < 4 || raw.length > 64) return null;
       // Must contain at least one digit to be a valid order ID
@@ -2548,6 +2634,7 @@ export async function extractOrderDetailsWithAi(
       // Wrap in a timeout to prevent hangs on maliciously-crafted images
       const PREPROCESS_TIMEOUT = 15_000; // 15 seconds max per image
       try {
+        let preprocessTimer: ReturnType<typeof setTimeout>;
         const result = await Promise.race([
           (async () => {
         const rawBuf = getImageBuffer(base64);
@@ -2599,10 +2686,10 @@ export async function extractOrderDetailsWithAi(
 
         return `data:image/jpeg;base64,${processed.toString('base64')}`;
           })(),
-          new Promise<string>((_, reject) =>
-            setTimeout(() => reject(new Error('Preprocessing timeout')), PREPROCESS_TIMEOUT)
-          ),
-        ]);
+          new Promise<string>((_, reject) => {
+            preprocessTimer = setTimeout(() => reject(new Error('Preprocessing timeout')), PREPROCESS_TIMEOUT);
+          }),
+        ]).finally(() => clearTimeout(preprocessTimer));
         return result;
       } catch (err) {
         aiLog.warn('OCR preprocessing failed, using original image', { error: err });

@@ -1,11 +1,14 @@
 import type { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
 import { prisma } from '../database/prisma.js';
-import { orderLog } from '../config/logger.js';
-import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
-import { toUiOrder, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
+import { orderLog, businessLog, securityLog } from '../config/logger.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent, logSecurityIncident } from '../config/appLogs.js';
+import { adminUsersQuerySchema, adminFinancialsQuerySchema, adminProductsQuerySchema, adminAuditLogsQuerySchema, reactivateOrderSchema, updateUserStatusSchema } from '../validations/admin.js';
+import { toUiOrderSummary, toUiUser, toUiRole, toUiDeal } from '../utils/uiMappers.js';
+import { orderListSelectLite, getProofFlags, userAdminListSelect } from '../utils/querySelect.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { writeAuditLog } from '../services/audit.js';
 import { freezeOrders, reactivateOrder as reactivateOrderWorkflow } from '../services/orderWorkflow.js';
 import { getAgencyCodeForMediatorCode, listMediatorCodesForAgency } from '../services/lineage.js';
@@ -29,13 +32,21 @@ function roleToDb(role: string): string | null {
 
 export function makeAdminController() {
   return {
-    getSystemConfig: async (_req: Request, res: Response, next: NextFunction) => {
+    getSystemConfig: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const doc = await db().systemConfig.findFirst({ where: { key: 'system' } });
         res.json({
           adminContactEmail: doc?.adminContactEmail ?? 'admin@buzzma.world',
         });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'SystemConfig',
+          requestId: String((res as any).locals?.requestId || ''),
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getSystemConfig' } });
         next(err);
       }
     },
@@ -59,9 +70,22 @@ export function makeAdminController() {
           entityId: 'system',
           metadata: { updatedFields: Object.keys(update) },
         });
+        securityLog.info('System config updated', { updatedFields: Object.keys(update), actorUserId: req.auth?.userId });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'SystemConfig', entityId: 'system', action: 'CONFIG_UPDATED', changedFields: Object.keys(update), before: {}, after: update });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: 'SystemConfig',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'CONFIG_UPDATED', updatedFields: Object.keys(update) },
+        });
 
         res.json({ adminContactEmail: doc?.adminContactEmail ?? body.adminContactEmail ?? 'admin@buzzma.world' });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/updateSystemConfig' } });
         next(err);
       }
     },
@@ -87,12 +111,32 @@ export function makeAdminController() {
           ];
         }
 
-        const users = await db().user.findMany({ where, orderBy: { createdAt: 'desc' }, take: 5000 });
-        const wallets = await db().wallet.findMany({ where: { ownerUserId: { in: users.map(u => u.id) }, deletedAt: null } });
-        const byUserId = new Map(wallets.map(w => [w.ownerUserId, w]));
-
-        res.json(users.map(u => toUiUser(pgUser(u), byUserId.has(u.id) ? pgWallet(byUserId.get(u.id)!) : undefined)));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 10000, maxLimit: 10000 });
+        const [users, total] = await Promise.all([
+          db().user.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+            select: { ...userAdminListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
+          }),
+          db().user.count({ where }),
+        ]);
+        const mapped = users.map(u => {
+          const wallet = (u as any).wallets?.[0];
+          return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
+        });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Users',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: mapped.length, total, page, limit, roleFilter: queryParams.role },
+        });
+        res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getUsers' } });
         next(err);
       }
     },
@@ -105,23 +149,53 @@ export function makeAdminController() {
           where.affiliateStatus = queryParams.status;
         }
 
-        const orders = await db().order.findMany({
-          where,
-          include: { items: true },
-          orderBy: { createdAt: 'desc' },
-          take: 5000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 10000, maxLimit: 10000 });
+        const [orders, total] = await Promise.all([
+          db().order.findMany({
+            where,
+            select: orderListSelectLite,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().order.count({ where }),
+        ]);
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
         const mapped = orders.map(o => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[admin/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            // Inject proof flags from raw SQL instead of base64 columns
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
+          catch (e) { orderLog.error(`[admin/getFinancials] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
-        res.json(mapped);
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Financials',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: mapped.length, total, page, limit },
+        });
+        res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getFinancials' } });
         next(err);
       }
     },
 
-    getStats: async (_req: Request, res: Response, next: NextFunction) => {
+    getStats: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const [roleCounts, orderStats] = await Promise.all([
           db().$queryRaw<Array<{ role: string; count: number }>>`
@@ -155,12 +229,20 @@ export function makeAdminController() {
           riskOrders: Number(os.risk_orders),
           counts,
         });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Stats',
+          requestId: String((res as any).locals?.requestId || ''),
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getStats' } });
         next(err);
       }
     },
 
-    getGrowth: async (_req: Request, res: Response, next: NextFunction) => {
+    getGrowth: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const since = new Date();
         since.setDate(since.getDate() - 6);
@@ -184,7 +266,15 @@ export function makeAdminController() {
         }
 
         res.json(data);
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Growth',
+          requestId: String((res as any).locals?.requestId || ''),
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getGrowth' } });
         next(err);
       }
     },
@@ -204,9 +294,22 @@ export function makeAdminController() {
           ];
         }
 
-        const deals = await db().deal.findMany({ where, orderBy: { createdAt: 'desc' }, take: 5000 });
-        res.json(deals.map(d => toUiDeal(pgDeal(d))));
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as any, { limit: 10000, maxLimit: 10000 });
+        const [deals, total] = await Promise.all([
+          db().deal.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+          db().deal.count({ where }),
+        ]);
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Products',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: deals.length, total, page, limit },
+        });
+        res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getProducts' } });
         next(err);
       }
     },
@@ -239,6 +342,18 @@ export function makeAdminController() {
           entityId: deal.mongoId!,
           metadata: { mediatorCode: deal.mediatorCode },
         });
+        businessLog.info('Deal deleted by admin', { dealId: deal.mongoId, mediatorCode: deal.mediatorCode, title: deal.title });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Deal', entityId: deal.mongoId!, action: 'DEAL_DELETED', changedFields: ['deletedAt', 'active'], before: { active: true }, after: { active: false, deletedAt: new Date().toISOString() } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `Deal#${deal.mongoId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'DEAL_DELETED', mediatorCode: deal.mediatorCode },
+        });
 
         const mediatorCode = String(deal.mediatorCode || '').trim();
         publishRealtime({
@@ -253,6 +368,7 @@ export function makeAdminController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/deleteDeal' } });
         next(err);
       }
     },
@@ -326,6 +442,27 @@ export function makeAdminController() {
           entityId: user.mongoId!,
           metadata: { role: roles.join(','), mediatorCode },
         });
+        securityLog.info('User deleted by admin', { userId: user.mongoId, roles: roles.join(','), mediatorCode });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: user.mongoId!, action: 'USER_DELETED', changedFields: ['deletedAt'], before: { status: user.status }, after: { deletedAt: new Date().toISOString() } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `User#${user.mongoId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'USER_DELETED', targetRoles: roles, mediatorCode },
+        });
+        logSecurityIncident('PRIVILEGE_ESCALATION_ATTEMPT', {
+          severity: 'medium',
+          ip: req.ip,
+          userId: req.auth?.userId,
+          route: req.originalUrl,
+          method: req.method,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'USER_DELETED', targetUserId: user.mongoId, note: 'Admin user deletion — audit trail' },
+        });
 
         publishRealtime({
           type: 'users.changed',
@@ -341,6 +478,7 @@ export function makeAdminController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/deleteUser' } });
         next(err);
       }
     },
@@ -385,6 +523,18 @@ export function makeAdminController() {
           entityId: wallet.mongoId || wallet.id,
           metadata: { ownerUserId: userId },
         });
+        businessLog.info('Wallet deleted by admin', { walletId: wallet.mongoId || wallet.id, ownerUserId: userId });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Wallet', entityId: wallet.mongoId || wallet.id, action: 'WALLET_DELETED', changedFields: ['deletedAt'], before: { deletedAt: null }, after: { deletedAt: new Date().toISOString() } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `Wallet#${wallet.mongoId || wallet.id}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'WALLET_DELETED', ownerUserId: userId },
+        });
 
         publishRealtime({
           type: 'wallets.changed',
@@ -394,6 +544,7 @@ export function makeAdminController() {
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/deleteWallet' } });
         next(err);
       }
     },
@@ -424,7 +575,7 @@ export function makeAdminController() {
           if (user.status === 'suspended') {
             await db().suspension.create({
               data: {
-                mongoId: new Types.ObjectId().toString(),
+                mongoId: randomUUID(),
                 targetUserId: user.id,
                 action: 'suspend' as any,
                 reason: body.reason,
@@ -495,7 +646,7 @@ export function makeAdminController() {
           if (before.status === 'suspended' && user.status === 'active') {
             await db().suspension.create({
               data: {
-                mongoId: new Types.ObjectId().toString(),
+                mongoId: randomUUID(),
                 targetUserId: user.id,
                 action: 'unsuspend' as any,
                 reason: body.reason,
@@ -513,6 +664,18 @@ export function makeAdminController() {
           entityId: user.mongoId!,
           metadata: { from: before.status, to: user.status, reason: body.reason },
         });
+        securityLog.info('User status updated by admin', { userId: user.mongoId, from: before.status, to: user.status, reason: body.reason });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: user.mongoId!, action: 'STATUS_UPDATED', changedFields: ['status'], before: { status: before.status }, after: { status: user.status, reason: body.reason } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `User#${user.mongoId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'STATUS_UPDATED', from: before.status, to: user.status, reason: body.reason },
+        });
 
         if (statusChanged) {
           publishRealtime({
@@ -527,6 +690,7 @@ export function makeAdminController() {
         }
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'high', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/updateUserStatus' } });
         next(err);
       }
     },
@@ -546,9 +710,22 @@ export function makeAdminController() {
           entityId: (order as any).mongoId || body.orderId,
           metadata: { reason: body.reason },
         });
+        orderLog.info('Order reactivated by admin', { orderId: (order as any).mongoId || body.orderId, reason: body.reason });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: (order as any).mongoId || body.orderId, action: 'ORDER_REACTIVATED', changedFields: ['frozen', 'workflowStatus'], before: { frozen: true }, after: { frozen: false, reason: body.reason } });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles as string[],
+          ip: req.ip,
+          method: req.method,
+          route: req.originalUrl,
+          resource: `Order#${(order as any).mongoId || body.orderId}`,
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'ORDER_REACTIVATED', reason: body.reason },
+        });
 
         res.json({ ok: true });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/reactivateOrder' } });
         next(err);
       }
     },
@@ -562,12 +739,12 @@ export function makeAdminController() {
           actorUserId,
           from,
           to,
-          page: pageStr,
-          limit: limitStr,
-        } = req.query as Record<string, string | undefined>;
+          page: parsedPage,
+          limit: parsedLimit,
+        } = adminAuditLogsQuerySchema.parse(req.query);
 
-        const page = Math.max(1, parseInt(pageStr || '1', 10) || 1);
-        const limit = Math.min(500, Math.max(1, parseInt(limitStr || '50', 10) || 50));
+        const page = Math.max(1, parsedPage ?? 1);
+        const limit = Math.min(10000, Math.max(1, parsedLimit ?? 200));
         const skip = (page - 1) * limit;
 
         const where: any = {};
@@ -610,7 +787,16 @@ export function makeAdminController() {
           page,
           pages: Math.ceil(total / limit),
         });
+        logAccessEvent('ADMIN_ACTION', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'AuditLogs',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { resultCount: logs.length, total, page, limit },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'admin/getAuditLogs' } });
         next(err);
       }
     },

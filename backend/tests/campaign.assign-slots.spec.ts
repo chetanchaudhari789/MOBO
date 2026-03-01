@@ -1,11 +1,10 @@
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { prisma } from '../database/prisma.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
-import { CampaignModel } from '../models/Campaign.js';
 
 async function login(app: any, mobile: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ mobile, password });
@@ -17,17 +16,8 @@ async function login(app: any, mobile: string, password: string) {
 }
 
 describe('ops campaigns: assign slots', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('rejects empty/zero allocations and only locks after a real assignment', async () => {
-    const env = loadEnv({
-      NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-    });
-
-    await connectMongo(env);
+    const env = loadEnv({ NODE_ENV: 'test' });
     const seeded = await seedE2E();
 
     const app = createApp(env);
@@ -35,32 +25,11 @@ describe('ops campaigns: assign slots', () => {
 
     const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
 
-    const campaign = await CampaignModel.create({
-      title: 'Slots Campaign',
-      brandUserId: agency.userId as any,
-      brandName: 'Agency Inventory',
-      platform: 'Amazon',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      originalPricePaise: 1000_00,
-      pricePaise: 900_00,
-      payoutPaise: 100_00,
-      returnWindowDays: 14,
-      dealType: 'Discount',
-      totalSlots: 10,
-      usedSlots: 0,
-      status: 'active',
-      allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
-      assignments: {},
-      createdBy: agency.userId as any,
-    });
-
-    // Create PG campaign (controllers query PG only)
     const pgCampaign = await db.campaign.create({
       data: {
-        mongoId: String(campaign._id),
+        mongoId: randomUUID(),
         title: 'Slots Campaign',
-        brandUserId: seeded.pgAgency.id,
+        brandUserId: seeded.agency.id,
         brandName: 'Agency Inventory',
         platform: 'Amazon',
         image: 'https://placehold.co/600x400',
@@ -75,7 +44,7 @@ describe('ops campaigns: assign slots', () => {
         status: 'active',
         allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
         assignments: {},
-        createdBy: seeded.pgAgency.id,
+        createdBy: seeded.agency.id,
       },
     });
 
@@ -83,7 +52,7 @@ describe('ops campaigns: assign slots', () => {
       .post('/api/ops/campaigns/assign')
       .set('Authorization', `Bearer ${agency.token}`)
       .send({
-        id: String(campaign._id),
+        id: pgCampaign.id,
         assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: 0 },
       });
 
@@ -94,7 +63,7 @@ describe('ops campaigns: assign slots', () => {
       .post('/api/ops/campaigns/assign')
       .set('Authorization', `Bearer ${agency.token}`)
       .send({
-        id: String(campaign._id),
+        id: pgCampaign.id,
         assignments: { [E2E_ACCOUNTS.mediator.mediatorCode]: 5 },
       });
 
@@ -111,12 +80,7 @@ describe('ops campaigns: assign slots', () => {
   });
 
   it('prevents agencies from assigning to non-active mediators', async () => {
-    const env = loadEnv({
-      NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
-    });
-
-    await connectMongo(env);
+    const env = loadEnv({ NODE_ENV: 'test' });
     const seeded = await seedE2E();
 
     const app = createApp(env);
@@ -125,48 +89,28 @@ describe('ops campaigns: assign slots', () => {
     const agency = await login(app, E2E_ACCOUNTS.agency.mobile, E2E_ACCOUNTS.agency.password);
 
     // Create pending mediator in PG (controllers query PG only)
-    const { Types } = await import('mongoose');
-    const pendingMongoId = new Types.ObjectId().toString();
+    const pendingMongoId = randomUUID();
+    const pendingMobile = `91${Date.now().toString().slice(-8)}`;
+    const pendingMedCode = `MED_PEND_${Date.now()}`;
     await db.user.create({
       data: {
         mongoId: pendingMongoId,
         name: 'Pending Mediator',
-        mobile: '9111111111',
+        mobile: pendingMobile,
         passwordHash: 'x',
         role: 'mediator',
         roles: ['mediator'],
         status: 'pending',
-        mediatorCode: 'MED_PEND',
+        mediatorCode: pendingMedCode,
         parentCode: E2E_ACCOUNTS.agency.agencyCode,
       },
     });
 
-    const campaign = await CampaignModel.create({
-      title: 'Slots Campaign 2',
-      brandUserId: agency.userId as any,
-      brandName: 'Agency Inventory',
-      platform: 'Amazon',
-      image: 'https://placehold.co/600x400',
-      productUrl: 'https://example.com/product',
-      originalPricePaise: 1000_00,
-      pricePaise: 900_00,
-      payoutPaise: 100_00,
-      returnWindowDays: 14,
-      dealType: 'Discount',
-      totalSlots: 10,
-      usedSlots: 0,
-      status: 'active',
-      allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
-      assignments: {},
-      createdBy: agency.userId as any,
-    });
-
-    // Create PG campaign
-    await db.campaign.create({
+    const pgCampaign = await db.campaign.create({
       data: {
-        mongoId: String(campaign._id),
+        mongoId: randomUUID(),
         title: 'Slots Campaign 2',
-        brandUserId: seeded.pgAgency.id,
+        brandUserId: seeded.agency.id,
         brandName: 'Agency Inventory',
         platform: 'Amazon',
         image: 'https://placehold.co/600x400',
@@ -181,7 +125,7 @@ describe('ops campaigns: assign slots', () => {
         status: 'active',
         allowedAgencyCodes: [E2E_ACCOUNTS.agency.agencyCode],
         assignments: {},
-        createdBy: seeded.pgAgency.id,
+        createdBy: seeded.agency.id,
       },
     });
 
@@ -189,8 +133,8 @@ describe('ops campaigns: assign slots', () => {
       .post('/api/ops/campaigns/assign')
       .set('Authorization', `Bearer ${agency.token}`)
       .send({
-        id: String(campaign._id),
-        assignments: { MED_PEND: 1 },
+        id: pgCampaign.id,
+        assignments: { [pendingMedCode]: 1 },
       });
 
     expect(res.status).toBe(403);

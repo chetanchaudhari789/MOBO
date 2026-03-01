@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 import { prisma } from '../database/prisma.js';
 
@@ -27,18 +26,11 @@ async function loginAdmin(app: any, username: string, password: string) {
 const LARGE_DATA_URL = `data:image/png;base64,${'A'.repeat(14000)}`;
 
 describe('order step verification (purchase vs review/rating)', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('keeps order UNDER_REVIEW when purchase verified but review proof missing, then approves after review verified', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      SEED_E2E: 'true',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);
@@ -54,6 +46,13 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(productsRes.body.length).toBeGreaterThan(0);
 
     const deal = productsRes.body[0];
+
+    // Reset velocity counter: soft-delete ALL orders for this user so the
+    // per-buyer velocity limit (10/hour, 30/day) does not fire on repeated runs.
+    await prisma().order.updateMany({
+      where: { userId: shopper.userId, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
 
     const createOrderRes = await request(app)
       .post('/api/orders')
@@ -74,7 +73,7 @@ describe('order step verification (purchase vs review/rating)', () => {
             brandName: String(deal.brandName || 'E2E Brand'),
           },
         ],
-        externalOrderId: `EXT_REVIEW_${Date.now()}`,
+        externalOrderId: `EXT_REVIEW_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         screenshots: { order: LARGE_DATA_URL },
       });
 
@@ -93,7 +92,7 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(Array.isArray(verifyPurchaseRes.body.missingProofs)).toBe(true);
     expect(verifyPurchaseRes.body.missingProofs).toContain('review');
 
-    const afterPurchase = await prisma().order.findFirst({ where: { mongoId: orderId } });
+    const afterPurchase = await prisma().order.findFirst({ where: { id: orderId } });
     expect(afterPurchase).toBeTruthy();
     expect(afterPurchase?.workflowStatus).toBe('UNDER_REVIEW');
     expect(!!(afterPurchase?.verification as any)?.order?.verifiedAt).toBe(true);
@@ -133,7 +132,7 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
     expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
-    const finalOrder = await prisma().order.findFirst({ where: { mongoId: orderId } });
+    const finalOrder = await prisma().order.findFirst({ where: { id: orderId } });
     expect(finalOrder).toBeTruthy();
     expect(finalOrder?.workflowStatus).toBe('APPROVED');
     expect(finalOrder?.affiliateStatus).toBe('Pending_Cooling');
@@ -144,16 +143,13 @@ describe('order step verification (purchase vs review/rating)', () => {
   it('keeps order UNDER_REVIEW when purchase verified but rating proof missing, then approves after rating verified', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      SEED_E2E: 'true',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);
 
-    const shopper = await login(app, E2E_ACCOUNTS.shopper.mobile, E2E_ACCOUNTS.shopper.password);
+    const shopper = await login(app, E2E_ACCOUNTS.shopper2.mobile, E2E_ACCOUNTS.shopper2.password);
     const admin = await loginAdmin(app, E2E_ACCOUNTS.admin.username, E2E_ACCOUNTS.admin.password);
 
     const productsRes = await request(app)
@@ -163,7 +159,15 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(Array.isArray(productsRes.body)).toBe(true);
     expect(productsRes.body.length).toBeGreaterThan(0);
 
+    // Use productsRes.body[0] — shopper2 hasn't ordered this deal yet
     const deal = productsRes.body[0];
+
+    // Reset velocity counter: soft-delete ALL orders for this user so the
+    // per-buyer velocity limit (10/hour, 30/day) does not fire on repeated runs.
+    await prisma().order.updateMany({
+      where: { userId: shopper.userId, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
 
     const createOrderRes = await request(app)
       .post('/api/orders')
@@ -184,7 +188,7 @@ describe('order step verification (purchase vs review/rating)', () => {
             brandName: String(deal.brandName || 'E2E Brand'),
           },
         ],
-        externalOrderId: `EXT_RATING_${Date.now()}`,
+        externalOrderId: `EXT_RATING_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         screenshots: { order: LARGE_DATA_URL },
       });
 
@@ -238,7 +242,7 @@ describe('order step verification (purchase vs review/rating)', () => {
     expect(verifyReturnWindowRes.body).toHaveProperty('ok', true);
     expect(verifyReturnWindowRes.body).toHaveProperty('approved', true);
 
-    const finalOrder = await prisma().order.findFirst({ where: { mongoId: orderId } });
+    const finalOrder = await prisma().order.findFirst({ where: { id: orderId } });
     expect(finalOrder).toBeTruthy();
     expect(finalOrder?.workflowStatus).toBe('APPROVED');
     expect(finalOrder?.affiliateStatus).toBe('Pending_Cooling');

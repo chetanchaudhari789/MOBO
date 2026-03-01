@@ -13,6 +13,7 @@
 import { PrismaClient } from '../generated/prisma/client.js';
 import type { TlsOptions } from 'node:tls';
 import { dbLog, logEvent } from '../config/logger.js';
+import { logDatabaseEvent } from '../config/appLogs.js';
 
 let _prisma: PrismaClient | null = null;
 let _connecting: Promise<void> | null = null;
@@ -123,14 +124,13 @@ function buildPoolConfig(url: string) {
 /**
  * Connect to PostgreSQL via Prisma with connection pooling.
  * Safe to call multiple times.  Retries up to `maxRetries` with exponential
- * back-off so transient network hiccups (especially when MongoMemoryServer
- * is starting in parallel during tests) don't cause a cascade of failures.
+ * back-off so transient network hiccups don't cause a cascade of failures.
  * Returns silently when DATABASE_URL is not configured (PG is optional).
  */
 export async function connectPrisma(maxRetries = 3): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    dbLog.info('DATABASE_URL not set – PostgreSQL dual-write disabled');
+    dbLog.info('DATABASE_URL not set – PostgreSQL connection skipped');
     return;
   }
 
@@ -140,10 +140,16 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
   _connecting = (async () => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const logConfig: ('warn' | 'error' | 'query')[] =
-          process.env.NODE_ENV === 'development'
-            ? ['warn', 'error', 'query']
-            : ['error'];
+        // In dev, route 'query' events ONLY to our slow-query listener
+        // (emit: 'event') so they never flood stdout. In prod, only errors.
+        const isDev = process.env.NODE_ENV === 'development';
+        const logConfig = isDev
+          ? [
+              { emit: 'event' as const, level: 'query' as const },
+              { emit: 'stdout' as const, level: 'warn' as const },
+              { emit: 'stdout' as const, level: 'error' as const },
+            ]
+          : [{ emit: 'stdout' as const, level: 'error' as const }];
 
         // Standard PostgreSQL with connection pooling + SSL
         const { PrismaPg } = await import('@prisma/adapter-pg');
@@ -152,13 +158,17 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         const client = new PrismaClient({ adapter, log: logConfig });
 
         // Log slow queries (>200ms) in development for performance debugging
-        if (process.env.NODE_ENV === 'development') {
+        if (isDev) {
           client.$on('query' as never, (event: any) => {
             const duration = event.duration;
             if (duration > 200) {
               dbLog.warn(`Slow PG query (${duration}ms): ${String(event.query).slice(0, 200)}`, {
                 duration,
                 params: event.params ? String(event.params).slice(0, 100) : undefined,
+              });
+              logDatabaseEvent('SLOW_QUERY', {
+                durationMs: duration,
+                metadata: { query: String(event.query).slice(0, 200) },
               });
             }
           });
@@ -170,6 +180,16 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         // Run a lightweight query to verify connectivity upfront.
         await client.$queryRawUnsafe('SELECT 1');
         _prisma = client;
+        logDatabaseEvent('CONNECTED', {
+          durationMs: 0,
+          metadata: {
+            poolMax: poolConfig.max,
+            poolMin: poolConfig.min,
+            schema: pgSchema ?? 'public',
+            ssl: sslLabel,
+            attempt,
+          },
+        });
         logEvent('info', 'Connected to PostgreSQL successfully', {
           domain: 'db',
           eventName: 'PG_CONNECTED',
@@ -186,6 +206,10 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         const isLastAttempt = attempt === maxRetries;
         const msg = `PostgreSQL connection attempt ${attempt}/${maxRetries} failed`;
         if (isLastAttempt) {
+          logDatabaseEvent('DISCONNECTED', {
+            error: err instanceof Error ? err : new Error(String(err)),
+            metadata: { attempt, maxRetries, errorCode: (err as any).code },
+          });
           logEvent('error', msg, {
             domain: 'db',
             eventName: 'PG_CONNECTION_FAILED',
@@ -193,7 +217,7 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
             stack: err instanceof Error ? err.stack : undefined,
             metadata: { attempt, maxRetries },
           });
-          // Non-fatal — Mongo is still the primary. PG is a shadow.
+          // All retries exhausted — PostgreSQL is unavailable.
           _prisma = null;
         } else {
           dbLog.warn(`${msg} – retrying in ${attempt}s…`, { error: (err as Error).message });
@@ -212,6 +236,7 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
 
 /**
  * Lightweight ping to check if the PG connection is alive.
+ * Attempts auto-reconnection (once) if the connection has dropped.
  * Returns true if the connection is healthy, false otherwise.
  * Used by the health endpoint for real connectivity checks.
  */
@@ -220,7 +245,19 @@ export async function pingPg(): Promise<boolean> {
   try {
     await _prisma.$queryRawUnsafe('SELECT 1');
     return true;
-  } catch {
+  } catch (err) {
+    // Connection may have dropped — attempt a single reconnection.
+    dbLog.warn('PG ping failed — attempting reconnection', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    try {
+      _prisma = null; // Clear stale client
+      await connectPrisma(1); // Single attempt reconnect
+      if (_prisma) {
+        dbLog.info('PG reconnected successfully after ping failure');
+        return true;
+      }
+    } catch { /* reconnection failed — fall through */ }
     return false;
   }
 }

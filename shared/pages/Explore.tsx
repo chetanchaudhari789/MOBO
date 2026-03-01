@@ -10,7 +10,6 @@ import { EmptyState, Input, Spinner } from '../components/ui';
 export const Explore: React.FC = () => {
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
-  const [filtered, setFiltered] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedDealType, setSelectedDealType] = useState('All');
@@ -82,7 +81,8 @@ export const Explore: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
+  // Derived filtered list — no extra state or effect needed
+  const filtered = useMemo(() => {
     let result = products;
 
     // Filter by deal type
@@ -119,7 +119,7 @@ export const Explore: React.FC = () => {
       );
     }
 
-    setFiltered(result);
+    return result;
   }, [searchTerm, selectedCategory, selectedDealType, products]);
 
   useEffect(() => {

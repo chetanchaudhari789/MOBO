@@ -1,13 +1,16 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { Env } from '../config/env.js';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
 import { orderLog } from '../config/logger.js';
+import { logChangeEvent, logAccessEvent, logPerformance, logErrorEvent } from '../config/appLogs.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
 import { rupeesToPaise } from '../utils/money.js';
-import { toUiOrder } from '../utils/uiMappers.js';
+import { toUiOrder, toUiOrderSummary } from '../utils/uiMappers.js';
+import { orderListSelectLite, getProofFlags } from '../utils/querySelect.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pushOrderEvent, isTerminalAffiliateStatus } from '../services/orderEvents.js';
 import { transitionOrderWorkflow } from '../services/orderWorkflow.js';
 import type { Role } from '../middleware/auth.js';
@@ -21,7 +24,7 @@ import { writeAuditLog } from '../services/audit.js';
 
 export function makeOrdersController(env: Env) {
   const MAX_PROOF_BYTES = 50 * 1024 * 1024;
-  const MIN_PROOF_BYTES = (env.SEED_E2E || env.NODE_ENV !== 'production') ? 1 : 10 * 1024;
+  const MIN_PROOF_BYTES = (env.NODE_ENV !== 'production') ? 1 : 10 * 1024;
 
   const getDataUrlByteSize = (raw: string) => {
     const match = String(raw || '').match(/^data:[^;]+;base64,(.+)$/i);
@@ -153,8 +156,27 @@ export function makeOrdersController(env: Env) {
         }
 
         const proofValue = resolveProofValue(order, proofType);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'OrderProof',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'ORDER_PROOF_VIEWED', orderId, proofType },
+        });
+
         sendProofResponse(res, proofValue);
       } catch (err) {
+        logErrorEvent({
+          message: 'getOrderProof failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -178,8 +200,27 @@ export function makeOrdersController(env: Env) {
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         const proofValue = resolveProofValue(order, proofType);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'OrderProof',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'ORDER_PROOF_VIEWED_PUBLIC', orderId, proofType, public: true },
+        });
+
         sendProofResponse(res, proofValue);
       } catch (err) {
+        logErrorEvent({
+          message: 'getOrderProofPublic failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -202,19 +243,60 @@ export function makeOrdersController(env: Env) {
         const targetUser = await db().user.findFirst({ where: userWhere as any, select: { id: true } });
         if (!targetUser) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
 
-        const orders = await db().order.findMany({
-          where: { userId: targetUser.id, deletedAt: null },
-          include: { items: true },
-          orderBy: { createdAt: 'desc' },
-          take: 2000,
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as Record<string, unknown>, { limit: 50 });
+        const where = { userId: targetUser.id, deletedAt: null };
+
+        const [orders, total] = await Promise.all([
+          db().order.findMany({
+            where,
+            select: orderListSelectLite,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().order.count({ where }),
+        ]);
+
+        // Fetch lightweight proof boolean flags (avoids transferring base64 blobs)
+        const proofFlags = await getProofFlags(db(), orders.map(o => o.id));
+        const mapped = orders.map((o: any) => {
+          try {
+            const flags = proofFlags.get(o.id);
+            const pg = pgOrder(o);
+            if (flags) {
+              pg.screenshots = {
+                order: flags.hasOrderProof ? 'exists' : null,
+                payment: null,
+                review: flags.hasReviewProof ? 'exists' : null,
+                rating: flags.hasRatingProof ? 'exists' : null,
+                returnWindow: flags.hasReturnWindowProof ? 'exists' : null,
+              };
+            }
+            return toUiOrderSummary(pg);
+          }
+          catch (e) { orderLog.error(`[orders/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
+        }).filter(Boolean);
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'ORDERS_LISTED', targetUserId: userId, resultCount: mapped.length, total, page, limit },
         });
 
-        const mapped = orders.map((o: any) => {
-          try { return toUiOrder(pgOrder(o)); }
-          catch (e) { orderLog.error(`[orders/getOrders] toUiOrder failed for ${o.id}`, { error: e }); return null; }
-        }).filter(Boolean);
-        res.json(mapped);
+        res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
       } catch (err) {
+        logErrorEvent({
+          message: 'getUserOrders failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -258,11 +340,11 @@ export function makeOrdersController(env: Env) {
           throw new AppError(429, 'VELOCITY_LIMIT', 'Too many orders created. Please try later.');
         }
 
-        const allowE2eBypass = env.SEED_E2E || env.NODE_ENV !== 'production';
+        const allowE2eBypass = env.NODE_ENV !== 'production';
         const resolvedExternalOrderId = body.externalOrderId || (allowE2eBypass ? `E2E-${Date.now()}` : undefined);
 
         if (resolvedExternalOrderId) {
-          const dup = await db().order.findFirst({ where: { externalOrderId: resolvedExternalOrderId, deletedAt: null } });
+          const dup = await db().order.findFirst({ where: { externalOrderId: resolvedExternalOrderId, deletedAt: null }, select: { id: true } });
           if (dup) {
             throw new AppError(
               409,
@@ -285,7 +367,7 @@ export function makeOrdersController(env: Env) {
           duplicateWhere.mongoId = { not: body.preOrderId };
         }
 
-        const existingDealOrder = await db().order.findFirst({ where: duplicateWhere });
+        const existingDealOrder = await db().order.findFirst({ where: duplicateWhere, select: { id: true } });
         if (existingDealOrder) {
           throw new AppError(
             409,
@@ -327,10 +409,16 @@ export function makeOrdersController(env: Env) {
           if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
             throw new AppError(400, 'INVALID_ORDER_AMOUNT', 'Could not compute a valid order amount for verification.');
           }
+          const aiStart = Date.now();
           const verification = await verifyProofWithAi(env, {
             imageBase64: body.screenshots.order,
             expectedOrderId: resolvedExternalOrderId || body.externalOrderId || '',
             expectedAmount,
+          });
+          logPerformance({
+            operation: 'AI_ORDER_PROOF_VERIFICATION',
+            durationMs: Date.now() - aiStart,
+            metadata: { orderId: resolvedExternalOrderId, confidenceScore: verification?.confidenceScore },
           });
 
           const confidenceThreshold = env.AI_PROOF_CONFIDENCE_THRESHOLD ?? 75;
@@ -532,7 +620,7 @@ export function makeOrdersController(env: Env) {
 
           const order = await tx.order.create({
             data: {
-              mongoId: new Types.ObjectId().toString(),
+              mongoId: randomUUID(),
               userId: userPgId,
               brandUserId: campaign.brandUserId,
               items: {
@@ -643,6 +731,30 @@ export function makeOrdersController(env: Env) {
           },
         }).catch(() => { });
 
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'Order',
+          entityId: orderMongoId,
+          action: 'ORDER_CREATED',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: {
+            campaignId: String(campaign.mongoId ?? campaign.id),
+            itemCount: body.items.length,
+            externalOrderId: resolvedExternalOrderId,
+          },
+        });
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'ORDER_CREATED', orderId: orderMongoId, externalOrderId: resolvedExternalOrderId },
+        });
+
         res
           .status(201)
           .json(toUiOrder(pgOrder(finalOrder)));
@@ -665,6 +777,15 @@ export function makeOrdersController(env: Env) {
         publishRealtime({ type: 'orders.changed', ts: new Date().toISOString(), audience });
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
       } catch (err) {
+        logErrorEvent({
+          message: 'createOrder failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'high',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -763,7 +884,7 @@ export function makeOrdersController(env: Env) {
 
           // AI verification: check account name matches buyer + product name matches
           let ratingAiResult: any = null;
-          if (!env.SEED_E2E) {
+          if (env.NODE_ENV === 'production') {
             const buyerUser = await db().user.findUnique({
               where: { id: order.userId },
               select: { name: true },
@@ -772,11 +893,17 @@ export function makeOrdersController(env: Env) {
             const productName = String((order.items?.[0] as any)?.title || order.extractedProductName || '').trim();
             const reviewerName = String(order.reviewerName || '').trim();
             if (buyerName && productName) {
+              const aiStart = Date.now();
               ratingAiResult = await verifyRatingScreenshotWithAi(env, {
                 imageBase64: body.data,
                 expectedBuyerName: buyerName,
                 expectedProductName: productName,
                 ...(reviewerName ? { expectedReviewerName: reviewerName } : {}),
+              });
+              logPerformance({
+                operation: 'AI_RATING_VERIFICATION',
+                durationMs: Date.now() - aiStart,
+                metadata: { orderId: order.mongoId, confidenceScore: ratingAiResult?.confidenceScore },
               });
               // Block submission if both name AND product mismatch with high confidence (≥70 for anti-fraud strength)
               if (ratingAiResult && !ratingAiResult.accountNameMatch && !ratingAiResult.productNameMatch
@@ -825,7 +952,7 @@ export function makeOrdersController(env: Env) {
 
           // AI verification: check order ID, product name, amount, sold by
           let returnWindowResult: any = null;
-          if (!env.SEED_E2E) {
+          if (env.NODE_ENV === 'production') {
             const expectedOrderId = String(order.externalOrderId || '').trim();
             const expectedProductName = String((order.items?.[0] as any)?.title || '').trim();
             const expectedAmount = (order.items ?? []).reduce(
@@ -833,12 +960,18 @@ export function makeOrdersController(env: Env) {
             ) / 100;
             const expectedSoldBy = String(order.soldBy || '').trim();
             if (expectedOrderId) {
+              const aiStart = Date.now();
               returnWindowResult = await verifyReturnWindowWithAi(env, {
                 imageBase64: body.data,
                 expectedOrderId,
                 expectedProductName,
                 expectedAmount,
                 expectedSoldBy: expectedSoldBy || undefined,
+              });
+              logPerformance({
+                operation: 'AI_RETURN_WINDOW_VERIFICATION',
+                durationMs: Date.now() - aiStart,
+                metadata: { orderId: order.mongoId, confidenceScore: returnWindowResult?.confidenceScore },
               });
             }
           }
@@ -870,8 +1003,8 @@ export function makeOrdersController(env: Env) {
           assertProofImageSize(body.data, 'Order proof');
           const expectedOrderId = String(order.externalOrderId || '').trim();
 
-          if (env.SEED_E2E) {
-            // E2E runs should not rely on external AI services.
+          if (env.NODE_ENV === 'test') {
+            // Test runs should not rely on external AI services.
           } else if (isGeminiConfigured(env) && expectedOrderId) {
             const expectedAmount = (order.items ?? []).reduce(
               (acc: number, it: any) => acc + (Number(it?.priceAtPurchasePaise) || 0) * (Number(it?.quantity) || 1), 0
@@ -880,15 +1013,32 @@ export function makeOrdersController(env: Env) {
             if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
               orderLog.warn(`[ordersController] Skipping AI re-upload verification: invalid expectedAmount=${expectedAmount} for order=${order.mongoId}`);
             } else {
+              const aiStart = Date.now();
               aiOrderVerification = await verifyProofWithAi(env, {
                 imageBase64: body.data,
                 expectedOrderId,
                 expectedAmount,
               });
+              logPerformance({
+                operation: 'AI_ORDER_REUPLOAD_VERIFICATION',
+                durationMs: Date.now() - aiStart,
+                metadata: { orderId: order.mongoId, confidenceScore: aiOrderVerification?.confidenceScore },
+              });
             }
           }
 
           updateData.screenshotOrder = body.data;
+          // Persist AI purchase proof verification result
+          if (aiOrderVerification) {
+            updateData.orderAiVerification = {
+              orderIdMatch: aiOrderVerification.orderIdMatch,
+              amountMatch: aiOrderVerification.amountMatch,
+              detectedOrderId: aiOrderVerification.detectedOrderId,
+              detectedAmount: aiOrderVerification.detectedAmount,
+              confidenceScore: aiOrderVerification.confidenceScore,
+              discrepancyNote: aiOrderVerification.discrepancyNote,
+            };
+          }
           if (order.rejectionType === 'order') {
             updateData.rejectionType = null;
             updateData.rejectionReason = null;
@@ -984,11 +1134,13 @@ export function makeOrdersController(env: Env) {
           : null;
         const upstreamAgencyCode = String(mediatorUser?.parentCode || '').trim();
 
-        // Resolve mongoIds for realtime audience
-        const orderUser = await db().user.findUnique({ where: { id: order.userId }, select: { mongoId: true } });
-        const brandUser = order.brandUserId
-          ? await db().user.findUnique({ where: { id: order.brandUserId }, select: { mongoId: true } })
-          : null;
+        // Resolve mongoIds for realtime audience — parallel lookups
+        const [orderUser, brandUser] = await Promise.all([
+          db().user.findUnique({ where: { id: order.userId }, select: { mongoId: true } }),
+          order.brandUserId
+            ? db().user.findUnique({ where: { id: order.brandUserId }, select: { mongoId: true } })
+            : null,
+        ]);
 
         const audience = {
           roles: privilegedRoles,
@@ -1006,8 +1158,37 @@ export function makeOrdersController(env: Env) {
           entityId: order.mongoId!,
           metadata: { proofType: body.type },
         }).catch(() => { });
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Order',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'PROOF_SUBMITTED', orderId: order.mongoId, proofType: body.type },
+        });
+
+        logChangeEvent({
+          actorUserId: req.auth?.userId,
+          actorRoles: req.auth?.roles,
+          actorIp: req.ip,
+          entityType: 'Order',
+          entityId: order.mongoId!,
+          action: 'STATUS_CHANGE',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { proofType: body.type, action: 'PROOF_SUBMITTED' },
+        });
         return;
       } catch (err) {
+        logErrorEvent({
+          message: 'submitClaim failed',
+          category: 'BUSINESS_LOGIC',
+          severity: 'high',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },

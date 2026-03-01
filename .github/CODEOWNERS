@@ -1,0 +1,17 @@
+# ──────────────────────────────────────────────────────────
+# CODEOWNERS — Require review for security-sensitive paths
+# ──────────────────────────────────────────────────────────
+
+# CI/CD pipeline — changes to workflows require owner review
+.github/                    @chetanchaudhari789
+
+# Database schema & migrations — zero tolerance for data loss
+backend/prisma/             @chetanchaudhari789
+backend/prisma/migrations/  @chetanchaudhari789
+
+# Environment & secrets configuration
+backend/config/env.ts       @chetanchaudhari789
+*.env.example               @chetanchaudhari789
+
+# Security middleware
+backend/middleware/auth.ts  @chetanchaudhari789

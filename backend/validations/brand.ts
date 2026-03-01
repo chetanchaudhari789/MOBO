@@ -1,11 +1,9 @@
 import { z } from 'zod';
 
-const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId');
-
 export const payoutAgencySchema = z.object({
   // UI sends these fields; backend uses auth user by default.
-  brandId: objectId.optional(),
-  agencyId: objectId,
+  brandId: z.string().min(1).optional(),
+  agencyId: z.string().min(1),
   amount: z.coerce.number().positive(), // INR
   ref: z.string().trim().min(1).max(128),
 });
@@ -39,3 +37,22 @@ export const updateBrandCampaignSchema = z.object({
   status: z.string().min(1).max(30).optional(),
   allowedAgencies: z.array(z.string().min(1)).optional(),
 });
+
+// ─── Query param validation ─────────────────────────────────────
+export const brandCampaignsQuerySchema = z.object({
+  brandId: z.string().min(1).max(100).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+}).strict();
+
+export const brandOrdersQuerySchema = z.object({
+  brandName: z.string().min(1).max(200).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+}).strict();
+
+export const brandTransactionsQuerySchema = z.object({
+  brandId: z.string().min(1).max(100).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+}).strict();

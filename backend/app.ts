@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -7,6 +8,7 @@ import crypto from 'node:crypto';
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
 import { httpLog, logEvent } from './config/logger.js';
+import { logSecurityIncident, logPerformance } from './config/appLogs.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
@@ -71,6 +73,20 @@ function isOriginAllowed(origin: string, allowed: string[]): boolean {
   });
 }
 
+// ── In-flight request tracking (for graceful shutdown drain) ─────
+let inFlightRequests = 0;
+let drainResolve: (() => void) | null = null;
+
+export function getInFlightCount() { return inFlightRequests; }
+
+export function waitForDrain(timeoutMs: number): Promise<void> {
+  if (inFlightRequests <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    drainResolve = resolve;
+    setTimeout(resolve, timeoutMs);
+  });
+}
+
 export function createApp(env: Env) {
   const app = express();
 
@@ -78,6 +94,17 @@ export function createApp(env: Env) {
   initAiServiceConfig(env);
 
   app.disable('x-powered-by');
+
+  // Track in-flight requests for graceful shutdown draining.
+  // Must be registered BEFORE routes so every request is counted.
+  app.use((req, res, next) => {
+    inFlightRequests++;
+    res.on('close', () => {
+      inFlightRequests--;
+      if (inFlightRequests <= 0 && drainResolve) drainResolve();
+    });
+    next();
+  });
 
   // Response timing headers for performance monitoring.
   app.use(responseTimingMiddleware());
@@ -93,12 +120,13 @@ export function createApp(env: Env) {
     next();
   });
 
-  // Most deployments (Render/Vercel/NGINX) run behind a reverse proxy.
+  // Most deployments run behind a reverse proxy (NGINX, load balancer).
   // This ensures `req.ip` and rate-limits behave correctly.
   app.set('trust proxy', 1);
 
   // Structured request logging via Winston with correlation ID propagation.
   // Silent in tests (Winston logger is configured to be silent in test mode).
+  // GOD-LEVEL: Includes user journey context (userId, role) from auth middleware.
   const SLOW_REQUEST_THRESHOLD_MS = 3000;
   app.use((req, res, next) => {
     const start = Date.now();
@@ -112,6 +140,10 @@ export function createApp(env: Env) {
       const status = res.statusCode;
       const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
 
+      // Auth context is available here because handlers have already executed.
+      const userId = req.auth?.userId;
+      const role = req.auth?.roles?.join(',');
+
       logEvent(level, `${req.method} ${req.originalUrl} -> ${status}`, {
         domain: 'http',
         eventName: 'REQUEST_COMPLETED',
@@ -122,19 +154,32 @@ export function createApp(env: Env) {
         statusCode: status,
         duration: ms,
         ip: req.ip,
+        userId,
+        role,
         metadata: {
           userAgent: req.get('user-agent'),
           contentLength: res.get('content-length'),
         },
       });
 
-      // Slow request detection
+      // NOTE: Per-endpoint access events are logged in each controller handler
+      // with rich journey context (action, metadata). No duplicate middleware
+      // access log needed here — the REQUEST_COMPLETED event above covers
+      // HTTP telemetry.
+
+      // Performance tracking for slow requests
       if (ms > SLOW_REQUEST_THRESHOLD_MS) {
         httpLog.warn(`Slow request detected: ${req.method} ${req.originalUrl} took ${ms}ms`, {
           requestId,
           correlationId,
           durationMs: ms,
           threshold: SLOW_REQUEST_THRESHOLD_MS,
+        });
+        logPerformance({
+          operation: `${req.method} ${req.originalUrl}`,
+          durationMs: ms,
+          slowThresholdMs: SLOW_REQUEST_THRESHOLD_MS,
+          metadata: { userId, role, statusCode: status, ip: req.ip },
         });
       }
     });
@@ -155,6 +200,48 @@ export function createApp(env: Env) {
   // Permissions-Policy: restrict sensitive browser APIs (not part of Helmet types)
   app.use((_req, res, next) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    // Prevent intermediary caches from storing sensitive API responses.
+    // Individual routes (e.g. public product listings) can override this.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    next();
+  });
+
+  // ── Compression ────────────────────────────────────────────────
+  // Gzip responses >1 KB for ~3-5x size reduction on JSON payloads.
+  // Skip SSE streams (realtime) — they use chunked transfer encoding.
+  app.use(compression({
+    threshold: 1024,
+    level: 6,
+    filter: (req, res) => {
+      if (req.path.startsWith('/api/realtime/')) return false;
+      return compression.filter(req, res);
+    },
+  }));
+
+  // ── Request timeout ────────────────────────────────────────────────
+  // Prevents hung handlers from holding connections indefinitely.
+  // This is a safety net — individual routes can set shorter timeouts.
+  const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS) || 30_000;
+  app.use((req, res, next) => {
+    // Skip SSE streams — they're intentionally long-lived.
+    if (req.path.startsWith('/api/realtime/')) return next();
+    const timer = setTimeout(() => {
+      if (!res.headersSent) {
+        httpLog.warn('Request timeout', {
+          method: req.method,
+          path: req.originalUrl,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+          ip: req.ip,
+        });
+        res.status(504).json({
+          error: { code: 'GATEWAY_TIMEOUT', message: 'The request took too long. Please try again.' },
+        });
+      }
+    }, REQUEST_TIMEOUT_MS);
+    // Don't prevent process exit.
+    timer.unref();
+    res.on('close', () => clearTimeout(timer));
     next();
   });
 
@@ -168,6 +255,14 @@ export function createApp(env: Env) {
       skip: (req) => req.path === '/api/realtime/stream' || req.path === '/api/realtime/health',
       handler: (_req, res) => {
         httpLog.warn('Rate limit exceeded', { ip: _req.ip });
+        logSecurityIncident('RATE_LIMIT_HIT', {
+          severity: 'medium',
+          ip: _req.ip,
+          route: _req.originalUrl,
+          method: _req.method,
+          requestId: String(res.locals.requestId || ''),
+        });
+        res.setHeader('Retry-After', '60');
         res.status(429).json({
           error: { code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment and try again.' },
         });
@@ -182,6 +277,7 @@ export function createApp(env: Env) {
     standardHeaders: true,
     legacyHeaders: false,
     handler: (_req, res) => {
+      res.setHeader('Retry-After', '300');
       res.status(429).json({
         error: { code: 'AUTH_RATE_LIMITED', message: 'Too many login attempts. Please wait a few minutes and try again.' },
       });
@@ -196,6 +292,14 @@ export function createApp(env: Env) {
   app.use((req, res, next) => {
     const origin = req.header('origin');
     if (origin && !isOriginAllowed(origin, corsOrigins)) {
+      logSecurityIncident('CORS_VIOLATION', {
+        severity: 'medium',
+        ip: req.ip,
+        route: req.originalUrl,
+        method: req.method,
+        requestId: String(res.locals.requestId || ''),
+        metadata: { origin },
+      });
       return res.status(403).json({
         error: 'origin_not_allowed',
       });

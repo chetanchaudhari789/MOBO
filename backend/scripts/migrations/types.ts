@@ -1,5 +1,5 @@
 export type MigrationContext = {
-  // Intentionally structural (avoids a direct dependency on the `mongodb` package types)
+  // Intentionally structural (avoids tight coupling to PostgreSQL driver types)
   db: any;
   now: Date;
   log: (message: string) => void;

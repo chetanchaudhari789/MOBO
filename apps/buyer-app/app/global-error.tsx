@@ -33,7 +33,7 @@ export default function GlobalError({
           <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
             An unexpected error occurred. Please try again.
           </p>
-          {error?.message && (
+          {process.env.NODE_ENV === 'development' && error?.message && (
             <pre
               style={{
                 fontSize: '0.75rem',
@@ -48,6 +48,11 @@ export default function GlobalError({
             >
               {error.message}
             </pre>
+          )}
+          {error?.digest && (
+            <p style={{ fontSize: '0.7rem', color: '#9ca3af', marginBottom: '1rem' }}>
+              Error ID: {error.digest}
+            </p>
           )}
           <button
             onClick={reset}

@@ -146,7 +146,6 @@ test('order lifecycle: buyer create -> ops verify -> ops settle -> wallets credi
   } else {
     // Likely DUPLICATE_DEAL_ORDER. Re-use the most recent order for this buyer.
     const body = await createRes.text().catch(() => '');
-    // eslint-disable-next-line no-console
     console.log(`Order creation returned ${createRes.status()}: ${body.slice(0, 300)}`);
     const existingRes = await request.get(`/api/orders/user/${buyer.user.id}`, {
       headers: authHeaders(buyer.tokens.accessToken),

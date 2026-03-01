@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useToast } from '../context/ToastContext';
@@ -10,9 +10,9 @@ import { normalizeMobileTo10Digits } from '../utils/mobiles';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv as downloadCsvFile } from '../utils/csvHelpers';
-import { urlToBase64 } from '../utils/imageHelpers';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { User, Campaign, Order, Product, Ticket } from '../types';
 import {
   LayoutGrid,
@@ -119,7 +119,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
     .filter((o: Order) => {
       if (new Date(o.createdAt).toDateString() !== new Date().toDateString()) return false;
       // Only count settled or cooling orders — exclude rejected/fraud/frozen.
-      const status = String((o as any).affiliateStatus || '');
+      const status = String(o.affiliateStatus || '');
       return status === 'Approved_Settled' || status === 'Pending_Cooling';
     })
     .reduce((acc: number, o: Order) => acc + (o.items[0]?.commission || 0), 0);
@@ -138,14 +138,14 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
   const totalDeals = orders.length;
   const totalEarnings = orders
     .filter((o: Order) => {
-      const status = String((o as any).affiliateStatus || '');
+      const status = String(o.affiliateStatus || '');
       return status === 'Approved_Settled' || status === 'Pending_Cooling';
     })
     .reduce((acc: number, o: Order) => acc + (o.items[0]?.commission || 0), 0);
   const totalOrderValue = orders.reduce((acc: number, o: Order) => acc + (o.total || 0), 0);
-  const settledOrders = orders.filter((o: Order) => String((o as any).affiliateStatus || '') === 'Approved_Settled');
+  const settledOrders = orders.filter((o: Order) => String(o.affiliateStatus || '') === 'Approved_Settled');
   const pendingOrders = orders.filter((o: Order) => {
-    const s = String((o as any).affiliateStatus || '');
+    const s = String(o.affiliateStatus || '');
     return s === 'Pending_Cooling' || s === 'Pending_Verification';
   });
 
@@ -225,7 +225,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-[0.8rem] flex items-center justify-center font-black text-sm shadow-inner overflow-hidden">
                     {u.avatar ? (
-                      <img
+                      <img loading="lazy"
                         src={u.avatar}
                         alt={u.name ? `${u.name} avatar` : 'Avatar'}
                         className="w-full h-full object-cover"
@@ -426,9 +426,9 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                   )}
                   <div className="p-2 pb-0 flex gap-3 mb-3">
                     <div className="w-14 h-14 bg-[#F4F4F5] rounded-[1rem] p-1.5 flex-shrink-0 relative overflow-hidden">
-                      <img
+                      <ProxiedImage
                         src={o.items?.[0]?.image}
-                        alt={o.items?.[0]?.title}
+                        alt={o.items?.[0]?.title || 'Order item'}
                         className="w-full h-full object-contain mix-blend-multiply relative z-10"
                       />
                     </div>
@@ -692,7 +692,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                        <img
+                        <ProxiedImage
                           src={d.image}
                           alt={d.title}
                           className="w-full h-full object-contain mix-blend-multiply"
@@ -799,7 +799,7 @@ const MarketView = ({ campaigns, deals, loading, user, onRefresh, onPublish }: a
                 >
                   <div className="flex gap-4 mb-4">
                     <div className="w-16 h-16 bg-[#F4F4F5] rounded-[1rem] p-2 flex-shrink-0">
-                        <img
+                        <ProxiedImage
                           src={c.image}
                           alt={c.title}
                           className="w-full h-full object-contain mix-blend-multiply"
@@ -974,7 +974,7 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-zinc-100 rounded-[0.8rem] flex items-center justify-center font-black text-zinc-500 text-sm overflow-hidden">
                       {u.avatar ? (
-                        <img
+                        <img loading="lazy"
                           src={u.avatar}
                           alt={u.name ? `${u.name} avatar` : 'Avatar'}
                           className="w-full h-full object-cover"
@@ -1073,7 +1073,7 @@ const MediatorProfileView = () => {
         >
           <div className="w-24 h-24 rounded-full bg-zinc-100 border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
             {avatar ? (
-              <img
+              <img loading="lazy"
                 src={avatar}
                 alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                 className="w-full h-full object-cover"
@@ -1169,7 +1169,7 @@ const MediatorProfileView = () => {
           >
             {qrCode ? (
               <div className="relative">
-                <img
+                <img loading="lazy"
                   src={qrCode}
                   alt="Payment QR"
                   className="h-32 w-32 object-contain rounded-lg"
@@ -1283,7 +1283,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-[0.8rem] bg-white/10 flex items-center justify-center font-bold text-sm overflow-hidden">
                 {buyer.avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={buyer.avatar}
                     alt={buyer.name ? `${buyer.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -1420,9 +1420,9 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-zinc-50 rounded-[0.8rem] p-1.5 flex-shrink-0">
-                        <img
+                        <ProxiedImage
                           src={o.items?.[0]?.image}
-                          alt={o.items?.[0]?.title}
+                          alt={o.items?.[0]?.title || 'Order item'}
                           className="w-full h-full object-contain mix-blend-multiply"
                         />
                       </div>
@@ -1532,7 +1532,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             </button>
             <h3 className="font-bold text-lg text-zinc-900 mb-4">Payment QR</h3>
             <div className="p-2 border-2 border-dashed border-zinc-200 rounded-xl mb-4">
-              <img src={buyer.qrCode} alt="Payment QR" className="w-48 h-48 object-contain" />
+              <img loading="lazy" src={buyer.qrCode} alt="Payment QR" className="w-48 h-48 object-contain" />
             </div>
             <p className="text-center text-xs font-bold text-zinc-500">{buyer.name}</p>
             <p className="text-center text-[10px] text-zinc-400 font-mono">{buyer.upiId}</p>
@@ -1604,9 +1604,7 @@ export const MediatorDashboard: React.FC = () => {
     }
   }, [dealBuilder]);
 
-  // AI Analysis State
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // AI Analysis — now reads stored data from order, no Gemini calls needed
 
   useEffect(() => {
     loadData();
@@ -1722,46 +1720,6 @@ export const MediatorDashboard: React.FC = () => {
     }
   };
 
-  const analysisAbortRef = useRef<AbortController | null>(null);
-
-  const runAnalysis = async () => {
-    if (!proofModal || !proofModal.screenshots?.order) return;
-    // Cancel any in-flight analysis
-    analysisAbortRef.current?.abort();
-    const controller = new AbortController();
-    analysisAbortRef.current = controller;
-    setIsAnalyzing(true);
-    setAiAnalysis(null);
-    try {
-      const imageBase64 = await urlToBase64(proofModal.screenshots.order);
-      if (controller.signal.aborted) return;
-      const result = await api.ops.analyzeProof(
-        proofModal.id,
-        imageBase64,
-        proofModal.externalOrderId || '',
-        proofModal.total
-      );
-      if (controller.signal.aborted) return;
-      setAiAnalysis(result);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      console.error(e);
-      toast.error('Analysis failed. Try again.');
-    } finally {
-      if (!controller.signal.aborted) setIsAnalyzing(false);
-    }
-  };
-
-  // Auto-trigger extraction when modal opens (skip if already analyzed for same order)
-  const lastAnalyzedOrderRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (proofModal && proofModal.screenshots?.order && proofModal.id !== lastAnalyzedOrderRef.current) {
-      lastAnalyzedOrderRef.current = proofModal.id;
-      runAnalysis();
-    }
-    return () => { analysisAbortRef.current?.abort(); };
-  }, [proofModal]);
-
   const hasNotifications = unreadCount > 0;
 
   return (
@@ -1771,7 +1729,7 @@ export const MediatorDashboard: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-[0.8rem] bg-[#18181B] text-white flex items-center justify-center font-black text-lg shadow-lg border-2 border-white overflow-hidden">
             {user?.avatar ? (
-              <img
+              <img loading="lazy"
                 src={user.avatar}
                 alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                 className="w-full h-full object-cover"
@@ -1900,7 +1858,6 @@ export const MediatorDashboard: React.FC = () => {
             onRefresh={loadData}
             onViewProof={(order: Order) => {
               setProofModal(order);
-              setAiAnalysis(null);
             }}
           />
         )}
@@ -2059,81 +2016,61 @@ export const MediatorDashboard: React.FC = () => {
                     alt="Order Proof"
                   />
 
-                  {/* AI ANALYSIS SECTION */}
+                  {/* AI VERIFICATION RESULTS (stored from buyer's proof submission) */}
+                  {proofModal.orderAiVerification && (
                   <div className="bg-indigo-500/10 p-4 rounded-xl border border-indigo-500/20 mt-4 relative overflow-hidden">
                     <div className="flex justify-between items-center mb-3 relative z-10">
                       <h4 className="font-bold text-indigo-300 flex items-center gap-2 text-xs uppercase tracking-widest">
-                        <Sparkles size={14} className="text-indigo-400" /> AI Assistant
+                        <Sparkles size={14} className="text-indigo-400" /> AI Verification
                       </h4>
-                      {!aiAnalysis && !isAnalyzing && (
-                        <button
-                          type="button"
-                          onClick={runAnalysis}
-                          className="bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1020]"
-                        >
-                          Analyze
-                        </button>
-                      )}
                     </div>
 
-                    {isAnalyzing && (
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <Loader2
-                          className="animate-spin motion-reduce:animate-none text-indigo-400 mb-2"
-                          size={24}
-                        />
-                        <p className="text-xs font-bold text-indigo-300 animate-pulse motion-reduce:animate-none">
-                          Analyzing Screenshot...
-                        </p>
-                      </div>
-                    )}
-
-                    {aiAnalysis && (
                       <div className="space-y-3 animate-fade-in">
                         {(() => {
-                          const n = Number(aiAnalysis.confidenceScore);
+                          const aiData = proofModal.orderAiVerification;
+                          const n = Number(aiData?.confidenceScore);
                           const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
                           return (
                             <>
                               <div className="flex gap-2">
                                 <div
-                                  className={`flex-1 p-2 rounded-lg border ${aiAnalysis.orderIdMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
+                                  className={`flex-1 p-2 rounded-lg border ${aiData?.orderIdMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
                                 >
                                   <p
-                                    className={`text-[9px] font-bold uppercase ${aiAnalysis.orderIdMatch ? 'text-green-400' : 'text-red-400'}`}
+                                    className={`text-[9px] font-bold uppercase ${aiData?.orderIdMatch ? 'text-green-400' : 'text-red-400'}`}
                                   >
                                     Order ID
                                   </p>
                                   <p className="text-xs font-bold text-white">
-                                    {aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}
+                                    {aiData?.orderIdMatch ? 'Matched' : 'Mismatch'}
                                   </p>
-                                  {(aiAnalysis as any).detectedOrderId && (
+                                  {aiData?.detectedOrderId && (
                                     <p className="text-[9px] text-zinc-400 mt-0.5 font-mono break-all">
-                                      Detected: {(aiAnalysis as any).detectedOrderId}
+                                      Detected: {aiData.detectedOrderId}
                                     </p>
                                   )}
                                 </div>
                                 <div
-                                  className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
+                                  className={`flex-1 p-2 rounded-lg border ${aiData?.amountMatch ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}
                                 >
                                   <p
-                                    className={`text-[9px] font-bold uppercase ${aiAnalysis.amountMatch ? 'text-green-400' : 'text-red-400'}`}
+                                    className={`text-[9px] font-bold uppercase ${aiData?.amountMatch ? 'text-green-400' : 'text-red-400'}`}
                                   >
                                     Amount
                                   </p>
                                   <p className="text-xs font-bold text-white">
-                                    {aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}
+                                    {aiData?.amountMatch ? 'Matched' : 'Mismatch'}
                                   </p>
-                                  {(aiAnalysis as any).detectedAmount != null && (
+                                  {aiData?.detectedAmount != null && (
                                     <p className="text-[9px] text-zinc-400 mt-0.5 font-mono">
-                                      Detected: ₹{(aiAnalysis as any).detectedAmount}
+                                      Detected: {formatCurrency(aiData.detectedAmount)}
                                     </p>
                                   )}
                                 </div>
                               </div>
                               <div className="bg-black/30 p-2 rounded-lg">
                                 <p className="text-[10px] text-zinc-400 leading-relaxed">
-                                  {aiAnalysis.discrepancyNote ||
+                                  {aiData?.discrepancyNote ||
                                     'Verified. Details match expected values.'}
                                 </p>
                               </div>
@@ -2155,8 +2092,8 @@ export const MediatorDashboard: React.FC = () => {
                           );
                         })()}
                       </div>
-                    )}
                   </div>
+                  )}
                 </div>
               ) : (
                 <div className="mt-4 p-4 text-center border border-dashed border-zinc-700 rounded-xl text-zinc-500 text-xs">
@@ -2223,22 +2160,22 @@ export const MediatorDashboard: React.FC = () => {
                     <>
                       <div className="flex items-center gap-1.5">
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
-                          (proofModal.verification as any)?.returnWindowVerified ? 'bg-green-500 text-white'
+                          proofModal.verification?.returnWindowVerified ? 'bg-green-500 text-white'
                             : (proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? 'bg-amber-500 text-amber-900'
                             : proofModal.verification?.orderVerified ? 'bg-purple-500 text-white'
                             : 'bg-zinc-600 text-zinc-400'
                         }`}>
-                          {(proofModal.verification as any)?.returnWindowVerified ? '✓' :
+                          {proofModal.verification?.returnWindowVerified ? '✓' :
                             ((proofModal.requirements?.required?.includes('review') && proofModal.requirements?.required?.includes('rating')) ? '4' :
                              (proofModal.requirements?.required?.includes('review') || proofModal.requirements?.required?.includes('rating')) ? '3' : '2')}
                         </div>
                         <span className={`text-[10px] font-bold ${
-                          (proofModal.verification as any)?.returnWindowVerified ? 'text-green-400'
+                          proofModal.verification?.returnWindowVerified ? 'text-green-400'
                             : (proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? 'text-amber-400'
                             : 'text-zinc-400'
                         }`}>Return{(proofModal.requirements?.missingProofs as string[] ?? []).includes('returnWindow') ? ' !' : ''}</span>
                       </div>
-                      <div className={`flex-1 h-0.5 rounded ${(proofModal.verification as any)?.returnWindowVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                      <div className={`flex-1 h-0.5 rounded ${proofModal.verification?.returnWindowVerified ? 'bg-green-500' : 'bg-zinc-700'}`} />
                     </>
                   )}
                   <div className="flex items-center gap-1.5">
@@ -2314,9 +2251,9 @@ export const MediatorDashboard: React.FC = () => {
                 <h4 className="text-xs font-bold text-teal-400 uppercase mb-3 flex items-center gap-2">
                   <Package size={14} /> Return Window Check
                 </h4>
-                {(proofModal.screenshots as any)?.returnWindow ? (
+                {proofModal.screenshots?.returnWindow ? (
                   <ZoomableImage
-                    src={(proofModal.screenshots as any).returnWindow}
+                    src={proofModal.screenshots.returnWindow}
                     className="w-full rounded-xl border border-teal-500/20"
                     alt="Return Window Proof"
                   />
@@ -2326,7 +2263,7 @@ export const MediatorDashboard: React.FC = () => {
                   </div>
                 )}
                 <p className="text-[10px] text-zinc-500 mt-2">
-                  Cooling Period: {(proofModal as any).returnWindowDays ?? 10} days
+                  Cooling Period: {proofModal.returnWindowDays ?? 10} days
                 </p>
                 {/* AI Return Window Verification */}
                 {proofModal.returnWindowAiVerification && (
@@ -2634,8 +2571,9 @@ export const MediatorDashboard: React.FC = () => {
             <div className="w-12 h-1 bg-zinc-200 rounded-full mx-auto mb-6"></div>
             <div className="flex gap-4 mb-6">
               <div className="w-16 h-16 rounded-[1rem] bg-zinc-50 p-2 border border-zinc-100 flex items-center justify-center">
-                <img
+                <ProxiedImage
                   src={dealBuilder.image}
+                  alt={dealBuilder.title || 'Deal'}
                   className="w-full h-full object-contain mix-blend-multiply"
                 />
               </div>

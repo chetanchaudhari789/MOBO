@@ -1,7 +1,7 @@
 // ──────────────────────────────────────────────────────────
 // MOBO – Prisma Schema (PostgreSQL)
-// Mirrors all 17 Mongoose models for parallel dual-write migration.
-// MongoDB remains the primary. Prisma/PG is the shadow write target.
+// PostgreSQL is the primary and only database.
+// 17 models covering the full MOBO domain.
 // ──────────────────────────────────────────────────────────
 
 generator client {
@@ -358,6 +358,8 @@ model Brand {
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([deletedAt, status])
+  @@index([ownerUserId])
   @@map("brands")
 }
 
@@ -378,6 +380,8 @@ model Agency {
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([deletedAt, status])
+  @@index([ownerUserId])
   @@map("agencies")
 }
 
@@ -399,6 +403,7 @@ model MediatorProfile {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([parentAgencyCode])
   @@map("mediator_profiles")
 }
 
@@ -418,6 +423,7 @@ model ShopperProfile {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([defaultMediatorCode])
   @@map("shopper_profiles")
 }
 
@@ -462,7 +468,9 @@ model Campaign {
   orders OrderItem[]
 
   @@index([status, brandUserId, createdAt(sort: Desc)])
+  @@index([brandUserId])
   @@index([deletedAt, createdAt(sort: Desc)])
+  @@index([status])
   @@map("campaigns")
 }
 
@@ -503,7 +511,9 @@ model Deal {
 
   @@unique([campaignId, mediatorCode])
   @@index([mediatorCode, createdAt(sort: Desc)])
+  @@index([mediatorCode, deletedAt, active])
   @@index([active])
+  @@index([deletedAt, active])
   @@map("deals")
 }
 
@@ -549,6 +559,7 @@ model Order {
   returnWindowDays       Int     @default(14) @map("return_window_days")
 
   // AI verification results (JSONB because deeply nested)
+  orderAiVerification        Json? @map("order_ai_verification")
   ratingAiVerification       Json? @map("rating_ai_verification")
   returnWindowAiVerification Json? @map("return_window_ai_verification")
 
@@ -585,8 +596,8 @@ model Order {
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  user      User        @relation("OrderUser", fields: [userId], references: [id])
-  brandUser User?       @relation("OrderBrandUser", fields: [brandUserId], references: [id])
+  user      User        @relation("OrderUser", fields: [userId], references: [id], onDelete: Restrict)
+  brandUser User?       @relation("OrderBrandUser", fields: [brandUserId], references: [id], onDelete: Restrict)
   items     OrderItem[]
 
   @@index([userId, createdAt(sort: Desc)])
@@ -600,9 +611,12 @@ model Order {
   @@index([settlementMode])
   // 100k-scale composite indexes for common query/filter patterns
   @@index([deletedAt, createdAt(sort: Desc)])     // soft-delete + recent-first listing
+  @@index([deletedAt, affiliateStatus, createdAt(sort: Desc)]) // admin financials with status filter
   @@index([externalOrderId])                       // duplicate-check during order creation
   @@index([userId, workflowStatus, deletedAt])     // buyer dashboard filtered listing
   @@index([brandUserId, workflowStatus, deletedAt]) // brand dashboard filtered listing
+  @@index([managerName, deletedAt, createdAt(sort: Desc)]) // ops dashboard filtered listing
+  @@index([buyerMobile, deletedAt])                  // velocity check lookups
   @@map("orders")
 }
 
@@ -622,10 +636,11 @@ model OrderItem {
   brandName            String? @map("brand_name")
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  campaign Campaign @relation(fields: [campaignId], references: [id])
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
   @@index([campaignId])
+  @@index([productId])
   @@map("order_items")
 }
 
@@ -647,7 +662,7 @@ model Wallet {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  owner        User          @relation(fields: [ownerUserId], references: [id])
+  owner        User          @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
   transactions Transaction[]
   payouts      Payout[]
 
@@ -719,12 +734,13 @@ model Payout {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  beneficiary User   @relation(fields: [beneficiaryUserId], references: [id])
-  wallet      Wallet @relation(fields: [walletId], references: [id])
+  beneficiary User   @relation(fields: [beneficiaryUserId], references: [id], onDelete: Restrict)
+  wallet      Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
 
   @@unique([provider, providerRef])
   @@index([status, requestedAt(sort: Desc)])
   @@index([beneficiaryUserId, requestedAt(sort: Desc)])
+  @@index([walletId])
   @@map("payouts")
 }
 
@@ -759,11 +775,12 @@ model Invite {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  creator User? @relation("InviteCreatedBy", fields: [createdBy], references: [id])
+  creator User? @relation("InviteCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
 
   @@index([status, expiresAt])
   @@index([code, status, useCount])
   @@index([parentCode, status, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])                      // admin invite listing (unfiltered sort)
   @@map("invites")
 }
 
@@ -790,10 +807,12 @@ model Ticket {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([status, createdAt(sort: Desc)])
   @@index([userId, deletedAt, createdAt(sort: Desc)]) // user-specific ticket listing
+  @@index([deletedAt, createdAt(sort: Desc)])          // admin ticket listing
+  @@index([orderId])                                   // settlement dispute lookups
   @@map("tickets")
 }
 
@@ -829,8 +848,8 @@ model Suspension {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  target User @relation("SuspensionTarget", fields: [targetUserId], references: [id])
-  admin  User @relation("SuspensionAdmin", fields: [adminUserId], references: [id])
+  target User @relation("SuspensionTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  admin  User @relation("SuspensionAdmin", fields: [adminUserId], references: [id], onDelete: Restrict)
 
   @@index([targetUserId, createdAt(sort: Desc)])
   @@map("suspensions")
@@ -851,7 +870,7 @@ model AuditLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  actor User? @relation(fields: [actorUserId], references: [id])
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([createdAt(sort: Desc), action])
   @@index([entityType, entityId, createdAt(sort: Desc)])

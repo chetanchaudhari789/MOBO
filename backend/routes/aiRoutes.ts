@@ -11,12 +11,12 @@ import {
   verifyProofWithAi,
   verifyRatingScreenshotWithAi,
 } from '../services/aiService.js';
-import { DealModel } from '../models/Deal.js';
 import { toUiDeal } from '../utils/uiMappers.js';
-import { buildMediatorCodeRegex, normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { normalizeMediatorCode } from '../utils/mediatorCode.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 
 export function aiRoutes(env: Env): Router {
   const router = Router();
@@ -258,6 +258,16 @@ export function aiRoutes(env: Env): Router {
       }
 
       let effectiveProducts: any[] = Array.isArray(payload.products) ? payload.products : [];
+
+      // Log AI chat access for ALL code paths (intent-based + AI-generated)
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: req.auth?.userId,
+        roles: req.auth?.roles,
+        ip: req.ip,
+        resource: 'AI',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AI_CHAT', messageLength: String(payload.message || '').length },
+      });
       if (!Array.isArray(effectiveProducts) || effectiveProducts.length === 0) {
         const requester = req.auth?.user;
         const roles = req.auth?.roles ?? [];
@@ -278,21 +288,6 @@ export function aiRoutes(env: Env): Router {
                 take: 50,
               });
               deals = pgDeals;
-            }
-            // Fallback: MongoDB
-            if (!deals.length) {
-              const mediatorRegex = buildMediatorCodeRegex(mediatorCode);
-              if (mediatorRegex) {
-                const mongoDeals = await DealModel.find({
-                  mediatorCode: mediatorRegex,
-                  active: true,
-                  deletedAt: null,
-                })
-                  .sort({ createdAt: -1 })
-                  .limit(50)
-                  .lean();
-                deals = mongoDeals;
-              }
             }
             effectiveProducts = deals.map(toUiDeal);
           }
@@ -528,14 +523,29 @@ export function aiRoutes(env: Env): Router {
         metadata: { intent: result?.intent, messageLength: rawMessage.length },
       });
 
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: req.auth?.userId,
+        roles: req.auth?.roles,
+        ip: req.ip,
+        resource: 'AI_CHAT',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AI_CHAT', intent: result?.intent, messageLength: rawMessage.length },
+      });
+
       res.json(result);
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ai/chat' } });
       if (!sendKnownError(err, res)) next(err);
     }
   });
 
   // Lightweight config status (does not validate the key).
   router.get('/status', (_req, res) => {
+    logAccessEvent('RESOURCE_ACCESS', {
+      ip: _req.ip,
+      resource: 'AI',
+      metadata: { action: 'AI_STATUS' },
+    });
     res.json({ configured: isGeminiConfigured(env) });
   });
 
@@ -545,8 +555,17 @@ export function aiRoutes(env: Env): Router {
     try {
       if (!ensureAiEnabled(res)) return;
       const result = await checkGeminiApiKey(env);
+      logAccessEvent('ADMIN_ACTION', {
+        userId: _req.auth?.userId,
+        roles: _req.auth?.roles,
+        ip: _req.ip,
+        resource: 'AI',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AI_KEY_CHECK', ok: result.ok },
+      });
       res.status(result.ok ? 200 : 503).json(result);
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'medium', userId: _req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ai/check-key' } });
       if (!sendKnownError(err, res)) next(err);
     }
   });
@@ -557,14 +576,14 @@ export function aiRoutes(env: Env): Router {
       const payload = proofSchema.parse(req.body);
 
       // E2E runs should be deterministic and must not depend on external AI quotas.
-      if (env.SEED_E2E) {
+      if (env.NODE_ENV === 'test') {
         res.json({
           orderIdMatch: true,
           amountMatch: true,
           confidenceScore: 95,
           detectedOrderId: payload.expectedOrderId,
           detectedAmount: payload.expectedAmount,
-          discrepancyNote: 'E2E mode: AI verification bypassed.',
+          discrepancyNote: 'Test mode: AI verification bypassed.',
         });
         return;
       }
@@ -598,8 +617,18 @@ export function aiRoutes(env: Env): Router {
         },
       });
 
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: req.auth?.userId,
+        roles: req.auth?.roles,
+        ip: req.ip,
+        resource: 'AI_VERIFY_PROOF',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AI_VERIFY_PROOF', expectedOrderId: payload.expectedOrderId, orderIdMatch: result.orderIdMatch, amountMatch: result.amountMatch, confidenceScore: result.confidenceScore },
+      });
+
       res.json(result);
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ai/verify-proof' } });
       if (!sendKnownError(err, res)) next(err);
     }
   });
@@ -614,14 +643,14 @@ export function aiRoutes(env: Env): Router {
       if (!enforceMinInterval(req, res)) return;
 
       // E2E deterministic bypass
-      if (env.SEED_E2E) {
+      if (env.NODE_ENV === 'test') {
         res.json({
           accountNameMatch: true,
           productNameMatch: true,
           confidenceScore: 95,
           detectedAccountName: payload.expectedBuyerName,
           detectedProductName: payload.expectedProductName,
-          discrepancyNote: 'E2E mode: AI verification bypassed.',
+          discrepancyNote: 'Test mode: AI verification bypassed.',
         });
         return;
       }
@@ -646,8 +675,18 @@ export function aiRoutes(env: Env): Router {
         },
       });
 
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: req.auth?.userId,
+        roles: req.auth?.roles,
+        ip: req.ip,
+        resource: 'AI_VERIFY_RATING',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AI_VERIFY_RATING', accountNameMatch: result.accountNameMatch, productNameMatch: result.productNameMatch, confidenceScore: result.confidenceScore },
+      });
+
       res.json(result);
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ai/verify-rating' } });
       if (!sendKnownError(err, res)) next(err);
     }
   });
@@ -679,8 +718,18 @@ export function aiRoutes(env: Env): Router {
         },
       });
 
+      logAccessEvent('RESOURCE_ACCESS', {
+        userId: req.auth?.userId,
+        roles: req.auth?.roles,
+        ip: req.ip,
+        resource: 'AI_EXTRACT_ORDER',
+        requestId: String((res as any).locals?.requestId || ''),
+        metadata: { action: 'AI_EXTRACT_ORDER', orderId: result.orderId, confidenceScore: result.confidenceScore },
+      });
+
       res.json(result);
     } catch (err) {
+      logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'EXTERNAL_SERVICE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ai/extract-order' } });
       if (!sendKnownError(err, res)) next(err);
     }
   });

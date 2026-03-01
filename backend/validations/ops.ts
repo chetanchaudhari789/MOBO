@@ -144,3 +144,11 @@ export const payoutMediatorSchema = z.object({
   mediatorId: z.string().min(1),
   amount: z.number().positive(),
 });
+
+export const copyCampaignSchema = z.object({
+  id: z.string().min(1, 'Valid campaign ID is required'),
+});
+
+export const declineOfferSchema = z.object({
+  id: z.string().min(1, 'Valid campaign ID is required'),
+});

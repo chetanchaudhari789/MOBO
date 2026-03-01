@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 
 async function loginAdmin(app: any, username: string, password: string) {
@@ -12,17 +11,11 @@ async function loginAdmin(app: any, username: string, password: string) {
 }
 
 describe('admin invites delete', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('allows admin to delete an unused active invite code', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
     await seedE2E();
 
     const app = createApp(env);
@@ -48,6 +41,8 @@ describe('admin invites delete', () => {
 
     expect(listRes.status).toBe(200);
     expect(Array.isArray(listRes.body)).toBe(true);
-    expect(listRes.body.some((i: any) => i.code === code)).toBe(false);
+    // After soft-delete the invite is revoked, not physically removed
+    const deleted = listRes.body.find((i: any) => i.code === code);
+    expect(!deleted || deleted.status === 'revoked').toBe(true);
   });
 });

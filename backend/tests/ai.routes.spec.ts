@@ -2,7 +2,6 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedE2E, E2E_ACCOUNTS } from '../seeds/e2e.js';
 
 /** Helper: login and return bearer token */
@@ -15,18 +14,12 @@ async function loginShopper(app: any) {
 }
 
 describe('ai routes', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('exposes status and rejects invalid tokens', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
       GEMINI_API_KEY: '',
     });
 
-    await connectMongo(env);
     const app = createApp(env);
 
     const statusRes = await request(app).get('/api/ai/status');
@@ -45,11 +38,9 @@ describe('ai routes', () => {
   it('validates payloads before calling the AI service', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
       GEMINI_API_KEY: '',
     });
 
-    await connectMongo(env);
     const app = createApp(env);
 
     const tooLong = 'x'.repeat(5000);
@@ -62,11 +53,9 @@ describe('ai routes', () => {
   it('returns 503 with a stable error code when Gemini is not configured', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
       GEMINI_API_KEY: '',
     });
 
-    await connectMongo(env);
     const app = createApp(env);
 
     const res = await request(app).post('/api/ai/chat').send({ message: 'hello', userName: 'Guest' });
@@ -78,11 +67,9 @@ describe('ai routes', () => {
   it('validates verify-proof payload', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
       GEMINI_API_KEY: '',
     });
 
-    await connectMongo(env);
     await seedE2E();
     const app = createApp(env);
     const token = await loginShopper(app);
@@ -98,11 +85,9 @@ describe('ai routes', () => {
   it('validates extract-order payload and returns 503 when Gemini is not configured', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
       GEMINI_API_KEY: '',
     });
 
-    await connectMongo(env);
     await seedE2E();
     const app = createApp(env);
     const token = await loginShopper(app);

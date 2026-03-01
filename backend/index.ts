@@ -1,43 +1,60 @@
 import { loadDotenv } from './config/dotenvLoader.js';
 
 loadDotenv();
-import { loadEnv, type Env } from './config/env.js';
-import { connectMongo, disconnectMongo } from './database/mongo.js';
+import { loadEnv } from './config/env.js';
 import { connectPrisma, disconnectPrisma, isPrismaAvailable } from './database/prisma.js';
-import { registerDualWriteHooks } from './database/dualWriteHooks.js';
-import { createApp } from './app.js';
+import { createApp, getInFlightCount, waitForDrain } from './app.js';
 import type { Server } from 'node:http';
-import { startupLog, seedLog, logEvent, getSystemMetrics } from './config/logger.js';
+import { startupLog, logEvent, getSystemMetrics } from './config/logger.js';
+import { logAvailabilityEvent, logDatabaseEvent, startAvailabilityMonitor, stopAvailabilityMonitor } from './config/appLogs.js';
+import { setReady, setShuttingDown } from './config/lifecycle.js';
 
+// ── Lifecycle state ──────────────────────────────────────────────────
 let server: Server | null = null;
 let shuttingDown = false;
-const shutdownTimeoutMs = 30_000;
+const shutdownTimeoutMs = Number(process.env.SHUTDOWN_TIMEOUT_MS) || 30_000;
 
+// ── Graceful shutdown ────────────────────────────────────────────────
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
+  setShuttingDown(true);
+  setReady(false); // immediately stop accepting new traffic via health probes
 
-  startupLog.info(`Received ${signal}. Shutting down...`);
+  startupLog.info(`Received ${signal}. Shutting down gracefully…`, {
+    inFlightRequests: getInFlightCount(),
+    shutdownTimeoutMs,
+  });
+
+  logAvailabilityEvent('APPLICATION_SHUTDOWN_START', {
+    component: 'backend',
+    status: 'stopping',
+    uptimeSeconds: Math.floor(process.uptime()),
+    metadata: { signal, inFlightRequests: getInFlightCount() },
+  });
 
   const forceTimer = setTimeout(() => {
-    startupLog.error('Force shutdown after timeout');
+    startupLog.error('Force shutdown after timeout', { inFlightRequests: getInFlightCount() });
     process.exit(1);
   }, shutdownTimeoutMs);
   forceTimer.unref();
 
   try {
+    // 1. Stop accepting new connections
     await new Promise<void>((resolve) => {
       if (!server) return resolve();
       server.close(() => resolve());
     });
+
+    // 2. Wait for in-flight requests to drain (up to half the shutdown budget)
+    const drainBudget = Math.floor(shutdownTimeoutMs * 0.6);
+    const currentInFlight = getInFlightCount();
+    if (currentInFlight > 0) {
+      startupLog.info(`Draining ${currentInFlight} in-flight request(s)…`, { drainBudget });
+      await waitForDrain(drainBudget);
+    }
   } catch (err) {
     startupLog.error('Error while closing HTTP server', { error: err });
-  }
-
-  try {
-    await disconnectMongo();
-  } catch (err) {
-    startupLog.error('Error while disconnecting Mongo', { error: err });
   }
 
   try {
@@ -46,86 +63,65 @@ async function shutdown(signal: string) {
     startupLog.error('Error while disconnecting Prisma', { error: err });
   } finally {
     clearTimeout(forceTimer);
+    stopAvailabilityMonitor();
+    logAvailabilityEvent('APPLICATION_SHUTDOWN_COMPLETE', {
+      component: 'backend',
+      status: 'down',
+      uptimeSeconds: Math.floor(process.uptime()),
+    });
+    startupLog.info('Shutdown complete.');
   }
 }
 
-async function tryRunE2ESeed() {
-  try {
-    const mod = await import('./seeds/e2e.js');
-    if (typeof (mod as any).seedE2E === 'function') {
-      await (mod as any).seedE2E();
-    }
-  } catch (err) {
-    seedLog.warn('SEED_E2E seed failed; skipping', { error: err });
-  }
-}
-
-async function tryRunAdminSeed(env: Env) {
-  try {
-    const mod = await import('./seeds/admin.js');
-    if (typeof (mod as any).seedAdminOnly === 'function') {
-      await (mod as any).seedAdminOnly({
-        mobile: env.ADMIN_SEED_MOBILE,
-        username: env.ADMIN_SEED_USERNAME,
-        password: env.ADMIN_SEED_PASSWORD,
-        name: env.ADMIN_SEED_NAME,
-      });
-    }
-  } catch {
-    seedLog.warn('SEED_ADMIN requested but seed module is missing (./seeds/admin.js); skipping');
-  }
-}
-
-async function tryRunDevSeed() {
-  try {
-    const mod = await import('./seeds/dev.js');
-    if (typeof (mod as any).seedDev === 'function') {
-      await (mod as any).seedDev();
-    }
-  } catch (err) {
-    seedLog.warn('SEED_DEV seed failed; skipping', { error: err });
-  }
-}
-
+// ── Main ─────────────────────────────────────────────────────────────
 async function main() {
   const env = loadEnv();
 
-  await connectMongo(env);
+  logAvailabilityEvent('APPLICATION_STARTING', {
+    component: 'backend',
+    status: 'starting',
+    metadata: {
+      nodeEnv: env.NODE_ENV,
+      port: env.PORT,
+      nodeVersion: process.version,
+      platform: process.platform,
+    },
+  });
 
-  // Connect PostgreSQL (Prisma) — PRIMARY database.
+  // Connect PostgreSQL (Prisma) — PRIMARY and ONLY database.
+  const dbStart = performance.now();
   await connectPrisma();
 
   if (!isPrismaAvailable()) {
+    logAvailabilityEvent('DATABASE_ERROR', {
+      component: 'postgresql',
+      status: 'down',
+    });
     startupLog.error('PostgreSQL connection failed. Cannot start without primary database.');
     process.exit(1);
   }
 
-  // Register Mongoose post-hooks for dual-write to PG.
-  // Hooks fire only when DUAL_WRITE_ENABLED=true AND Prisma is connected.
-  registerDualWriteHooks();
-
-  const seedAdminRequested = env.SEED_ADMIN;
-  const seedE2ERequested = env.SEED_E2E;
-  const seedDevRequested = env.SEED_DEV;
-  const isProd = env.NODE_ENV === 'production';
-
-  // E2E/admin seeding is idempotent and explicitly opt-in.
-  // Allow it even when NODE_ENV=production so Playwright (and similar harnesses) work
-  // in environments that default NODE_ENV to production.
-  if (!isProd || seedAdminRequested || seedE2ERequested) {
-    if (seedDevRequested) {
-      if (isProd) {
-        throw new Error('SEED_DEV is not allowed in production');
-      }
-      await tryRunDevSeed();
-    }
-    if (seedAdminRequested) await tryRunAdminSeed(env);
-    if (seedE2ERequested) await tryRunE2ESeed();
-  }
+  const dbConnectMs = Math.round(performance.now() - dbStart);
+  logDatabaseEvent('CONNECTED', { durationMs: dbConnectMs });
+  logAvailabilityEvent('DATABASE_CONNECTED', {
+    component: 'postgresql',
+    status: 'up',
+    responseTimeMs: dbConnectMs,
+  });
+  startupLog.info('PostgreSQL connected — primary database ready');
 
   const app = createApp(env);
 
   server = app.listen(env.PORT, () => {
+    // ── Server hardening for reverse proxy (ALB/NGINX/Render) ──
+    // Default keepAliveTimeout (5s) is shorter than most LB idle timeouts (60s),
+    // causing 502 errors. Set to 65s to outlast them.
+    server!.keepAliveTimeout = 65_000;
+    server!.headersTimeout = 66_000; // must exceed keepAliveTimeout
+
+    // Mark ready — health probes can now return 200.
+    setReady(true);
+
     const metrics = getSystemMetrics();
     logEvent('info', `Backend listening on :${env.PORT}`, {
       domain: 'system',
@@ -135,13 +131,26 @@ async function main() {
         port: env.PORT,
         nodeVersion: process.version,
         platform: process.platform,
+        pid: process.pid,
         uptimeSeconds: Math.round(process.uptime()),
+        shutdownTimeoutMs,
         ...metrics,
       },
     });
+
+    logAvailabilityEvent('APPLICATION_READY', {
+      component: 'backend',
+      status: 'up',
+      uptimeSeconds: Math.round(process.uptime()),
+      metadata: { port: env.PORT, nodeEnv: env.NODE_ENV },
+    });
+
+    // Start periodic health/memory monitoring (every 5 min, warn at 512MB RSS)
+    startAvailabilityMonitor();
   });
 }
 
+// ── Process event handlers ───────────────────────────────────────────
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('unhandledRejection', (reason) => {
@@ -164,6 +173,12 @@ process.on('uncaughtException', (err) => {
   });
   process.exitCode = 1;
   void shutdown('uncaughtException');
+});
+// Log deprecation warnings in dev/staging so they're caught before production.
+process.on('warning', (warning) => {
+  if (warning.name === 'DeprecationWarning') {
+    startupLog.warn(`Node.js deprecation: ${warning.message}`, { code: (warning as any).code });
+  }
 });
 main().catch((err) => {
   logEvent('error', `Fatal startup error: ${err.message}`, {

@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../middleware/errors.js';
 import { prisma } from '../database/prisma.js';
@@ -20,14 +20,14 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
 
   // Resolve the PG UUID for this user.
   // If user.id is already a UUID (from Prisma), use it.
-  // If user.id is a MongoDB ObjectId hex string, look up the PG user by mongoId.
+  // If user.id is a legacy 24-char hex string, look up the PG user by mongoId.
   let pgUserId = String(user?.id ?? '');
   if (pgUserId && !UUID_RE.test(pgUserId)) {
-    // user.id looks like a MongoDB ObjectId — resolve to PG UUID via mongoId lookup.
+    // user.id looks like a legacy hex ID — resolve to PG UUID via mongoId lookup.
     const mongoId = user?._id ? String(user._id) : pgUserId;
     const pgUser = await db.user.findFirst({ where: { mongoId, deletedAt: null }, select: { id: true } });
     if (!pgUser) {
-      // No PG user exists for this MongoDB user — skip silently (test/migration scenarios).
+      // No PG user found for this legacy ID — skip silently (test/migration scenarios).
       return;
     }
     pgUserId = pgUser.id;
@@ -35,7 +35,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
   if (!pgUserId) throw new AppError(500, 'MISSING_USER_ID', 'Cannot ensure role documents: user is missing id');
 
   const createdBy = user?.createdBy ? String(user.createdBy) : undefined;
-  // Also resolve createdBy if it's a MongoDB ObjectId.
+  // Also resolve createdBy if it's a legacy hex ID.
   let resolvedCreatedBy = createdBy;
   if (resolvedCreatedBy && !UUID_RE.test(resolvedCreatedBy)) {
     const pgCreator = await db.user.findFirst({ where: { mongoId: resolvedCreatedBy, deletedAt: null }, select: { id: true } });
@@ -54,7 +54,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
         status: String(user?.status ?? 'active'),
       },
       create: {
-        mongoId: new Types.ObjectId().toString(),
+        mongoId: randomUUID(),
         agencyCode,
         name,
         ownerUserId: pgUserId,
@@ -81,7 +81,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
         connectedAgencyCodes,
       },
       create: {
-        mongoId: new Types.ObjectId().toString(),
+        mongoId: randomUUID(),
         brandCode,
         name,
         ownerUserId: pgUserId,
@@ -104,7 +104,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
         status: String(user?.status ?? 'active'),
       },
       create: {
-        mongoId: new Types.ObjectId().toString(),
+        mongoId: randomUUID(),
         userId: pgUserId,
         mediatorCode,
         parentAgencyCode: String(user?.parentCode ?? '').trim() || null,
@@ -127,7 +127,7 @@ export async function ensureRoleDocumentsForUser(args: { user: AnyUser; session?
     } else {
       await db.shopperProfile.create({
         data: {
-          mongoId: new Types.ObjectId().toString(),
+          mongoId: randomUUID(),
           userId: pgUserId,
           defaultMediatorCode: String(user?.parentCode ?? '').trim() || null,
           createdBy: resolvedCreatedBy,

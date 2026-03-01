@@ -1,21 +1,19 @@
 import 'dotenv/config';
 
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
+import { connectPrisma, disconnectPrisma } from '../database/prisma.js';
 import { checkGeminiApiKey } from '../services/aiService.js';
 
 async function main() {
   const env = loadEnv();
 
-  // Mongo is required for normal backend startup; keep consistent.
-  // If you want to check AI without DB, we can adjust later.
-  await connectMongo(env);
+  await connectPrisma();
 
   const result = await checkGeminiApiKey(env);
   // eslint-disable-next-line no-console
   console.log(JSON.stringify(result, null, 2));
 
-  await disconnectMongo();
+  await disconnectPrisma();
 }
 
 main().catch((err) => {

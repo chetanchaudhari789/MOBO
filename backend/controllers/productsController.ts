@@ -1,13 +1,17 @@
 import type { Request, Response, NextFunction } from 'express';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { toUiDeal } from '../utils/uiMappers.js';
 import { normalizeMediatorCode } from '../utils/mediatorCode.js';
+import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pushOrderEvent } from '../services/orderEvents.js';
 import { writeAuditLog } from '../services/audit.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { pgDeal } from '../utils/pgMappers.js';
+import { idWhere } from '../utils/idWhere.js';
+import { orderLog } from '../config/logger.js';
+import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 
 function db() { return prisma(); }
 
@@ -28,18 +32,35 @@ export function makeProductsController() {
           return;
         }
 
-        const deals = await db().deal.findMany({
-          where: {
-            mediatorCode: { equals: mediatorCode, mode: 'insensitive' },
-            active: true,
-            deletedAt: null,
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 2000,
-        });
+        const { page, limit, skip, isPaginated } = parsePagination(req.query as Record<string, unknown>, { limit: 50 });
+        const where = {
+          mediatorCode: { equals: mediatorCode, mode: 'insensitive' as const },
+          active: true,
+          deletedAt: null,
+        };
 
-        res.json(deals.map(d => toUiDeal(pgDeal(d))));
+        const [deals, total] = await Promise.all([
+          db().deal.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+          db().deal.count({ where }),
+        ]);
+
+        res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: req.auth?.userId,
+          roles: req.auth?.roles,
+          ip: req.ip,
+          resource: 'Deal',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'PRODUCTS_LISTED', endpoint: 'listProducts', mediatorCode, resultCount: deals.length },
+        });
       } catch (err) {
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'products/listProducts' } });
         next(err);
       }
     },
@@ -62,7 +83,7 @@ export function makeProductsController() {
 
         const deal = await db().deal.findFirst({
           where: {
-            mongoId: dealId,
+            ...idWhere(dealId),
             mediatorCode: { equals: mediatorCode, mode: 'insensitive' },
             active: true,
             deletedAt: null,
@@ -83,7 +104,7 @@ export function makeProductsController() {
           brandUserMongoId = bu?.mongoId ?? undefined;
         }
 
-        const mongoId = new Types.ObjectId().toString();
+        const mongoId = randomUUID();
         const _preOrder = await db().order.create({
           data: {
             mongoId,
@@ -132,6 +153,8 @@ export function makeProductsController() {
           entityId: mongoId,
           metadata: { dealId, campaignId: deal.campaignId, mediatorCode },
         });
+        orderLog.info('Order redirect tracked', { orderId: mongoId, dealId, campaignId: deal.campaignId, mediatorCode, userId: requesterId });
+        logChangeEvent({ actorUserId: requesterId, entityType: 'Order', entityId: mongoId, action: 'STATUS_CHANGE', changedFields: ['workflowStatus'], before: {}, after: { workflowStatus: 'REDIRECTED' } });
 
         const ts = new Date().toISOString();
         publishRealtime({
@@ -148,7 +171,17 @@ export function makeProductsController() {
           preOrderId: mongoId,
           url: String(deal.productUrl),
         });
+
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: requesterId,
+          roles: requesterRoles,
+          ip: req.ip,
+          resource: 'DealRedirect',
+          requestId: String((res as any).locals?.requestId || ''),
+          metadata: { action: 'DEAL_REDIRECT', dealId, campaignId: deal.campaignId, mediatorCode, preOrderId: mongoId },
+        });
       } catch (err) {
+        logErrorEvent({ category: 'BUSINESS_LOGIC', severity: 'medium', message: 'Deal redirect tracking failed', operation: 'trackRedirect', error: err, metadata: { dealId: String(req.params.dealId || ''), userId: req.auth?.userId } });
         next(err);
       }
     },

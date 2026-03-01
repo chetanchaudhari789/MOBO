@@ -1,10 +1,4 @@
-import type { HydratedDocument } from 'mongoose';
-import type { UserDoc } from '../models/User.js';
-import type { CampaignDoc } from '../models/Campaign.js';
-import type { WalletDoc } from '../models/Wallet.js';
-import type { OrderDoc } from '../models/Order.js';
-import type { DealDoc } from '../models/Deal.js';
-import type { TicketDoc } from '../models/Ticket.js';
+// All mappers accept `any` (PG rows or legacy shapes).
 import { paiseToRupees } from './money.js';
 
 /** Safely convert a value to ISO string, returning undefined for invalid dates. */
@@ -25,8 +19,8 @@ export function toUiRole(role: string): 'user' | 'agency' | 'mediator' | 'brand'
 }
 
 export function toUiUser(
-  user: HydratedDocument<UserDoc> | (UserDoc & { _id?: any }) | any,
-  wallet?: WalletDoc | null
+  user: any,
+  wallet?: any
 ) {
   const walletBalancePaise = wallet?.availablePaise ?? user.walletBalancePaise ?? 0;
   const walletPendingPaise = wallet?.pendingPaise ?? user.walletPendingPaise ?? 0;
@@ -71,7 +65,7 @@ export function toUiUser(
   };
 }
 
-export function toUiCampaign(c: CampaignDoc & { _id?: any } | any) {
+export function toUiCampaign(c: any) {
   const statusMap: Record<string, 'Active' | 'Paused' | 'Completed' | 'Draft'> = {
     active: 'Active',
     paused: 'Paused',
@@ -130,7 +124,7 @@ export function toUiCampaign(c: CampaignDoc & { _id?: any } | any) {
   };
 }
 
-export function toUiDeal(d: DealDoc & { _id?: any } | any) {
+export function toUiDeal(d: any) {
   const placeholderImage =
     'data:image/svg+xml;utf8,' +
     encodeURIComponent(
@@ -164,7 +158,143 @@ export function toUiDeal(d: DealDoc & { _id?: any } | any) {
   };
 }
 
-export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
+/**
+ * Lightweight order summary for LIST endpoints.
+ * Strips screenshots, events, AI verification, and missing-proof details
+ * to reduce payload from ~5-20 KB/order to ~0.5-1 KB/order.
+ */
+export function toUiOrderSummary(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrderSummary: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
+  const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
+  const requiresReview = dealTypes.includes('Review');
+  const requiresRating = dealTypes.includes('Rating');
+  const requiresReturnWindow = requiresReview || requiresRating;
+
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
+
+  return {
+    id: String(o._id ?? o.id),
+    userId: String(o.userId),
+    items: (o.items ?? []).map((it: any) => ({
+      title: it.title,
+      image: it.image,
+      dealType: it.dealType,
+      quantity: it.quantity,
+      platform: it.platform,
+      brandName: it.brandName,
+    })),
+    total: paiseToRupees(o.totalPaise),
+    status: o.status,
+    workflowStatus: o.workflowStatus,
+    frozen: !!o.frozen,
+    paymentStatus: o.paymentStatus,
+    affiliateStatus: o.affiliateStatus,
+    externalOrderId: o.externalOrderId,
+    hasOrderProof: !!(o.screenshots?.order || o.screenshots?.payment),
+    hasReviewProof: !!(o.reviewLink || o.screenshots?.review),
+    hasRatingProof: !!o.screenshots?.rating,
+    hasReturnWindowProof: !!o.screenshots?.returnWindow,
+    verification: {
+      orderVerified: !!orderVerifiedAt,
+      reviewVerified: !!reviewVerifiedAt,
+      ratingVerified: !!ratingVerifiedAt,
+      returnWindowVerified: !!returnWindowVerifiedAt,
+    },
+    requirements: {
+      required: [
+        ...(requiresReview ? (['review'] as const) : []),
+        ...(requiresRating ? (['rating'] as const) : []),
+        ...(requiresReturnWindow ? (['returnWindow'] as const) : []),
+      ],
+    },
+    rejection: o.rejection
+      ? { type: o.rejection.type, reason: o.rejection.reason }
+      : undefined,
+    managerName: o.managerName,
+    agencyName: o.agencyName,
+    buyerName: o.buyerName,
+    brandName: o.brandName,
+    createdAt: safeIso(o.createdAt ?? o.createdAtIso) ?? new Date().toISOString(),
+    expectedSettlementDate: safeIso(o.expectedSettlementDate),
+  };
+}
+
+/**
+ * Lightweight order summary for brand list endpoints.
+ * Excludes buyer PII (name, mobile) and heavy data.
+ */
+export function toUiOrderSummaryForBrand(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrderSummaryForBrand: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
+  const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
+  const requiresReview = dealTypes.includes('Review');
+  const requiresRating = dealTypes.includes('Rating');
+  const requiresReturnWindow = requiresReview || requiresRating;
+
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
+
+  return {
+    id: String(o._id ?? o.id),
+    items: (o.items ?? []).map((it: any) => ({
+      title: it.title,
+      image: it.image,
+      dealType: it.dealType,
+      quantity: it.quantity,
+      platform: it.platform,
+      brandName: it.brandName,
+    })),
+    total: paiseToRupees(o.totalPaise),
+    status: o.status,
+    workflowStatus: o.workflowStatus,
+    frozen: !!o.frozen,
+    paymentStatus: o.paymentStatus,
+    affiliateStatus: o.affiliateStatus,
+    externalOrderId: o.externalOrderId,
+    hasOrderProof: !!(o.screenshots?.order || o.screenshots?.payment),
+    hasReviewProof: !!(o.reviewLink || o.screenshots?.review),
+    hasRatingProof: !!o.screenshots?.rating,
+    hasReturnWindowProof: !!o.screenshots?.returnWindow,
+    verification: {
+      orderVerified: !!orderVerifiedAt,
+      reviewVerified: !!reviewVerifiedAt,
+      ratingVerified: !!ratingVerifiedAt,
+      returnWindowVerified: !!returnWindowVerifiedAt,
+    },
+    requirements: {
+      required: [
+        ...(requiresReview ? (['review'] as const) : []),
+        ...(requiresRating ? (['rating'] as const) : []),
+        ...(requiresReturnWindow ? (['returnWindow'] as const) : []),
+      ],
+    },
+    rejection: o.rejection
+      ? { type: o.rejection.type, reason: o.rejection.reason }
+      : undefined,
+    managerName: o.managerName,
+    agencyName: o.agencyName,
+    reviewerName: o.reviewerName,
+    brandName: o.brandName,
+    createdAt: safeIso(o.createdAt ?? o.createdAtIso) ?? new Date().toISOString(),
+    expectedSettlementDate: safeIso(o.expectedSettlementDate),
+  };
+}
+
+export function toUiOrder(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrder: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
@@ -174,10 +304,10 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
   const hasRatingProof = !!o.screenshots?.rating;
   const hasReturnWindowProof = !!o.screenshots?.returnWindow;
 
-  const orderVerifiedAt = o.verification?.order?.verifiedAt ? new Date(o.verification.order.verifiedAt) : null;
-  const reviewVerifiedAt = o.verification?.review?.verifiedAt ? new Date(o.verification.review.verifiedAt) : null;
-  const ratingVerifiedAt = o.verification?.rating?.verifiedAt ? new Date(o.verification.rating.verifiedAt) : null;
-  const returnWindowVerifiedAt = o.verification?.returnWindow?.verifiedAt ? new Date(o.verification.returnWindow.verifiedAt) : null;
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
 
   const requiredSteps: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview ? (['review'] as const) : []),
@@ -253,6 +383,24 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
       detectedProductName: o.ratingAiVerification.detectedProductName,
       confidenceScore: o.ratingAiVerification.confidenceScore,
     } : undefined,
+    orderAiVerification: o.orderAiVerification ? {
+      orderIdMatch: o.orderAiVerification.orderIdMatch,
+      amountMatch: o.orderAiVerification.amountMatch,
+      detectedOrderId: o.orderAiVerification.detectedOrderId,
+      detectedAmount: o.orderAiVerification.detectedAmount,
+      confidenceScore: o.orderAiVerification.confidenceScore,
+      discrepancyNote: o.orderAiVerification.discrepancyNote,
+    } : undefined,
+    returnWindowAiVerification: o.returnWindowAiVerification ? {
+      orderIdMatch: o.returnWindowAiVerification.orderIdMatch,
+      productNameMatch: o.returnWindowAiVerification.productNameMatch,
+      amountMatch: o.returnWindowAiVerification.amountMatch,
+      soldByMatch: o.returnWindowAiVerification.soldByMatch,
+      returnWindowClosed: o.returnWindowAiVerification.returnWindowClosed,
+      confidenceScore: o.returnWindowAiVerification.confidenceScore,
+      detectedReturnWindow: o.returnWindowAiVerification.detectedReturnWindow,
+      discrepancyNote: o.returnWindowAiVerification.discrepancyNote,
+    } : undefined,
     returnWindowDays: o.returnWindowDays ?? 10,
     missingProofRequests: Array.isArray(o.missingProofRequests)
       ? o.missingProofRequests.map((r: any) => ({
@@ -285,7 +433,11 @@ export function toUiOrder(o: OrderDoc & { _id?: any } | any) {
 }
 
 // Brand must never receive buyer PII (name, phone, etc.) but CAN see proof artifacts.
-export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
+export function toUiOrderForBrand(o: any) {
+  if (!o || typeof o !== 'object') {
+    throw new Error('toUiOrderForBrand: received null or non-object input');
+  }
+  const verification = (o.verification && typeof o.verification === 'object') ? o.verification : {};
   const dealTypes = (o.items ?? []).map((it: any) => String(it?.dealType || '')).filter(Boolean);
   const requiresReview = dealTypes.includes('Review');
   const requiresRating = dealTypes.includes('Rating');
@@ -295,10 +447,10 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
   const hasRatingProof = !!o.screenshots?.rating;
   const hasReturnWindowProof = !!o.screenshots?.returnWindow;
 
-  const orderVerifiedAt = o.verification?.order?.verifiedAt ? new Date(o.verification.order.verifiedAt) : null;
-  const reviewVerifiedAt = o.verification?.review?.verifiedAt ? new Date(o.verification.review.verifiedAt) : null;
-  const ratingVerifiedAt = o.verification?.rating?.verifiedAt ? new Date(o.verification.rating.verifiedAt) : null;
-  const returnWindowVerifiedAt = o.verification?.returnWindow?.verifiedAt ? new Date(o.verification.returnWindow.verifiedAt) : null;
+  const orderVerifiedAt = verification.order?.verifiedAt ? new Date(verification.order.verifiedAt) : null;
+  const reviewVerifiedAt = verification.review?.verifiedAt ? new Date(verification.review.verifiedAt) : null;
+  const ratingVerifiedAt = verification.rating?.verifiedAt ? new Date(verification.rating.verifiedAt) : null;
+  const returnWindowVerifiedAt = verification.returnWindow?.verifiedAt ? new Date(verification.returnWindow.verifiedAt) : null;
 
   const requiredSteps: Array<'review' | 'rating' | 'returnWindow'> = [
     ...(requiresReview ? (['review'] as const) : []),
@@ -397,7 +549,7 @@ export function toUiOrderForBrand(o: OrderDoc & { _id?: any } | any) {
   };
 }
 
-export function toUiTicketForBrand(t: TicketDoc & { _id?: any } | any) {
+export function toUiTicketForBrand(t: any) {
   return {
     id: String(t._id ?? t.id),
     // Do not leak who the buyer is to brands.
@@ -410,7 +562,7 @@ export function toUiTicketForBrand(t: TicketDoc & { _id?: any } | any) {
     createdAt: safeIso(t.createdAt) ?? new Date().toISOString(),
   };
 }
-export function toUiTicket(t: TicketDoc & { _id?: any } | any) {
+export function toUiTicket(t: any) {
   return {
     id: String(t._id ?? t.id),
     userId: String(t.userId),

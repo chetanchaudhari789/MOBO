@@ -1,7 +1,7 @@
-﻿import React from 'react';
+import React from 'react';
 import { ExternalLink, Star } from 'lucide-react';
 import { Product } from '../types';
-import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
+import { ProxiedImage, placeholderImage } from './ProxiedImage';
 
 interface ProductCardProps {
   product: Product;
@@ -10,24 +10,11 @@ interface ProductCardProps {
 // Allow React's special props (e.g. `key`) without leaking them into runtime.
 type ProductCardComponentProps = React.Attributes & ProductCardProps;
 
-export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) => {
-  const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
-  const getApiBase = getApiBaseAbsolute;
-  const placeholderImage =
-    'data:image/svg+xml;utf8,' +
-    encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">' +
-        '<rect width="160" height="160" rx="24" fill="#F3F4F6"/>' +
-        '<circle cx="80" cy="64" r="24" fill="#E5E7EB"/>' +
-        '<rect x="32" y="104" width="96" height="16" rx="8" fill="#E5E7EB"/>' +
-      '</svg>'
-    );
+const sanitizeLabel = (value: unknown) => String(value || '').replace(/["\\]/g, '').trim();
+
+export const ProductCard = React.memo<ProductCardComponentProps>(({ product }) => {
   const rawImage = sanitizeLabel(product.image);
-  const proxiedImage =
-    rawImage && /^https?:\/\//i.test(rawImage)
-      ? `${getApiBase()}/media/image?url=${encodeURIComponent(rawImage)}`
-      : rawImage;
-  const imageSrc = proxiedImage || placeholderImage;
+  const imageSrc = rawImage || placeholderImage;
   const platformLabel = sanitizeLabel(product.platform) || 'DEAL';
   const brandLabel = sanitizeLabel(product.brandName) || 'PARTNER';
   const mediatorLabel = sanitizeLabel(product.mediatorCode) || 'PARTNER';
@@ -35,8 +22,10 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
     product.originalPrice > product.price ? product.originalPrice : null;
 
   const handleLinkClick = () => {
-    if (product.productUrl) {
-      window.open(product.productUrl, '_blank');
+    if (product.productUrl && /^https?:\/\//i.test(product.productUrl)) {
+      window.open(product.productUrl, '_blank', 'noopener,noreferrer');
+    } else if (product.productUrl) {
+      console.warn('Blocked non-HTTP URL:', product.productUrl);
     } else {
       console.warn('No redirection link found for this product.');
     }
@@ -63,14 +52,10 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
       {/* Top Section: Image & Key Info */}
       <div className="flex gap-4 mb-4">
         <div className="w-24 h-24 rounded-2xl bg-gray-50 border border-gray-100 p-2 flex-shrink-0 flex items-center justify-center relative">
-            <img
+            <ProxiedImage
               src={imageSrc}
               alt={product.title}
               className="w-full h-full object-contain mix-blend-multiply"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (target.src !== placeholderImage) target.src = placeholderImage;
-              }}
             />
         </div>
         <div className="flex-1 min-w-0 flex flex-col justify-center py-1">
@@ -85,7 +70,7 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
             <div className="flex text-yellow-400">
               {[...Array(5)].map((_, i) => (
                 <Star
-                  key={i}
+                  key={`star-${i}`}
                   size={10}
                   fill={i < Math.floor(product.rating || 5) ? 'currentColor' : 'none'}
                   strokeWidth={0}
@@ -141,4 +126,5 @@ export const ProductCard: React.FC<ProductCardComponentProps> = ({ product }) =>
       </button>
     </div>
   );
-};
+});
+ProductCard.displayName = 'ProductCard';

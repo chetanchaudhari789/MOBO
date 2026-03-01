@@ -69,7 +69,7 @@ const SENSITIVE_KEYS = new Set([
   'ssn', 'cvv', 'cardnumber', 'card_number',
   'otp', 'pin', 'mpin', 'vapidprivatekey',
   'googleclientsecret', 'googleserviceaccountkey',
-  'geminiapikey', 'databaseurl', 'mongodburi',
+  'geminiapikey', 'databaseurl',
 ]);
 
 function isSensitiveKey(key: string): boolean {
@@ -292,7 +292,7 @@ const devFormat = printf(({ level, message, timestamp: ts, module: mod, requestI
   return `${dim}${ts}${reset} ${color}${bold}${level.toUpperCase().padEnd(5)}${reset} ${dom}${tag}${reqId}${message}${evt}${dur}${extra}`;
 });
 
-// ─── Production JSON Format ──────────────────────────────────────────────────
+// ─── Production JSON Format (for file rotation logs — structured, machine-readable) ──
 const prodJsonFormat = combine(
   timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.SSSZ' }),
   errors({ stack: true }),
@@ -301,6 +301,45 @@ const prodJsonFormat = combine(
   redactFormat(),
   throttleFormat(),
   json()
+);
+
+// ─── Production Console Format (human-readable single-line for Render / Docker) ──
+// Output: `2026-03-01T09:50:00Z INFO [auth] User abc123 logged in | userId=abc ip=1.2.3.4`
+const prodConsoleFormat = combine(
+  timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.SSSZ' }),
+  errors({ stack: true }),
+  metadata({ fillExcept: ['message', 'level', 'timestamp', 'module', 'requestId', 'durationMs', 'domain', 'eventName', 'correlationId'] }),
+  structuredEnrich(),
+  redactFormat(),
+  throttleFormat(),
+  printf(({ level, message, timestamp: ts, module: mod, requestId, durationMs, domain, eventName, correlationId: _cid, stack, ...rest }: any) => {
+    const lvl = level.toUpperCase().padEnd(5);
+    const tag = mod ? `[${mod}]` : domain ? `[${domain}]` : '';
+    const reqId = requestId ? `(${String(requestId).slice(0, 8)})` : '';
+    const dur = typeof durationMs === 'number' ? `${durationMs}ms` : '';
+    const evt = eventName ? `«${eventName}»` : '';
+
+    // Build compact key=value pairs from metadata
+    const meta = rest.metadata && typeof rest.metadata === 'object' ? { ...rest.metadata } : {};
+    // Remove keys already shown in the prefix
+    for (const k of ['module', 'requestId', 'durationMs', 'domain', 'eventName', 'correlationId', 'traceId', 'service', 'serviceName', 'environment', 'version', 'hostname', 'pid']) {
+      delete meta[k];
+    }
+    const kvPairs = Object.entries(meta)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => {
+        if (typeof v === 'object') return `${k}=${JSON.stringify(v)}`;
+        return `${k}=${v}`;
+      })
+      .join(' ');
+
+    // Assemble: timestamp LEVEL [module] message «EVENT» 45ms | key=val key=val
+    const parts = [ts, lvl, tag, reqId, message, evt, dur].filter(Boolean);
+    let line = parts.join(' ');
+    if (kvPairs) line += ` | ${kvPairs}`;
+    if (stack) line += `\n${stack}`;
+    return line;
+  })
 );
 
 // ─── Dev Console Format ──────────────────────────────────────────────────────
@@ -314,8 +353,9 @@ const devConsoleFormat = combine(
 
 // ─── Transports ──────────────────────────────────────────────────────────────
 const transports: winston.transport[] = [
+  // Console: human-readable in prod (for Render/Docker), colorful in dev
   new winston.transports.Console({
-    format: isProd ? prodJsonFormat : devConsoleFormat,
+    format: isProd ? prodConsoleFormat : devConsoleFormat,
   }),
 ];
 
@@ -339,6 +379,69 @@ if (isProd) {
       maxSize: '20m',
       maxFiles: '90d',
       format: prodJsonFormat,
+      zippedArchive: true,
+    }),
+    // ── Domain-specific log files (CrowdStrike-aligned separation) ──
+    // Access / auth events — for investigating user behaviour and access issues.
+    new DailyRotateFile({
+      dirname: LOG_DIR,
+      filename: 'access-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '30d',
+      format: prodJsonFormat,
+      zippedArchive: true,
+      // Filter: only log entries with authentication/authorization category
+      // Winston uses the log transform to apply this filter.
+    }),
+    // Security events — for SIEM ingestion and incident investigation.
+    new DailyRotateFile({
+      dirname: LOG_DIR,
+      filename: 'security-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '90d',
+      format: combine(
+        winston.format((info) => {
+          // Only include security-domain or security-category logs
+          const domain = info.domain || (info.metadata as any)?.domain;
+          const category = info.eventCategory || (info.metadata as any)?.eventCategory;
+          if (
+            domain === 'security' ||
+            category === 'security_incident' ||
+            category === 'authentication'
+          ) {
+            return info;
+          }
+          return false;
+        })(),
+        prodJsonFormat
+      ),
+      zippedArchive: true,
+    }),
+    // Availability events — for SLA reporting and uptime tracking.
+    new DailyRotateFile({
+      dirname: LOG_DIR,
+      filename: 'availability-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '10m',
+      maxFiles: '30d',
+      format: combine(
+        winston.format((info) => {
+          const category = info.eventCategory || (info.metadata as any)?.eventCategory;
+          const eventName = info.eventName || (info.metadata as any)?.eventName || '';
+          if (
+            category === 'availability' ||
+            eventName.startsWith('APPLICATION_') ||
+            eventName.startsWith('DB_') ||
+            eventName === 'STARTUP_FATAL'
+          ) {
+            return info;
+          }
+          return false;
+        })(),
+        prodJsonFormat
+      ),
       zippedArchive: true,
     })
   );
@@ -412,12 +515,39 @@ export const aiLog = logger.child({ module: 'ai' });
 export const orderLog = logger.child({ module: 'orders' });
 export const walletLog = logger.child({ module: 'wallet' });
 export const notifLog = logger.child({ module: 'notifications' });
-export const migrationLog = logger.child({ module: 'migration' });
-export const seedLog = logger.child({ module: 'seed' });
 export const startupLog = logger.child({ module: 'startup' });
 export const securityLog = logger.child({ module: 'security' });
 export const cronLog = logger.child({ module: 'cron' });
 export const businessLog = logger.child({ module: 'business' });
+export const perfLog = logger.child({ module: 'performance' });
+export const pushLog = logger.child({ module: 'push' });
+
+// ─── Performance Tracing Utility ─────────────────────────────────────────────
+/**
+ * Lightweight performance timer for measuring operation latency.
+ * Usage:
+ *   const timer = startTimer('db_query');
+ *   await someOperation();
+ *   timer.end({ query: 'users', rows: 42 });
+ *
+ * Logs at 'info' for normal operations, 'warn' if duration > slowThresholdMs.
+ */
+export function startTimer(operation: string, slowThresholdMs = 500) {
+  const start = performance.now();
+  return {
+    end(meta?: Record<string, unknown>) {
+      const durationMs = Math.round(performance.now() - start);
+      const level = durationMs > slowThresholdMs ? 'warn' : 'info';
+      perfLog.log(level, `${operation} completed in ${durationMs}ms`, {
+        operation,
+        durationMs,
+        slow: durationMs > slowThresholdMs,
+        ...meta,
+      });
+      return durationMs;
+    },
+  };
+}
 
 // ─── Exported Utilities ──────────────────────────────────────────────────────
 export { sanitize, getSystemMetrics, maskEmail, maskMobile };

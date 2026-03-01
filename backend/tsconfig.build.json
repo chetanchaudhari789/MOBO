@@ -9,14 +9,12 @@
     "types/**/*.d.ts",
     "config/**/*.ts",
     "database/**/*.ts",
-    "models/**/*.ts",
     "modules/**/*.ts",
     "services/**/*.ts",
     "controllers/**/*.ts",
     "routes/**/*.ts",
     "middleware/**/*.ts",
     "validations/**/*.ts",
-    "seeds/**/*.ts",
     "utils/**/*.ts"
   ],
   "exclude": ["dist", "node_modules", "tests"]

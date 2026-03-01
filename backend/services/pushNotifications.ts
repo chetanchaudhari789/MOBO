@@ -1,8 +1,6 @@
 import webpush from 'web-push';
 import type { Env } from '../config/env.js';
-import type { OrderWorkflowStatus } from '../models/Order.js';
-import { PushSubscriptionModel } from '../models/PushSubscription.js';
-import { UserModel } from '../models/User.js';
+import type { OrderWorkflowStatus } from '../generated/prisma/client.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
 
@@ -50,11 +48,9 @@ export function getVapidPublicKey(env: Env): string {
 
 async function removeInvalidSubscription(endpoint: string) {
   try {
-    // Remove from both PG and MongoDB
     if (isPrismaAvailable()) {
       await prisma().pushSubscription.deleteMany({ where: { endpoint } }).catch(() => {});
     }
-    await PushSubscriptionModel.deleteOne({ endpoint });
   } catch {
     // ignore cleanup errors
   }
@@ -74,7 +70,7 @@ export async function sendPushToUser(params: {
   let subscriptions: Array<{ endpoint: string; keysP256dh: string | null; keysAuth: string | null; expirationTime: Date | number | null }> = [];
   if (isPrismaAvailable()) {
     const db = prisma();
-    // Resolve userId (could be mongoId or PG UUID)
+    // Resolve userId (UUID or legacy mongoId)
     const pgUser = await db.user.findFirst({
       where: idWhere(params.userId),
       select: { id: true },
@@ -85,22 +81,6 @@ export async function sendPushToUser(params: {
         select: { endpoint: true, keysP256dh: true, keysAuth: true, expirationTime: true },
       });
     }
-  }
-
-  // Fallback to MongoDB if PG returned nothing
-  if (!subscriptions.length) {
-    const mongoSubs = await PushSubscriptionModel.find({
-      userId: params.userId,
-      app: params.app,
-    })
-      .select({ endpoint: 1, keys: 1, expirationTime: 1 })
-      .lean();
-    subscriptions = mongoSubs.map((s: any) => ({
-      endpoint: String(s.endpoint || ''),
-      keysP256dh: String(s.keys?.p256dh || ''),
-      keysAuth: String(s.keys?.auth || ''),
-      expirationTime: s.expirationTime || null,
-    }));
   }
 
   if (!subscriptions.length) return;
@@ -191,7 +171,7 @@ export async function notifyOrderWorkflowPush(params: {
     if (params.to === 'UNDER_REVIEW') {
       const mediatorCode = String(params.order?.managerName || '').trim();
       if (mediatorCode) {
-        // Find mediators from PG (primary), fall back to MongoDB
+        // Find mediators by mediator code
         let mediatorIds: string[] = [];
         if (isPrismaAvailable()) {
           const db = prisma();
@@ -200,12 +180,6 @@ export async function notifyOrderWorkflowPush(params: {
             select: { id: true, mongoId: true },
           });
           mediatorIds = pgMediators.map(m => m.mongoId || m.id);
-        }
-        if (!mediatorIds.length) {
-          const mongoMediators = await UserModel.find({ mediatorCode, roles: 'mediator', deletedAt: null })
-            .select({ _id: 1 })
-            .lean();
-          mediatorIds = mongoMediators.map((m: any) => String(m._id));
         }
         const payload: PushPayload = {
           title: 'New order to review',

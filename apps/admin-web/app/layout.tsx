@@ -4,6 +4,7 @@ import './globals.css';
 import { MoboHead } from '../../../shared/layouts/MoboHead';
 import { BODY_CLASSNAME, HTML_CLASSNAME } from '../../../shared/styles/moboGlobals';
 import { DisableNumberScroll } from '../../../shared/components/DisableNumberScroll';
+import { plusJakartaSans, jetbrainsMono } from '../../../shared/fonts';
 
 export const metadata: Metadata = {
   title: 'BUZZMA Admin',
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={HTML_CLASSNAME} suppressHydrationWarning>
+    <html lang="en" className={`${HTML_CLASSNAME} ${plusJakartaSans.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <head>
         <MoboHead />
       </head>

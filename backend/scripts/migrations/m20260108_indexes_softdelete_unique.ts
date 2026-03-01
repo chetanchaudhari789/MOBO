@@ -70,7 +70,7 @@ async function ensureIndex(opts: {
     if (!opts.dropIfOptionsConflict || !isOptionsConflict) throw err;
 
     // If we get here, we intentionally replace the existing index.
-    // Prefer dropping by explicit name (if provided), otherwise fall back to Mongo's default name.
+    // Prefer dropping by explicit name (if provided), otherwise fall back to the default name.
     const defaultName = Object.entries(opts.keys)
       .map(([k, dir]) => `${k}_${dir}`)
       .join('_');

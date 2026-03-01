@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
 import { formatErrorMessage } from '../utils/errors';
+import { ProxiedImage } from '../components/ProxiedImage';
 import { api } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
@@ -16,7 +17,6 @@ import { DesktopShell } from '../components/DesktopShell';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
 import { csvSafe, downloadCsv } from '../utils/csvHelpers';
-import { urlToBase64 } from '../utils/imageHelpers';
 import {
   LayoutDashboard,
   Users,
@@ -75,7 +75,8 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-} from 'recharts';
+  ChartSuspense,
+} from '../components/LazyCharts';
 
 // formatCurrency, getPrimaryOrderId, urlToBase64, csvSafe, downloadCsv imported from shared/utils
 
@@ -212,7 +213,7 @@ const AgencyProfile = ({ user }: any) => {
             <div className="w-32 h-32 rounded-[2rem] bg-white p-2 shadow-lg border border-slate-100 flex-shrink-0">
               <div className="w-full h-full bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-4xl font-black text-white overflow-hidden relative group-hover:scale-[1.02] transition-transform duration-500">
                 {avatar ? (
-                  <img
+                  <img loading="lazy"
                     src={avatar}
                     alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -535,21 +536,21 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
-        csvSafe((o as any).reviewerName || ''),
+        csvSafe(o.reviewerName || ''),
         csvSafe(o.status || ''),
         csvSafe(o.paymentStatus || ''),
         csvSafe(o.affiliateStatus || ''),
         o.id,
-        csvSafe((o as any).soldBy || ''),
-        (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
-        csvSafe((o as any).extractedProductName || ''),
+        csvSafe(o.soldBy || ''),
+        o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+        csvSafe(o.extractedProductName || ''),
         o.screenshots?.order ? hyperlinkYes(buildProofUrl(o.id, 'order')) : 'No',
         o.screenshots?.payment ? hyperlinkYes(buildProofUrl(o.id, 'payment')) : 'No',
         o.screenshots?.rating ? hyperlinkYes(buildProofUrl(o.id, 'rating')) : 'No',
         (o.reviewLink || o.screenshots?.review)
           ? hyperlinkYes(buildProofUrl(o.id, 'review'))
           : 'No',
-        (o.screenshots as any)?.returnWindow
+        o.screenshots?.returnWindow
           ? hyperlinkYes(buildProofUrl(o.id, 'returnWindow'))
           : 'No',
       ];
@@ -583,9 +584,9 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         o.paymentStatus,
         o.affiliateStatus || '',
         o.id,
-        (o as any).soldBy || '',
-        (o as any).orderDate ? new Date((o as any).orderDate).toLocaleDateString() : '',
-        (o as any).extractedProductName || '',
+        o.soldBy || '',
+        o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+        o.extractedProductName || '',
       ] as (string | number)[];
     });
 
@@ -781,7 +782,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                             {o.managerName || 'Unknown'}
                           </div>
                           <div className="text-[9px] text-slate-400 font-mono">
-                            {(o as any).mediatorCode || (o as any).managerCode || ''}
+                            {o.mediatorCode || o.managerCode || ''}
                           </div>
                         </div>
                       </div>
@@ -860,7 +861,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                           <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[9px] font-bold text-purple-600">M</div>
                           <div>
                             <div className="text-xs font-bold text-slate-700">{o.managerName || 'Unknown'}</div>
-                            <div className="text-[9px] text-slate-400 font-mono">{(o as any).mediatorCode || (o as any).managerCode || ''}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">{o.mediatorCode || o.managerCode || ''}</div>
                           </div>
                         </div>
                       </td>
@@ -926,7 +927,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
                           <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[9px] font-bold text-purple-600">M</div>
                           <div>
                             <div className="text-xs font-bold text-slate-700">{o.managerName || 'Unknown'}</div>
-                            <div className="text-[9px] text-slate-400 font-mono">{(o as any).mediatorCode || (o as any).managerCode || ''}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">{o.mediatorCode || o.managerCode || ''}</div>
                           </div>
                         </div>
                       </td>
@@ -1435,6 +1436,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
             </select>
           </div>
           <div className="flex-1 w-full min-h-0">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data}>
                 <defs>
@@ -1455,7 +1457,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }}
-                  tickFormatter={(v) => `${v / 1000}k`}
+                  tickFormatter={(v: number) => `${v / 1000}k`}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1477,6 +1479,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                 />
               </AreaChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
 
@@ -1485,6 +1488,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
           <h3 className="text-lg font-bold text-slate-900 mb-1">Brand Performance</h3>
           <p className="text-xs text-slate-400 font-medium mb-6">Top performing brands by volume</p>
           <div className="flex-1 min-h-0">
+            <ChartSuspense>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={brandData} layout="vertical" barSize={24}>
                 <XAxis type="number" hide />
@@ -1507,6 +1511,7 @@ const DashboardView = ({ stats, allOrders }: any) => {
                 <Bar dataKey="count" fill="#a855f7" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </ChartSuspense>
           </div>
         </div>
       </div>
@@ -1983,8 +1988,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                     <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="p-5 pl-8">
                         <div className="flex items-center gap-4">
-                          <img
+                          <ProxiedImage
                             src={c.image}
+                            alt={c.title || 'Campaign'}
                             className="w-10 h-10 object-contain rounded-lg bg-slate-50 border border-slate-100 p-1 group-hover:scale-105 transition-transform"
                           />
                           <div>
@@ -2164,8 +2170,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                   >
                     <div className="flex gap-4 mb-5">
                       <div className="w-20 h-20 bg-slate-50 rounded-2xl p-2 border border-slate-100 flex-shrink-0 flex items-center justify-center">
-                        <img
+                        <ProxiedImage
                           src={c.image}
+                          alt={c.title || 'Campaign'}
                           className="w-full h-full object-contain mix-blend-multiply group-hover:scale-110 transition-transform"
                         />
                       </div>
@@ -2428,8 +2435,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
             <div className="bg-slate-50 p-3 2xl:p-4 rounded-2xl mb-2 border border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
               <div className="flex gap-3 items-center min-w-0">
                 <div className="w-10 h-10 bg-white rounded-lg p-1.5 border border-slate-200 shadow-sm flex-shrink-0">
-                  <img
+                  <ProxiedImage
                     src={assignModal.image}
+                    alt={assignModal.title || 'Campaign'}
                     className="w-full h-full object-contain mix-blend-multiply"
                   />
                 </div>
@@ -2665,7 +2673,7 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                       <div className="col-span-4 flex items-center gap-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors shadow-inner overflow-hidden">
                           {m.avatar ? (
-                            <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                            <img loading="lazy" src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
                             (m.name || '?').charAt(0)
                           )}
@@ -2808,48 +2816,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
   const [auditLoading, setAuditLoading] = useState(false);
   const [orderAuditLogs, setOrderAuditLogs] = useState<any[]>([]);
   const [_orderAuditEvents, setOrderAuditEvents] = useState<any[]>([]);
-  // AI Analysis state
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const lastAnalyzedOrderRef = useRef<string | null>(null);
 
-  const analysisAbortRef = useRef<AbortController | null>(null);
-
-  const runAgencyAnalysis = async (order: Order) => {
-    if (!order.screenshots?.order) return;
-    analysisAbortRef.current?.abort();
-    const controller = new AbortController();
-    analysisAbortRef.current = controller;
-    setIsAnalyzing(true);
-    setAiAnalysis(null);
-    try {
-      const imageBase64 = await urlToBase64(order.screenshots.order);
-      if (controller.signal.aborted) return;
-      const result = await api.ops.analyzeProof(
-        order.id,
-        imageBase64,
-        order.externalOrderId || '',
-        order.total
-      );
-      if (controller.signal.aborted) return;
-      setAiAnalysis(result);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      console.error(e);
-      toast.error('Analysis failed. Try again.');
-    } finally {
-      if (!controller.signal.aborted) setIsAnalyzing(false);
-    }
-  };
-
-  // Auto-trigger AI analysis when proof modal opens
-  useEffect(() => {
-    if (proofOrder && proofOrder.screenshots?.order && proofOrder.id !== lastAnalyzedOrderRef.current) {
-      lastAnalyzedOrderRef.current = proofOrder.id;
-      runAgencyAnalysis(proofOrder);
-    }
-    return () => { analysisAbortRef.current?.abort(); };
-  }, [proofOrder]);
 
   // Keep proof modal in sync when allOrders updates from real-time
   useEffect(() => {
@@ -3054,7 +3021,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center font-black text-slate-500 shadow-inner overflow-hidden">
                           {m.avatar ? (
-                            <img src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                            <img loading="lazy" src={m.avatar} alt={m.name ? `${m.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                           ) : (
                             (m.name || '?').charAt(0)
                           )}
@@ -3139,7 +3106,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               <div className="flex gap-4 items-center">
                 <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center font-black text-2xl overflow-hidden">
                   {selectedMediator.avatar ? (
-                    <img
+                    <img loading="lazy"
                       src={selectedMediator.avatar}
                       alt={selectedMediator.name ? `${selectedMediator.name} avatar` : 'Avatar'}
                       className="w-full h-full object-cover"
@@ -3194,8 +3161,9 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         className="p-4 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-colors flex gap-4 items-center"
                       >
                         <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-                          <img
+                          <ProxiedImage
                             src={o.items?.[0]?.image}
+                            alt={o.items?.[0]?.title || 'Order item'}
                             className="w-full h-full object-contain mix-blend-multiply"
                           />
                         </div>
@@ -3290,7 +3258,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         </p>
                         {selectedMediator.qrCode ? (
                           <div className="bg-white border border-slate-200 rounded-xl p-3 w-fit">
-                            <img
+                            <img loading="lazy"
                               src={selectedMediator.qrCode}
                               alt="UPI QR"
                               className="w-36 h-36 object-contain"
@@ -3398,9 +3366,9 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             <div className="flex-1 overflow-y-auto scrollbar-hide space-y-6 pr-2">
               {/* Product Summary */}
               <div className="flex gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <img
+                <ProxiedImage
                   src={proofOrder.items?.[0]?.image}
-                  alt={proofOrder.items?.[0]?.title}
+                  alt={proofOrder.items?.[0]?.title || 'Product'}
                   className="w-14 h-14 object-contain mix-blend-multiply rounded-xl bg-white border border-slate-100 p-1"
                 />
                 <div>
@@ -3428,53 +3396,39 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                         className="w-full h-auto block"
                       />
                     </div>
-                    {/* AI Analysis Section */}
+                    {/* AI Verification — stored from buyer's proof submission */}
+                    {proofOrder.orderAiVerification && (
                     <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mt-3 relative overflow-hidden">
                       <div className="flex justify-between items-center mb-3">
                         <h4 className="font-bold text-indigo-600 flex items-center gap-2 text-xs uppercase tracking-widest">
-                          <Sparkles size={14} className="text-indigo-500" /> AI Assistant
+                          <Sparkles size={14} className="text-indigo-500" /> AI Verification
                         </h4>
-                        {!aiAnalysis && !isAnalyzing && (
-                          <button
-                            type="button"
-                            onClick={() => runAgencyAnalysis(proofOrder)}
-                            className="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow active:scale-95"
-                          >
-                            Analyze
-                          </button>
-                        )}
                       </div>
-                      {isAnalyzing && (
-                        <div className="flex flex-col items-center justify-center py-4">
-                          <Loader2 className="animate-spin text-indigo-500 mb-2" size={24} />
-                          <p className="text-xs font-bold text-indigo-400 animate-pulse">Analyzing Screenshot...</p>
-                        </div>
-                      )}
-                      {aiAnalysis && (
                         <div className="space-y-3 animate-fade-in">
                           {(() => {
-                            const n = Number(aiAnalysis.confidenceScore);
+                            const aiData = proofOrder.orderAiVerification;
+                            const n = Number(aiData?.confidenceScore);
                             const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
                             return (
                               <>
                                 <div className="flex gap-2">
-                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>Order ID</p>
-                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.orderIdMatch ? 'Matched' : 'Mismatch'}</p>
-                                    {(aiAnalysis as any).detectedOrderId && (
-                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono break-all">Detected: {(aiAnalysis as any).detectedOrderId}</p>
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiData?.orderIdMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiData?.orderIdMatch ? 'text-green-600' : 'text-red-600'}`}>Order ID</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiData?.orderIdMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {aiData?.detectedOrderId && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono break-all">Detected: {aiData.detectedOrderId}</p>
                                     )}
                                   </div>
-                                  <div className={`flex-1 p-2 rounded-lg border ${aiAnalysis.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                                    <p className={`text-[9px] font-bold uppercase ${aiAnalysis.amountMatch ? 'text-green-600' : 'text-red-600'}`}>Amount</p>
-                                    <p className="text-xs font-bold text-slate-900">{aiAnalysis.amountMatch ? 'Matched' : 'Mismatch'}</p>
-                                    {(aiAnalysis as any).detectedAmount != null && (
-                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono">Detected: ₹{(aiAnalysis as any).detectedAmount}</p>
+                                  <div className={`flex-1 p-2 rounded-lg border ${aiData?.amountMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className={`text-[9px] font-bold uppercase ${aiData?.amountMatch ? 'text-green-600' : 'text-red-600'}`}>Amount</p>
+                                    <p className="text-xs font-bold text-slate-900">{aiData?.amountMatch ? 'Matched' : 'Mismatch'}</p>
+                                    {aiData?.detectedAmount != null && (
+                                      <p className="text-[9px] text-slate-500 mt-0.5 font-mono">Detected: {formatCurrency(aiData.detectedAmount)}</p>
                                     )}
                                   </div>
                                 </div>
                                 <div className="bg-slate-100 p-2 rounded-lg">
-                                  <p className="text-[10px] text-slate-600 leading-relaxed">{aiAnalysis.discrepancyNote || 'Verified. Details match expected values.'}</p>
+                                  <p className="text-[10px] text-slate-600 leading-relaxed">{aiData?.discrepancyNote || 'Verified. Details match expected values.'}</p>
                                 </div>
                                 <div className="flex justify-between items-center pt-1">
                                   <span className="text-[9px] text-indigo-500 font-bold uppercase">Confidence Score</span>
@@ -3492,8 +3446,8 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                             );
                           })()}
                         </div>
-                      )}
                     </div>
+                    )}
                   </>
                 ) : (
                   <div className="p-8 border-2 border-dashed border-red-200 bg-red-50 rounded-2xl text-center">
@@ -3584,14 +3538,14 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
               )}
 
               {/* 4. Return Window Proof */}
-              {(proofOrder.screenshots as any)?.returnWindow && (
+              {proofOrder.screenshots?.returnWindow && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-teal-500 uppercase tracking-widest">
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
                     <ZoomableImage
-                      src={(proofOrder.screenshots as any).returnWindow}
+                      src={proofOrder.screenshots.returnWindow}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
                     />
@@ -3685,7 +3639,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                   ) : (
                     <>
                     {filterAuditLogs(orderAuditLogs).map((log: any, i: number) => (
-                      <div key={i} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
+                      <div key={log.id || `audit-${i}`} className="flex items-start gap-2 text-[10px] text-zinc-500 border-l-2 border-zinc-200 pl-3 py-1">
                         <span className="font-bold text-zinc-600 shrink-0">{auditActionLabel(log.action)}</span>
                         <span className="flex-1">{log.createdAt ? new Date(log.createdAt).toLocaleString() : log.at ? new Date(log.at).toLocaleString() : ''}</span>
                         {log.metadata?.proofType && (
@@ -3700,7 +3654,7 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
             </div>
 
             <button
-              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); setAiAnalysis(null); lastAnalyzedOrderRef.current = null; }}
+              onClick={() => { setProofOrder(null); setAuditExpanded(false); setOrderAuditLogs([]); setOrderAuditEvents([]); }}
               className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
             >
               Close Viewer
@@ -3910,7 +3864,7 @@ export const AgencyDashboard: React.FC = () => {
             >
               <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm overflow-hidden">
                 {user?.avatar ? (
-                  <img src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
+                  <img loading="lazy" src={user.avatar} alt={user?.name ? `${user.name} avatar` : 'Avatar'} className="w-full h-full object-cover" />
                 ) : (
                   (user?.name || '?').charAt(0)
                 )}

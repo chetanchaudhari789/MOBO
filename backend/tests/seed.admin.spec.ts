@@ -2,27 +2,21 @@ import request from 'supertest';
 
 import { createApp } from '../app.js';
 import { loadEnv } from '../config/env.js';
-import { connectMongo, disconnectMongo } from '../database/mongo.js';
 import { seedAdminOnly } from '../seeds/admin.js';
 
 describe('admin seeding', () => {
-  afterEach(async () => {
-    await disconnectMongo();
-  });
-
   it('seeds the admin user and allows username/password login', async () => {
     const env = loadEnv({
       NODE_ENV: 'test',
-      MONGODB_URI: 'mongodb+srv://REPLACE_ME',
     });
 
-    await connectMongo(env);
+    const RUN = Date.now().toString().slice(-6);
 
     await seedAdminOnly({
-      username: 'chetan',
+      username: `admin_test_${RUN}`,
       password: 'chetan789',
-      mobile: '9000000000',
-      name: 'Chetan Admin',
+      mobile: `90${RUN}00`,
+      name: 'Test Admin',
       forceUsername: true,
       forcePassword: true,
     });
@@ -31,7 +25,7 @@ describe('admin seeding', () => {
 
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'chetan', password: 'chetan789' });
+      .send({ username: `admin_test_${RUN}`, password: 'chetan789' });
 
     expect(loginRes.status).toBe(200);
     expect(loginRes.body).toHaveProperty('user');

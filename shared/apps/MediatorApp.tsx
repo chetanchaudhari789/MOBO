@@ -1,11 +1,13 @@
-﻿import React from 'react';
+﻿import React, { lazy, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { NotificationProvider } from '../context/NotificationContext';
 import { ToastProvider } from '../context/ToastContext';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { PortalGuard } from '../components/PortalGuard';
 import { MediatorAuthScreen } from '../pages/MediatorAuth';
-import { MediatorDashboard } from '../pages/MediatorDashboard';
+
+// Lazy-load the 125KB MediatorDashboard — only fetched after auth succeeds
+const MediatorDashboard = lazy(() => import('../pages/MediatorDashboard').then(m => ({ default: m.MediatorDashboard })));
 
 interface MediatorAppProps {
   onBack?: () => void;
@@ -36,7 +38,9 @@ export const MediatorApp: React.FC<MediatorAppProps> = ({ onBack }) => {
       <ToastProvider>
         <NotificationProvider>
           <div className="relative min-h-[100dvh] flex flex-col">
-            <MediatorDashboard />
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center min-h-[100dvh]"><div className="w-8 h-8 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>}>
+              <MediatorDashboard />
+            </Suspense>
           </div>
         </NotificationProvider>
       </ToastProvider>

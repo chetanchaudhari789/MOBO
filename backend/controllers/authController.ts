@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../database/prisma.js';
 import { AppError } from '../middleware/errors.js';
 import { idWhere } from '../utils/idWhere.js';
@@ -17,6 +17,7 @@ import {
 } from '../validations/auth.js';
 import { generateHumanCode } from '../services/codes.js';
 import { writeAuditLog } from '../services/audit.js';
+import { logAuthEvent, logChangeEvent, logSecurityIncident, logAccessEvent, logErrorEvent } from '../config/appLogs.js';
 import { consumeInvite } from '../services/invites.js';
 import { ensureWallet } from '../services/walletService.js';
 import { toUiUser } from '../utils/uiMappers.js';
@@ -46,8 +47,25 @@ export function makeAuthController(env: Env) {
         }
 
         const wallet = await ensureWallet(user.id);
+        logAccessEvent('RESOURCE_ACCESS', {
+          userId: user.id,
+          roles: user.roles as string[],
+          ip: req.ip,
+          resource: 'Session',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'SESSION_VIEWED' },
+        });
         res.json({ user: toUiUser(pgUser(user), pgWallet(wallet)) });
       } catch (err) {
+        logErrorEvent({
+          message: 'me endpoint failed',
+          category: 'AUTHENTICATION',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -56,7 +74,7 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerSchema.parse(req.body);
 
-        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null }, select: { id: true } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
@@ -102,12 +120,13 @@ export function makeAuthController(env: Env) {
               status: 'active',
               deletedAt: null,
             },
+            select: { id: true },
           });
           if (!mediator) {
             throw new AppError(400, 'INVALID_INVITE_PARENT', 'Invite parent mediator is not valid');
           }
 
-          const mongoId = new Types.ObjectId().toString();
+          const mongoId = randomUUID();
           const newUser = await tx.user.create({
             data: {
               mongoId,
@@ -153,8 +172,8 @@ export function makeAuthController(env: Env) {
           });
         }
 
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
 
         const wallet = await ensureWallet(user.id);
 
@@ -162,9 +181,27 @@ export function makeAuthController(env: Env) {
           req,
           action: 'USER_REGISTERED',
           entityType: 'User',
-          entityId: user.mongoId!,
+          entityId: user.id,
           metadata: { role: 'shopper', mobile: user.mobile, parentCode: String(user.parentCode || '') },
         }).catch(() => {});
+
+        logAuthEvent('REGISTRATION', {
+          userId: user.id,
+          roles: user.roles as string[],
+          identifier: user.mobile,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+        });
+        logChangeEvent({
+          actorUserId: user.id,
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'BUYER_REGISTERED',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { role: 'shopper', mobile: user.mobile },
+        });
 
         const upstreamMediatorCode = String(user.parentCode || '').trim();
         if (upstreamMediatorCode) {
@@ -196,6 +233,14 @@ export function makeAuthController(env: Env) {
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
+        logErrorEvent({
+          message: 'Buyer registration failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -211,81 +256,30 @@ export function makeAuthController(env: Env) {
           typeof (body as any).username === 'string' ? String((body as any).username).trim() : '';
         const username = usernameRaw ? usernameRaw.toLowerCase() : '';
 
-        // Fast login: only fetch fields needed for authentication (no relations)
-        const user = mobile
-          ? await db().user.findFirst({
-              where: { mobile, deletedAt: null },
-              select: {
-                id: true,
-                mongoId: true,
-                name: true,
-                mobile: true,
-                email: true,
-                avatar: true,
-                role: true,
-                roles: true,
-                status: true,
-                passwordHash: true,
-                failedLoginAttempts: true,
-                lockoutUntil: true,
-                parentCode: true,
-                mediatorCode: true,
-                brandCode: true,
-                isVerifiedByMediator: true,
-                username: true,
-                upiId: true,
-                qrCode: true,
-                bankAccountNumber: true,
-                bankIfsc: true,
-                bankName: true,
-                bankHolderName: true,
-                kycStatus: true,
-                connectedAgencies: true,
-                pendingConnections: true,
-                generatedCodes: true,
-                walletBalancePaise: true,
-                walletPendingPaise: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            })
-          : await db().user.findFirst({
-              where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null },
-              select: {
-                id: true,
-                mongoId: true,
-                name: true,
-                mobile: true,
-                email: true,
-                avatar: true,
-                role: true,
-                roles: true,
-                status: true,
-                passwordHash: true,
-                failedLoginAttempts: true,
-                lockoutUntil: true,
-                parentCode: true,
-                mediatorCode: true,
-                brandCode: true,
-                isVerifiedByMediator: true,
-                username: true,
-                upiId: true,
-                qrCode: true,
-                bankAccountNumber: true,
-                bankIfsc: true,
-                bankName: true,
-                bankHolderName: true,
-                kycStatus: true,
-                connectedAgencies: true,
-                pendingConnections: true,
-                generatedCodes: true,
-                walletBalancePaise: true,
-                walletPendingPaise: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            });
-        if (!user) {
+        // Phase 1: Fast auth-only query — minimal columns for password check + lockout.
+        // Uses the @@index([mobile, deletedAt]) / @@index([username, deletedAt]) index.
+        const authSelect = {
+          id: true,
+          role: true,
+          roles: true,
+          status: true,
+          passwordHash: true,
+          failedLoginAttempts: true,
+          lockoutUntil: true,
+        } as const;
+
+        const authUser = mobile
+          ? await db().user.findFirst({ where: { mobile, deletedAt: null }, select: authSelect })
+          : await db().user.findFirst({ where: { username, roles: { hasSome: ['admin', 'ops'] as any }, deletedAt: null }, select: authSelect });
+
+        if (!authUser) {
+          logAuthEvent('LOGIN_FAILURE', {
+            identifier: mobile || username,
+            ip: req.ip,
+            reason: 'user_not_found',
+            requestId: String(res.locals.requestId || ''),
+            userAgent: req.get('user-agent'),
+          });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
@@ -296,25 +290,25 @@ export function makeAuthController(env: Env) {
 
         // Admin/ops must use username login (mobile is not accepted for these roles).
         if (mobile) {
-          const primaryRole = String(user.role || '').toLowerCase();
-          const roles = Array.isArray(user.roles) ? user.roles.map((r: any) => String(r).toLowerCase()) : [];
-          const isAdminOrOps = primaryRole === 'admin' || primaryRole === 'ops' || roles.includes('admin') || roles.includes('ops');
+          const primaryRole = String(authUser.role || '').toLowerCase();
+          const userRoles = Array.isArray(authUser.roles) ? authUser.roles.map((r: any) => String(r).toLowerCase()) : [];
+          const isAdminOrOps = primaryRole === 'admin' || primaryRole === 'ops' || userRoles.includes('admin') || userRoles.includes('ops');
           if (isAdminOrOps) {
             await writeAuditLog({
               req,
               action: 'AUTH_LOGIN_FAILED',
-              actorUserId: user.mongoId!,
+              actorUserId: authUser.id,
               metadata: { reason: 'username_required' },
             });
             throw new AppError(400, 'USERNAME_REQUIRED', 'Admin login requires username and password');
           }
         }
-        if (user.status !== 'active') {
+        if (authUser.status !== 'active') {
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: user.mongoId!,
-            metadata: { reason: 'user_not_active', status: user.status },
+            actorUserId: authUser.id,
+            metadata: { reason: 'user_not_active', status: authUser.status },
           });
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
         }
@@ -322,23 +316,40 @@ export function makeAuthController(env: Env) {
         // --- Account lockout enforcement ---
         const MAX_FAILED_ATTEMPTS = 7;
         const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
-        const lockoutUntil = user.lockoutUntil ? new Date(user.lockoutUntil) : null;
+        const lockoutUntil = authUser.lockoutUntil ? new Date(authUser.lockoutUntil) : null;
         if (lockoutUntil && lockoutUntil.getTime() > Date.now()) {
           const minutesLeft = Math.ceil((lockoutUntil.getTime() - Date.now()) / 60_000);
+          logAuthEvent('LOGIN_FAILURE', {
+            userId: authUser.id,
+            identifier: mobile || username,
+            ip: req.ip,
+            reason: 'account_locked',
+            requestId: String(res.locals.requestId || ''),
+            userAgent: req.get('user-agent'),
+          });
+          logSecurityIncident('BRUTE_FORCE_DETECTED', {
+            severity: 'high',
+            ip: req.ip,
+            userId: authUser.id,
+            route: req.originalUrl,
+            method: req.method,
+            requestId: String(res.locals.requestId || ''),
+            metadata: { lockoutUntil: lockoutUntil.toISOString() },
+          });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: user.mongoId!,
+            actorUserId: authUser.id,
             metadata: { reason: 'account_locked', lockoutUntil: lockoutUntil.toISOString() },
           });
           throw new AppError(429, 'ACCOUNT_LOCKED', `Account locked. Try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`);
         }
 
-        const ok = await verifyPassword(password, user.passwordHash);
+        const ok = await verifyPassword(password, authUser.passwordHash);
         if (!ok) {
-          const newAttempts = (user.failedLoginAttempts ?? 0) + 1;
+          const newAttempts = (authUser.failedLoginAttempts ?? 0) + 1;
           await db().user.update({
-            where: { id: user.id },
+            where: { id: authUser.id },
             data: {
               failedLoginAttempts: { increment: 1 },
               ...(newAttempts >= MAX_FAILED_ATTEMPTS
@@ -346,45 +357,86 @@ export function makeAuthController(env: Env) {
                 : {}),
             },
           });
+          logAuthEvent('LOGIN_FAILURE', {
+            userId: authUser.id,
+            identifier: mobile || username,
+            ip: req.ip,
+            reason: 'invalid_password',
+            requestId: String(res.locals.requestId || ''),
+            userAgent: req.get('user-agent'),
+            metadata: { failedAttempts: newAttempts },
+          });
           await writeAuditLog({
             req,
             action: 'AUTH_LOGIN_FAILED',
-            actorUserId: user.mongoId!,
+            actorUserId: authUser.id,
             metadata: { reason: 'invalid_password' },
           });
           throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
         }
 
-        // Reset failed attempts on successful login
-        const resetPromise = (user.failedLoginAttempts ?? 0) > 0 || user.lockoutUntil
+        // Password verified — sign tokens immediately (CPU-only, no I/O)
+        const accessToken = signAccessToken(env, authUser.id, authUser.roles as any);
+        const refreshToken = signRefreshToken(env, authUser.id, authUser.roles as any);
+
+        // Phase 2: Parallel — fetch full profile, wallet, reset lockout, audit log
+        // This runs concurrently for maximum speed.
+        const resetPromise = (authUser.failedLoginAttempts ?? 0) > 0 || authUser.lockoutUntil
           ? db().user.update({
-              where: { id: user.id },
+              where: { id: authUser.id },
               data: { failedLoginAttempts: 0, lockoutUntil: null },
             })
           : null;
 
-        // Sign tokens synchronously (fast, CPU-only)
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
-
-        // Parallel: wallet + reset + audit (non-blocking for fast response)
-        const [wallet] = await Promise.all([
-          ensureWallet(user.id),
+        const [user, wallet] = await Promise.all([
+          db().user.findFirst({
+            where: { id: authUser.id },
+            select: {
+              id: true, mongoId: true, name: true, mobile: true, email: true,
+              avatar: true, role: true, roles: true, status: true,
+              parentCode: true, mediatorCode: true, brandCode: true,
+              isVerifiedByMediator: true, username: true,
+              upiId: true, qrCode: true, bankAccountNumber: true,
+              bankIfsc: true, bankName: true, bankHolderName: true,
+              kycStatus: true, connectedAgencies: true, pendingConnections: true,
+              generatedCodes: true, walletBalancePaise: true, walletPendingPaise: true,
+              createdAt: true, updatedAt: true,
+            },
+          }),
+          ensureWallet(authUser.id),
           resetPromise,
           writeAuditLog({
             req,
             action: 'AUTH_LOGIN_SUCCESS',
-            actorUserId: user.mongoId!,
-            actorRoles: user.roles as any,
-            metadata: { role: user.role },
+            actorUserId: authUser.id,
+            actorRoles: authUser.roles as any,
+            metadata: { role: authUser.role },
           }).catch(() => {}),
         ]);
 
+        // Structured auth event for access/auth log file
+        logAuthEvent('LOGIN_SUCCESS', {
+          userId: authUser.id,
+          roles: authUser.roles as string[],
+          identifier: mobile || username,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+        });
+
         res.json({
-          user: toUiUser(pgUser(user), pgWallet(wallet)),
+          user: toUiUser(pgUser(user!), pgWallet(wallet)),
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
+        logErrorEvent({
+          message: 'Login failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -417,15 +469,30 @@ export function makeAuthController(env: Env) {
           throw new AppError(403, 'USER_NOT_ACTIVE', 'User is not active');
         }
 
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const newRefreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const newRefreshToken = signRefreshToken(env, user.id, user.roles as any);
         const wallet = await ensureWallet(user.id);
+
+        logAuthEvent('TOKEN_REFRESH', {
+          userId: user.id,
+          roles: user.roles as string[],
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+        });
 
         res.json({
           user: toUiUser(pgUser(user), pgWallet(wallet)),
           tokens: { accessToken, refreshToken: newRefreshToken },
         });
       } catch (err) {
+        if (err instanceof AppError && err.statusCode === 401) {
+          logAuthEvent('TOKEN_REFRESH_FAILURE', {
+            ip: req.ip,
+            reason: err.message,
+            requestId: String(res.locals.requestId || ''),
+          });
+        }
+        logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'AUTHENTICATION', severity: 'medium', userId: req.auth?.userId, requestId: String(res.locals.requestId || ''), metadata: { handler: 'auth/refresh' } });
         next(err);
       }
     },
@@ -434,7 +501,7 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerOpsSchema.parse(req.body);
 
-        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null }, select: { id: true } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
@@ -519,14 +586,18 @@ export function makeAuthController(env: Env) {
           const roles = body.role === 'agency' ? ['agency'] : ['mediator'];
           const mediatorCodePrefix = body.role === 'agency' ? 'AGY' : 'MED';
           let mediatorCode = generateHumanCode(mediatorCodePrefix);
-          for (let i = 0; i < 5; i += 1) {
+          let codeIsUnique = false;
+          for (let i = 0; i < 10; i += 1) {
             // eslint-disable-next-line no-await-in-loop
             const codeExists = await tx.user.findFirst({ where: { mediatorCode }, select: { id: true } });
-            if (!codeExists) break;
+            if (!codeExists) { codeIsUnique = true; break; }
             mediatorCode = generateHumanCode(mediatorCodePrefix);
           }
+          if (!codeIsUnique) {
+            throw new AppError(500, 'CODE_GENERATION_FAILED', 'Unable to generate a unique code; please retry');
+          }
 
-          const mongoId = new Types.ObjectId().toString();
+          const mongoId = randomUUID();
           const newUser = await tx.user.create({
             data: {
               mongoId,
@@ -581,6 +652,25 @@ export function makeAuthController(env: Env) {
           metadata: { role: user.role, mobile: user.mobile, pendingApproval },
         }).catch(() => {});
 
+        logAuthEvent('REGISTRATION', {
+          userId: user.id,
+          roles: user.roles as string[],
+          identifier: user.mobile,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+          metadata: { registrationType: 'ops', role: user.role, pendingApproval },
+        });
+        logChangeEvent({
+          actorUserId: user.id,
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'OPS_USER_REGISTERED',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { role: user.role, mobile: user.mobile, pendingApproval },
+        });
+
         // If mediator joined via agency code, the account is pending and must be approved by agency.
         if (pendingApproval) {
           const agencyCode = String(user.parentCode || '').trim();
@@ -606,12 +696,20 @@ export function makeAuthController(env: Env) {
           return;
         }
 
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
 
         const wallet = await ensureWallet(user.id);
         res.status(201).json({ user: toUiUser(pgUser(user), pgWallet(wallet)), tokens: { accessToken, refreshToken } });
       } catch (err) {
+        logErrorEvent({
+          message: 'Ops/mediator/agency registration failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -620,7 +718,7 @@ export function makeAuthController(env: Env) {
       try {
         const body = registerBrandSchema.parse(req.body);
 
-        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null } });
+        const existing = await db().user.findFirst({ where: { mobile: body.mobile, deletedAt: null }, select: { id: true } });
         if (existing) {
           throw new AppError(409, 'MOBILE_ALREADY_EXISTS', 'Mobile already registered');
         }
@@ -642,14 +740,18 @@ export function makeAuthController(env: Env) {
 
           // Generate a stable brand code for downstream linking (Brand -> Agency connections).
           let brandCode = generateHumanCode('BRD');
-          for (let i = 0; i < 5; i += 1) {
+          let brandCodeUnique = false;
+          for (let i = 0; i < 10; i += 1) {
             // eslint-disable-next-line no-await-in-loop
             const exists = await tx.user.findFirst({ where: { brandCode }, select: { id: true } });
-            if (!exists) break;
+            if (!exists) { brandCodeUnique = true; break; }
             brandCode = generateHumanCode('BRD');
           }
+          if (!brandCodeUnique) {
+            throw new AppError(500, 'CODE_GENERATION_FAILED', 'Unable to generate a unique brand code; please retry');
+          }
 
-          const mongoId = new Types.ObjectId().toString();
+          const mongoId = randomUUID();
           const newUser = await tx.user.create({
             data: {
               mongoId,
@@ -691,13 +793,32 @@ export function makeAuthController(env: Env) {
           metadata: { role: 'brand', mobile: user.mobile },
         }).catch(() => {});
 
+        logAuthEvent('REGISTRATION', {
+          userId: user.id,
+          roles: user.roles as string[],
+          identifier: user.mobile,
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+          metadata: { registrationType: 'brand' },
+        });
+        logChangeEvent({
+          actorUserId: user.id,
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'BRAND_REGISTERED',
+          requestId: String(res.locals.requestId || ''),
+          metadata: { role: 'brand', mobile: user.mobile },
+        });
+
         publishRealtime({
           type: 'invites.changed',
           ts: new Date().toISOString(),
           audience: { roles: ['admin', 'ops'] },
         });
-        const accessToken = signAccessToken(env, user.mongoId!, user.roles as any);
-        const refreshToken = signRefreshToken(env, user.mongoId!, user.roles as any);
+        const accessToken = signAccessToken(env, user.id, user.roles as any);
+        const refreshToken = signRefreshToken(env, user.id, user.roles as any);
 
         const wallet = await ensureWallet(user.id);
 
@@ -706,6 +827,14 @@ export function makeAuthController(env: Env) {
           tokens: { accessToken, refreshToken },
         });
       } catch (err) {
+        logErrorEvent({
+          message: 'Brand registration failed',
+          category: 'AUTHENTICATION',
+          severity: 'high',
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },
@@ -786,6 +915,29 @@ export function makeAuthController(env: Env) {
           },
         });
 
+        logAuthEvent('PROFILE_UPDATE', {
+          userId: user.id,
+          roles: user.roles as string[],
+          ip: req.ip,
+          requestId: String(res.locals.requestId || ''),
+          userAgent: req.get('user-agent'),
+          metadata: {
+            updatedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
+            updatedBy: isSelf ? 'self' : 'admin',
+          },
+        });
+        logChangeEvent({
+          actorUserId: requesterId,
+          actorRoles: requester.roles as string[],
+          actorIp: req.ip,
+          entityType: 'User',
+          entityId: user.id,
+          action: 'PROFILE_UPDATED',
+          changedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
+          requestId: String(res.locals.requestId || ''),
+          metadata: { updatedBy: isSelf ? 'self' : 'admin' },
+        });
+
         publishRealtime({
           type: 'users.changed',
           ts: new Date().toISOString(),
@@ -795,6 +947,15 @@ export function makeAuthController(env: Env) {
         const wallet = await ensureWallet(user.id);
         res.json({ user: toUiUser(pgUser(user), pgWallet(wallet)) });
       } catch (err) {
+        logErrorEvent({
+          message: 'Profile update failed',
+          category: 'AUTHENTICATION',
+          severity: 'medium',
+          userId: req.auth?.userId,
+          ip: req.ip,
+          requestId: String(res.locals?.requestId || ''),
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         next(err);
       }
     },

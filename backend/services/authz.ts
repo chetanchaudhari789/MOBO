@@ -7,6 +7,7 @@ export function getRequester(req: Request) {
   const roles = req.auth?.roles ?? [];
   const user = req.auth?.user;
   if (!userId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing auth context');
+  if (!pgUserId) throw new AppError(401, 'UNAUTHENTICATED', 'Missing PG user ID — token may be stale');
   return { userId, pgUserId: pgUserId as string, roles, user };
 }
 
@@ -20,7 +21,7 @@ export function requireAnyRole(roles: string[], ...required: string[]) {
 }
 
 export function requireSelfOrPrivileged(requesterId: string, targetUserId: string, roles: string[]) {
-  // Normalize both to strings for safe comparison (one may be an ObjectId).
+  // Normalize both to strings for safe comparison (may differ in format).
   if (String(requesterId) !== String(targetUserId) && !isPrivileged(roles)) {
     throw new AppError(403, 'FORBIDDEN', 'Not allowed');
   }

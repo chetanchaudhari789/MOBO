@@ -10,13 +10,13 @@ This is a concise, actionable checklist for preparing BUZZMA for production depl
 - `npm run build:apps`
 - Optional: `npm run test:e2e`
 
-## Backend env (Render/Node host)
+## Backend env (Node host)
 
 Required:
 
 - `NODE_ENV=production`
 - `PORT` (often set by host)
-- `MONGODB_URI=<real connection string>`
+- `DATABASE_URL=<PostgreSQL connection string>`
 - `JWT_ACCESS_SECRET=<secure random string, >= 20 chars>`
 - `JWT_REFRESH_SECRET=<secure random string, >= 20 chars>`
 - `CORS_ORIGINS=<comma-separated list of allowed portal origins>`
@@ -52,8 +52,8 @@ Optional:
 ## Operational sanity
 
 - Logs: verify the host captures stdout/stderr.
-- Health: `GET /api/health` should show `status: ok` and `database.readyState: 1`.
-- DB indexes: ensure production has created indexes (Mongoose autoIndex is disabled in production).
+- Health: `GET /api/health` should show `status: ok` and `database: connected`.
+- DB migrations: ensure `prisma migrate deploy` has been run on the production database.
 
 ## Rollout notes
 

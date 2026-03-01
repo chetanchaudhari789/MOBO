@@ -163,6 +163,15 @@ export interface Order {
     requestedBy?: string;
   }>;
 
+  // AI verification for purchase proof screenshot
+  orderAiVerification?: {
+    orderIdMatch?: boolean;
+    amountMatch?: boolean;
+    detectedOrderId?: string;
+    detectedAmount?: number;
+    confidenceScore?: number;
+    discrepancyNote?: string;
+  };
   // AI verification for rating screenshot
   ratingAiVerification?: {
     accountNameMatch?: boolean;
@@ -184,6 +193,12 @@ export interface Order {
   };
   // Return window cooling period
   returnWindowDays?: number;
+
+  // Top-level convenience fields (derived from items / assignment)
+  dealType?: string;
+  commission?: number;
+  mediatorCode?: string;
+  managerCode?: string;
 
   // Audit trail - order event history
   events?: Array<{
