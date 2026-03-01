@@ -10,7 +10,6 @@ import { ProxiedImage } from '../components/ProxiedImage';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
-import { ZoomableImage } from '../components/ZoomableImage';
 import { ProofImage } from '../components/ProofImage';
 import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { DesktopShell } from '../components/DesktopShell';

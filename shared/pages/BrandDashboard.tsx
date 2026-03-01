@@ -22,7 +22,7 @@ import {
   Wallet,
   TrendingUp,
   AlertCircle,
-  AlertTriangle,
+  AlertTriangle as AlertTriangleIcon,
   Lock,
   Image as ImageIcon,
   Link as LinkIcon,
@@ -58,8 +58,8 @@ import { subscribeRealtime } from '../services/realtime';
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
-import { ZoomableImage } from '../components/ZoomableImage';
 import { ProofImage } from '../components/ProofImage';
+import { RaiseTicketModal } from '../components/RaiseTicketModal';
 import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
@@ -2169,6 +2169,7 @@ export const BrandDashboard: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [sheetsExporting, setSheetsExporting] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   const fetchData = async () => {
     if (!user) return;
@@ -2417,6 +2418,12 @@ export const BrandDashboard: React.FC = () => {
                 badge={pendingRequests}
               />
             </nav>
+            <button
+              onClick={() => setTicketOpen(true)}
+              className="w-full mt-3 py-2.5 flex items-center justify-center gap-2 text-orange-600 hover:bg-orange-50 rounded-xl font-bold text-xs transition-colors border border-orange-200"
+            >
+              <AlertTriangleIcon size={14} /> Raise a Ticket
+            </button>
           </div>
 
           <div className="mt-auto p-6">

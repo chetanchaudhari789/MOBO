@@ -99,8 +99,7 @@ export const ProofImage: React.FC<{
     return () => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // cleanup only on unmount
 
   // Direct data URI path — no fetch needed
   if (isDirectSrc) {

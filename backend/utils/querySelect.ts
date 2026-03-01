@@ -1,4 +1,4 @@
-import { Prisma } from '../generated/prisma/client.js';
+import { Prisma as _Prisma } from '../generated/prisma/client.js';
 
 /**
  * Reusable Prisma `select` configurations for list queries.
