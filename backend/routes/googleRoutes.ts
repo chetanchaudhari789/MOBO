@@ -21,7 +21,7 @@ import { writeAuditLog } from '../services/audit.js';
 import { logAccessEvent, logAuthEvent, logChangeEvent, logErrorEvent } from '../config/appLogs.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
-import { authLog } from '../config/logger.js';
+import { authLog, businessLog } from '../config/logger.js';
 
 // ─── Helpers ───────────────────────────────────────────────────
 
@@ -88,6 +88,7 @@ export function googleRoutes(env: Env): Router {
     }
     pendingStates.set(state, { userId: String(userId), createdAt: Date.now() });
 
+    businessLog.info('Google OAuth initiated', { userId: String(userId), ip: req.ip });
     logAccessEvent('RESOURCE_ACCESS', {
       userId: String(userId),
       ip: req.ip,
@@ -221,6 +222,8 @@ export function googleRoutes(env: Env): Router {
         metadata: { googleEmail, hasRefreshToken: !!tokenData.refresh_token },
       });
 
+      businessLog.info('Google account connected', { userId: pending.userId, googleEmail, hasRefreshToken: !!tokenData.refresh_token, ip: req.ip });
+
       logAuthEvent('LOGIN_SUCCESS', {
         userId: pending.userId,
         ip: req.ip,
@@ -276,6 +279,7 @@ export function googleRoutes(env: Env): Router {
           googleEmail = pgUser.googleEmail || null;
         }
       }
+      businessLog.info('Google OAuth status checked', { userId: String(userId), connected, ip: req.ip });
       logAccessEvent('RESOURCE_ACCESS', {
         userId: String(userId),
         ip: req.ip,
@@ -310,6 +314,8 @@ export function googleRoutes(env: Env): Router {
           });
         }
       }
+
+      businessLog.info('Google account disconnected', { userId: String(userId), ip: req.ip });
 
       writeAuditLog({
         req,

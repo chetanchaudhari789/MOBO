@@ -17,6 +17,7 @@ import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { optionalAuth, requireAuth, requireRoles } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 import { logAccessEvent, logErrorEvent } from '../config/appLogs.js';
+import { businessLog, aiLog } from '../config/logger.js';
 
 export function aiRoutes(env: Env): Router {
   const router = Router();
@@ -512,6 +513,8 @@ export function aiRoutes(env: Env): Router {
         history: payload.history,
       });
 
+      businessLog.info('AI chat response generated', { userId: req.auth?.userId || 'anonymous', intent: result?.intent, messageLength: rawMessage.length, ip: req.ip });
+
       // Audit log the AI chat interaction
       writeAuditLog({
         req,
@@ -541,6 +544,7 @@ export function aiRoutes(env: Env): Router {
 
   // Lightweight config status (does not validate the key).
   router.get('/status', (_req, res) => {
+    aiLog.info('AI status checked', { configured: isGeminiConfigured(env), ip: _req.ip });
     logAccessEvent('RESOURCE_ACCESS', {
       ip: _req.ip,
       resource: 'AI',
@@ -555,6 +559,7 @@ export function aiRoutes(env: Env): Router {
     try {
       if (!ensureAiEnabled(res)) return;
       const result = await checkGeminiApiKey(env);
+      businessLog.info('AI API key validated', { userId: _req.auth?.userId, ok: result.ok, ip: _req.ip });
       logAccessEvent('ADMIN_ACTION', {
         userId: _req.auth?.userId,
         roles: _req.auth?.roles,
@@ -617,6 +622,7 @@ export function aiRoutes(env: Env): Router {
         },
       });
 
+      businessLog.info('AI proof verified', { userId: req.auth?.userId, expectedOrderId: payload.expectedOrderId, orderIdMatch: result.orderIdMatch, amountMatch: result.amountMatch, confidence: result.confidenceScore, ip: req.ip });
       logAccessEvent('RESOURCE_ACCESS', {
         userId: req.auth?.userId,
         roles: req.auth?.roles,
@@ -675,6 +681,7 @@ export function aiRoutes(env: Env): Router {
         },
       });
 
+      businessLog.info('AI rating screenshot verified', { userId: req.auth?.userId, accountNameMatch: result.accountNameMatch, productNameMatch: result.productNameMatch, confidence: result.confidenceScore, ip: req.ip });
       logAccessEvent('RESOURCE_ACCESS', {
         userId: req.auth?.userId,
         roles: req.auth?.roles,
@@ -718,6 +725,7 @@ export function aiRoutes(env: Env): Router {
         },
       });
 
+      businessLog.info('AI order details extracted', { userId: req.auth?.userId, detectedOrderId: result.orderId, detectedAmount: result.amount, confidence: result.confidenceScore, ip: req.ip });
       logAccessEvent('RESOURCE_ACCESS', {
         userId: req.auth?.userId,
         roles: req.auth?.roles,
