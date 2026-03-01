@@ -178,7 +178,7 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
         dbLog.info(`PostgreSQL adapter ready (pool max=${poolConfig.max}, schema=${pgSchema ?? 'public'}, ssl=${sslLabel})`);
 
         // Run a lightweight query to verify connectivity upfront.
-        await client.$queryRawUnsafe('SELECT 1');
+        await client.$queryRaw`SELECT 1`;
         _prisma = client;
         logDatabaseEvent('CONNECTED', {
           durationMs: 0,
@@ -243,7 +243,7 @@ export async function connectPrisma(maxRetries = 3): Promise<void> {
 export async function pingPg(): Promise<boolean> {
   if (!_prisma) return false;
   try {
-    await _prisma.$queryRawUnsafe('SELECT 1');
+    await _prisma.$queryRaw`SELECT 1`;
     return true;
   } catch (err) {
     // Connection may have dropped — attempt a single reconnection.

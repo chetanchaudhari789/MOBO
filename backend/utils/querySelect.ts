@@ -1,3 +1,5 @@
+import { Prisma } from '../generated/prisma/client.js';
+
 /**
  * Reusable Prisma `select` configurations for list queries.
  *
@@ -265,15 +267,12 @@ export async function getProofFlags(
   if (orderIds.length === 0) return new Map();
 
   const rows: Array<{ id: string; hop: boolean; hrp: boolean; hrap: boolean; hrwp: boolean }> =
-    await prisma.$queryRawUnsafe(
-      `SELECT id,
+    await prisma.$queryRaw`SELECT id,
         (screenshot_order IS NOT NULL OR screenshot_payment IS NOT NULL) AS hop,
         (review_link IS NOT NULL OR screenshot_review IS NOT NULL) AS hrp,
         (screenshot_rating IS NOT NULL) AS hrap,
         (screenshot_return_window IS NOT NULL) AS hrwp
-       FROM orders WHERE id = ANY($1::uuid[])`,
-      orderIds,
-    );
+       FROM orders WHERE id = ANY(${orderIds}::uuid[])`;
 
   const map = new Map<string, { hasOrderProof: boolean; hasReviewProof: boolean; hasRatingProof: boolean; hasReturnWindowProof: boolean }>();
   for (const r of rows) {

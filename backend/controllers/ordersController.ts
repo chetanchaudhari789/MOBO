@@ -44,20 +44,16 @@ export function makeOrdersController(env: Env) {
     }
   };
   const findOrderForProof = async (orderId: string) => {
-    const orderWhere = UUID_RE.test(orderId)
-      ? { OR: [{ id: orderId }, { mongoId: orderId }] as any, deletedAt: null }
-      : { mongoId: orderId, deletedAt: null };
-    const byId = await db().order.findFirst({
-      where: orderWhere as any,
-      include: { items: true },
+    const isUuid = UUID_RE.test(orderId);
+    // Single query with OR to cover id, mongoId, AND externalOrderId
+    const where = isUuid
+      ? { OR: [{ id: orderId }, { mongoId: orderId }, { externalOrderId: orderId }] as any, deletedAt: null }
+      : { OR: [{ mongoId: orderId }, { externalOrderId: orderId }] as any, deletedAt: null };
+    const found = await db().order.findFirst({
+      where: where as any,
+      include: { items: { where: { deletedAt: null } } },
     });
-    if (byId) return pgOrder(byId);
-    const byExternal = await db().order.findFirst({
-      where: { externalOrderId: orderId, deletedAt: null },
-      include: { items: true },
-    });
-    if (byExternal) return pgOrder(byExternal);
-    return null;
+    return found ? pgOrder(found) : null;
   };
   const resolveProofValue = (order: any, proofType: string) => {
     if (proofType === 'order') return order.screenshots?.order || '';
@@ -548,8 +544,8 @@ export function makeOrdersController(env: Env) {
             // Slot consumption happens on ORDERED — use atomic claim to prevent overselling.
             await claimSlot(tx);
 
-            // Delete old items, then recreate with new data
-            await tx.orderItem.deleteMany({ where: { orderId: existing.id } });
+            // Soft-delete old items, then recreate with new data
+            await tx.orderItem.updateMany({ where: { orderId: existing.id }, data: { deletedAt: new Date() } });
 
             const existingEvents = Array.isArray(existing.events) ? (existing.events as any[]) : [];
             const _updated = await tx.order.update({
