@@ -48,11 +48,17 @@ jobs:
       - name: Generate Prisma client
         run: npm -w @mobo/backend run pg:generate
 
+      - name: Typecheck backend
+        run: npx -w @mobo/backend tsc --noEmit
+
       - name: Build backend
         run: npm -w @mobo/backend run build
 
       - name: Backend tests (Vitest)
         run: npm run test:backend
+
+      - name: Security audit (informational)
+        run: npm audit --omit=dev || true
 
   docker-publish:
     runs-on: ubuntu-latest

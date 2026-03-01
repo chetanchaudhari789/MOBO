@@ -1,6 +1,9 @@
 # CI Dockerfile - uses pre-built artifacts from CI pipeline
 FROM node:20-alpine
 
+# Install tini for proper PID 1 signal handling
+RUN apk add --no-cache tini
+
 WORKDIR /app
 
 # Copy root package files for workspace setup
@@ -23,6 +26,12 @@ COPY backend/scripts/deploy-migrate.cjs ./backend/scripts/deploy-migrate.cjs
 # Copy traineddata for OCR
 COPY backend/eng.traineddata ./backend/
 
+# Create non-root user and set ownership
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
+    && chown -R appuser:appgroup /app
+
+USER appuser
+
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -31,4 +40,5 @@ EXPOSE 3000
 
 WORKDIR /app/backend
 
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/index.js"]
