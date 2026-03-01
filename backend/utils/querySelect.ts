@@ -51,6 +51,7 @@ export const userAdminListSelect = {
   name: true,
   mobile: true,
   email: true,
+  role: true,
   roles: true,
   status: true,
   mediatorCode: true,
@@ -65,14 +66,50 @@ export const userAdminListSelect = {
   kycGst: true,
   isVerifiedByMediator: true,
   upiId: true,
-  qrCode: true,
+  // qrCode and avatar are base64 blobs — excluded from list queries for
+  // performance.  Fetch them on-demand in the user detail endpoint.
+  qrCode: false,
   bankAccountNumber: true,
   bankIfsc: true,
   bankName: true,
   bankHolderName: true,
-  avatar: true,
+  avatar: false,
   createdAt: true,
   // EXCLUDED: passwordHash, googleRefreshToken, fcmTokens, deletedAt
+} as const;
+
+/**
+ * Prisma `select` for User LIST queries (ops mediators/buyers, brand users, etc.).
+ * Excludes base64 blob columns (avatar, qrCode) that can be 50KB-500KB each.
+ * Use this for any endpoint that returns arrays of users.
+ */
+export const userListSelect = {
+  id: true,
+  mongoId: true,
+  name: true,
+  mobile: true,
+  email: true,
+  role: true,
+  roles: true,
+  status: true,
+  mediatorCode: true,
+  parentCode: true,
+  generatedCodes: true,
+  brandCode: true,
+  connectedAgencies: true,
+  pendingConnections: true,
+  kycStatus: true,
+  kycPanCard: true,
+  kycAadhaar: true,
+  kycGst: true,
+  isVerifiedByMediator: true,
+  upiId: true,
+  // avatar + qrCode are base64 blobs — load on demand, not in list queries
+  bankAccountNumber: true,
+  bankIfsc: true,
+  bankName: true,
+  bankHolderName: true,
+  createdAt: true,
 } as const;
 
 /**

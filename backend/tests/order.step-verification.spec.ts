@@ -47,12 +47,10 @@ describe('order step verification (purchase vs review/rating)', () => {
 
     const deal = productsRes.body[0];
 
-    // Clean up any existing orders for this shopper+deal to avoid DUPLICATE_DEAL_ORDER
-    // The redirect stores deal.mongoId||deal.id as productId, so match both
-    const dealRecord1 = await prisma().deal.findFirst({ where: { id: String(deal.id), deletedAt: null } });
-    const dealIdsToCheck1 = [String(deal.id), dealRecord1?.mongoId].filter(Boolean) as string[];
+    // Reset velocity counter: soft-delete ALL orders for this user so the
+    // per-buyer velocity limit (10/hour, 30/day) does not fire on repeated runs.
     await prisma().order.updateMany({
-      where: { userId: shopper.userId, items: { some: { productId: { in: dealIdsToCheck1 } } }, deletedAt: null },
+      where: { userId: shopper.userId, deletedAt: null },
       data: { deletedAt: new Date() },
     });
 
@@ -164,12 +162,10 @@ describe('order step verification (purchase vs review/rating)', () => {
     // Use productsRes.body[0] — shopper2 hasn't ordered this deal yet
     const deal = productsRes.body[0];
 
-    // Clean up any existing orders for this shopper+deal to avoid DUPLICATE_DEAL_ORDER
-    // The redirect stores deal.mongoId||deal.id as productId, so match both
-    const dealRecord2 = await prisma().deal.findFirst({ where: { id: String(deal.id), deletedAt: null } });
-    const dealIdsToCheck2 = [String(deal.id), dealRecord2?.mongoId].filter(Boolean) as string[];
+    // Reset velocity counter: soft-delete ALL orders for this user so the
+    // per-buyer velocity limit (10/hour, 30/day) does not fire on repeated runs.
     await prisma().order.updateMany({
-      where: { userId: shopper.userId, items: { some: { productId: { in: dealIdsToCheck2 } } }, deletedAt: null },
+      where: { userId: shopper.userId, deletedAt: null },
       data: { deletedAt: new Date() },
     });
 

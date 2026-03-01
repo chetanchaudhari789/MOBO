@@ -207,7 +207,7 @@ export function makeOrdersController(env: Env) {
           ip: req.ip,
           resource: 'OrderProof',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { orderId, proofType, public: true },
+          metadata: { action: 'ORDER_PROOF_VIEWED_PUBLIC', orderId, proofType, public: true },
         });
 
         sendProofResponse(res, proofValue);
@@ -283,7 +283,7 @@ export function makeOrdersController(env: Env) {
           ip: req.ip,
           resource: 'Order',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { targetUserId: userId, resultCount: mapped.length, total, page, limit },
+          metadata: { action: 'ORDERS_LISTED', targetUserId: userId, resultCount: mapped.length, total, page, limit },
         });
 
         res.json(paginatedResponse(mapped, total, page, limit, isPaginated));
@@ -737,7 +737,7 @@ export function makeOrdersController(env: Env) {
           actorIp: req.ip,
           entityType: 'Order',
           entityId: orderMongoId,
-          action: 'CREATE',
+          action: 'ORDER_CREATED',
           requestId: String((res as any).locals?.requestId || ''),
           metadata: {
             campaignId: String(campaign.mongoId ?? campaign.id),

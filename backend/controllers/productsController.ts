@@ -57,7 +57,7 @@ export function makeProductsController() {
           ip: req.ip,
           resource: 'Deal',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'listProducts', mediatorCode, resultCount: deals.length },
+          metadata: { action: 'PRODUCTS_LISTED', endpoint: 'listProducts', mediatorCode, resultCount: deals.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'products/listProducts' } });

@@ -53,6 +53,7 @@ export function makeAuthController(env: Env) {
           ip: req.ip,
           resource: 'Session',
           requestId: String(res.locals.requestId || ''),
+          metadata: { action: 'SESSION_VIEWED' },
         });
         res.json({ user: toUiUser(pgUser(user), pgWallet(wallet)) });
       } catch (err) {
@@ -197,7 +198,7 @@ export function makeAuthController(env: Env) {
           actorIp: req.ip,
           entityType: 'User',
           entityId: user.id,
-          action: 'CREATE',
+          action: 'BUYER_REGISTERED',
           requestId: String(res.locals.requestId || ''),
           metadata: { role: 'shopper', mobile: user.mobile },
         });
@@ -665,7 +666,7 @@ export function makeAuthController(env: Env) {
           actorIp: req.ip,
           entityType: 'User',
           entityId: user.id,
-          action: 'CREATE',
+          action: 'OPS_USER_REGISTERED',
           requestId: String(res.locals.requestId || ''),
           metadata: { role: user.role, mobile: user.mobile, pendingApproval },
         });
@@ -806,7 +807,7 @@ export function makeAuthController(env: Env) {
           actorIp: req.ip,
           entityType: 'User',
           entityId: user.id,
-          action: 'CREATE',
+          action: 'BRAND_REGISTERED',
           requestId: String(res.locals.requestId || ''),
           metadata: { role: 'brand', mobile: user.mobile },
         });
@@ -931,7 +932,7 @@ export function makeAuthController(env: Env) {
           actorIp: req.ip,
           entityType: 'User',
           entityId: user.id,
-          action: 'UPDATE',
+          action: 'PROFILE_UPDATED',
           changedFields: Object.keys(update).filter(k => k !== 'avatar' && k !== 'qrCode'),
           requestId: String(res.locals.requestId || ''),
           metadata: { updatedBy: isSelf ? 'self' : 'admin' },

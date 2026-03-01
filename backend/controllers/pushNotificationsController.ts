@@ -93,7 +93,7 @@ export function makePushNotificationsController(env: Env) {
           actorIp: req.ip,
           entityType: 'PushSubscription',
           entityId: body.subscription.endpoint,
-          action: 'CREATE',
+          action: 'PUSH_SUBSCRIBED',
           requestId: String((res as any).locals?.requestId || ''),
           metadata: { app: body.app },
         });
@@ -132,7 +132,7 @@ export function makePushNotificationsController(env: Env) {
           actorIp: req.ip,
           entityType: 'PushSubscription',
           entityId: body.endpoint,
-          action: 'DELETE',
+          action: 'PUSH_UNSUBSCRIBED',
           requestId: String((res as any).locals?.requestId || ''),
         });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PushSubscription', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PUSH_UNSUBSCRIBED' } });

@@ -312,6 +312,37 @@ function formatAccessMessage(type: AccessEventType, p: AccessEventPayload): stri
       return `User ${who} retrieved VAPID public key for push notifications`;
     case 'GOOGLE_STATUS_CHECK':
       return `User ${who} checked Google account connection status (${p.metadata?.connected ? 'connected' : 'not connected'})`;
+    // ── Journey-specific read actions ──
+    case 'SESSION_VIEWED':
+      return `${role} ${who} viewed their session profile`;
+    case 'AGENCIES_LISTED':
+      return `Brand ${who} listed ${p.metadata?.resultCount ?? ''} connected agencies`.trim();
+    case 'CAMPAIGNS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} campaigns`.trim();
+    case 'ORDERS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} orders${p.metadata?.targetUserId ? ` for user #${(p.metadata.targetUserId as string).slice(0, 8)}` : ''}`.trim();
+    case 'TRANSACTIONS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} transactions`.trim();
+    case 'INVITES_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} invites`.trim();
+    case 'NOTIFICATIONS_LISTED':
+      return `User ${who} viewed notifications (${p.metadata?.unreadCount ?? 0} unread)`;
+    case 'MEDIATORS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} mediators`.trim();
+    case 'DEALS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} deals`.trim();
+    case 'PENDING_USERS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} pending buyers awaiting verification`.trim();
+    case 'VERIFIED_USERS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} verified buyers`.trim();
+    case 'LEDGER_LISTED':
+      return `${role} ${who} viewed payout ledger (${p.metadata?.resultCount ?? ''} entries)`.trim();
+    case 'PRODUCTS_LISTED':
+      return `User ${who} browsed ${p.metadata?.resultCount ?? ''} marketplace products`.trim();
+    case 'TICKETS_LISTED':
+      return `${role} ${who} listed ${p.metadata?.resultCount ?? ''} support tickets`.trim();
+    case 'ORDER_PROOF_VIEWED_PUBLIC':
+      return `Public viewer accessed proof for order #${(p.metadata?.orderId as string)?.slice(0, 8) || ''}`;
     // ── Tickets (controller audit actions) ──
     case 'TICKET_RESOLVED':
       return `${role} ${who} resolved ticket #${(p.metadata?.ticketId as string)?.slice(0, 8) || ''}`;
@@ -514,8 +545,20 @@ export type ChangeAction =
   // Business operations – tickets
   | 'TICKET_CREATED'
   | 'TICKET_STATUS_CHANGE'
+  | 'TICKET_DELETED'
   // Business operations – orders/products
-  | 'ORDER_REDIRECT_CREATED';
+  | 'ORDER_REDIRECT_CREATED'
+  | 'ORDER_CREATED'
+  // Business operations – auth/registration
+  | 'BUYER_REGISTERED'
+  | 'OPS_USER_REGISTERED'
+  | 'BRAND_REGISTERED'
+  | 'PROFILE_UPDATED'
+  // Business operations – push notifications
+  | 'PUSH_SUBSCRIBED'
+  | 'PUSH_UNSUBSCRIBED'
+  // Business operations – brand connections
+  | 'BRAND_CONNECTION_REQUESTED';
 
 export interface ChangeEventPayload {
   /** Who made the change. */
@@ -678,9 +721,30 @@ function formatChangeMessage(p: ChangeEventPayload): string {
       return `User ${who} created support ticket #${eid}`;
     case 'TICKET_STATUS_CHANGE':
       return `User ${who} changed ticket #${eid} status${p.after?.status ? ` → ${p.after.status}` : ''}`;
+    case 'TICKET_DELETED':
+      return `${role || 'User'} ${who} deleted support ticket #${eid}`;
     // ── Products ──
     case 'ORDER_REDIRECT_CREATED':
       return `User ${who} redirected to marketplace for order #${eid}`;
+    case 'ORDER_CREATED':
+      return `Buyer ${who} created new order #${eid}${p.after?.platform ? ` on ${p.after.platform}` : ''}`;
+    // ── Auth / Registration ──
+    case 'BUYER_REGISTERED':
+      return `New buyer ${who} registered${p.after?.mobile ? ` (mobile: ${p.after.mobile})` : ''}`;
+    case 'OPS_USER_REGISTERED':
+      return `New ${(p.after?.role as string) || 'ops user'} ${who} registered${p.after?.mediatorCode ? ` (code: ${p.after.mediatorCode})` : ''}`;
+    case 'BRAND_REGISTERED':
+      return `New brand ${who} registered${p.after?.brandName ? ` (${p.after.brandName})` : ''}`;
+    case 'PROFILE_UPDATED':
+      return `${role || 'User'} ${who} updated profile [${p.changedFields?.join(', ') || 'fields'}]`;
+    // ── Push Notifications ──
+    case 'PUSH_SUBSCRIBED':
+      return `User ${who} subscribed to push notifications`;
+    case 'PUSH_UNSUBSCRIBED':
+      return `User ${who} unsubscribed from push notifications`;
+    // ── Brand connections ──
+    case 'BRAND_CONNECTION_REQUESTED':
+      return `${role || 'ops'} ${who} requested brand connection${p.after?.brandName ? ` with ${p.after.brandName}` : ''}`;
     default:
       return `${role || 'User'} ${who} performed ${p.action} on ${entity}${eid ? ` #${eid}` : ''}`;
   }

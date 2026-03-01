@@ -8,7 +8,7 @@ import { logChangeEvent, logAccessEvent, logErrorEvent } from '../config/appLogs
 import { prisma } from '../database/prisma.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiOrderSummary, toUiOrderSummaryForBrand, toUiUser } from '../utils/uiMappers.js';
-import { orderListSelectLite, getProofFlags } from '../utils/querySelect.js';
+import { orderListSelectLite, getProofFlags, userListSelect } from '../utils/querySelect.js';
 import { parsePagination, paginatedResponse } from '../utils/pagination.js';
 import { pgUser, pgOrder, pgCampaign } from '../utils/pgMappers.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
@@ -106,7 +106,7 @@ export function makeBrandController() {
 
         const { page, limit, skip, isPaginated } = parsePagination(req.query as any);
         const [agencies, total] = await Promise.all([
-          db().user.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+          db().user.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit, select: userListSelect }),
           db().user.count({ where }),
         ]);
         res.json(paginatedResponse(agencies.map((a: any) => toUiUser(pgUser(a), null)), total, page, limit, isPaginated));
@@ -117,7 +117,7 @@ export function makeBrandController() {
           ip: req.ip,
           resource: 'Agency',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getAgencies', resultCount: agencies.length },
+          metadata: { action: 'AGENCIES_LISTED', endpoint: 'getAgencies', resultCount: agencies.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getAgencies' } });
@@ -158,7 +158,7 @@ export function makeBrandController() {
           ip: req.ip,
           resource: 'Campaign',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'brand/getCampaigns', resultCount: campaigns.length },
+          metadata: { action: 'CAMPAIGNS_LISTED', endpoint: 'brand/getCampaigns', resultCount: campaigns.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getCampaigns' } });
@@ -222,7 +222,7 @@ export function makeBrandController() {
             ip: req.ip,
             resource: 'Order',
             requestId: String((res as any).locals?.requestId || ''),
-            metadata: { endpoint: 'brand/getOrders', resultCount: brandMapped.length },
+            metadata: { action: 'ORDERS_LISTED', endpoint: 'brand/getOrders', resultCount: brandMapped.length },
           });
           return;
         }
@@ -251,7 +251,7 @@ export function makeBrandController() {
           ip: req.ip,
           resource: 'Order',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'brand/getOrders', resultCount: mapped.length },
+          metadata: { action: 'ORDERS_LISTED', endpoint: 'brand/getOrders', resultCount: mapped.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getOrders' } });
@@ -319,7 +319,7 @@ export function makeBrandController() {
           ip: req.ip,
           resource: 'Transaction',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'brand/getTransactions', resultCount: txMapped.length },
+          metadata: { action: 'TRANSACTIONS_LISTED', endpoint: 'brand/getTransactions', resultCount: txMapped.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'DATABASE', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'brand/getTransactions' } });

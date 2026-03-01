@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import type { Env } from './config/env.js';
 import { parseCorsOrigins } from './config/env.js';
 import { httpLog, logEvent } from './config/logger.js';
-import { logSecurityIncident, logAccessEvent, logPerformance } from './config/appLogs.js';
+import { logSecurityIncident, logPerformance } from './config/appLogs.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
@@ -162,24 +162,10 @@ export function createApp(env: Env) {
         },
       });
 
-      // Structured access event for every authenticated request
-      if (userId) {
-        const accessType = status === 403 ? 'RESOURCE_DENIED' as const
-          : status >= 400 ? 'RESOURCE_ACCESS' as const
-          : 'RESOURCE_ACCESS' as const;
-        logAccessEvent(accessType, {
-          userId,
-          roles: req.auth?.roles,
-          ip: req.ip,
-          method: req.method,
-          route: req.originalUrl,
-          resource: req.originalUrl,
-          requestId,
-          statusCode: status,
-          duration: ms,
-          userAgent: req.get('user-agent'),
-        });
-      }
+      // NOTE: Per-endpoint access events are logged in each controller handler
+      // with rich journey context (action, metadata). No duplicate middleware
+      // access log needed here — the REQUEST_COMPLETED event above covers
+      // HTTP telemetry.
 
       // Performance tracking for slow requests
       if (ms > SLOW_REQUEST_THRESHOLD_MS) {

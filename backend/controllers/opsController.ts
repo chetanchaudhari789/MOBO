@@ -30,7 +30,7 @@ import {
 } from '../validations/ops.js';
 import { rupeesToPaise } from '../utils/money.js';
 import { toUiCampaign, toUiDeal, toUiOrder, toUiOrderSummary, toUiUser, safeIso } from '../utils/uiMappers.js';
-import { orderListSelectLite, getProofFlags } from '../utils/querySelect.js';
+import { orderListSelectLite, getProofFlags, userListSelect } from '../utils/querySelect.js';
 import { idWhere } from '../utils/idWhere.js';
 import { ensureWallet, applyWalletDebit, applyWalletCredit } from '../services/walletService.js';
 import { getRequester, isPrivileged, requireAnyRole } from '../services/authz.js';
@@ -199,7 +199,7 @@ export function makeOpsController(env: Env) {
           metadata: { agencyCode, brandCode: body.brandCode },
         });
         businessLog.info('Brand connection requested', { brandCode: body.brandCode, agencyCode, brandId: brand.mongoId, requestedBy: req.auth?.userId });
-        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'PendingConnection', entityId: brand.mongoId!, action: 'CREATE', metadata: { agencyCode, brandCode: body.brandCode, agencyName } });
+        logChangeEvent({ actorUserId: String(req.auth?.userId || ''), entityType: 'PendingConnection', entityId: brand.mongoId!, action: 'BRAND_CONNECTION_REQUESTED', metadata: { agencyCode, brandCode: body.brandCode, agencyName } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PendingConnection', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'BRAND_CONNECTION_REQUESTED', brandCode: body.brandCode } });
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
@@ -256,7 +256,7 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
-          include: { wallets: { where: { deletedAt: null }, take: 1 } },
+          select: { ...userListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
         });
 
         res.json(mediators.map((m: any) => {
@@ -270,7 +270,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'Mediator',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getMediators', resultCount: mediators.length },
+          metadata: { action: 'MEDIATORS_LISTED', endpoint: 'getMediators', resultCount: mediators.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getMediators' } });
@@ -375,7 +375,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'Campaign',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getCampaigns', resultCount: ui.length },
+          metadata: { action: 'CAMPAIGNS_LISTED', endpoint: 'getCampaigns', resultCount: ui.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getCampaigns' } });
@@ -432,7 +432,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'Deal',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getDeals', resultCount: deals.length },
+          metadata: { action: 'DEALS_LISTED', endpoint: 'getDeals', resultCount: deals.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getDeals' } });
@@ -509,7 +509,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'Order',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getOrders', resultCount: mapped.length, total: oTotal },
+          metadata: { action: 'ORDERS_LISTED', endpoint: 'getOrders', resultCount: mapped.length, total: oTotal },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getOrders' } });
@@ -546,14 +546,14 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip: (puPage - 1) * puLimit,
           take: puLimit,
-          include: { wallets: { where: { deletedAt: null }, take: 1 } },
+          select: { ...userListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
         });
 
         res.json(users.map((u: any) => {
           const wallet = u.wallets?.[0];
           return toUiUser(pgUser(u), wallet ? pgWallet(wallet) : undefined);
         }));
-        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PendingUsers', requestId: String((res as any).locals?.requestId || ''), metadata: { resultCount: users.length } });
+        logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'PendingUsers', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'PENDING_USERS_LISTED', resultCount: users.length } });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getPendingUsers' } });
         next(err);
@@ -589,7 +589,7 @@ export function makeOpsController(env: Env) {
           orderBy: { createdAt: 'desc' },
           skip: (vuPage - 1) * vuLimit,
           take: vuLimit,
-          include: { wallets: { where: { deletedAt: null }, take: 1 } },
+          select: { ...userListSelect, wallets: { where: { deletedAt: null }, take: 1, select: { id: true, availablePaise: true, pendingPaise: true } } },
         });
 
         res.json(users.map((u: any) => {
@@ -603,7 +603,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'User',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getVerifiedUsers', resultCount: users.length },
+          metadata: { action: 'VERIFIED_USERS_LISTED', endpoint: 'getVerifiedUsers', resultCount: users.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getVerifiedUsers' } });
@@ -678,7 +678,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'Payout',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getLedger', resultCount: mapped.length },
+          metadata: { action: 'LEDGER_LISTED', endpoint: 'getLedger', resultCount: mapped.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getLedger' } });
@@ -2026,7 +2026,7 @@ export function makeOpsController(env: Env) {
 
           await writeAuditLog({ req, action: 'CAMPAIGN_CREATED', entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id });
           businessLog.info('Campaign created (privileged)', { campaignId: campaign.mongoId ?? campaign.id, title: body.title, platform: body.platform, brandUserId: brand.id, totalSlots: body.totalSlots, payoutRupees: body.payout, dealType: body.dealType, createdBy: pgUserId });
-          logChangeEvent({ actorUserId: pgUserId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CREATE', metadata: { title: body.title, platform: body.platform, brandName: brand.name, totalSlots: body.totalSlots, payout: body.payout, dealType: body.dealType, allowedAgencies: allowed } });
+          logChangeEvent({ actorUserId: pgUserId, entityType: 'Campaign', entityId: campaign.mongoId ?? campaign.id, action: 'CAMPAIGN_CREATED', metadata: { title: body.title, platform: body.platform, brandName: brand.name, totalSlots: body.totalSlots, payout: body.payout, dealType: body.dealType, allowedAgencies: allowed } });
           logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Campaign', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'CAMPAIGN_CREATED', campaignId: campaign.mongoId ?? campaign.id, title: body.title, brandUserId: brand.id } });
           const ts = new Date().toISOString();
           publishRealtime({
@@ -2800,7 +2800,7 @@ export function makeOpsController(env: Env) {
           ip: req.ip,
           resource: 'Transaction',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'getTransactions', resultCount: transactions.length },
+          metadata: { action: 'TRANSACTIONS_LISTED', endpoint: 'getTransactions', resultCount: transactions.length },
         });
       } catch (err) {
         logErrorEvent({ error: err instanceof Error ? err : new Error(String(err)), message: err instanceof Error ? err.message : String(err), category: 'BUSINESS_LOGIC', severity: 'medium', userId: req.auth?.userId, requestId: String((res as any).locals?.requestId || ''), metadata: { handler: 'ops/getTransactions' } });

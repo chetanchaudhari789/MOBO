@@ -149,7 +149,7 @@ export function makeTicketsController() {
             ip: req.ip,
             resource: 'Ticket',
             requestId: String((res as any).locals?.requestId || ''),
-            metadata: { endpoint: 'listTickets', resultCount: count },
+            metadata: { action: 'TICKETS_LISTED', endpoint: 'listTickets', resultCount: count },
           });
         };
 
@@ -333,7 +333,7 @@ export function makeTicketsController() {
 
         await writeAuditLog({ req, action: 'TICKET_DELETED', entityType: 'Ticket', entityId: id, metadata: { status: String(existing.status) } });
         businessLog.info('Ticket deleted', { ticketId: id, status: String(existing.status) });
-        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'DELETE', changedFields: ['deletedAt'], before: { status: String(existing.status) }, after: { deleted: true } });
+        logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'TICKET_DELETED', changedFields: ['deletedAt'], before: { status: String(existing.status) }, after: { deleted: true } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Ticket', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'TICKET_DELETED', ticketId: id, status: String(existing.status) } });
 
         res.json({ ok: true });

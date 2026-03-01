@@ -82,22 +82,23 @@ describe('core flows: products -> redirect -> order -> claim -> ops verify/settl
       update: { availablePaise: WALLET_START, pendingPaise: 0, lockedPaise: 0 },
     });
 
-    // Clean up any existing orders for this shopper+deal to avoid DUPLICATE_DEAL_ORDER
-    // The redirect stores deal.mongoId||deal.id as productId, so match both
+    // Reset velocity counter: soft-delete ALL orders for this user so the
+    // per-buyer velocity limit (10/hour, 30/day) does not fire on repeated runs.
+    await db.order.updateMany({
+      where: { userId: shopper.userId, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+
+    // Also identify old orders for this specific deal (for transaction cleanup below)
     const dealMongoId = deal?.mongoId || dealId;
     const oldOrders = await db.order.findMany({
       where: {
         userId: shopper.userId,
         items: { some: { productId: { in: [dealId, dealMongoId] } } },
-        deletedAt: null,
       },
       select: { id: true, mongoId: true },
     });
     if (oldOrders.length > 0) {
-      await db.order.updateMany({
-        where: { id: { in: oldOrders.map((o) => o.id) } },
-        data: { deletedAt: new Date() },
-      });
       // Also clean up stale settlement transactions to avoid idempotency key collisions
       const oldMongoIds = oldOrders.map((o) => o.mongoId).filter(Boolean) as string[];
       if (oldMongoIds.length > 0) {

@@ -233,7 +233,7 @@ export function makeNotificationsController() {
           ip: req.ip,
           resource: 'Notification',
           requestId: String((res as any).locals?.requestId || ''),
-          metadata: { endpoint: 'notifications/list', resultCount: Math.min(notifications.length, 50), role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other' },
+          metadata: { action: 'NOTIFICATIONS_LISTED', endpoint: 'notifications/list', resultCount: Math.min(notifications.length, 50), role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other' },
         });
 
         businessLog.info('Notifications listed', { userId, role: isShopper ? 'shopper' : isMediator ? 'mediator' : 'other', count: Math.min(notifications.length, 50) });
