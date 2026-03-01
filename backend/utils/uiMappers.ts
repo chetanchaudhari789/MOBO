@@ -200,6 +200,16 @@ export function toUiOrderSummary(o: any) {
     hasReviewProof: !!(o.reviewLink || o.screenshots?.review),
     hasRatingProof: !!o.screenshots?.rating,
     hasReturnWindowProof: !!o.screenshots?.returnWindow,
+    // Lightweight screenshots flags (truthy markers, NOT base64 data)
+    // Enables frontend proof indicators and ProofImage component checks
+    screenshots: {
+      order: o.screenshots?.order ? 'exists' : null,
+      payment: o.screenshots?.payment ? 'exists' : null,
+      review: o.screenshots?.review ? 'exists' : null,
+      rating: o.screenshots?.rating ? 'exists' : null,
+      returnWindow: o.screenshots?.returnWindow ? 'exists' : null,
+    },
+    reviewLink: o.reviewLink || null,
     verification: {
       orderVerified: !!orderVerifiedAt,
       reviewVerified: !!reviewVerifiedAt,
@@ -265,6 +275,15 @@ export function toUiOrderSummaryForBrand(o: any) {
     hasReviewProof: !!(o.reviewLink || o.screenshots?.review),
     hasRatingProof: !!o.screenshots?.rating,
     hasReturnWindowProof: !!o.screenshots?.returnWindow,
+    // Lightweight screenshots flags (truthy markers, NOT base64 data)
+    screenshots: {
+      order: o.screenshots?.order ? 'exists' : null,
+      payment: o.screenshots?.payment ? 'exists' : null,
+      review: o.screenshots?.review ? 'exists' : null,
+      rating: o.screenshots?.rating ? 'exists' : null,
+      returnWindow: o.screenshots?.returnWindow ? 'exists' : null,
+    },
+    reviewLink: o.reviewLink || null,
     verification: {
       orderVerified: !!orderVerifiedAt,
       reviewVerified: !!reviewVerifiedAt,

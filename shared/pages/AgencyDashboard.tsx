@@ -13,6 +13,7 @@ import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { ProofImage } from '../components/ProofImage';
 import { DesktopShell } from '../components/DesktopShell';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
@@ -3390,8 +3391,10 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                 {proofOrder.screenshots?.order ? (
                   <>
                     <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
-                      <ZoomableImage
-                        src={proofOrder.screenshots.order}
+                      <ProofImage
+                        orderId={proofOrder.id}
+                        proofType="order"
+                        existingSrc={proofOrder.screenshots.order !== 'exists' ? proofOrder.screenshots.order : undefined}
                         alt="Order Proof"
                         className="w-full h-auto block"
                       />
@@ -3468,8 +3471,10 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                       <div className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-2 py-1 rounded-lg">
                         5 Stars
                       </div>
-                      <ZoomableImage
-                        src={proofOrder.screenshots.rating}
+                      <ProofImage
+                        orderId={proofOrder.id}
+                        proofType="rating"
+                        existingSrc={proofOrder.screenshots.rating !== 'exists' ? proofOrder.screenshots.rating : undefined}
                         alt="Rating Proof"
                         className="w-full h-auto block"
                       />
@@ -3544,8 +3549,10 @@ const TeamView = ({ mediators, user, loading, onRefresh, allOrders }: any) => {
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
-                    <ZoomableImage
-                      src={proofOrder.screenshots.returnWindow}
+                    <ProofImage
+                      orderId={proofOrder.id}
+                      proofType="returnWindow"
+                      existingSrc={proofOrder.screenshots.returnWindow !== 'exists' ? proofOrder.screenshots.returnWindow : undefined}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
                     />
