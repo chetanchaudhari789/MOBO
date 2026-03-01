@@ -69,6 +69,11 @@ const envSchema = z.object({
   // anti-fraud gating; lower values increase false-positive risk.
   AI_PROOF_CONFIDENCE_THRESHOLD: z.coerce.number().int().min(0).max(100).default(75),
 
+  // AI confidence score (0-100) at or above which a proof step is auto-verified
+  // without manual mediator review.  Set to 101 to disable auto-verification.
+  // 90 strikes a good balance between speed and fraud safety.
+  AI_AUTO_VERIFY_THRESHOLD: z.coerce.number().int().min(0).max(101).default(90),
+
   // Wallet safety limits
   WALLET_MAX_BALANCE_PAISE: z.coerce.number().int().positive().default(1_00_00_000), // ₹1,00,000
 

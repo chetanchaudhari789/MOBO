@@ -58,6 +58,8 @@ import { ZoomableImage } from '../components/ZoomableImage';
 import { ProofImage } from '../components/ProofImage';
 import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { MobileTabBar } from '../components/MobileTabBar';
+import { RaiseTicketModal } from '../components/RaiseTicketModal';
+import { FeedbackCard } from '../components/FeedbackCard';
 
 // --- UTILS ---
 // formatCurrency, getPrimaryOrderId, csvSafe, downloadCsv, urlToBase64 imported from shared/utils
@@ -91,7 +93,7 @@ const formatRelativeTime = (iso?: string) => {
 
 // --- VIEWS ---
 
-const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewProof }: any) => {
+const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewProof, onGoToUnpublished, unpublishedCount }: any) => {
   // Verification queue is workflow-driven.
   // Orders can remain UNDER_REVIEW even after purchase verification if review/rating is still pending.
   const { toast } = useToast();
@@ -175,13 +177,17 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
           </h2>
         </div>
 
-        <div className="min-w-[130px] bg-white border border-zinc-100 p-4 rounded-[1.5rem] shadow-sm relative overflow-hidden snap-center">
+        <div
+          className="min-w-[130px] bg-white border border-zinc-100 p-4 rounded-[1.5rem] shadow-sm relative overflow-hidden snap-center cursor-pointer hover:border-lime-200 hover:shadow-md transition-all active:scale-95"
+          onClick={onGoToUnpublished}
+        >
           <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">
-            Pending Actions
+            Unpublished
           </p>
           <h2 className="text-3xl font-black text-zinc-900 tracking-tighter leading-none">
-            {actionRequiredOrders.length + pendingUsers.length}
+            {unpublishedCount ?? 0}
           </h2>
+          <p className="text-[9px] text-lime-600 font-bold mt-1">Tap to publish →</p>
         </div>
       </div>
 
@@ -295,19 +301,44 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
           onClick={() => {
             const allOrders = orders as Order[];
             if (!allOrders.length) { toast.error('No orders to export'); return; }
+            const mediatorHeaders = [
+              'External Order ID', 'Date', 'Time', 'Product', 'Platform', 'Brand', 'Deal Type',
+              'Unit Price (₹)', 'Quantity', 'Total (₹)', 'Commission (₹)',
+              'Buyer Name', 'Buyer Mobile', 'Reviewer Name',
+              'Workflow Status', 'Affiliate Status', 'Payment Status',
+              'Sold By', 'Order Date', 'Extracted Product',
+              'Internal Ref',
+            ];
             downloadCsv(
               `mediator-orders-${new Date().toISOString().slice(0, 10)}.csv`,
-              ['Order ID', 'Product', 'Buyer', 'Amount', 'Commission', 'Status', 'Payment', 'Date'],
-              allOrders.map((o) => [
-                getPrimaryOrderId(o),
-                o.items[0]?.title || '',
-                o.buyerName || '',
-                String(o.total || 0),
-                String(o.items[0]?.commission || 0),
-                String(o.affiliateStatus || o.workflowStatus || ''),
-                String(o.paymentStatus || ''),
-                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ])
+              mediatorHeaders,
+              allOrders.map((o) => {
+                const d = new Date(o.createdAt);
+                const item = o.items?.[0];
+                return [
+                  getPrimaryOrderId(o),
+                  d.toLocaleDateString(),
+                  d.toLocaleTimeString(),
+                  item?.title || '',
+                  item?.platform || '',
+                  item?.brandName || '',
+                  item?.dealType || 'Discount',
+                  String(item?.priceAtPurchase ?? 0),
+                  String(item?.quantity || 1),
+                  String(o.total || 0),
+                  String(item?.commission || 0),
+                  o.buyerName || '',
+                  o.buyerMobile || '',
+                  (o as any).reviewerName || '',
+                  o.workflowStatus || '',
+                  o.affiliateStatus || '',
+                  o.paymentStatus || '',
+                  o.soldBy || '',
+                  o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+                  o.extractedProductName || '',
+                  o.id,
+                ];
+              })
             );
             toast.success('Orders exported');
           }}
@@ -325,17 +356,40 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
             if (!allOrders.length) { toast.error('No orders to export'); return; }
             exportToGoogleSheet({
               title: `Mediator Orders - ${new Date().toISOString().slice(0, 10)}`,
-              headers: ['Order ID', 'Product', 'Buyer', 'Amount', 'Commission', 'Status', 'Payment', 'Date'],
-              rows: allOrders.map((o) => [
-                getPrimaryOrderId(o),
-                o.items[0]?.title || '',
-                o.buyerName || '',
-                o.total || 0,
-                o.items[0]?.commission || 0,
-                o.affiliateStatus || o.workflowStatus || '',
-                o.paymentStatus || '',
-                o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-              ]),
+              headers: [
+                'External Order ID', 'Date', 'Time', 'Product', 'Platform', 'Brand', 'Deal Type',
+                'Unit Price (₹)', 'Quantity', 'Total (₹)', 'Commission (₹)',
+                'Buyer Name', 'Buyer Mobile', 'Reviewer Name',
+                'Workflow Status', 'Affiliate Status', 'Payment Status',
+                'Sold By', 'Order Date', 'Extracted Product', 'Internal Ref',
+              ],
+              rows: allOrders.map((o) => {
+                const d = new Date(o.createdAt);
+                const item = o.items?.[0];
+                return [
+                  getPrimaryOrderId(o),
+                  d.toLocaleDateString(),
+                  d.toLocaleTimeString(),
+                  item?.title || '',
+                  item?.platform || '',
+                  item?.brandName || '',
+                  item?.dealType || 'Discount',
+                  item?.priceAtPurchase ?? 0,
+                  item?.quantity || 1,
+                  o.total || 0,
+                  item?.commission || 0,
+                  o.buyerName || '',
+                  o.buyerMobile || '',
+                  (o as any).reviewerName || '',
+                  o.workflowStatus || '',
+                  o.affiliateStatus || '',
+                  o.paymentStatus || '',
+                  o.soldBy || '',
+                  o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+                  o.extractedProductName || '',
+                  o.id,
+                ] as (string | number)[];
+              }),
               sheetName: 'Orders',
               onStart: () => setSheetsExporting(true),
               onEnd: () => setSheetsExporting(false),
@@ -1221,6 +1275,9 @@ const MediatorProfileView = () => {
             <LogOut size={18} /> Logout
           </button>
         )}
+
+        {/* Feedback Section */}
+        <FeedbackCard role="mediator" />
       </div>
     </div>
   );
@@ -1730,6 +1787,11 @@ export const MediatorDashboard: React.FC = () => {
 
   const hasNotifications = unreadCount > 0;
 
+  const unpublishedCount = useMemo(() => {
+    const dealCampaignIds = new Set((deals || []).map((d: Product) => String(d.campaignId)));
+    return (campaigns || []).filter((c: Campaign) => !dealCampaignIds.has(String(c.id))).length;
+  }, [campaigns, deals]);
+
   return (
     <div className="flex flex-col h-[100dvh] min-h-0 bg-[#FAFAFA] font-sans relative overflow-hidden text-zinc-900 select-none">
       {/* Top Bar */}
@@ -1864,6 +1926,8 @@ export const MediatorDashboard: React.FC = () => {
             tickets={tickets}
             loading={loading}
             onRefresh={loadData}
+            unpublishedCount={unpublishedCount}
+            onGoToUnpublished={() => setActiveTab('market')}
             onViewProof={(order: Order) => {
               setProofModal(order);
             }}

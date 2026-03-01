@@ -66,7 +66,7 @@ async function buildOrderAudience(order: any, agencyCode?: string) {
   };
 }
 
-function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'returnWindow'> {
+export function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'returnWindow'> {
   const dealTypes = (order.items ?? [])
     .map((it: any) => String(it?.dealType || ''))
     .filter(Boolean);
@@ -80,13 +80,13 @@ function getRequiredStepsForOrder(order: any): Array<'review' | 'rating' | 'retu
   ];
 }
 
-function hasProofForRequirement(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
+export function hasProofForRequirement(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
   if (type === 'review') return !!(order.reviewLink || order.screenshotReview);
   if (type === 'returnWindow') return !!order.screenshotReturnWindow;
   return !!order.screenshotRating;
 }
 
-function isRequirementVerified(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
+export function isRequirementVerified(order: any, type: 'review' | 'rating' | 'returnWindow'): boolean {
   const v = (order.verification && typeof order.verification === 'object') ? order.verification as any : {};
   return !!v[type]?.verifiedAt;
 }
@@ -127,7 +127,7 @@ async function assertOrderAccess(order: any, roles: string[], requester: any): P
   return agencyCode;
 }
 
-async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env) {
+export async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env) {
   const wf = String(order.workflowStatus || 'CREATED');
   if (wf !== 'UNDER_REVIEW') return { approved: false, reason: 'NOT_UNDER_REVIEW' };
 
@@ -542,6 +542,28 @@ export function makeOpsController(env: Env) {
           }
           catch (e) { orderLog.error(`[getOrders] toUiOrderSummary failed for order ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
+
+        // Enrich orders with actual mediator display names (managerName stores mediator code)
+        const uniqueCodes = [...new Set(managerCodes)];
+        if (uniqueCodes.length > 0) {
+          const mediatorUsers = await db().user.findMany({
+            where: { mediatorCode: { in: uniqueCodes }, deletedAt: null },
+            select: { mediatorCode: true, name: true },
+          });
+          const codeToName = new Map<string, string>();
+          for (const m of mediatorUsers) {
+            if (m.mediatorCode && m.name) codeToName.set(m.mediatorCode, m.name);
+          }
+          for (const order of mapped) {
+            if (order && typeof order === 'object') {
+              const code = (order as any).managerName || '';
+              (order as any).mediatorCode = code;
+              const resolvedName = codeToName.get(code);
+              if (resolvedName) (order as any).managerName = resolvedName;
+            }
+          }
+        }
+
         res.json(paginatedResponse(mapped, oTotal, oPage, oLimit, oIsPaginated));
 
         businessLog.info('Orders listed', { userId: req.auth?.userId, resultCount: mapped.length, total: oTotal, ip: req.ip });

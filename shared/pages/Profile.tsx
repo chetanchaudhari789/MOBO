@@ -16,6 +16,9 @@ import {
   ShieldCheck,
   Plus,
   CheckCircle,
+  MessageCircle,
+  Star,
+  Loader2,
 } from 'lucide-react';
 import { Order } from '../types';
 
@@ -41,6 +44,12 @@ export const Profile: React.FC = () => {
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const qrInputRef = useRef<HTMLInputElement>(null);
+
+  // Feedback state
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackSent, setFeedbackSent] = useState(false);
 
   // Re-sync form fields when the user context changes (e.g. after login, token refresh)
   // but only when the user is NOT currently editing to avoid overwriting in-progress changes.
@@ -363,6 +372,91 @@ export const Profile: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Feedback / App Experience */}
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-zinc-100 animate-slide-up">
+          <div className="flex items-center gap-2 mb-6">
+            <MessageCircle size={24} className="text-zinc-300" />
+            <h3 className="font-extrabold text-xl text-zinc-900">Feedback</h3>
+          </div>
+
+          {feedbackSent ? (
+            <div className="text-center py-6">
+              <CheckCircle size={40} className="text-green-500 mx-auto mb-3" />
+              <p className="text-sm font-bold text-zinc-700">Thank you for your feedback!</p>
+              <p className="text-xs text-zinc-400 mt-1">Your response helps us improve the experience.</p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1 mb-2 block">
+                  Rate your experience
+                </label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setFeedbackRating(s)}
+                      className="transition-transform hover:scale-110 active:scale-95"
+                    >
+                      <Star
+                        size={28}
+                        fill={s <= feedbackRating ? '#facc15' : 'none'}
+                        className={s <= feedbackRating ? 'text-yellow-400' : 'text-zinc-200'}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1 mb-2 block">
+                  Tell us more
+                </label>
+                <textarea
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  maxLength={2000}
+                  className="w-full p-4 bg-zinc-50 border-none rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-lime-400 h-24 resize-none"
+                  placeholder="What do you like? What can be better?"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={feedbackSubmitting || feedbackRating === 0}
+                onClick={async () => {
+                  setFeedbackSubmitting(true);
+                  try {
+                    await api.tickets.create({
+                      userId: user!.id,
+                      userName: user!.name,
+                      role: 'user',
+                      issueType: 'Feedback',
+                      description: `Rating: ${feedbackRating}/5\n${feedbackText.trim()}`,
+                    });
+                    setFeedbackSent(true);
+                    toast.success('Feedback submitted — thank you!');
+                  } catch (err: any) {
+                    toast.error(err?.message || 'Failed to send feedback');
+                  } finally {
+                    setFeedbackSubmitting(false);
+                  }
+                }}
+                className="w-full py-4 bg-black text-white font-bold rounded-2xl text-sm hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+              >
+                {feedbackSubmitting ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <>
+                    <MessageCircle size={16} /> Submit Feedback
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Danger Zone */}
