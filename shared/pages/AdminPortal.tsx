@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
-import { api } from '../services/api';
+import { api, asArray } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
@@ -358,32 +358,33 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
 
       const failures: string[] = [];
 
-      if (u.status === 'fulfilled') setUsers(u.value);
+      if (u.status === 'fulfilled') setUsers(asArray(u.value));
       else { console.error('Admin Users Fetch Error:', u.reason); failures.push('users'); }
 
       if (o.status === 'fulfilled') {
-        setOrders(o.value);
+        const safeOrders = asArray<Order>(o.value);
+        setOrders(safeOrders);
         // Keep proof modal in sync with refreshed data
         setProofModal((prev) => {
           if (!prev) return prev;
-          const updated = (o.value as Order[]).find((ord: Order) => ord.id === prev.id);
+          const updated = safeOrders.find((ord: Order) => ord.id === prev.id);
           return updated || null;
         });
       } else { console.error('Admin Financials Fetch Error:', o.reason); failures.push('financials'); }
 
-      if (p.status === 'fulfilled') setProducts(p.value);
+      if (p.status === 'fulfilled') setProducts(asArray(p.value));
       else { console.error('Admin Products Fetch Error:', p.reason); failures.push('products'); }
 
       if (s.status === 'fulfilled') setStats(s.value);
       else { console.error('Admin Stats Fetch Error:', s.reason); failures.push('stats'); }
 
-      if (g.status === 'fulfilled') setChartData(g.value);
+      if (g.status === 'fulfilled') setChartData(asArray(g.value));
       else { console.error('Admin Growth Fetch Error:', g.reason); failures.push('analytics'); }
 
-      if (i.status === 'fulfilled') setInvites(i.value);
+      if (i.status === 'fulfilled') setInvites(asArray(i.value));
       else { console.error('Admin Invites Fetch Error:', i.reason); failures.push('invites'); }
 
-      if (t.status === 'fulfilled') setTickets(t.value);
+      if (t.status === 'fulfilled') setTickets(asArray(t.value));
       else { console.error('Admin Tickets Fetch Error:', t.reason); failures.push('tickets'); }
 
       if (failures.length > 0) {

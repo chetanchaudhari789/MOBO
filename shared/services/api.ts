@@ -6,6 +6,18 @@ import { isNetworkError, isTimeoutError, httpStatusToFriendlyMessage } from '../
 // Real API Base URL
 const API_URL = getApiBaseUrl();
 
+/**
+ * Extract a plain array from an API response that may be a paginated envelope
+ * `{ data: T[] }` or a plain `T[]`.  Always returns a safe array.
+ */
+export function asArray<T = any>(response: unknown): T[] {
+  if (Array.isArray(response)) return response;
+  if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
+    return (response as any).data;
+  }
+  return [];
+}
+
 export const TOKEN_STORAGE_KEY = 'mobo_tokens_v1';
 
 function makeRequestId(): string {

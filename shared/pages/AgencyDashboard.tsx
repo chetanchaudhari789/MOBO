@@ -4,7 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
 import { formatErrorMessage } from '../utils/errors';
 import { ProxiedImage } from '../components/ProxiedImage';
-import { api } from '../services/api';
+import { api, asArray } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
@@ -3695,18 +3695,23 @@ export const AgencyDashboard: React.FC = () => {
         api.ops.getMediatorOrders(user.mediatorCode, 'agency'),
         api.ops.getAgencyLedger(),
       ]);
-      setMediators(meds);
-      setCampaigns(camps);
-      setOrders(ords);
-      setPayouts(ledger);
+      const safeMeds = asArray<User>(meds);
+      const safeCamps = asArray<Campaign>(camps);
+      const safeOrds = asArray<Order>(ords);
+      const safeLedger = asArray(ledger);
 
-      const revenue = (ords as Order[]).reduce((sum: number, o: Order) => sum + o.total, 0);
+      setMediators(safeMeds);
+      setCampaigns(safeCamps);
+      setOrders(safeOrds);
+      setPayouts(safeLedger);
+
+      const revenue = safeOrds.reduce((sum: number, o: Order) => sum + (o.total || 0), 0);
 
       // Fixed logic: Campaign is active if this agency is allowed AND some sub-mediators have assignments
-      const myMediatorCodes: string[] = (meds as User[])
+      const myMediatorCodes: string[] = safeMeds
         .map((m: User) => m.mediatorCode)
         .filter((code: string | undefined | null): code is string => Boolean(code));
-      const activeCount = (camps as Campaign[]).filter(
+      const activeCount = safeCamps.filter(
         (c: Campaign) =>
           c.status === 'Active' &&
           c.allowedAgencies.includes(user.mediatorCode!) &&
@@ -3715,7 +3720,7 @@ export const AgencyDashboard: React.FC = () => {
 
       setStats({
         revenue,
-        totalMediators: meds.length,
+        totalMediators: safeMeds.length,
         activeCampaigns: activeCount,
       });
     } catch (e) {
