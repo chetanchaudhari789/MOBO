@@ -413,7 +413,28 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
   const [financeSearch, setFinanceSearch] = useState('');
   const [financeStatusFilter, setFinanceStatusFilter] = useState<string>('All');
   const [financeDealTypeFilter, setFinanceDealTypeFilter] = useState<string>('All');
+  const [financeMediatorFilter, setFinanceMediatorFilter] = useState<string>('All');
+  const [financeProductFilter, setFinanceProductFilter] = useState<string>('All');
   const [financeViewMode, setFinanceViewMode] = useState<'ledger' | 'orders' | 'finance'>('ledger');
+
+  // Unique mediators and products for filter dropdowns
+  const mediatorOptions = useMemo(() => {
+    const codes = new Set<string>();
+    (allOrders as Order[]).forEach((o: Order) => {
+      const label = o.managerName || o.mediatorCode || '';
+      if (label) codes.add(label);
+    });
+    return Array.from(codes).sort();
+  }, [allOrders]);
+
+  const productOptions = useMemo(() => {
+    const titles = new Set<string>();
+    (allOrders as Order[]).forEach((o: Order) => {
+      const t = o.items?.[0]?.title || '';
+      if (t) titles.add(t);
+    });
+    return Array.from(titles).sort();
+  }, [allOrders]);
 
   const ledger = useMemo(() => {
     let result = allOrders as Order[];
@@ -428,6 +449,17 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         String(o.items?.[0]?.dealType || '').toLowerCase() === financeDealTypeFilter.toLowerCase()
       );
     }
+    if (financeMediatorFilter !== 'All') {
+      result = result.filter((o: Order) => {
+        const label = (o as any).managerName || (o as any).mediatorCode || '';
+        return label === financeMediatorFilter;
+      });
+    }
+    if (financeProductFilter !== 'All') {
+      result = result.filter((o: Order) =>
+        (o.items?.[0]?.title || '') === financeProductFilter
+      );
+    }
     if (financeSearch.trim()) {
       const q = financeSearch.trim().toLowerCase();
       result = result.filter((o: Order) =>
@@ -439,7 +471,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       );
     }
     return result;
-  }, [allOrders, financeSearch, financeStatusFilter]);
+  }, [allOrders, financeSearch, financeStatusFilter, financeDealTypeFilter, financeMediatorFilter, financeProductFilter]);
 
   // Updated Calc Logic
   const settledVolume = ledger
@@ -495,12 +527,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
       'Unit Price',
       'Quantity',
       'Total Value',
+      'Commission (₹)',
       'Agency Name',
       'Partner ID',
       'Buyer Name',
       'Buyer Mobile',
       'Reviewer Name',
-      'Status',
+      'Workflow Status',
       'Payment Status',
       'Verification Status',
       'Internal Ref',
@@ -533,12 +566,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         item?.priceAtPurchase,
         item?.quantity || 1,
         o.total,
+        item?.commission || 0,
         csvSafe(o.agencyName || user?.name || 'Agency'),
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
         csvSafe(o.reviewerName || ''),
-        csvSafe(o.status || ''),
+        csvSafe(o.workflowStatus || o.status || ''),
         csvSafe(o.paymentStatus || ''),
         csvSafe(o.affiliateStatus || ''),
         o.id,
@@ -577,11 +611,13 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
         item?.priceAtPurchase ?? 0,
         item?.quantity || 1,
         o.total,
+        item?.commission || 0,
         o.agencyName || user?.name || 'Agency',
         o.managerName || '',
         o.buyerName || '',
         o.buyerMobile || '',
-        o.status,
+        (o as any).reviewerName || '',
+        o.workflowStatus || o.status || '',
         o.paymentStatus,
         o.affiliateStatus || '',
         o.id,
@@ -593,7 +629,7 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
 
     exportToGoogleSheet({
       title: `Agency Orders Report - ${new Date().toISOString().slice(0, 10)}`,
-      headers: ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'],
+      headers: ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Commission (₹)','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Reviewer Name','Workflow Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'],
       rows: orderRows,
       sheetName: 'Agency Orders',
       onStart: () => setSheetsExporting(true),
@@ -698,6 +734,26 @@ const FinanceView = ({ allOrders, mediators: _mediators, loading, onRefresh, use
             <option value="Discount">Order Deal</option>
             <option value="Rating">Rating Deal</option>
             <option value="Review">Review Deal</option>
+          </select>
+          <select
+            value={financeMediatorFilter}
+            onChange={(e) => setFinanceMediatorFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white max-w-[160px]"
+          >
+            <option value="All">All Mediators</option>
+            {mediatorOptions.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select
+            value={financeProductFilter}
+            onChange={(e) => setFinanceProductFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white max-w-[200px] truncate"
+          >
+            <option value="All">All Products</option>
+            {productOptions.map((p) => (
+              <option key={p} value={p}>{p.length > 30 ? p.slice(0, 30) + '…' : p}</option>
+            ))}
           </select>
           <span className="text-xs text-slate-400 font-bold">{ledger.length} records</span>
         </div>
@@ -2117,8 +2173,9 @@ const InventoryView = ({ campaigns, user, loading, onRefresh, mediators, allOrde
                               try {
                                 const res = await api.ops.copyCampaign(c.id);
                                 if (res.ok) {
-                                  toast.success('Campaign copied!');
-                                  onRefresh();
+                                  toast.success('Campaign copied as Draft — edit it in Inventory tab');
+                                  await onRefresh();
+                                  setSubTab('inventory');
                                 } else {
                                   toast.error((res as any).error || 'Copy failed');
                                 }

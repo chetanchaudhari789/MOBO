@@ -4,6 +4,7 @@ import { subscribeRealtime } from '../services/realtime';
 import { useToast } from '../context/ToastContext';
 import { Product } from '../types';
 import { ProductCard } from '../components/ProductCard';
+import { QuickOrderModal } from '../components/QuickOrderModal';
 import { Search, Filter } from 'lucide-react';
 import { EmptyState, Input, Spinner } from '../components/ui';
 
@@ -16,6 +17,7 @@ export const Explore: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const silentSyncRef = useRef(false);
+  const [orderProduct, setOrderProduct] = useState<Product | null>(null);
 
   const dealTypes = useMemo(() => {
     const seen = new Set<string>();
@@ -218,12 +220,17 @@ export const Explore: React.FC = () => {
           <div className="flex flex-col items-center gap-6">
             {filtered.map((p) => (
               <div key={p.id} className="animate-enter w-full flex justify-center">
-                <ProductCard product={p} />
+                <ProductCard product={p} onPlaceOrder={(prod) => setOrderProduct(prod)} />
               </div>
             ))}
           </div>
         )}
       </div>
+      <QuickOrderModal
+        open={!!orderProduct}
+        product={orderProduct}
+        onClose={() => setOrderProduct(null)}
+      />
     </div>
   );
 };

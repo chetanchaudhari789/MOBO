@@ -22,6 +22,7 @@ import {
   Wallet,
   TrendingUp,
   AlertCircle,
+  AlertTriangle,
   Lock,
   Image as ImageIcon,
   Link as LinkIcon,
@@ -585,6 +586,8 @@ const OrdersView = ({ user }: any) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [dealTypeFilter, setDealTypeFilter] = useState<string>('All');
+  const [mediatorFilter, setMediatorFilter] = useState<string>('All');
+  const [productFilter, setProductFilter] = useState<string>('All');
   const [orderViewMode, setOrderViewMode] = useState<'orders' | 'orderSheet' | 'financeSheet'>('orders');
   const [isLoading, setIsLoading] = useState(true);
   const [sheetsExporting, setSheetsExporting] = useState(false);
@@ -666,6 +669,25 @@ const OrdersView = ({ user }: any) => {
     };
   }, [user]);
 
+  // Unique mediators and products for filter dropdowns
+  const mediatorOptions = useMemo(() => {
+    const codes = new Set<string>();
+    orders.forEach((o) => {
+      const label = o.managerName || (o as any).mediatorCode || '';
+      if (label) codes.add(label);
+    });
+    return Array.from(codes).sort();
+  }, [orders]);
+
+  const productOptions = useMemo(() => {
+    const titles = new Set<string>();
+    orders.forEach((o) => {
+      const t = o.items?.[0]?.title || '';
+      if (t) titles.add(t);
+    });
+    return Array.from(titles).sort();
+  }, [orders]);
+
   const filtered = orders.filter((o) => {
     const q = search.toLowerCase();
     const title = String(o.items?.[0]?.title || '').toLowerCase();
@@ -679,6 +701,14 @@ const OrdersView = ({ user }: any) => {
     if (dealTypeFilter !== 'All') {
       const dt = o.dealType || o.items?.[0]?.dealType || 'Discount';
       if (dt !== dealTypeFilter) return false;
+    }
+    if (mediatorFilter !== 'All') {
+      const label = o.managerName || (o as any).mediatorCode || '';
+      if (label !== mediatorFilter) return false;
+    }
+    if (productFilter !== 'All') {
+      const t = o.items?.[0]?.title || '';
+      if (t !== productFilter) return false;
     }
     return textMatch;
   });
@@ -705,12 +735,13 @@ const OrdersView = ({ user }: any) => {
       'Unit Price',
       'Quantity',
       'Total Value',
+      'Commission (₹)',
       'Agency Name',
       'Partner ID',
       'Buyer Name',
       'Buyer Mobile',
       'Reviewer Name',
-      'Status',
+      'Workflow Status',
       'Payment Status',
       'Verification Status',
       'Internal Ref',
@@ -743,12 +774,13 @@ const OrdersView = ({ user }: any) => {
         item?.priceAtPurchase,
         item?.quantity || 1,
         o.total,
+        item?.commission || 0,
         csvSafe(o.agencyName || 'Direct'),
         csvSafe(o.managerName || ''),
         csvSafe(o.buyerName || ''),
         csvSafe(o.buyerMobile || ''),
         csvSafe(o.reviewerName || ''),
-        csvSafe(o.status || ''),
+        csvSafe(o.workflowStatus || o.status || ''),
         csvSafe(o.paymentStatus || ''),
         csvSafe(o.affiliateStatus || ''),
         o.id,
@@ -774,7 +806,7 @@ const OrdersView = ({ user }: any) => {
 
   const handleExportToSheets = () => {
     if (!filtered.length) { toast.info('No orders to export'); return; }
-    const sheetHeaders = ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Reviewer Name','Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'];
+    const sheetHeaders = ['Order ID','Date','Time','Product','Category','Platform','Deal Type','Unit Price','Quantity','Total Value','Commission (₹)','Agency Name','Partner ID','Buyer Name','Buyer Mobile','Reviewer Name','Workflow Status','Payment Status','Verification Status','Internal Ref','Sold By','Order Date','Extracted Product'];
     const sheetRows = filtered.map((o) => {
       const dateObj = new Date(o.createdAt);
       const item = o.items?.[0];
@@ -789,12 +821,13 @@ const OrdersView = ({ user }: any) => {
         item?.priceAtPurchase ?? 0,
         item?.quantity || 1,
         o.total,
+        item?.commission || 0,
         o.agencyName || 'Direct',
         o.managerName || '',
         o.buyerName || '',
         o.buyerMobile || '',
         o.reviewerName || '',
-        o.status,
+        o.workflowStatus || o.status || '',
         o.paymentStatus,
         o.affiliateStatus || '',
         o.id,
@@ -865,6 +898,26 @@ const OrdersView = ({ user }: any) => {
               <option value="Discount">Order Deal</option>
               <option value="Rating">Rating Deal</option>
               <option value="Review">Review Deal</option>
+            </select>
+            <select
+              value={mediatorFilter}
+              onChange={(e) => setMediatorFilter(e.target.value)}
+              className="px-4 py-3.5 bg-white border border-zinc-200 rounded-2xl text-sm font-bold outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-100 transition-all shadow-sm text-zinc-900 max-w-[160px]"
+            >
+              <option value="All">All Mediators</option>
+              {mediatorOptions.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <select
+              value={productFilter}
+              onChange={(e) => setProductFilter(e.target.value)}
+              className="px-4 py-3.5 bg-white border border-zinc-200 rounded-2xl text-sm font-bold outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-100 transition-all shadow-sm text-zinc-900 max-w-[200px] truncate"
+            >
+              <option value="All">All Products</option>
+              {productOptions.map((p) => (
+                <option key={p} value={p}>{p.length > 30 ? p.slice(0, 30) + '…' : p}</option>
+              ))}
             </select>
             <button
               onClick={handleExport}
@@ -2071,7 +2124,7 @@ const CampaignsView = ({ campaigns, agencies, user, loading, onRefresh }: any) =
                       setCopyingId(c.id);
                       try {
                         await api.brand.copyCampaign(c.id);
-                        toast.success('Campaign copied!');
+                        toast.success('Campaign copied as Draft — you can now edit it');
                         onRefresh();
                       } catch (err) {
                         toast.error(formatErrorMessage(err, 'Copy failed'));
@@ -2835,6 +2888,7 @@ export const BrandDashboard: React.FC = () => {
         </div>
       )}
     </DesktopShell>
+    <RaiseTicketModal open={ticketOpen} onClose={() => setTicketOpen(false)} />
     {BrandConfirmDialog}
     </>
   );

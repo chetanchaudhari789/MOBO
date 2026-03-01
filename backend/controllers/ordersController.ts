@@ -17,6 +17,7 @@ import type { Role } from '../middleware/auth.js';
 import { publishRealtime } from '../services/realtimeHub.js';
 import { getRequester, isPrivileged } from '../services/authz.js';
 import { isGeminiConfigured, verifyProofWithAi, verifyRatingScreenshotWithAi, verifyReturnWindowWithAi } from '../services/aiService.js';
+import { finalizeApprovalIfReady, getRequiredStepsForOrder, hasProofForRequirement, isRequirementVerified } from './opsController.js';
 
 // UUID v4 regex — 8-4-4-4-12 hex with dashes.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -92,6 +93,66 @@ export function makeOrdersController(env: Env) {
     } catch {
       throw new AppError(415, 'UNSUPPORTED_PROOF_FORMAT', 'Unsupported proof format');
     }
+  };
+
+  /**
+   * Auto-verify a proof step when AI confidence meets the auto-verify threshold.
+   * Sets verification.{step}.verifiedAt, pushes AUTO_VERIFIED event, and calls
+   * finalizeApprovalIfReady to potentially approve the entire order.
+   */
+  const autoVerifyStep = async (
+    freshOrder: any,
+    proofType: string,
+    aiConfidence: number,
+    threshold: number,
+    envRef: Env,
+  ): Promise<any> => {
+    if (String(freshOrder.workflowStatus) !== 'UNDER_REVIEW') return freshOrder;
+
+    const v = (freshOrder.verification && typeof freshOrder.verification === 'object')
+      ? { ...(freshOrder.verification as any) } : {} as any;
+
+    // Determine the verification key: 'order' | 'rating' | 'review' | 'returnWindow'
+    const vKey = proofType === 'order' ? 'order' : proofType;
+    if (v[vKey]?.verifiedAt) return freshOrder; // already verified
+
+    v[vKey] = v[vKey] ?? {};
+    v[vKey].verifiedAt = new Date().toISOString();
+    v[vKey].verifiedBy = 'SYSTEM_AI';
+    v[vKey].autoVerified = true;
+    v[vKey].aiConfidenceScore = aiConfidence;
+
+    const evts = pushOrderEvent(
+      Array.isArray(freshOrder.events) ? (freshOrder.events as any[]) : [],
+      {
+        type: 'VERIFIED',
+        at: new Date(),
+        actorUserId: 'SYSTEM_AI',
+        metadata: { step: vKey, autoVerified: true, aiConfidenceScore: aiConfidence },
+      },
+    );
+    const updated = await db().order.update({
+      where: { id: freshOrder.id },
+      data: { verification: v, events: evts as any },
+      include: { items: { where: { deletedAt: null } } },
+    });
+
+    const finalize = await finalizeApprovalIfReady(updated!, 'SYSTEM_AI', envRef);
+    orderLog.info('Auto-verified step by AI confidence', {
+      orderId: freshOrder.mongoId,
+      step: vKey,
+      aiConfidenceScore: aiConfidence,
+      threshold,
+      approved: (finalize as any).approved,
+    });
+
+    if ((finalize as any).approved) {
+      return await db().order.findFirst({
+        where: { id: freshOrder.id },
+        include: { items: { where: { deletedAt: null } } },
+      });
+    }
+    return updated;
   };
 
   return {
@@ -394,6 +455,7 @@ export function makeOrdersController(env: Env) {
           throw new AppError(400, 'ORDER_ID_REQUIRED', 'Order ID is required to validate proof.');
         }
 
+        let aiOrderConfidence = 0;
         if (allowE2eBypass) {
           // E2E/dev runs should not rely on external AI services.
         } else if (isGeminiConfigured(env)) {
@@ -428,6 +490,7 @@ export function makeOrdersController(env: Env) {
               `Order proof did not match the order ID and amount (confidence: ${verification?.confidenceScore ?? 0}/${confidenceThreshold}). Please upload a clear, valid proof.`
             );
           }
+          aiOrderConfidence = verification?.confidenceScore ?? 0;
         } else {
           throw new AppError(503, 'AI_NOT_CONFIGURED', 'Proof validation is not configured.');
         }
@@ -714,6 +777,52 @@ export function makeOrdersController(env: Env) {
             metadata: { system: true, source: 'createOrder' },
             env,
           });
+
+          // ── Auto-verify by AI confidence ──────────────────────────────
+          // When the AI confidence score meets the auto-verify threshold,
+          // skip manual mediator review and mark the purchase step verified.
+          const autoThreshold = env.AI_AUTO_VERIFY_THRESHOLD ?? 90;
+          if (aiOrderConfidence >= autoThreshold) {
+            const freshOrder = await db().order.findFirst({
+              where: { mongoId: orderMongoId, deletedAt: null },
+              include: { items: { where: { deletedAt: null } } },
+            });
+            if (freshOrder && String(freshOrder.workflowStatus) === 'UNDER_REVIEW') {
+              const v = (freshOrder.verification && typeof freshOrder.verification === 'object')
+                ? { ...(freshOrder.verification as any) } : {} as any;
+              if (!v.order?.verifiedAt) {
+                v.order = v.order ?? {};
+                v.order.verifiedAt = new Date().toISOString();
+                v.order.verifiedBy = 'SYSTEM_AI';
+                v.order.autoVerified = true;
+                v.order.aiConfidenceScore = aiOrderConfidence;
+                const evts = pushOrderEvent(
+                  Array.isArray(freshOrder.events) ? (freshOrder.events as any[]) : [],
+                  { type: 'VERIFIED', at: new Date(), actorUserId: 'SYSTEM_AI', metadata: { step: 'order', autoVerified: true, aiConfidenceScore: aiOrderConfidence } },
+                );
+                const updated = await db().order.update({
+                  where: { id: freshOrder.id },
+                  data: { verification: v, events: evts as any },
+                  include: { items: { where: { deletedAt: null } } },
+                });
+                const finalize = await finalizeApprovalIfReady(updated!, 'SYSTEM_AI', env);
+                orderLog.info('Auto-verified purchase by AI confidence', {
+                  orderId: orderMongoId,
+                  aiConfidenceScore: aiOrderConfidence,
+                  autoThreshold,
+                  approved: (finalize as any).approved,
+                });
+                if ((finalize as any).approved) {
+                  finalOrder = await db().order.findFirst({
+                    where: { id: freshOrder.id },
+                    include: { items: { where: { deletedAt: null } } },
+                  });
+                } else {
+                  finalOrder = updated;
+                }
+              }
+            }
+          }
         }
 
         // Audit trail — write BEFORE sending response so the audit entry is guaranteed
@@ -827,6 +936,9 @@ export function makeOrdersController(env: Env) {
         // verification is JSONB
         const verification = (order.verification && typeof order.verification === 'object') ? order.verification as any : {};
 
+        // AI confidence captured from whichever proof type is uploaded; used for auto-verify.
+        let claimAiConfidence = 0;
+
         // Step-gating: buyer can only upload review/rating AFTER purchase is verified by mediator.
         if (body.type === 'review' || body.type === 'rating') {
           const purchaseVerified = !!verification?.order?.verifiedAt;
@@ -918,6 +1030,7 @@ export function makeOrdersController(env: Env) {
 
           updateData.screenshotRating = body.data;
           if (ratingAiResult) {
+            claimAiConfidence = ratingAiResult.confidenceScore ?? 0;
             updateData.ratingAiVerification = {
               accountNameMatch: ratingAiResult.accountNameMatch,
               productNameMatch: ratingAiResult.productNameMatch,
@@ -979,6 +1092,7 @@ export function makeOrdersController(env: Env) {
 
           updateData.screenshotReturnWindow = body.data;
           if (returnWindowResult) {
+            claimAiConfidence = returnWindowResult.confidenceScore ?? 0;
             updateData.returnWindowAiVerification = returnWindowResult;
             // Audit trail: record AI return-window verification for backtracking
             writeAuditLog({
@@ -1031,6 +1145,7 @@ export function makeOrdersController(env: Env) {
           updateData.screenshotOrder = body.data;
           // Persist AI purchase proof verification result
           if (aiOrderVerification) {
+            claimAiConfidence = aiOrderVerification.confidenceScore ?? 0;
             updateData.orderAiVerification = {
               orderIdMatch: aiOrderVerification.orderIdMatch,
               amountMatch: aiOrderVerification.amountMatch,
@@ -1100,7 +1215,14 @@ export function makeOrdersController(env: Env) {
         // ORDERED -> PROOF_SUBMITTED -> UNDER_REVIEW
         // If already UNDER_REVIEW, we just persist the new proof without rewinding workflow.
         if (wf === 'UNDER_REVIEW') {
-          const refreshed = await db().order.findUnique({ where: { id: order.id }, include: { items: { where: { deletedAt: null } } } });
+          let refreshed = await db().order.findUnique({ where: { id: order.id }, include: { items: { where: { deletedAt: null } } } });
+
+          // ── Auto-verify by AI confidence (submitClaim, already UNDER_REVIEW) ──
+          const autoThreshold = env.AI_AUTO_VERIFY_THRESHOLD ?? 90;
+          if (claimAiConfidence >= autoThreshold && refreshed) {
+            refreshed = await autoVerifyStep(refreshed, body.type, claimAiConfidence, autoThreshold, env);
+          }
+
           res.json(toUiOrder(pgOrder(refreshed)));
           return;
         }
@@ -1123,7 +1245,20 @@ export function makeOrdersController(env: Env) {
           env,
         });
 
-        res.json(toUiOrder(pgOrder(afterReview)));
+        // ── Auto-verify by AI confidence (submitClaim, new UNDER_REVIEW) ──
+        let claimFinalOrder: any = afterReview;
+        const autoThreshold2 = env.AI_AUTO_VERIFY_THRESHOLD ?? 90;
+        if (claimAiConfidence >= autoThreshold2 && afterReview) {
+          const freshOrder = await db().order.findFirst({
+            where: { id: order.id, deletedAt: null },
+            include: { items: { where: { deletedAt: null } } },
+          });
+          if (freshOrder) {
+            claimFinalOrder = await autoVerifyStep(freshOrder, body.type, claimAiConfidence, autoThreshold2, env);
+          }
+        }
+
+        res.json(toUiOrder(pgOrder(claimFinalOrder)));
 
         const privilegedRoles: Role[] = ['admin', 'ops'];
         const managerCode = String(order.managerName || '').trim();

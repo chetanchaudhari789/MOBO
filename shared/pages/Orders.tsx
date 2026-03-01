@@ -737,16 +737,38 @@ export const Orders: React.FC = () => {
               if (!orders.length) { toast.error('No orders to export'); return; }
               exportToGoogleSheet({
                 title: `My Orders - ${new Date().toISOString().slice(0, 10)}`,
-                headers: ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Created'],
-                rows: orders.map((o) => [
-                  getPrimaryOrderId(o),
-                  o.items[0]?.title || '',
-                  o.total || 0,
-                  o.items[0]?.dealType || '',
-                  o.affiliateStatus || o.workflowStatus || '',
-                  o.paymentStatus || '',
-                  o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '',
-                ]),
+                headers: [
+                  'External Order ID', 'Date', 'Time', 'Product', 'Platform', 'Brand', 'Deal Type',
+                  'Unit Price (₹)', 'Quantity', 'Total (₹)', 'Commission/Cashback (₹)',
+                  'Workflow Status', 'Affiliate Status', 'Payment Status',
+                  'Mediator', 'Reviewer Name', 'Sold By', 'Order Date', 'Extracted Product', 'Internal Ref',
+                ],
+                rows: orders.map((o) => {
+                  const d = new Date(o.createdAt);
+                  const item = o.items?.[0];
+                  return [
+                    getPrimaryOrderId(o),
+                    d.toLocaleDateString(),
+                    d.toLocaleTimeString(),
+                    item?.title || '',
+                    item?.platform || '',
+                    item?.brandName || '',
+                    item?.dealType || 'Discount',
+                    item?.priceAtPurchase ?? 0,
+                    item?.quantity || 1,
+                    o.total || 0,
+                    item?.commission || 0,
+                    o.workflowStatus || '',
+                    o.affiliateStatus || '',
+                    o.paymentStatus || '',
+                    o.managerName || '',
+                    (o as any).reviewerName || '',
+                    o.soldBy || '',
+                    o.orderDate ? new Date(o.orderDate).toLocaleDateString() : '',
+                    o.extractedProductName || '',
+                    o.id,
+                  ] as (string | number)[];
+                }),
                 sheetName: 'Orders',
                 onStart: () => setSheetsExporting(true),
                 onEnd: () => setSheetsExporting(false),
@@ -764,19 +786,40 @@ export const Orders: React.FC = () => {
             title="Download as CSV"
             onClick={() => {
               if (!orders.length) { toast.error('No orders to export'); return; }
-              const h = ['Order ID', 'Product', 'Amount', 'Deal Type', 'Status', 'Payment', 'Reviewer Name', 'Created'];
-              const csvRows = orders.map(o => [
-                csvSafe(getPrimaryOrderId(o)),
-                csvSafe(o.items[0]?.title || ''),
-                csvSafe(String(o.total || 0)),
-                csvSafe(o.items[0]?.dealType || ''),
-                csvSafe(o.affiliateStatus || o.workflowStatus || ''),
-                csvSafe(o.paymentStatus || ''),
-                csvSafe(o.reviewerName || ''),
-                csvSafe(o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''),
-              ].join(','));
+              const h = [
+                'External Order ID', 'Date', 'Time', 'Product', 'Platform', 'Brand', 'Deal Type',
+                'Unit Price (₹)', 'Quantity', 'Total (₹)', 'Commission/Cashback (₹)',
+                'Workflow Status', 'Affiliate Status', 'Payment Status',
+                'Mediator', 'Reviewer Name', 'Sold By', 'Order Date', 'Extracted Product', 'Internal Ref',
+              ];
+              const csvRows = orders.map(o => {
+                const d = new Date(o.createdAt);
+                const item = o.items?.[0];
+                return [
+                  csvSafe(getPrimaryOrderId(o)),
+                  csvSafe(d.toLocaleDateString()),
+                  csvSafe(d.toLocaleTimeString()),
+                  csvSafe(item?.title || ''),
+                  csvSafe(item?.platform || ''),
+                  csvSafe(item?.brandName || ''),
+                  csvSafe(item?.dealType || 'Discount'),
+                  csvSafe(String(item?.priceAtPurchase ?? 0)),
+                  csvSafe(String(item?.quantity || 1)),
+                  csvSafe(String(o.total || 0)),
+                  csvSafe(String(item?.commission || 0)),
+                  csvSafe(o.workflowStatus || ''),
+                  csvSafe(o.affiliateStatus || ''),
+                  csvSafe(o.paymentStatus || ''),
+                  csvSafe(o.managerName || ''),
+                  csvSafe((o as any).reviewerName || ''),
+                  csvSafe(o.soldBy || ''),
+                  csvSafe(o.orderDate ? new Date(o.orderDate).toLocaleDateString() : ''),
+                  csvSafe(o.extractedProductName || ''),
+                  csvSafe(o.id),
+                ].join(',');
+              });
               const csv = [h.join(','), ...csvRows].join('\n');
-              downloadCsv(`orders-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+              downloadCsv(`my-orders-${new Date().toISOString().slice(0, 10)}.csv`, csv);
               toast.success('CSV downloaded!');
             }}
             className="p-2.5 rounded-xl border border-zinc-100 bg-white hover:bg-zinc-50 transition-colors"
