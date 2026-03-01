@@ -12,6 +12,7 @@ import { csvSafe, downloadCsv } from '../utils/csvHelpers';
 import { Order, Product } from '../types';
 import { Button, EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { ProofImage } from '../components/ProofImage';
 import { ProxiedImage } from '../components/ProxiedImage';
 import { ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import {
@@ -1803,8 +1804,10 @@ export const Orders: React.FC = () => {
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase text-slate-400">Order Proof</div>
                 {proofToView.screenshots?.order ? (
-                  <ZoomableImage
-                    src={proofToView.screenshots.order}
+                  <ProofImage
+                    orderId={proofToView.id}
+                    proofType="order"
+                    existingSrc={proofToView.screenshots.order !== 'exists' ? proofToView.screenshots.order : undefined}
                     alt="Order proof"
                   />
                 ) : (
@@ -1818,8 +1821,10 @@ export const Orders: React.FC = () => {
                 <div className="space-y-2">
                   <div className="text-[10px] font-bold uppercase text-slate-400">Rating Proof</div>
                   {proofToView.screenshots?.rating ? (
-                    <ZoomableImage
-                      src={proofToView.screenshots.rating}
+                    <ProofImage
+                      orderId={proofToView.id}
+                      proofType="rating"
+                      existingSrc={proofToView.screenshots.rating !== 'exists' ? proofToView.screenshots.rating : undefined}
                       alt="Rating proof"
                     />
                   ) : (
@@ -1854,8 +1859,10 @@ export const Orders: React.FC = () => {
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase text-slate-400">Return Window Proof</div>
                 {(proofToView.screenshots as any)?.returnWindow ? (
-                  <ZoomableImage
-                    src={(proofToView.screenshots as any).returnWindow}
+                  <ProofImage
+                    orderId={proofToView.id}
+                    proofType="returnWindow"
+                    existingSrc={(proofToView.screenshots as any).returnWindow !== 'exists' ? (proofToView.screenshots as any).returnWindow : undefined}
                     alt="Return window proof"
                   />
                 ) : (

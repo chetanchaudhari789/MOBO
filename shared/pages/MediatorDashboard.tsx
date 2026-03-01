@@ -55,6 +55,7 @@ import {
 
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { ProofImage } from '../components/ProofImage';
 import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { MobileTabBar } from '../components/MobileTabBar';
 
@@ -2017,8 +2018,10 @@ export const MediatorDashboard: React.FC = () => {
                   <p className="text-[10px] text-zinc-500 font-bold uppercase mb-2">
                     Order Screenshot
                   </p>
-                  <ZoomableImage
-                    src={proofModal.screenshots.order}
+                  <ProofImage
+                    orderId={proofModal.id}
+                    proofType="order"
+                    existingSrc={proofModal.screenshots.order !== 'exists' ? proofModal.screenshots.order : undefined}
                     className="w-full rounded-xl border border-white/10"
                     alt="Order Proof"
                   />
@@ -2204,8 +2207,10 @@ export const MediatorDashboard: React.FC = () => {
                   <Star size={14} /> 5-Star Rating Check
                 </h4>
                 {proofModal.screenshots?.rating ? (
-                  <ZoomableImage
-                    src={proofModal.screenshots.rating}
+                  <ProofImage
+                    orderId={proofModal.id}
+                    proofType="rating"
+                    existingSrc={proofModal.screenshots.rating !== 'exists' ? proofModal.screenshots.rating : undefined}
                     className="w-full rounded-xl border border-orange-500/20"
                     alt="Rating Proof"
                   />
@@ -2259,8 +2264,10 @@ export const MediatorDashboard: React.FC = () => {
                   <Package size={14} /> Return Window Check
                 </h4>
                 {proofModal.screenshots?.returnWindow ? (
-                  <ZoomableImage
-                    src={proofModal.screenshots.returnWindow}
+                  <ProofImage
+                    orderId={proofModal.id}
+                    proofType="returnWindow"
+                    existingSrc={proofModal.screenshots.returnWindow !== 'exists' ? proofModal.screenshots.returnWindow : undefined}
                     className="w-full rounded-xl border border-teal-500/20"
                     alt="Return Window Proof"
                   />

@@ -58,6 +58,7 @@ import { useRealtimeConnection } from '../hooks/useRealtimeConnection';
 import { User, Campaign, Order } from '../types';
 import { EmptyState, Spinner } from '../components/ui';
 import { ZoomableImage } from '../components/ZoomableImage';
+import { ProofImage } from '../components/ProofImage';
 import { RatingVerificationBadge, ReturnWindowVerificationBadge } from '../components/AiVerificationBadge';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getPrimaryOrderId } from '../utils/orderHelpers';
@@ -1195,8 +1196,10 @@ const OrdersView = ({ user }: any) => {
                 {viewProofOrder.screenshots?.order ? (
                   <>
                     <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
-                      <ZoomableImage
-                        src={viewProofOrder.screenshots.order}
+                      <ProofImage
+                        orderId={viewProofOrder.id}
+                        proofType="order"
+                        existingSrc={viewProofOrder.screenshots.order !== 'exists' ? viewProofOrder.screenshots.order : undefined}
                         alt="Order Proof"
                         className="w-full h-auto block"
                       />
@@ -1270,8 +1273,10 @@ const OrdersView = ({ user }: any) => {
                       <div className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-2 py-1 rounded-lg">
                         5 Stars
                       </div>
-                      <ZoomableImage
-                        src={viewProofOrder.screenshots.rating}
+                      <ProofImage
+                        orderId={viewProofOrder.id}
+                        proofType="rating"
+                        existingSrc={viewProofOrder.screenshots.rating !== 'exists' ? viewProofOrder.screenshots.rating : undefined}
                         alt="Rating Proof"
                         className="w-full h-auto block"
                       />
@@ -1326,8 +1331,10 @@ const OrdersView = ({ user }: any) => {
                     <Package size={14} /> Return Window
                   </div>
                   <div className="rounded-2xl border-2 border-teal-100 overflow-hidden shadow-sm">
-                    <ZoomableImage
-                      src={viewProofOrder.screenshots.returnWindow}
+                    <ProofImage
+                      orderId={viewProofOrder.id}
+                      proofType="returnWindow"
+                      existingSrc={viewProofOrder.screenshots.returnWindow !== 'exists' ? viewProofOrder.screenshots.returnWindow : undefined}
                       className="w-full h-auto max-h-[60vh] object-contain bg-zinc-50"
                       alt="Return Window proof"
                     />
@@ -1350,8 +1357,10 @@ const OrdersView = ({ user }: any) => {
                       <CreditCard size={14} /> Payment Confirmation
                     </div>
                     <div className="rounded-2xl border-2 border-zinc-100 overflow-hidden shadow-sm">
-                      <ZoomableImage
-                        src={viewProofOrder.screenshots.payment}
+                      <ProofImage
+                        orderId={viewProofOrder.id}
+                        proofType="payment"
+                        existingSrc={viewProofOrder.screenshots.payment !== 'exists' ? viewProofOrder.screenshots.payment : undefined}
                         alt="Payment Proof"
                         className="w-full h-auto block"
                       />
