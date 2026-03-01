@@ -1007,6 +1007,7 @@ export function makeOpsController(env: Env) {
 
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
         orderLog.info('Order claim verified', { orderId: order.mongoId, step: 'order', approved: (finalize as any).approved, workflowStatus: wf });
+        businessLog.info('Order claim verified', { orderId: order.mongoId, step: 'order', approved: (finalize as any).approved, verifiedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ORDER_CLAIM_VERIFIED', changedFields: ['verification', 'workflowStatus'], before: { workflowStatus: wf }, after: { workflowStatus: (finalize as any).approved ? 'APPROVED' : wf } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'VERIFY_ORDER_CLAIM', orderId: order.mongoId } });
 
@@ -1123,6 +1124,7 @@ export function makeOpsController(env: Env) {
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
         orderLog.info('Order requirement verified', { orderId: order.mongoId, step: body.type, approved: (finalize as any).approved });
+        businessLog.info('Order requirement verified', { orderId: order.mongoId, step: body.type, approved: (finalize as any).approved, verifiedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'REQUIREMENT_VERIFIED', changedFields: ['verification', body.type], before: { verified: false }, after: { verified: true, step: body.type } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'REQUIREMENT_VERIFIED', orderId: order.mongoId, step: body.type, approved: (finalize as any).approved } });
 
@@ -1241,6 +1243,7 @@ export function makeOpsController(env: Env) {
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
         orderLog.info('All order steps verified', { orderId: order.mongoId, stepsVerified: required, approved: (finalize as any).approved });
+        businessLog.info('All order steps verified', { orderId: order.mongoId, stepsVerified: required, approved: (finalize as any).approved, verifiedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'ALL_STEPS_VERIFIED', changedFields: ['verification', 'workflowStatus'], before: { workflowStatus: wf }, after: { workflowStatus: (finalize as any).approved ? 'APPROVED' : wf, stepsVerified: required } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'VERIFY_ALL_STEPS', orderId: order.mongoId } });
 
@@ -1382,6 +1385,7 @@ export function makeOpsController(env: Env) {
           metadata: { proofType: body.type, reason: body.reason },
         });
         orderLog.info('Order proof rejected', { orderId: order.mongoId, proofType: body.type, reason: body.reason });
+        businessLog.info('Order proof rejected', { orderId: order.mongoId, proofType: body.type, reason: body.reason, rejectedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'PROOF_REJECTED', changedFields: ['affiliateStatus', 'rejectionType', 'rejectionReason'], before: { affiliateStatus: order.affiliateStatus }, after: { affiliateStatus: 'Rejected', rejectionType: body.type, rejectionReason: body.reason } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'REJECT_ORDER_PROOF', orderId: order.mongoId, proofType: body.type } });
 
@@ -1507,6 +1511,7 @@ export function makeOpsController(env: Env) {
           metadata: { proofType: body.type, note: body.note },
         });
         orderLog.info('Missing proof requested', { orderId: order.mongoId, proofType: body.type, note: body.note });
+        businessLog.info('Missing proof requested', { orderId: order.mongoId, proofType: body.type, note: body.note, requestedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: order.mongoId!, action: 'MISSING_PROOF_REQUESTED', changedFields: ['missingProofRequests'], before: {}, after: { requestedType: body.type, note: body.note } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Order', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'MISSING_PROOF_REQUESTED', orderId: order.mongoId, proofType: body.type } });
 

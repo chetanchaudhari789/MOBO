@@ -72,6 +72,7 @@ export function makeAdminController() {
           metadata: { updatedFields: Object.keys(update) },
         });
         securityLog.info('System config updated', { updatedFields: Object.keys(update), actorUserId: req.auth?.userId });
+        businessLog.info('System config updated', { updatedFields: Object.keys(update), updatedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'SystemConfig', entityId: 'system', action: 'CONFIG_UPDATED', changedFields: Object.keys(update), before: {}, after: update });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
@@ -449,6 +450,7 @@ export function makeAdminController() {
           metadata: { role: roles.join(','), mediatorCode },
         });
         securityLog.info('User deleted by admin', { userId: user.mongoId, roles: roles.join(','), mediatorCode });
+        businessLog.info('User deleted by admin', { userId: user.mongoId, targetRole: roles.join(','), mediatorCode, deletedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: user.mongoId!, action: 'USER_DELETED', changedFields: ['deletedAt'], before: { status: user.status }, after: { deletedAt: new Date().toISOString() } });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
@@ -671,6 +673,7 @@ export function makeAdminController() {
           metadata: { from: before.status, to: user.status, reason: body.reason },
         });
         securityLog.info('User status updated by admin', { userId: user.mongoId, from: before.status, to: user.status, reason: body.reason });
+        businessLog.info('User status updated', { userId: user.mongoId, from: before.status, to: user.status, reason: body.reason, updatedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'User', entityId: user.mongoId!, action: 'STATUS_UPDATED', changedFields: ['status'], before: { status: before.status }, after: { status: user.status, reason: body.reason } });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
@@ -717,6 +720,7 @@ export function makeAdminController() {
           metadata: { reason: body.reason },
         });
         orderLog.info('Order reactivated by admin', { orderId: (order as any).mongoId || body.orderId, reason: body.reason });
+        businessLog.info('Order reactivated by admin', { orderId: (order as any).mongoId || body.orderId, reason: body.reason, reactivatedBy: req.auth?.userId, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Order', entityId: (order as any).mongoId || body.orderId, action: 'ORDER_REACTIVATED', changedFields: ['frozen', 'workflowStatus'], before: { frozen: true }, after: { frozen: false, reason: body.reason } });
         logAccessEvent('ADMIN_ACTION', {
           userId: req.auth?.userId,
