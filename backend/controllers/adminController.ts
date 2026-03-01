@@ -581,28 +581,56 @@ export function makeAdminController() {
 
         if (adminMongoId && statusChanged) {
           if (user.status === 'suspended') {
-            await db().suspension.create({
-              data: {
-                mongoId: randomUUID(),
-                targetUserId: user.id,
-                action: 'suspend' as any,
-                reason: body.reason,
-                adminUserId: adminPgId!,
-              },
+            // Wrap suspension + all cascades in a single transaction for atomicity
+            await db().$transaction(async (tx: any) => {
+              await tx.suspension.create({
+                data: {
+                  mongoId: randomUUID(),
+                  targetUserId: user.id,
+                  action: 'suspend' as any,
+                  reason: body.reason,
+                  adminUserId: adminPgId!,
+                },
+              });
+
+              // Freeze active workflows immediately; do NOT auto-resume after unsuspension.
+              const roles = Array.isArray(user.roles) ? (user.roles as string[]) : [];
+              const mediatorCode = String(user.mediatorCode || '').trim();
+
+              if (roles.includes('shopper')) {
+                await freezeOrders({ query: { userId: user.id }, reason: 'USER_SUSPENDED', actorUserId: adminPgId, tx });
+              }
+
+              if (roles.includes('mediator') && mediatorCode) {
+                await tx.deal.updateMany({ where: { mediatorCode, deletedAt: null }, data: { active: false } });
+                await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminPgId, tx });
+              }
+
+              if (roles.includes('agency') && mediatorCode) {
+                const mediatorCodes = await listMediatorCodesForAgency(mediatorCode);
+                if (mediatorCodes.length) {
+                  await tx.deal.updateMany({ where: { mediatorCode: { in: mediatorCodes }, deletedAt: null }, data: { active: false } });
+                  await freezeOrders({ query: { managerName: { in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminPgId, tx });
+                }
+              }
+
+              if (roles.includes('brand')) {
+                await tx.campaign.updateMany({
+                  where: { brandUserId: user.id, deletedAt: null, status: { in: ['active', 'draft'] as any } },
+                  data: { status: 'paused' as any },
+                });
+                await freezeOrders({ query: { brandUserId: user.id }, reason: 'BRAND_SUSPENDED', actorUserId: adminPgId, tx });
+              }
             });
 
-            // Freeze active workflows immediately; do NOT auto-resume after unsuspension.
+            // Audit logs + realtime events (non-transactional, fire-and-forget)
             const roles = Array.isArray(user.roles) ? (user.roles as string[]) : [];
             const mediatorCode = String(user.mediatorCode || '').trim();
 
             if (roles.includes('shopper')) {
-              await freezeOrders({ query: { userId: user.id }, reason: 'USER_SUSPENDED', actorUserId: adminPgId });
               writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'USER_SUSPENDED', role: 'shopper' } }).catch(() => { });
             }
-
             if (roles.includes('mediator') && mediatorCode) {
-              await db().deal.updateMany({ where: { mediatorCode, deletedAt: null }, data: { active: false } });
-              await freezeOrders({ query: { managerName: mediatorCode }, reason: 'MEDIATOR_SUSPENDED', actorUserId: adminPgId });
               writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => { });
               writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'MEDIATOR_SUSPENDED', mediatorCode } }).catch(() => { });
               const agencyCode = (await getAgencyCodeForMediatorCode(mediatorCode)) || '';
@@ -618,12 +646,9 @@ export function makeAdminController() {
                 },
               });
             }
-
             if (roles.includes('agency') && mediatorCode) {
               const mediatorCodes = await listMediatorCodesForAgency(mediatorCode);
               if (mediatorCodes.length) {
-                await db().deal.updateMany({ where: { mediatorCode: { in: mediatorCodes }, deletedAt: null }, data: { active: false } });
-                await freezeOrders({ query: { managerName: { in: mediatorCodes } }, reason: 'AGENCY_SUSPENDED', actorUserId: adminPgId });
                 writeAuditLog({ req, action: 'DEALS_DEACTIVATED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => { });
                 writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'AGENCY_SUSPENDED', agencyCode: mediatorCode, mediatorCount: mediatorCodes.length } }).catch(() => { });
                 publishRealtime({
@@ -639,13 +664,7 @@ export function makeAdminController() {
                 });
               }
             }
-
             if (roles.includes('brand')) {
-              await db().campaign.updateMany({
-                where: { brandUserId: user.id, deletedAt: null, status: { in: ['active', 'draft'] as any } },
-                data: { status: 'paused' as any },
-              });
-              await freezeOrders({ query: { brandUserId: user.id }, reason: 'BRAND_SUSPENDED', actorUserId: adminPgId });
               writeAuditLog({ req, action: 'CAMPAIGNS_PAUSED_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => { });
               writeAuditLog({ req, action: 'ORDERS_FROZEN_CASCADE', entityType: 'User', entityId: user.mongoId!, metadata: { reason: 'BRAND_SUSPENDED' } }).catch(() => { });
             }

@@ -533,7 +533,7 @@ export function makeOrdersController(env: Env) {
               : { mongoId: body.preOrderId, userId: userPgId, deletedAt: null };
             const existing = await tx.order.findFirst({
               where: preOrderWhere as any,
-              include: { items: true },
+              include: { items: { where: { deletedAt: null } } },
             });
             if (!existing) throw new AppError(404, 'ORDER_NOT_FOUND', 'Pre-order not found');
             if (existing.frozen) throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
@@ -598,7 +598,7 @@ export function makeOrdersController(env: Env) {
                 }) as any,
                 updatedBy: userPgId,
               },
-              include: { items: true },
+              include: { items: { where: { deletedAt: null } } },
             });
 
             // State machine: REDIRECTED -> ORDERED
@@ -668,7 +668,7 @@ export function makeOrdersController(env: Env) {
               }) as any,
               createdBy: userPgId,
             },
-            include: { items: true },
+            include: { items: { where: { deletedAt: null } } },
           });
 
           return order;
@@ -799,7 +799,7 @@ export function makeOrdersController(env: Env) {
           : { mongoId: body.orderId, deletedAt: null };
         const order = await db().order.findFirst({
           where: claimOrderWhere as any,
-          include: { items: true },
+          include: { items: { where: { deletedAt: null } } },
         });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
@@ -1100,7 +1100,7 @@ export function makeOrdersController(env: Env) {
         // ORDERED -> PROOF_SUBMITTED -> UNDER_REVIEW
         // If already UNDER_REVIEW, we just persist the new proof without rewinding workflow.
         if (wf === 'UNDER_REVIEW') {
-          const refreshed = await db().order.findUnique({ where: { id: order.id }, include: { items: true } });
+          const refreshed = await db().order.findUnique({ where: { id: order.id }, include: { items: { where: { deletedAt: null } } } });
           res.json(toUiOrder(pgOrder(refreshed)));
           return;
         }

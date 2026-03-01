@@ -91,6 +91,42 @@ function isRequirementVerified(order: any, type: 'review' | 'rating' | 'returnWi
   return !!v[type]?.verifiedAt;
 }
 
+/**
+ * Shared authorization + suspension guard for order-scoped ops handlers.
+ * Verifies: frozen check, role-based scope (mediator/agency hierarchy), mediator/agency active status.
+ * Returns the resolved agencyCode for realtime audience building.
+ */
+async function assertOrderAccess(order: any, roles: string[], requester: any): Promise<string> {
+  if ((order as any).frozen) {
+    throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
+  }
+
+  if (!isPrivileged(roles)) {
+    if (roles.includes('mediator')) {
+      if (String(order.managerName) !== String(requester?.mediatorCode)) {
+        throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
+      }
+    } else if (roles.includes('agency')) {
+      const allowed = await listMediatorCodesForAgency(String(requester?.mediatorCode || ''));
+      if (!allowed.includes(String(order.managerName))) {
+        throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
+      }
+    } else {
+      throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
+    }
+  }
+
+  const managerCode = String(order.managerName || '');
+  if (!(await isMediatorActive(managerCode))) {
+    throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
+  }
+  const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
+  if (agencyCode && !(await isAgencyActive(agencyCode))) {
+    throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
+  }
+  return agencyCode;
+}
+
 async function finalizeApprovalIfReady(order: any, actorUserId: string, env: Env) {
   const wf = String(order.workflowStatus || 'CREATED');
   if (wf !== 'UNDER_REVIEW') return { approved: false, reason: 'NOT_UNDER_REVIEW' };
@@ -941,36 +977,10 @@ export function makeOpsController(env: Env) {
       try {
         const body = verifyOrderSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: { where: { deletedAt: null } } } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-        if ((order as any).frozen) {
-          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-        }
-
-        if (!isPrivileged(roles)) {
-          if (roles.includes('mediator')) {
-            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
-            }
-          } else if (roles.includes('agency')) {
-            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
-            if (!allowed.includes(String(order.managerName))) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
-            }
-          } else {
-            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
-          }
-        }
-
-        const managerCode = String(order.managerName || '');
-        if (!(await isMediatorActive(managerCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
-        }
-        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
-        if (agencyCode && !(await isAgencyActive(agencyCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
-        }
+        const agencyCode = await assertOrderAccess(order, roles, requester);
 
         const wf = String((order as any).workflowStatus || 'CREATED');
         if (wf !== 'UNDER_REVIEW') {
@@ -1001,7 +1011,7 @@ export function makeOpsController(env: Env) {
           actorUserId: req.auth?.userId,
           metadata: { step: 'order', missingProofs },
         });
-        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any }, include: { items: true } });
+        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any }, include: { items: { where: { deletedAt: null } } } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
 
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
@@ -1031,7 +1041,7 @@ export function makeOpsController(env: Env) {
 
         // Only re-fetch if finalize modified the order; otherwise use the update result
         const finalOrder = (finalize as any).approved
-          ? await db().order.findFirst({ where: { id: order.id }, include: { items: true } })
+          ? await db().order.findFirst({ where: { id: order.id }, include: { items: { where: { deletedAt: null } } } })
           : updatedOrder;
         res.json({
           ok: true,
@@ -1050,36 +1060,10 @@ export function makeOpsController(env: Env) {
         const body = verifyOrderRequirementSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: { where: { deletedAt: null } } } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-        if ((order as any).frozen) {
-          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-        }
-
-        if (!isPrivileged(roles)) {
-          if (roles.includes('mediator')) {
-            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
-            }
-          } else if (roles.includes('agency')) {
-            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
-            if (!allowed.includes(String(order.managerName))) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
-            }
-          } else {
-            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
-          }
-        }
-
-        const managerCode = String(order.managerName || '');
-        if (!(await isMediatorActive(managerCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
-        }
-        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
-        if (agencyCode && !(await isAgencyActive(agencyCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
-        }
+        const agencyCode = await assertOrderAccess(order, roles, requester);
 
         const wf = String((order as any).workflowStatus || 'CREATED');
         if (wf !== 'UNDER_REVIEW') {
@@ -1121,7 +1105,7 @@ export function makeOpsController(env: Env) {
           actorUserId: req.auth?.userId,
           metadata: { step: body.type },
         });
-        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any }, include: { items: true } });
+        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: newEvents as any }, include: { items: { where: { deletedAt: null } } } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
         orderLog.info('Order requirement verified', { orderId: order.mongoId, step: body.type, approved: (finalize as any).approved });
@@ -1148,7 +1132,7 @@ export function makeOpsController(env: Env) {
 
         // Only re-fetch if finalize modified the order; otherwise use the update result
         const finalOrder = (finalize as any).approved
-          ? await db().order.findFirst({ where: { id: order.id }, include: { items: true } })
+          ? await db().order.findFirst({ where: { id: order.id }, include: { items: { where: { deletedAt: null } } } })
           : updatedOrder;
         res.json({
           ok: true,
@@ -1171,36 +1155,10 @@ export function makeOpsController(env: Env) {
       try {
         const body = verifyOrderSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
-        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: { where: { deletedAt: null } } } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-        if ((order as any).frozen) {
-          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-        }
-
-        if (!isPrivileged(roles)) {
-          if (roles.includes('mediator')) {
-            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
-            }
-          } else if (roles.includes('agency')) {
-            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
-            if (!allowed.includes(String(order.managerName))) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot verify orders outside your network');
-            }
-          } else {
-            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
-          }
-        }
-
-        const managerCode = String(order.managerName || '');
-        if (!(await isMediatorActive(managerCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
-        }
-        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
-        if (agencyCode && !(await isAgencyActive(agencyCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
-        }
+        const agencyCode = await assertOrderAccess(order, roles, requester);
 
         const wf = String((order as any).workflowStatus || 'CREATED');
         if (wf !== 'UNDER_REVIEW') {
@@ -1243,7 +1201,7 @@ export function makeOpsController(env: Env) {
           }
         }
 
-        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: evts as any }, include: { items: true } });
+        const updatedOrder = await db().order.update({ where: { id: order.id }, data: { verification: v, events: evts as any }, include: { items: { where: { deletedAt: null } } } });
         const finalize = await finalizeApprovalIfReady(updatedOrder!, String(req.auth?.userId || ''), env);
         await writeAuditLog({ req, action: 'ORDER_VERIFIED', entityType: 'Order', entityId: order.mongoId! });
         orderLog.info('All order steps verified', { orderId: order.mongoId, stepsVerified: required, approved: (finalize as any).approved });
@@ -1265,7 +1223,7 @@ export function makeOpsController(env: Env) {
 
         // Only re-fetch if finalize modified the order; otherwise use the update result
         const finalOrder = (finalize as any).approved
-          ? await db().order.findFirst({ where: { id: order.id }, include: { items: true } })
+          ? await db().order.findFirst({ where: { id: order.id }, include: { items: { where: { deletedAt: null } } } })
           : updatedOrder;
         res.json({
           ok: true,
@@ -1284,36 +1242,10 @@ export function makeOpsController(env: Env) {
         const body = rejectOrderProofSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: { where: { deletedAt: null } } } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-        if ((order as any).frozen) {
-          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-        }
-
-        if (!isPrivileged(roles)) {
-          if (roles.includes('mediator')) {
-            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot reject orders outside your network');
-            }
-          } else if (roles.includes('agency')) {
-            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
-            if (!allowed.includes(String(order.managerName))) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot reject orders outside your network');
-            }
-          } else {
-            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
-          }
-        }
-
-        const managerCode = String(order.managerName || '');
-        if (!(await isMediatorActive(managerCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
-        }
-        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
-        if (agencyCode && !(await isAgencyActive(agencyCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
-        }
+        const agencyCode = await assertOrderAccess(order, roles, requester);
 
         const wf = String((order as any).workflowStatus || 'CREATED');
         if (wf !== 'UNDER_REVIEW') {
@@ -1439,36 +1371,10 @@ export function makeOpsController(env: Env) {
         const body = requestMissingProofSchema.parse(req.body);
         const { roles, user: requester } = getRequester(req);
 
-        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: { where: { deletedAt: null } } } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-        if ((order as any).frozen) {
-          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-        }
-
-        if (!isPrivileged(roles)) {
-          if (roles.includes('mediator')) {
-            if (String(order.managerName) !== String((requester as any)?.mediatorCode)) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot request proofs outside your network');
-            }
-          } else if (roles.includes('agency')) {
-            const allowed = await listMediatorCodesForAgency(String((requester as any)?.mediatorCode || ''));
-            if (!allowed.includes(String(order.managerName))) {
-              throw new AppError(403, 'FORBIDDEN', 'Cannot request proofs outside your network');
-            }
-          } else {
-            throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
-          }
-        }
-
-        const managerCode = String(order.managerName || '');
-        if (!(await isMediatorActive(managerCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; order is frozen');
-        }
-        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
-        if (agencyCode && !(await isAgencyActive(agencyCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; order is frozen');
-        }
+        const agencyCode = await assertOrderAccess(order, roles, requester);
 
         const pgMapped = pgOrder(order);
         const required = getRequiredStepsForOrder(pgMapped);
@@ -1548,48 +1454,16 @@ export function makeOpsController(env: Env) {
         const { roles, user } = getRequester(req);
         const settlementMode = (body as any).settlementMode === 'external' ? 'external' : 'wallet';
 
-        const requesterMediatorCode = String((user as any)?.mediatorCode || '').trim();
         const canSettleAny = isPrivileged(roles);
         const canSettleScoped = roles.includes('mediator') || roles.includes('agency');
         if (!canSettleAny && !canSettleScoped) {
           throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
         }
 
-        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: { where: { deletedAt: null } } } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
-        if (!canSettleAny) {
-          const orderManagerCode = String(order.managerName || '').trim();
-          if (!orderManagerCode) throw new AppError(409, 'INVALID_ORDER', 'Order is missing manager code');
-
-          if (roles.includes('mediator')) {
-            if (!requesterMediatorCode || requesterMediatorCode !== orderManagerCode) {
-              throw new AppError(403, 'FORBIDDEN', 'You can only settle your own orders');
-            }
-          }
-
-          if (roles.includes('agency')) {
-            if (!requesterMediatorCode) {
-              throw new AppError(403, 'FORBIDDEN', 'Agency is missing code');
-            }
-            const allowedCodes = await listMediatorCodesForAgency(requesterMediatorCode);
-            if (!allowedCodes.includes(orderManagerCode)) {
-              throw new AppError(403, 'FORBIDDEN', 'You can only settle orders within your agency');
-            }
-          }
-        }
-        if ((order as any).frozen) {
-          throw new AppError(409, 'ORDER_FROZEN', 'Order is frozen and requires explicit reactivation');
-        }
-
-        const managerCode = String(order.managerName || '');
-        if (!(await isMediatorActive(managerCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Mediator is suspended; payouts are blocked');
-        }
-        const agencyCode = (await getAgencyCodeForMediatorCode(managerCode)) || '';
-        if (agencyCode && !(await isAgencyActive(agencyCode))) {
-          throw new AppError(409, 'FROZEN_SUSPENSION', 'Agency is suspended; payouts are blocked');
-        }
+        const agencyCode = await assertOrderAccess(order, roles, user);
 
         // Buyer must also be active — order.userId is PG UUID
         const buyer = await db().user.findUnique({ where: { id: order.userId }, select: { id: true, status: true, deletedAt: true } });
@@ -1705,7 +1579,7 @@ export function makeOpsController(env: Env) {
             }
           }
 
-          // Atomic settlement using Prisma transaction
+          // Atomic settlement using Prisma transaction — wallet + order status in one commit
           await db().$transaction(async (tx: any) => {
             await applyWalletDebit({
               idempotencyKey: `order-settlement-debit-${order.mongoId}`,
@@ -1745,30 +1619,50 @@ export function makeOpsController(env: Env) {
                 tx,
               });
             }
+
+            // Order status update is inside the transaction so money + status are atomic
+            const newEvents1 = pushOrderEvent(order.events as any, {
+              type: 'SETTLED',
+              at: new Date(),
+              actorUserId: req.auth?.userId,
+              metadata: {
+                ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
+                settlementMode,
+              },
+            });
+            await tx.order.update({
+              where: { id: order.id },
+              data: {
+                paymentStatus: 'Paid',
+                affiliateStatus: 'Approved_Settled',
+                settlementMode,
+                ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
+                events: newEvents1 as any,
+              },
+            });
+          });
+        } else {
+          // Cap-exceeded or external: no wallet movement, just update order status
+          const newEvents1 = pushOrderEvent(order.events as any, {
+            type: isOverLimit ? 'CAP_EXCEEDED' : 'SETTLED',
+            at: new Date(),
+            actorUserId: req.auth?.userId,
+            metadata: {
+              ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
+              settlementMode,
+            },
+          });
+          await db().order.update({
+            where: { id: order.id },
+            data: {
+              paymentStatus: isOverLimit ? 'Failed' : 'Paid',
+              affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled',
+              settlementMode,
+              ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
+              events: newEvents1 as any,
+            },
           });
         }
-
-        // Update order status + workflow transitions
-        const newEvents1 = pushOrderEvent(order.events as any, {
-          type: isOverLimit ? 'CAP_EXCEEDED' : 'SETTLED',
-          at: new Date(),
-          actorUserId: req.auth?.userId,
-          metadata: {
-            ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
-            settlementMode,
-          },
-        });
-
-        await db().order.update({
-          where: { id: order.id },
-          data: {
-            paymentStatus: isOverLimit ? 'Failed' : 'Paid',
-            affiliateStatus: isOverLimit ? 'Cap_Exceeded' : 'Approved_Settled',
-            settlementMode,
-            ...(body.settlementRef ? { settlementRef: body.settlementRef } : {}),
-            events: newEvents1 as any,
-          },
-        });
 
         // Workflow transitions: APPROVED -> REWARD_PENDING -> COMPLETED/FAILED
         await transitionOrderWorkflow({
@@ -1818,7 +1712,7 @@ export function makeOpsController(env: Env) {
         const canScoped = roles.includes('mediator') || roles.includes('agency');
         if (!canAny && !canScoped) throw new AppError(403, 'FORBIDDEN', 'Insufficient role');
 
-        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: true } });
+        const order = await db().order.findFirst({ where: { ...idWhere(body.orderId), deletedAt: null }, include: { items: { where: { deletedAt: null } } } });
         if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found');
 
         if ((order as any).frozen) {
