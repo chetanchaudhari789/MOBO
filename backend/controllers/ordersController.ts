@@ -320,7 +320,7 @@ export function makeOrdersController(env: Env) {
         const userLookupWhere = UUID_RE.test(body.userId)
           ? { OR: [{ id: body.userId }, { mongoId: body.userId }] as any, deletedAt: null }
           : { mongoId: body.userId, deletedAt: null };
-        const user = await db().user.findFirst({ where: userLookupWhere as any });
+        const user = await db().user.findFirst({ where: userLookupWhere as any, select: { id: true, mongoId: true, name: true, mobile: true, status: true, parentCode: true } });
         if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
         if (user.status !== 'active') {
           throw new AppError(403, 'USER_NOT_ACTIVE', 'Your account is not active. Please contact support.');
