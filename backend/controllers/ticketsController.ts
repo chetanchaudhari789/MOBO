@@ -143,6 +143,7 @@ export function makeTicketsController() {
         const db = prisma();
 
         const logTicketAccess = (count: number) => {
+          businessLog.info('Tickets listed', { userId: req.auth?.userId, roles: req.auth?.roles, resultCount: count, ip: req.ip });
           logAccessEvent('RESOURCE_ACCESS', {
             userId: req.auth?.userId,
             roles: req.auth?.roles,

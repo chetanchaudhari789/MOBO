@@ -128,6 +128,7 @@ export function makeInviteController() {
         ]);
         res.json(paginatedResponse(invites.map(pgInvite), total, page, limit, isPaginated));
 
+        businessLog.info('Invites listed', { userId: req.auth?.userId, resultCount: invites.length, total, page, limit, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,

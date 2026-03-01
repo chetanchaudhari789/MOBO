@@ -111,6 +111,7 @@ export function makeBrandController() {
         ]);
         res.json(paginatedResponse(agencies.map((a: any) => toUiUser(pgUser(a), null)), total, page, limit, isPaginated));
 
+        businessLog.info('Agencies listed', { userId: req.auth?.userId, resultCount: agencies.length, total, page, limit, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -152,6 +153,7 @@ export function makeBrandController() {
         ]);
         res.json(paginatedResponse(campaigns.map((c: any) => toUiCampaign(pgCampaign(c))), total, page, limit, isPaginated));
 
+        businessLog.info('Brand campaigns listed', { userId: req.auth?.userId, resultCount: campaigns.length, total, page, limit, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -216,6 +218,7 @@ export function makeBrandController() {
           }).filter(Boolean);
           res.json(paginatedResponse(brandMapped as any[], total, page, limit, isPaginated));
 
+          businessLog.info('Brand orders listed', { userId: req.auth?.userId, resultCount: brandMapped.length, total, page, limit, ip: req.ip });
           logAccessEvent('RESOURCE_ACCESS', {
             userId: req.auth?.userId,
             roles: req.auth?.roles,
@@ -245,6 +248,7 @@ export function makeBrandController() {
         }).filter(Boolean);
         res.json(paginatedResponse(mapped as any[], total, page, limit, isPaginated));
 
+        businessLog.info('Orders listed (privileged)', { userId: req.auth?.userId, resultCount: mapped.length, total, page, limit, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -313,6 +317,7 @@ export function makeBrandController() {
         });
         res.json(paginatedResponse(txMapped, txTotal, page, limit, isPaginated));
 
+        businessLog.info('Brand transactions listed', { userId: req.auth?.userId, resultCount: txMapped.length, total: txTotal, page, limit, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,

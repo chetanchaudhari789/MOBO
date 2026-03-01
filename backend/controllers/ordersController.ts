@@ -3,7 +3,7 @@ import type { Env } from '../config/env.js';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { prisma as db } from '../database/prisma.js';
-import { orderLog } from '../config/logger.js';
+import { orderLog, businessLog } from '../config/logger.js';
 import { logChangeEvent, logAccessEvent, logPerformance, logErrorEvent } from '../config/appLogs.js';
 import { pgOrder } from '../utils/pgMappers.js';
 import { createOrderSchema, submitClaimSchema } from '../validations/orders.js';
@@ -157,6 +157,7 @@ export function makeOrdersController(env: Env) {
 
         const proofValue = resolveProofValue(order, proofType);
 
+        businessLog.info('Order proof viewed', { orderId, proofType, viewerId: req.auth?.userId, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -201,6 +202,7 @@ export function makeOrdersController(env: Env) {
 
         const proofValue = resolveProofValue(order, proofType);
 
+        businessLog.info('Order proof viewed (public)', { orderId, proofType });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -277,6 +279,7 @@ export function makeOrdersController(env: Env) {
           catch (e) { orderLog.error(`[orders/getOrders] toUiOrderSummary failed for ${o.id}`, { error: e }); return null; }
         }).filter(Boolean);
 
+        businessLog.info('Orders listed', { userId, resultCount: mapped.length, total, page, limit, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -731,6 +734,7 @@ export function makeOrdersController(env: Env) {
           },
         }).catch(() => { });
 
+        orderLog.info('Order created', { orderId: orderMongoId, userId: req.auth?.userId, campaignId: String(campaign.mongoId ?? campaign.id), externalOrderId: resolvedExternalOrderId, itemCount: body.items.length, ip: req.ip });
         logChangeEvent({
           actorUserId: req.auth?.userId,
           actorRoles: req.auth?.roles,
@@ -746,6 +750,7 @@ export function makeOrdersController(env: Env) {
           },
         });
 
+        businessLog.info('Order created', { orderId: orderMongoId, userId: req.auth?.userId, campaignId: String(campaign.mongoId ?? campaign.id), itemCount: body.items.length, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -1159,6 +1164,7 @@ export function makeOrdersController(env: Env) {
           metadata: { proofType: body.type },
         }).catch(() => { });
 
+        businessLog.info('Proof submitted', { orderId: order.mongoId, proofType: body.type, userId: req.auth?.userId, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
