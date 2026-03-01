@@ -4,9 +4,9 @@ import { requireAuth } from '../middleware/auth.js';
 import { exportToGoogleSheet, refreshUserGoogleToken, type SheetExportRequest } from '../services/sheetsService.js';
 import { writeAuditLog } from '../services/audit.js';
 import { logAccessEvent, logChangeEvent, logErrorEvent } from '../config/appLogs.js';
+import { businessLog } from '../config/logger.js';
 import { prisma, isPrismaAvailable } from '../database/prisma.js';
 import { idWhere } from '../utils/idWhere.js';
-import { businessLog } from '../config/logger.js';
 
 export function sheetsRoutes(env: Env): Router {
   const router = Router();
@@ -85,7 +85,7 @@ export function sheetsRoutes(env: Env): Router {
 
       const result = await exportToGoogleSheet(env, { title, sheetName, headers, rows: sanitizedRows }, userAccessToken, sharingEmail);
 
-      businessLog.info('Google Sheet exported', { userId: (req as any).auth?.userId, spreadsheetId: result.spreadsheetId, title: result.sheetTitle, rowCount: rows.length, ip: req.ip });
+      businessLog.info(`[Export] User ${(req as any).auth?.userId} exported Google Sheet — "${result.sheetTitle}", ${rows.length} rows`, { actorUserId: (req as any).auth?.userId, spreadsheetId: result.spreadsheetId, title: result.sheetTitle, rowCount: rows.length, ip: req.ip });
 
       // Audit trail
       writeAuditLog({

@@ -143,7 +143,7 @@ export function makeTicketsController() {
         const db = prisma();
 
         const logTicketAccess = (count: number) => {
-          businessLog.info('Tickets listed', { userId: req.auth?.userId, roles: req.auth?.roles, resultCount: count, ip: req.ip });
+          businessLog.info(`[${String(req.auth?.roles?.[0] || 'User').charAt(0).toUpperCase() + String(req.auth?.roles?.[0] || 'User').slice(1)}] User ${req.auth?.userId} listed tickets — ${count} results`, { actorUserId: req.auth?.userId, roles: req.auth?.roles, resultCount: count, ip: req.ip });
           logAccessEvent('RESOURCE_ACCESS', {
             userId: req.auth?.userId,
             roles: req.auth?.roles,
@@ -240,7 +240,7 @@ export function makeTicketsController() {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
         await writeAuditLog({ req, action: 'TICKET_CREATED', entityType: 'Ticket', entityId: String(mapped._id), metadata: { issueType: body.issueType, orderId: body.orderId, actorRole: role } });
-        businessLog.info('Ticket created', { ticketId: String(mapped._id), issueType: body.issueType, orderId: body.orderId, role });
+        businessLog.info(`[${role.charAt(0).toUpperCase() + role.slice(1)}] User ${req.auth?.userId} created ticket ${String(mapped._id)} — issue: ${body.issueType}, order: ${body.orderId || 'none'}`, { actorUserId: req.auth?.userId, ticketId: String(mapped._id), issueType: body.issueType, orderId: body.orderId, role, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: String(mapped._id), action: 'TICKET_CREATED', changedFields: ['status', 'issueType'], before: {}, after: { status: 'Open', issueType: body.issueType } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Ticket', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'TICKET_CREATED', ticketId: String(mapped._id), issueType: body.issueType, orderId: body.orderId, role } });
 
@@ -291,7 +291,7 @@ export function makeTicketsController() {
           : (previousStatus === 'Resolved' || previousStatus === 'Rejected') && body.status === 'Open' ? 'TICKET_REOPENED'
           : 'TICKET_UPDATED';
         await writeAuditLog({ req, action: auditAction, entityType: 'Ticket', entityId: id, metadata: { previousStatus, newStatus: body.status, actorRole: String(user?.role || roles[0] || '') } });
-        businessLog.info(`Ticket ${auditAction.toLowerCase().replace('ticket_', '')}`, { ticketId: id, previousStatus, newStatus: body.status });
+        businessLog.info(`[${String(user?.role || roles[0] || 'User').charAt(0).toUpperCase() + String(user?.role || roles[0] || 'User').slice(1)}] User ${req.auth?.userId} ${auditAction.toLowerCase().replace('ticket_', '')} ticket ${id} — ${previousStatus} → ${body.status}`, { actorUserId: req.auth?.userId, ticketId: id, previousStatus, newStatus: body.status, ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'TICKET_STATUS_CHANGE', changedFields: ['status'], before: { status: previousStatus }, after: { status: body.status } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Ticket', requestId: String((res as any).locals?.requestId || ''), metadata: { action: auditAction, ticketId: id, previousStatus, newStatus: body.status } });
 
@@ -333,7 +333,7 @@ export function makeTicketsController() {
         publishRealtime({ type: 'notifications.changed', ts: new Date().toISOString(), audience });
 
         await writeAuditLog({ req, action: 'TICKET_DELETED', entityType: 'Ticket', entityId: id, metadata: { status: String(existing.status) } });
-        businessLog.info('Ticket deleted', { ticketId: id, status: String(existing.status) });
+        businessLog.info(`[${String(user?.role || roles[0] || 'User').charAt(0).toUpperCase() + String(user?.role || roles[0] || 'User').slice(1)}] User ${req.auth?.userId} deleted ticket ${id} — was ${String(existing.status)}`, { actorUserId: req.auth?.userId, ticketId: id, previousStatus: String(existing.status), ip: req.ip });
         logChangeEvent({ actorUserId: req.auth?.userId, entityType: 'Ticket', entityId: id, action: 'TICKET_DELETED', changedFields: ['deletedAt'], before: { status: String(existing.status) }, after: { deleted: true } });
         logAccessEvent('RESOURCE_ACCESS', { userId: req.auth?.userId, roles: req.auth?.roles, ip: req.ip, resource: 'Ticket', requestId: String((res as any).locals?.requestId || ''), metadata: { action: 'TICKET_DELETED', ticketId: id, status: String(existing.status) } });
 

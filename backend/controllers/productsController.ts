@@ -51,7 +51,7 @@ export function makeProductsController() {
 
         res.json(paginatedResponse(deals.map(d => toUiDeal(pgDeal(d))), total, page, limit, isPaginated));
 
-        businessLog.info('Products listed', { userId: req.auth?.userId, mediatorCode, resultCount: deals.length, total, ip: req.ip });
+        businessLog.info(`[Buyer] User ${req.auth?.userId} listed products — ${deals.length} deals, mediator: ${mediatorCode || 'none'}`, { actorUserId: req.auth?.userId, mediatorCode, resultCount: deals.length, total, ip: req.ip });
         logAccessEvent('RESOURCE_ACCESS', {
           userId: req.auth?.userId,
           roles: req.auth?.roles,
@@ -155,7 +155,7 @@ export function makeProductsController() {
           metadata: { dealId, campaignId: deal.campaignId, mediatorCode },
         });
         orderLog.info('Order redirect tracked', { orderId: mongoId, dealId, campaignId: deal.campaignId, mediatorCode, userId: requesterId });
-        businessLog.info('Buyer redirected to deal', { orderId: mongoId, dealId, campaignId: deal.campaignId, mediatorCode, userId: requesterId, platform: String(deal.platform ?? ''), ip: req.ip });
+        businessLog.info(`[Buyer] User ${requesterId} redirected to deal ${dealId} — order ${mongoId}, campaign ${deal.campaignId}, mediator: ${mediatorCode}`, { actorUserId: requesterId, orderId: mongoId, dealId, campaignId: deal.campaignId, mediatorCode, platform: String(deal.platform ?? ''), ip: req.ip });
         logChangeEvent({ actorUserId: requesterId, entityType: 'Order', entityId: mongoId, action: 'STATUS_CHANGE', changedFields: ['workflowStatus'], before: {}, after: { workflowStatus: 'REDIRECTED' } });
 
         const ts = new Date().toISOString();
