@@ -1,28 +1,35 @@
 'use client';
-import React, { lazy, Suspense } from 'react';
+import React, { Suspense } from 'react';
 
 /**
- * Lazy-loaded Recharts components.
- * Recharts is ~200KB gzipped — only load when charts are actually rendered.
- * Container components (AreaChart, BarChart, ResponsiveContainer) are lazy-loaded.
- * Sub-components (Area, Bar, XAxis, etc.) are re-exported directly since they
- * are class components that aren't compatible with React.lazy().
+ * Recharts re-exports for dashboard charts.
+ *
+ * Why direct imports instead of React.lazy()?
+ * -------------------------------------------
+ * Recharts sub-components (Area, Bar, XAxis, etc.) CANNOT be wrapped in
+ * React.lazy() because recharts chart containers identify their children by
+ * checking `child.type` at runtime. React.lazy() wraps the type in a
+ * Suspense-compatible shell, which breaks this detection and causes a
+ * runtime crash ("Something went wrong").
+ *
+ * Code-splitting is still effective because:
+ * 1. Dashboard pages are already lazy-loaded via React.lazy() in the App
+ *    entry components (AgencyApp, BrandApp, etc.)
+ * 2. Next.js automatically code-splits dynamic imports, so recharts only
+ *    loads when the dashboard chunk loads — never in the initial bundle.
+ * 3. ChartSuspense wraps chart regions to show a skeleton while loading.
  */
-
-const LazyAreaChart = lazy(() => import('recharts').then(m => ({ default: m.AreaChart })));
-const LazyBarChart = lazy(() => import('recharts').then(m => ({ default: m.BarChart })));
-const LazyResponsiveContainer = lazy(() => import('recharts').then(m => ({ default: m.ResponsiveContainer })));
-
-// Re-export sub-components as async imports to avoid loading recharts eagerly.
-// These are used inside chart containers which are already lazy-loaded above.
-
-// Sub-components: use lazy with explicit ComponentType cast to satisfy TS strict mode.
-const LazyArea = lazy(() => import('recharts').then(m => ({ default: m.Area as any as React.ComponentType<any> })));
-const LazyBar = lazy(() => import('recharts').then(m => ({ default: m.Bar as any as React.ComponentType<any> })));
-const LazyXAxis = lazy(() => import('recharts').then(m => ({ default: m.XAxis as any as React.ComponentType<any> })));
-const LazyYAxis = lazy(() => import('recharts').then(m => ({ default: m.YAxis as any as React.ComponentType<any> })));
-const LazyCartesianGrid = lazy(() => import('recharts').then(m => ({ default: m.CartesianGrid as any as React.ComponentType<any> })));
-const LazyTooltip = lazy(() => import('recharts').then(m => ({ default: m.Tooltip as any as React.ComponentType<any> })));
+import {
+  AreaChart,
+  BarChart,
+  ResponsiveContainer,
+  Area,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from 'recharts';
 
 /** Wrapper that shows a skeleton while Recharts loads */
 function ChartFallback() {
@@ -38,13 +45,13 @@ export function ChartSuspense({ children }: { children: React.ReactNode }) {
 }
 
 export {
-  LazyAreaChart as AreaChart,
-  LazyBarChart as BarChart,
-  LazyArea as Area,
-  LazyBar as Bar,
-  LazyXAxis as XAxis,
-  LazyYAxis as YAxis,
-  LazyCartesianGrid as CartesianGrid,
-  LazyTooltip as Tooltip,
-  LazyResponsiveContainer as ResponsiveContainer,
+  AreaChart,
+  BarChart,
+  Area,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
 };

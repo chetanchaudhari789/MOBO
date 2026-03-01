@@ -4,7 +4,7 @@ import type { Role } from '../middleware/auth.js';
 import { requireAuth } from '../middleware/auth.js';
 import { subscribeRealtime, type RealtimeEvent } from '../services/realtimeHub.js';
 import { realtimeLog } from '../config/logger.js';
-import { logAccessEvent, logPerformance } from '../config/appLogs.js';
+import { logAccessEvent, logPerformance, logErrorEvent } from '../config/appLogs.js';
 
 function writeSse(res: any, evt: { event: string; data?: any }): boolean {
   // Never throw from a realtime emitter callback.
@@ -154,7 +154,14 @@ export function realtimeRoutes(env: Env) {
     try {
       res.write(': connected\n\n');
       if (typeof (res as any).flush === 'function') (res as any).flush();
-    } catch {
+    } catch (err) {
+      logErrorEvent({
+        message: 'SSE handshake failed',
+        category: 'NETWORK',
+        error: err instanceof Error ? err : new Error(String(err)),
+        severity: 'medium',
+        metadata: { userId, requestId },
+      });
       cleanup();
       return;
     }

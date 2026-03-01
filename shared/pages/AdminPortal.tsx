@@ -1309,7 +1309,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm shadow-inner group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors overflow-hidden">
                                 {u.avatar ? (
-                                  <img loading="lazy"
+                                  <ProxiedImage
                                     src={u.avatar}
                                     alt={u.name ? `${u.name} avatar` : 'Avatar'}
                                     className="w-full h-full object-cover"

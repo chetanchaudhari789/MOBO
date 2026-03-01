@@ -225,7 +225,7 @@ const InboxView = ({ orders, pendingUsers, tickets, loading, onRefresh, onViewPr
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-[0.8rem] flex items-center justify-center font-black text-sm shadow-inner overflow-hidden">
                     {u.avatar ? (
-                      <img loading="lazy"
+                      <ProxiedImage
                         src={u.avatar}
                         alt={u.name ? `${u.name} avatar` : 'Avatar'}
                         className="w-full h-full object-cover"
@@ -974,7 +974,7 @@ const SquadView = ({ user, pendingUsers, verifiedUsers, loading, orders: _orders
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-zinc-100 rounded-[0.8rem] flex items-center justify-center font-black text-zinc-500 text-sm overflow-hidden">
                       {u.avatar ? (
-                        <img loading="lazy"
+                        <ProxiedImage
                           src={u.avatar}
                           alt={u.name ? `${u.name} avatar` : 'Avatar'}
                           className="w-full h-full object-cover"
@@ -1073,7 +1073,7 @@ const MediatorProfileView = () => {
         >
           <div className="w-24 h-24 rounded-full bg-zinc-100 border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
             {avatar ? (
-              <img loading="lazy"
+              <ProxiedImage
                 src={avatar}
                 alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                 className="w-full h-full object-cover"
@@ -1169,7 +1169,7 @@ const MediatorProfileView = () => {
           >
             {qrCode ? (
               <div className="relative">
-                <img loading="lazy"
+                <ProxiedImage
                   src={qrCode}
                   alt="Payment QR"
                   className="h-32 w-32 object-contain rounded-lg"
@@ -1283,7 +1283,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-[0.8rem] bg-white/10 flex items-center justify-center font-bold text-sm overflow-hidden">
                 {buyer.avatar ? (
-                  <img loading="lazy"
+                  <ProxiedImage
                     src={buyer.avatar}
                     alt={buyer.name ? `${buyer.name} avatar` : 'Avatar'}
                     className="w-full h-full object-cover"
@@ -1532,7 +1532,7 @@ const LedgerModal = ({ buyer, orders, loading, onClose, onRefresh }: any) => {
             </button>
             <h3 className="font-bold text-lg text-zinc-900 mb-4">Payment QR</h3>
             <div className="p-2 border-2 border-dashed border-zinc-200 rounded-xl mb-4">
-              <img loading="lazy" src={buyer.qrCode} alt="Payment QR" className="w-48 h-48 object-contain" />
+              <ProxiedImage src={buyer.qrCode} alt="Payment QR" className="w-48 h-48 object-contain" />
             </div>
             <p className="text-center text-xs font-bold text-zinc-500">{buyer.name}</p>
             <p className="text-center text-[10px] text-zinc-400 font-mono">{buyer.upiId}</p>
@@ -1729,7 +1729,7 @@ export const MediatorDashboard: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-[0.8rem] bg-[#18181B] text-white flex items-center justify-center font-black text-lg shadow-lg border-2 border-white overflow-hidden">
             {user?.avatar ? (
-              <img loading="lazy"
+              <ProxiedImage
                 src={user.avatar}
                 alt={user?.name ? `${user.name} avatar` : 'Avatar'}
                 className="w-full h-full object-cover"
