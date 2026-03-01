@@ -1479,6 +1479,7 @@ export const Orders: React.FC = () => {
                           src={formScreenshot}
                           className="w-full h-full object-cover opacity-80"
                           alt="preview"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                       ) : (
                         <>
@@ -1963,7 +1964,7 @@ export const Orders: React.FC = () => {
                   className={`w-full aspect-[2/1] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden relative ${ratingPreview ? 'border-lime-200' : 'border-gray-200'}`}
                 >
                   {ratingPreview ? (
-                    <img loading="lazy" src={ratingPreview} className="w-full h-full object-cover opacity-80" alt="Rating preview" />
+                    <img loading="lazy" src={ratingPreview} className="w-full h-full object-cover opacity-80" alt="Rating preview" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   ) : (
                     <>
                       <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">

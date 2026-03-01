@@ -696,6 +696,7 @@ ${
   } catch (error) {
     // Fallback response if AI fails
     aiLog.error('Gemini API error', { error });
+    logErrorEvent({ error: error instanceof Error ? error : new Error(String(error)), message: 'Chat AI generation failed', category: 'EXTERNAL_SERVICE', severity: 'medium', metadata: { handler: 'generateChatUiResponse', userName: payload.userName } });
     return {
       text: `Hi ${payload.userName}! I'm experiencing some technical difficulties right now, but I'm here to help. Could you try rephrasing your question?`,
       intent: 'unknown',
@@ -3606,6 +3607,7 @@ export async function extractOrderDetailsWithAi(
     };
   } catch (error) {
     aiLog.error('Order extraction error', { error });
+    logErrorEvent({ error: error instanceof Error ? error : new Error(String(error)), message: 'AI order extraction failed', category: 'EXTERNAL_SERVICE', severity: 'medium', metadata: { handler: 'extractOrderDetailsWithAi' } });
     return {
       orderId: null,
       amount: null,
