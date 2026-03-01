@@ -837,7 +837,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isVisible = true, onNavigate }
 
         {previewUrl && (
           <div className="bg-white p-3 rounded-[1.5rem] shadow-xl border border-slate-100 mb-2 w-fit relative animate-slide-up">
-            <img loading="lazy" src={previewUrl} className="h-20 w-auto rounded-xl object-cover" alt="Preview" />
+            <img loading="lazy" src={previewUrl} className="h-20 w-auto rounded-xl object-cover" alt="Preview" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             <button
               onClick={clearAttachment}
               aria-label="Remove attachment"
