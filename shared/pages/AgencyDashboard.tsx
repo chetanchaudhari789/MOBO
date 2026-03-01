@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
 import { formatErrorMessage } from '../utils/errors';
 import { ProxiedImage } from '../components/ProxiedImage';
+import { RaiseTicketModal } from '../components/RaiseTicketModal';
 import { api, asArray } from '../services/api';
 import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
@@ -3747,6 +3748,7 @@ export const AgencyDashboard: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   const fetchData = async () => {
     if (!user?.mediatorCode) return;
@@ -3943,6 +3945,12 @@ export const AgencyDashboard: React.FC = () => {
               </div>
             </button>
             <button
+              onClick={() => setTicketOpen(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 text-xs font-bold text-amber-600 hover:bg-amber-50 rounded-xl transition-colors mb-1"
+            >
+              <AlertTriangle size={16} /> Raise a Ticket
+            </button>
+            <button
               onClick={logout}
               className="w-full flex items-center justify-center gap-2 py-3 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors"
             >
@@ -3990,6 +3998,7 @@ export const AgencyDashboard: React.FC = () => {
       )}
       {activeTab === 'brands' && <BrandsView />}
       {activeTab === 'profile' && <AgencyProfile user={user} />}
+      <RaiseTicketModal open={ticketOpen} onClose={() => setTicketOpen(false)} />
     </DesktopShell>
   );
 };

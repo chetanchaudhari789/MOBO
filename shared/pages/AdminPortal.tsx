@@ -7,6 +7,7 @@ import { getApiBaseAbsolute } from '../utils/apiBaseUrl';
 import { filterAuditLogs, auditActionLabel } from '../utils/auditDisplay';
 import { formatErrorMessage } from '../utils/errors';
 import { ProxiedImage } from '../components/ProxiedImage';
+import { RaiseTicketModal } from '../components/RaiseTicketModal';
 import { exportToGoogleSheet } from '../utils/exportToSheets';
 import { subscribeRealtime } from '../services/realtime';
 import { Button, EmptyState, IconButton, Input, Spinner } from '../components/ui';
@@ -184,6 +185,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
   const [sheetsExporting, setSheetsExporting] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   const switchView = (next: ViewMode) => {
     setView(next);
@@ -983,6 +985,13 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
           </div>
 
           <div className="mt-auto p-4 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setTicketOpen(true)}
+              className="w-full py-3 flex items-center justify-center gap-2 text-amber-400 hover:bg-slate-800 rounded-xl transition-colors text-xs font-bold uppercase tracking-wider mb-1"
+            >
+              <AlertTriangle size={16} /> Raise Ticket
+            </button>
             <button
               type="button"
               onClick={logout}
@@ -2091,6 +2100,7 @@ export const AdminPortal: React.FC<{ onBack?: () => void }> = ({ onBack: _onBack
         </div>
       )}
     </DesktopShell>
+    <RaiseTicketModal open={ticketOpen} onClose={() => setTicketOpen(false)} />
     </>
   );
 };
