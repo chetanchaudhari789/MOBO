@@ -748,7 +748,7 @@ export function makeOpsController(env: Env) {
         const { roles, user: requester } = getRequester(req);
         const body = rejectByIdSchema.parse(req.body);
 
-        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null }, select: { id: true, mongoId: true, parentCode: true, mediatorCode: true, status: true } });
+        const mediator = await db().user.findFirst({ where: { ...idWhere(body.id), deletedAt: null }, select: { id: true, mongoId: true, parentCode: true, mediatorCode: true, kycStatus: true, status: true } });
         if (!mediator) {
           throw new AppError(404, 'USER_NOT_FOUND', 'Mediator not found');
         }
